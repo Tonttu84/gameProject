@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:27:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/18 17:25:15 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/19 13:54:07 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -36,6 +36,7 @@ public:
     bool getAlive();
     bool getBroken();
     void setAlive(bool);
+    bool rally();
 
 private:
     int team = 0;

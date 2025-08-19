@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/18 17:39:12 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/19 14:50:43 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -30,7 +30,54 @@ int getRandomNumber(int min = 0, int max = (Battlefield::height - 1)) {
 }
 
 
-void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team)
+void Battlefield::placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team)
+{
+	int safeguard = 0;
+	for (auto& unit : team)
+	{
+		int HIter = 1;
+		if (safeguard == 0)
+			HIter = getRandomNumber(1, height - 2);
+		int WIter = width * 2 / 3;
+		if (safeguard == 0)
+			WIter = getRandomNumber(width * 2 / 3, width - 2);
+	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < height -2)
+	   {
+			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < width -2)
+			{
+				WIter++;
+			}
+			WIter = width * 2 / 3;
+			HIter++;
+			
+		}
+		if (_battlefield[HIter][WIter].getUnit() == nullptr)
+		   {
+			_battlefield[HIter][WIter].setUnit(unit.get());
+		
+			std::cout << "Created unit" << std::endl;    
+			safeguard = 0;
+		}
+		else if (safeguard == 20)
+		{
+			
+			std::cout << "Map is full" << std::endl;
+			exit(1);
+		}
+		else 
+		{
+			HIter = 1;
+			safeguard++;
+		}
+		if (HIter == height -1)
+		{
+			HIter = 1;
+		}
+	}
+} 
+
+
+void Battlefield::placeTeamBLUE(std::vector<std::unique_ptr<AUnit>>& team)
 {
 	int safeguard = 0;
 	for (auto& unit : team)
@@ -40,10 +87,10 @@ void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team)
 			HIter = getRandomNumber(1, height - 2);
 		int WIter = 1;
 		if (safeguard == 0)
-			WIter = getRandomNumber(1, width - 2);
+			WIter = getRandomNumber(1, width / 3);
 	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < height -2)
 	   {
-			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < width -2)
+			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < (width / 3) - 1)
 			{
 				WIter++;
 			}
@@ -254,7 +301,108 @@ Cell *Battlefield::findTarget(const AUnit &Searcher) const
 	
 }
 
-void Battlefield::moveOne(std::unique_ptr<AUnit> &unit, const Cell* const cellptr)
+//0 on success, 1 on fail
+
+int  Battlefield::moveN(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc , myCell.hLoc - 1) == 0)
+		return 0;	
+	else if (myCell.wLoc > 0 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc - 1) == 0))
+		return 0;	
+	else if (myCell.wLoc < width -2 && (moveAUnit(unit, myCell.wLoc +1 , myCell.hLoc - 1) == 0))
+		return 0;
+	return 1;		
+}
+
+int  Battlefield::moveNE(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc -1) == 0)
+		return 0;	
+	else if ((moveAUnit(unit, myCell.wLoc, myCell.hLoc -1) == 0))
+		return 0;	
+	else if ((moveAUnit(unit, myCell.wLoc +1  , myCell.hLoc ) == 0))
+		return 0;
+	return 1;
+	
+}
+
+int  Battlefield::moveE(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc) == 0)
+		return 0;
+	else if (myCell.hLoc > 0 && (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc -1) == 0))
+		return 0;
+	else if (myCell.hLoc < height -2 && (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc +1) == 0))
+		return 0;
+
+	return 1;
+}
+
+
+int  Battlefield::moveSE(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc + 1) == 0)
+			return 0;
+	else if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc) == 0)
+		return 0;
+	else if (moveAUnit(unit, myCell.wLoc, myCell.hLoc +1) == 0)
+		return 0;
+	return 1; 
+}
+
+int  Battlefield::moveS(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc , myCell.hLoc + 1) == 0)
+		return 0;	
+	else if (myCell.wLoc > 0 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc +1) == 0))
+		return 0;	
+	else if ((myCell.wLoc < width -2 && moveAUnit(unit, myCell.wLoc +1 , myCell.hLoc +1) == 0))
+		return 0;
+	return 1;	
+}
+
+int  Battlefield::moveSW(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc + 1) == 0)
+		return 0;	
+	else if (moveAUnit(unit, myCell.wLoc, myCell.hLoc + 1) == 0)
+		return 0;
+	else if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc) == 0)
+		return 0;
+
+	return 1;
+}
+
+int  Battlefield::moveW(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc) == 0)
+		return 0;	
+	else if (myCell.hLoc > 0 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc -1) == 0))
+		return 0;
+	else if (myCell.hLoc < height -2 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc +1) == 0))
+		return 0;
+
+	return 1;
+}
+
+int  Battlefield::moveNW(AUnit &unit, Cell &myCell)
+{
+	if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc -1) == 0)
+		return 0;	
+	else if (moveAUnit(unit, myCell.wLoc, myCell.hLoc - 1) == 0)
+		return 0;
+	else if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc) == 0)
+		return 0;
+	return 1;	
+}
+
+
+
+
+
+
+
+void Battlefield::moveOne(std::unique_ptr<AUnit> &unit, const Cell* cellptr)
 {
 	
 	
@@ -269,76 +417,44 @@ void Battlefield::moveOne(std::unique_ptr<AUnit> &unit, const Cell* const cellpt
 	int hDelta = cellptr->hLoc - (myCell.hLoc);
 	if (wDelta > 1 && hDelta > 1)
 	{
-		if (enter(*unit, myCell.wLoc + 1, myCell.hLoc + 1) == 0)
-			return;
-		else if (enter(*unit, myCell.wLoc + 1, myCell.hLoc) == 0)
-			return;
-		else if (enter(*unit, myCell.wLoc, myCell.hLoc) == 0)
-			return; 
+		moveSE(*unit, myCell);
+		return;
 	}
 	else if (wDelta > 1 && hDelta < -1)
 	{
-		if (enter(*unit, myCell.wLoc + 1, myCell.hLoc - 1) == 0)
-			return;	
-		else if (enter(*unit, myCell.wLoc + 1, myCell.hLoc ) == 0)
-			return;	
-		else if (enter(*unit, myCell.wLoc + 1, myCell.hLoc -1 ) == 0)
-			return;	
+		moveNE(*unit, myCell);
+		return;
 	}
 	else if (wDelta > 1)
 	{
-		if (enter(*unit, myCell.wLoc + 1, myCell.hLoc) == 0)
-			return;
-		else if (myCell.hLoc > 0 && (enter(*unit, myCell.wLoc + 1, myCell.hLoc -1) == 0))
-			return;
-		else if (myCell.hLoc < height -2 && (enter(*unit, myCell.wLoc + 1, myCell.hLoc +1) == 0))
-			return;
+		moveE(*unit, myCell);
+		return;
 		
 	}
 	else if (wDelta < -1 && hDelta > 1)
 	{
-		if (enter(*unit, myCell.wLoc -1 , myCell.hLoc + 1) == 0)
-			return;	
-		else if (enter(*unit, myCell.wLoc, myCell.hLoc + 1) == 0)
-			return;
-		else if (enter(*unit, myCell.wLoc -1 , myCell.hLoc) == 0)
-			return;	
+		moveSW(*unit, myCell);
+		return;
 	}
 	else if (wDelta < -1 && hDelta < -1)
 	{
-		if (enter(*unit, myCell.wLoc -1 , myCell.hLoc -1) == 0)
-			return;	
-		else if (enter(*unit, myCell.wLoc, myCell.hLoc - 1) == 0)
-			return;
-		else if (enter(*unit, myCell.wLoc -1 , myCell.hLoc) == 0)
-			return;	
+		moveNW(*unit, myCell);
+		return;
 	}
 	else if (wDelta < -1)
 	{
-		if (enter(*unit, myCell.wLoc -1 , myCell.hLoc) == 0)
-			return;	
-		else if (myCell.hLoc > 0 && (enter(*unit, myCell.wLoc -1 , myCell.hLoc -1) == 0))
-			return;
-		else if (myCell.hLoc < height -2 && (enter(*unit, myCell.wLoc -1 , myCell.hLoc +1) == 0))
-			return;
+		moveW(*unit, myCell);
+		return;
 	}
 	else if (hDelta > 1)
 	{
-		if (enter(*unit, myCell.wLoc , myCell.hLoc + 1) == 0)
-			return;	
-		else if (wDelta > 0 && (enter(*unit, myCell.wLoc -1 , myCell.hLoc +1) == 0))
-			return;	
-		else if (wDelta < width -2 && (enter(*unit, myCell.wLoc +1 , myCell.hLoc +1) == 0))
-			return;	
+		moveS(*unit, myCell);
+		return;
 	}
 	else if (hDelta < -1)
 	{
-		if (enter(*unit, myCell.wLoc , myCell.hLoc - 1) == 0)
-			return;	
-		else if (wDelta > 0 && (enter(*unit, myCell.wLoc -1 , myCell.hLoc - 1) == 0))
-			return;	
-		else if (wDelta < width -2 && (enter(*unit, myCell.wLoc +1 , myCell.hLoc - 1) == 0))
-			return;	
+		moveN(*unit, myCell);
+		return;
 	}
 		
 }
@@ -360,7 +476,7 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>> &team)
 }
 
 
-int Battlefield::enter(AUnit &unit, int w, int h)
+int Battlefield::moveAUnit(AUnit &unit, int w, int h)
 {
 	if (_battlefield[h][w].getUnit())
 		return 1;
@@ -411,20 +527,71 @@ void Battlefield::flee(std::unique_ptr<AUnit> &unit)
 			std::cout << "A soldier fled the battlefield and turns to banditry" << std::endl;
 			unit->setAlive(0); //For the purpose of the battlefield he died
 		}
-	if (myCell->hLoc < myCell->wLoc && myCell->hLoc < height - myCell -> hLoc && myCell->hLoc < width - myCell->wLoc)
-		enter(*unit, myCell->wLoc, myCell->hLoc - 1);
-	else if (myCell->wLoc < height - myCell -> hLoc && myCell->wLoc < width - myCell->wLoc)
-		enter(*unit , myCell->wLoc - 1, myCell->hLoc);
-	else if (width - myCell->wLoc < height - myCell->hLoc)
-		enter(*unit, myCell->wLoc + 1, myCell->hLoc );
+	if (unit->getTeam() == 1)
+	{
+		if (moveE(*unit, *unit->getCell()) == 1)
+			unit->rally();
+	}
+	else if (unit->getTeam() == 2)
+	{
+		if (moveW(*unit, *unit->getCell()) == 1)
+			unit->rally();
+	}
 	else 
-		enter(*unit, myCell->wLoc, myCell->hLoc +1);
-	
-	
-
-
-
-		
-	
-	
+	{
+		if (moveS(*unit, *unit->getCell()) == 1)
+			unit->rally();
+	}
 }
+
+
+void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEnd)
+{
+
+
+	 assert(wEnd >= wStart && "wEnd must be greater than wStart");
+    assert(hEnd >= hStart && "hEend must be greater than or equal to hStart");
+	
+	int safeguard = 0;
+	for (auto& unit : team)
+	{
+		size_t HIter = hStart;
+		if (safeguard == 0)
+			HIter = getRandomNumber(hStart, hEnd);
+		size_t WIter = wStart;
+		if (safeguard == 0)
+			WIter = getRandomNumber(wStart, wEnd);
+	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < hEnd + 1)
+	   {
+			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < wEnd + 1)
+			{
+				WIter++;
+			}
+			WIter = wStart;
+			HIter++;
+			
+		}
+		if (_battlefield[HIter][WIter].getUnit() == nullptr)
+		   {
+			_battlefield[HIter][WIter].setUnit(unit.get());
+		
+			std::cout << "Created unit" << std::endl;    
+			safeguard = 0;
+		}
+		else if (safeguard == 20)
+		{
+			
+			std::cout << "Map is full" << std::endl;
+			exit(1);
+		}
+		else 
+		{
+			HIter = hStart;
+			safeguard++;
+		}
+		if (HIter == hEnd +1)
+		{
+			HIter = hStart;
+		}
+	}
+} 

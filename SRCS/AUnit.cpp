@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:46:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/18 17:25:52 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/19 14:00:24 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -165,4 +165,17 @@ bool AUnit::getBroken()
 void AUnit::setAlive(bool newAlive)
 {
     alive = newAlive;
+}
+
+bool AUnit::rally()
+{
+    if (broken == false)
+        return 0; //unnecessary rally always fails
+    if ((morale + Utility::throwDice() - Utility::throwDice()) >= 12)
+    {
+        std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
+        broken = true;
+        return 0;
+    }
+    return 1;
 }
