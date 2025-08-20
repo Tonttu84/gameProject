@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:46:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/19 14:00:24 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/20 11:28:08 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -143,39 +143,73 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 
 }
 
-void AUnit::battle(Battlefield &myBattlefield)
-{
-    if (broken || getCell() == nullptr)
-        return;
-    AUnit *target = find_target(myBattlefield);
-    if (target)
-        attack(*target);
-}
-
-bool AUnit::getAlive()
-{
-    return alive;
-}
-
-bool AUnit::getBroken()
-{
-    return broken;
-}
-
-void AUnit::setAlive(bool newAlive)
-{
-    alive = newAlive;
-}
-
-bool AUnit::rally()
-{
-    if (broken == false)
-        return 0; //unnecessary rally always fails
-    if ((morale + Utility::throwDice() - Utility::throwDice()) >= 12)
+    void AUnit::battle(Battlefield &myBattlefield)
     {
-        std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
-        broken = true;
-        return 0;
+        if (broken || getCell() == nullptr)
+            return;
+        AUnit *target = find_target(myBattlefield);
+        if (target)
+            attack(*target);
     }
-    return 1;
-}
+
+    bool AUnit::getAlive() const
+    {
+        return alive;
+    }
+
+    bool AUnit::getBroken() const
+    {
+        return broken;
+    }
+
+    void AUnit::setAlive(bool newAlive)
+    {
+        alive = newAlive;
+    }
+
+    bool AUnit::rally()
+    {
+        if (broken == false)
+            return 0; //unnecessary rally always fails
+        if ((morale + Utility::throwDice() - Utility::throwDice()) >= 12)
+        {
+            std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
+            broken = true;
+            return 0;
+        }
+        return 1;
+    }
+
+
+    int AUnit::getHp() const
+    {
+    return hitpoints; 
+    }
+    int AUnit::getmaxHP() const
+    {
+        return maxHP;
+    }
+
+     void AUnit::setBroken(bool value)
+     {
+        broken = value;
+     }
+    void  AUnit::heal(int value)
+    {
+        if (value < 0)
+            return;
+        if (value + hitpoints > maxHP)
+            hitpoints = maxHP;
+        else
+            hitpoints = hitpoints + value;
+    }
+
+     void AUnit::setSpellcaster(bool value)
+     {
+        spellcaster = value;
+     }
+
+     bool AUnit::getSpellCaster() const
+     {
+        return spellcaster;
+     }

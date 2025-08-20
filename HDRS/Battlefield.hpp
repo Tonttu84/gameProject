@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/19 14:44:07 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/20 11:14:23 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -24,10 +24,23 @@ class Cell;
 class Battlefield
 {
     public:
+
+        template<typename UnitType>
+        void createTeam(size_t amount, int team)
+        {
+            for (size_t i = 0; i < amount; ++i)
+            {
+                if (team == 1)
+                    teamRED.push_back(std::make_unique<UnitType>(team));
+                else if (team == 2)
+                    teamBLUE.push_back(std::make_unique<UnitType>(team));
+            }
+        }
+        
         Battlefield();
         ~Battlefield() = default;
         Battlefield(Battlefield &cpy) = delete;
-        Battlefield &operator=(Battlefield &target) = delete;
+        Battlefield &operator=(Battlefield &target) = default;
         void insertTeam(size_t amount, int team);
         void print(void);
         static int constexpr height = 50;
@@ -36,12 +49,12 @@ class Battlefield
         void moveUnits(void);
         void makeBattle(void);
         void debugPrint(void);
-        void createTeam(size_t amount, int team);
+        
         void placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEend);
         void placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team);
         void placeTeamBLUE(std::vector<std::unique_ptr<AUnit>>& team);
         std::vector<std::unique_ptr<AUnit>> &getTeamRED();
-        std::vector<std::unique_ptr<AUnit>> &getTeamBLUE() { return teamBLUE; }
+        std::vector<std::unique_ptr<AUnit>> &getTeamBLUE();
         Cell *findTarget(const AUnit &Searcher) const;
         void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);
         void flee(std::unique_ptr<AUnit> &unit);
@@ -52,6 +65,7 @@ class Battlefield
 
         std::array<std::array<Cell, width>, height> _battlefield;
         void cleanup();
+        void triggerSpecialPhase();
 
 
         int moveSE(AUnit &unit, Cell &myCell);

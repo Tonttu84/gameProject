@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/19 14:50:43 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/20 13:30:56 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,6 +14,7 @@
 #include <random>
 #include "../HDRS/Cell.hpp"
 #include "../HDRS/Human.hpp"
+#include "../HDRS/Priest.hpp"
 
 #define RED "\033[31m"
 #define BLUE "\033[34m"
@@ -21,14 +22,12 @@
 
 class Human;
 
-
 int getRandomNumber(int min = 0, int max = (Battlefield::height - 1)) {
 	static std::random_device rd;  // Non-deterministic seed
 	static std::mt19937 gen(rd()); // Mersenne Twister engine
 	std::uniform_int_distribution<> dist(min, max);
 	return dist(gen);
 }
-
 
 void Battlefield::placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team)
 {
@@ -75,7 +74,6 @@ void Battlefield::placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team)
 		}
 	}
 } 
-
 
 void Battlefield::placeTeamBLUE(std::vector<std::unique_ptr<AUnit>>& team)
 {
@@ -144,9 +142,18 @@ void Battlefield::print()
 			if (_battlefield[i][k].getUnit() == nullptr)
 				std::cout << ".";
 			else if( _battlefield[i][k].getUnit()->getTeam() == 1)
-				std::cout << RED "X" RESET;
+			{
+				if(dynamic_cast<Priest *>(_battlefield[i][k].getUnit()))
+					std::cout << RED "P" RESET;
+				else
+					std::cout << RED "X" RESET;
+			}
 			else if( _battlefield[i][k].getUnit()->getTeam() == 2)
-				std::cout << BLUE "X" RESET;
+			{	if(dynamic_cast<Priest *>(_battlefield[i][k].getUnit()))
+					std::cout << BLUE "P" RESET;
+				else
+					std::cout << BLUE "X" RESET;
+			}
 			else 
 				std::cout << "?";
 				
@@ -155,7 +162,6 @@ void Battlefield::print()
 	}
 	std::cout << std::endl;
 }
-
 
 size_t Battlefield::countTeam(const int team) const
 {
@@ -195,8 +201,6 @@ void Battlefield::makeBattle()
 	}
 }
 
-
-
 void Battlefield::debugPrint()
 {
 	for(int i = 0; i < height; i++)
@@ -212,16 +216,8 @@ void Battlefield::debugPrint()
 	std::cout << std::endl;
 }
 
-void Battlefield::createTeam(size_t amount, int team)
-{
-    for (size_t i = 0; i < amount; ++i)
-    {
-        if (team == 1)
-            teamRED.push_back(std::make_unique<Human>(team));
-        else if (team == 2)
-            teamBLUE.push_back(std::make_unique<Human>(team));
-    }
-}
+
+
 
 std::vector<std::unique_ptr<AUnit>>& Battlefield::getTeamRED()
 {
@@ -266,7 +262,6 @@ static Cell *searchCell(const AUnit &Searcher, const std::vector<std::unique_ptr
 	return finalTarget;
 }
 
-
 Cell *Battlefield::findTarget(const AUnit &Searcher) const
 {
 	if (Searcher.getCell() == nullptr)
@@ -300,7 +295,6 @@ Cell *Battlefield::findTarget(const AUnit &Searcher) const
 	return OptionB;
 	
 }
-
 //0 on success, 1 on fail
 
 int  Battlefield::moveN(AUnit &unit, Cell &myCell)
@@ -396,12 +390,6 @@ int  Battlefield::moveNW(AUnit &unit, Cell &myCell)
 	return 1;	
 }
 
-
-
-
-
-
-
 void Battlefield::moveOne(std::unique_ptr<AUnit> &unit, const Cell* cellptr)
 {
 	
@@ -468,6 +456,8 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>> &team)
 			flee(*IT);
 			continue;	
 		}
+		if ((*IT)->getSpellCaster() == true)
+			continue;
 		Cell *target = findTarget(**IT);
 		if (target == nullptr)
 			return;
@@ -544,6 +534,9 @@ void Battlefield::flee(std::unique_ptr<AUnit> &unit)
 	}
 }
 
+std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeamBLUE() { 
+	return teamBLUE; 
+}
 
 void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEnd)
 {
@@ -594,4 +587,17 @@ void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wS
 			HIter = hStart;
 		}
 	}
-} 
+}
+
+void Battlefield::triggerSpecialPhase()
+{
+    for (auto& unit : teamRED)
+    {
+        if (unit) unit->special();
+    }
+
+    for (auto& unit : teamBLUE)
+    {
+        if (unit) unit->special();
+    }
+}

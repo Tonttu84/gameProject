@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:27:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/19 13:54:07 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/20 11:45:43 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -33,12 +33,20 @@ public:
     int defend(int AttackAttempt, int damage);
     void battle(Battlefield &myBattlefield);
     AUnit *find_target(Battlefield &myBattlefield);
-    bool getAlive();
-    bool getBroken();
+    bool getAlive() const;
+    bool getBroken() const;
     void setAlive(bool);
     bool rally();
+    int getHp() const;
+    int getmaxHP() const;
+    void setBroken(bool value);
+    void heal(int value);
+    virtual void special(){};
 
-private:
+    void setSpellcaster(bool value);
+    bool getSpellCaster() const;
+
+protected:
     int team = 0;
     Cell* currentCell = nullptr;
     int hitpoints = 10;
@@ -46,6 +54,7 @@ private:
     int defence = 10;
     int morale = 10;
     int strength = 10;
+    int maxHP = 10;
     
     int resistance = 10;
     int value = 10; //relative value that mages etc consider when trying to hit opponents, zombies etc chaff is not a priority target
@@ -53,6 +62,7 @@ private:
 
     bool alive = true;
     bool broken = false;
+    bool spellcaster = false;
     
 };
 
