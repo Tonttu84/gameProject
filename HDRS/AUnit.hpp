@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:27:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/20 11:45:43 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/27 18:25:02 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -42,9 +42,14 @@ public:
     void setBroken(bool value);
     void heal(int value);
     virtual void special(){};
+    int getCast();
+    void setCast(int setCast);
 
     void setSpellcaster(bool value);
     bool getSpellCaster() const;
+
+    void setPlaced(bool value);
+    bool getPlaced();
 
 protected:
     int team = 0;
@@ -55,6 +60,7 @@ protected:
     int morale = 10;
     int strength = 10;
     int maxHP = 10;
+    int cast = 0;
     
     int resistance = 10;
     int value = 10; //relative value that mages etc consider when trying to hit opponents, zombies etc chaff is not a priority target
@@ -63,7 +69,7 @@ protected:
     bool alive = true;
     bool broken = false;
     bool spellcaster = false;
-    
+    bool placed = false;
 };
 
 

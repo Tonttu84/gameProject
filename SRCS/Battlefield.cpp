@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/20 13:30:56 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/27 18:32:37 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -19,6 +19,12 @@
 #define RED "\033[31m"
 #define BLUE "\033[34m"
 #define RESET "\033[0m"
+#define RED_ON_YELLOW "\033[31;103m"
+#define BLUE_ON_YELLOW "\033[34;103m"
+
+#define BG_RED   "\033[41m"
+#define BG_BLUE  "\033[44m"
+
 
 class Human;
 
@@ -144,13 +150,25 @@ void Battlefield::print()
 			else if( _battlefield[i][k].getUnit()->getTeam() == 1)
 			{
 				if(dynamic_cast<Priest *>(_battlefield[i][k].getUnit()))
-					std::cout << RED "P" RESET;
+				{
+					if (_battlefield[i][k].getUnit()->getCast() != 0)
+						std::cout << RED_ON_YELLOW "P" RESET;
+					else 
+						std::cout << RED "P" RESET;
+
+				}
 				else
 					std::cout << RED "X" RESET;
 			}
 			else if( _battlefield[i][k].getUnit()->getTeam() == 2)
 			{	if(dynamic_cast<Priest *>(_battlefield[i][k].getUnit()))
-					std::cout << BLUE "P" RESET;
+				{
+					if (_battlefield[i][k].getUnit()->getCast() != 0)
+						std::cout << BLUE_ON_YELLOW "P" RESET;
+					else 
+						std::cout << BLUE "P" RESET;
+
+				}
 				else
 					std::cout << BLUE "X" RESET;
 			}
@@ -456,7 +474,7 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>> &team)
 			flee(*IT);
 			continue;	
 		}
-		if ((*IT)->getSpellCaster() == true)
+		if ((*IT)->getCast() > 0)
 			continue;
 		Cell *target = findTarget(**IT);
 		if (target == nullptr)
@@ -548,6 +566,9 @@ void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wS
 	int safeguard = 0;
 	for (auto& unit : team)
 	{
+		if (unit->getPlaced() == true)
+			continue;
+
 		size_t HIter = hStart;
 		if (safeguard == 0)
 			HIter = getRandomNumber(hStart, hEnd);
@@ -567,7 +588,7 @@ void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wS
 		if (_battlefield[HIter][WIter].getUnit() == nullptr)
 		   {
 			_battlefield[HIter][WIter].setUnit(unit.get());
-		
+			unit->setPlaced(true);
 			std::cout << "Created unit" << std::endl;    
 			safeguard = 0;
 		}

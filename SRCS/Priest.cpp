@@ -34,6 +34,11 @@ void Priest::castBless(void)
     if (mana <= 0 || broken || alive == false)
         return;
    
+    if (getCast() > 0)
+    {
+        setCast(getCast() - 1);
+        return;
+    }    
     
    AUnit *target = nullptr;
     if (getTeam() == 1)
@@ -49,11 +54,13 @@ void Priest::castBless(void)
     {   std::cout << "The divine healing helps a soldier find his courage" << std::endl;
         target->setBroken(false);
         target->heal(1 + Utility::throwDice());
+        setCast(1);
     } 
     else 
     {
         std::cout << "The divine healing helps a soldier" << std::endl;
         target->heal(1 + Utility::throwDice());
+        setCast(1);
     }
     
 }

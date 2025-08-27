@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:46:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/20 11:28:08 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/27 18:36:37 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -213,3 +213,24 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
      {
         return spellcaster;
      }
+
+     int AUnit::getCast()
+     {
+        return cast;
+     }
+
+    void AUnit::setCast(int setCast)
+     {
+        cast = setCast;
+     }
+
+
+
+    void AUnit::setPlaced(bool value)
+    {
+        placed = value;
+    }
+    bool AUnit::getPlaced()
+    {
+        return placed;
+    }
