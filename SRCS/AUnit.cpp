@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:46:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/27 18:36:37 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/29 10:36:23 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -19,218 +19,247 @@
 AUnit::AUnit(const int newTeam)
 :team(newTeam)
 {
-    
+	
 }
 
 AUnit::~AUnit()
 {
-    if (getCell())
-        getCell() -> reset();
-    currentCell = nullptr;
+	if (getCell())
+		getCell() -> reset();
+	currentCell = nullptr;
 }
 
 void AUnit::setCell(Cell* cell) {
-    
-    if (cell &&  cell->getUnit() && cell->getUnit() != this) {
-        assert(currentCell->getUnit() == this && "Unit's current cell doesn't match!");
-    }
-    currentCell = cell;
+	
+	if (cell &&  cell->getUnit() && cell->getUnit() != this) {
+		assert(currentCell->getUnit() == this && "Unit's current cell doesn't match!");
+	}
+	currentCell = cell;
 }
 
  Cell* AUnit::getCell() const {
-        return currentCell;
-    }
+		return currentCell;
+	}
 
-    void AUnit::reset()
+	void AUnit::reset()
 {
-    currentCell = nullptr;
+	currentCell = nullptr;
 }
 
 
 int AUnit::getTeam() const
 {
-    return team;
+	return team;
 }
 
 int AUnit::defend(int AttackAttempt, int damage)
 {
-    if (defence + Utility::throwDice() >= AttackAttempt)
-        return 0;
-    
-    int resultDMG = damage + Utility::throwDice() - Utility::throwDice();
-    if (resultDMG > 0)
-    {
-        if (resultDMG + Utility::throwDice() > morale + Utility::throwDice())
-            {
-                broken = true;
-                std::cout << "One coward valued his life more than his honor" << std::endl;
-            }
-        hitpoints = hitpoints - resultDMG;
-        if (hitpoints < 1)
-            alive = false;
-        return resultDMG;
-    }
-    return 0;
+	if (defence + Utility::throwDice() >= AttackAttempt)
+		return 0;
+	
+	int resultDMG = damage + Utility::throwDice() - Utility::throwDice();
+	if (resultDMG > 0)
+	{
+		testMorale(resultDMG);
+		hitpoints = hitpoints - resultDMG;
+		if (hitpoints < 1)
+			alive = false;
+		return resultDMG;
+	}
+	return 0;
 }
 
 int constexpr placeholderWeapon = 5;
 
 void AUnit::attack(AUnit &target)
 {   
-    int HitResult = this -> attackPWR + Utility::throwDice();
-    
-    target.defend(HitResult, placeholderWeapon + strength / 3);
-    
+	int HitResult = this -> attackPWR + Utility::throwDice();
+	
+	target.defend(HitResult, placeholderWeapon + strength / 3);
+	
 }
 
 AUnit *AUnit::find_target(Battlefield &myBattlefield)
 {
-    AUnit *retval = nullptr;
+	AUnit *retval = nullptr;
 
-    if (getCell() == nullptr)
-        return nullptr;
-    Cell *thisCell = getCell();
+	if (getCell() == nullptr)
+		return nullptr;
+	Cell *thisCell = getCell();
 
-    if (thisCell->hLoc > 0)
-    {
-        if (thisCell -> wLoc >0)
-        {
-            retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc - 1].getUnit();
-            if (retval && retval->team != team && retval -> getAlive())
-                return retval;
-        }
-        retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc].getUnit();
-        if (retval && retval->team != team && retval -> getAlive())
-            return retval;
-        if (thisCell->wLoc < myBattlefield.width - 2)
-        {
-            retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc + 1].getUnit();
-            if (retval && retval->team != team && retval -> getAlive())
-            return retval;
-        }
-    }
-    if (thisCell->hLoc < myBattlefield.height - 2 )
-    {
-        if (thisCell->wLoc > 0)
-        {
-            retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc - 1].getUnit();
-            if (retval && retval->team != team && retval -> getAlive())
-                return retval;
-        }
-        retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc].getUnit();
-        if (retval && retval->team != team && retval -> getAlive())
-            return retval;
-        if (thisCell->wLoc < myBattlefield.width - 2)
-        {
-            retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc + 1].getUnit();
-            if (retval && retval->team != team && retval -> getAlive())
-            return retval;
-        }
-    }
-     if (thisCell->wLoc > 0)
-        {
-            retval = myBattlefield._battlefield[thisCell->hLoc][thisCell->wLoc - 1].getUnit();
-            if (retval && retval->team != team && retval -> getAlive())
-                return retval;
-        }
-    if (thisCell->wLoc < myBattlefield.width - 2)
-        {
-            retval = myBattlefield._battlefield[thisCell->hLoc][thisCell->wLoc - 1].getUnit();
-            if (retval && retval->team != team && retval -> getAlive() )
-                return retval;
-        }
-    return nullptr;
+	if (thisCell->hLoc > 0)
+	{
+		if (thisCell -> wLoc >0)
+		{
+			retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc - 1].getUnit();
+			if (retval && retval->team != team && retval -> getAlive())
+				return retval;
+		}
+		retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc].getUnit();
+		if (retval && retval->team != team && retval -> getAlive())
+			return retval;
+		if (thisCell->wLoc < myBattlefield.width - 2)
+		{
+			retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc + 1].getUnit();
+			if (retval && retval->team != team && retval -> getAlive())
+			return retval;
+		}
+	}
+	if (thisCell->hLoc < myBattlefield.height - 2 )
+	{
+		if (thisCell->wLoc > 0)
+		{
+			retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc - 1].getUnit();
+			if (retval && retval->team != team && retval -> getAlive())
+				return retval;
+		}
+		retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc].getUnit();
+		if (retval && retval->team != team && retval -> getAlive())
+			return retval;
+		if (thisCell->wLoc < myBattlefield.width - 2)
+		{
+			retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc + 1].getUnit();
+			if (retval && retval->team != team && retval -> getAlive())
+			return retval;
+		}
+	}
+	 if (thisCell->wLoc > 0)
+		{
+			retval = myBattlefield._battlefield[thisCell->hLoc][thisCell->wLoc - 1].getUnit();
+			if (retval && retval->team != team && retval -> getAlive())
+				return retval;
+		}
+	if (thisCell->wLoc < myBattlefield.width - 2)
+		{
+			retval = myBattlefield._battlefield[thisCell->hLoc][thisCell->wLoc - 1].getUnit();
+			if (retval && retval->team != team && retval -> getAlive() )
+				return retval;
+		}
+	return nullptr;
 
 }
 
-    void AUnit::battle(Battlefield &myBattlefield)
-    {
-        if (broken || getCell() == nullptr)
-            return;
-        AUnit *target = find_target(myBattlefield);
-        if (target)
-            attack(*target);
-    }
+	void AUnit::battle(Battlefield &myBattlefield)
+	{
+		if (broken || getCell() == nullptr)
+			return;
+		AUnit *target = find_target(myBattlefield);
+		if (target)
+			attack(*target);
+	}
 
-    bool AUnit::getAlive() const
-    {
-        return alive;
-    }
+	bool AUnit::getAlive() const
+	{
+		return alive;
+	}
 
-    bool AUnit::getBroken() const
-    {
-        return broken;
-    }
+	bool AUnit::getBroken() const
+	{
+		return broken;
+	}
 
-    void AUnit::setAlive(bool newAlive)
-    {
-        alive = newAlive;
-    }
+	void AUnit::setAlive(bool newAlive)
+	{
+		alive = newAlive;
+	}
 
-    bool AUnit::rally()
-    {
-        if (broken == false)
-            return 0; //unnecessary rally always fails
-        if ((morale + Utility::throwDice() - Utility::throwDice()) >= 12)
-        {
-            std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
-            broken = true;
-            return 0;
-        }
-        return 1;
-    }
+	bool AUnit::rally()
+	{
+		if (broken == false)
+			return 0; //unnecessary rally always fails
+		if ((morale + Utility::throwDice() - Utility::throwDice()) >= 12)
+		{
+			std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
+			broken = true;
+			return 0;
+		}
+		return 1;
+	}
 
+	int AUnit::getHp() const
+	{
+		return hitpoints; 
+	}
+	int AUnit::getmaxHP() const
+	{
+		return maxHP;
+	}
 
-    int AUnit::getHp() const
-    {
-    return hitpoints; 
-    }
-    int AUnit::getmaxHP() const
-    {
-        return maxHP;
-    }
+	void AUnit::setBroken(bool value)
+	{
+	broken = value;
+	}
+	void  AUnit::heal(int value)
+	{
+		if (value < 0)
+			return;
+		if (value + hitpoints > maxHP)
+			hitpoints = maxHP;
+		else
+			hitpoints = hitpoints + value;
+	}
 
-     void AUnit::setBroken(bool value)
-     {
-        broken = value;
-     }
-    void  AUnit::heal(int value)
-    {
-        if (value < 0)
-            return;
-        if (value + hitpoints > maxHP)
-            hitpoints = maxHP;
-        else
-            hitpoints = hitpoints + value;
-    }
+	void AUnit::setSpellcaster(bool value)
+	{
+	spellcaster = value;
+	}
 
-     void AUnit::setSpellcaster(bool value)
-     {
-        spellcaster = value;
-     }
+	bool AUnit::getSpellCaster() const
+	{
+	return spellcaster;
+	}
 
-     bool AUnit::getSpellCaster() const
-     {
-        return spellcaster;
-     }
+	int AUnit::getCast(){
+	return cast;
+	}
 
-     int AUnit::getCast()
-     {
-        return cast;
-     }
+	void AUnit::setCast(int setCast)
+	{
+		cast = setCast;
+	}
 
-    void AUnit::setCast(int setCast)
-     {
-        cast = setCast;
-     }
+	void AUnit::setPlaced(bool value)
+	{
+		placed = value;
+	}
+	bool AUnit::getPlaced(){
+		return placed;
+	}
 
+	char  AUnit::getPrintSymbol(){
+		return printSymbol;
+	}
 
+	int AUnit::getArmour(){
+		return armour;
+	}
 
-    void AUnit::setPlaced(bool value)
-    {
-        placed = value;
-    }
-    bool AUnit::getPlaced()
-    {
-        return placed;
-    }
+	int AUnit::getValue(){
+		return armour;
+	}
+	int AUnit::takeDamage(int amount)
+	{
+		if (amount - armour <= 0)
+			return 0;
+		hitpoints = hitpoints - (amount - armour);
+		if (hitpoints <= 0)
+		{
+			alive = false;
+		}
+		else 
+			testMorale(amount - armour);
+		return (amount - armour);
+		
+	}
+
+	//returns true if the test is passed
+	bool AUnit::testMorale(int damage)
+	{
+		if (damage <= 0)
+			return true;
+		if (morale + Utility::throwDice() - Utility::throwDice() > damage)
+			return true;
+		setBroken(true);
+		std::cout << "One coward valued his life more than his honor" << std::endl;
+		return false;
+	}

@@ -1,0 +1,27 @@
+# **************************************************************************** #
+#                                                                              #
+#                                                         :::      ::::::::    #
+#    TODO.txt                                           :+:      :+:    :+:    #
+#                                                     +:+ +:+         +:+      #
+#    By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+         #
+#                                                 +#+#+#+#+#+   +#+            #
+#    Created: 2025/08/28 16:45:50 by jrimpila          #+#    #+#              #
+#    Updated: 2025/08/28 17:01:24 by jrimpila         ###   ########.fr        #
+#                                                                              #
+# **************************************************************************** #
+
+Add a solid mechanism for units to be pushed back. I think it will add natural mechanism how outflanking can pushe
+unit together
+
+Near hit 
+
+Add shield wall
+
+ranged attacks, deviation, accuracy
+
+pre battle buffs for mages?
+
+targeting, value for casts, pick the highest value cast
+
+damage types bludgeon good vs armor, edged good once past armor, piercing?
+

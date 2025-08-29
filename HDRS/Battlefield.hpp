@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/20 11:14:23 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/29 11:21:33 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -41,7 +41,7 @@ class Battlefield
         ~Battlefield() = default;
         Battlefield(Battlefield &cpy) = delete;
         Battlefield &operator=(Battlefield &target) = default;
-        void insertTeam(size_t amount, int team);
+        
         void print(void);
         static int constexpr height = 50;
         static int constexpr  width = 150;
@@ -76,6 +76,8 @@ class Battlefield
         int moveNW(AUnit &unit, Cell &myCell);
         int moveN(AUnit &unit, Cell &myCell);
         int moveS(AUnit &unit, Cell &myCell);
+
+        Cell* safeGetCell(int h, int w);
 
     private:
          

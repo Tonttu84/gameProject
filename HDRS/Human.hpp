@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 09:00:00 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/18 14:45:31 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/28 17:44:26 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -28,10 +28,9 @@ class Human : public AUnit
         ~Human() noexcept = default;
         Human(const Human &target) = default;
         
-        int getTeam() const;
         Human(int team);
 
-    private:
+    protected:
         Hittable HitTable();
         BodyPart Head;
         BodyPart Body;

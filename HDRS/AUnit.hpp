@@ -6,13 +6,14 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:27:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/27 18:25:02 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/29 10:34:34 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #pragma once
 #include <memory>
 #include <assert.h>
+#include "Macros.hpp"
 class Battlefield;
 
 class Cell;
@@ -44,12 +45,17 @@ public:
     virtual void special(){};
     int getCast();
     void setCast(int setCast);
+    bool testMorale(int damage);
 
     void setSpellcaster(bool value);
     bool getSpellCaster() const;
 
     void setPlaced(bool value);
     bool getPlaced();
+     int getArmour();
+     int getValue();
+
+    char getPrintSymbol();
 
 protected:
     int team = 0;
@@ -61,10 +67,12 @@ protected:
     int strength = 10;
     int maxHP = 10;
     int cast = 0;
+    int armour = 2;
     
     int resistance = 10;
     int value = 10; //relative value that mages etc consider when trying to hit opponents, zombies etc chaff is not a priority target
     size_t size = 1;
+    char printSymbol = '?';
 
     bool alive = true;
     bool broken = false;

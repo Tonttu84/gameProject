@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 08:59:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/18 15:28:58 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/28 17:42:35 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,7 +17,7 @@
 
 Human::Human(int setTeam): AUnit::AUnit(setTeam)
 {
-    
+    this->printSymbol = 'X';
 }
 
 

@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/17 13:00:08 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/20 12:10:59 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/28 18:48:59 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -30,9 +30,9 @@ int Utility::throwDice()
    {
       
         if (targets.begin() == targets.end())
-            {
-                return nullptr;
-            }
+        {
+            return nullptr;
+        }
 
         AUnit* secondary = nullptr;
 

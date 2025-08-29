@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:16:55 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/27 19:08:07 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/29 08:58:45 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,11 +31,12 @@ class Cell{
         int  hLoc;
         int getRange(const Cell &target);
 
-
+        bool fire = false;
     private:
         int terrain = empty;
         int elevation = 0;
         AUnit *ptr = nullptr; // Non-owning, auto-nullifying
+        
 };
 
 

@@ -1,31 +1,29 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   Priest.hpp                                         :+:      :+:    :+:   */
+/*   Macros.hpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/08/19 15:03:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/28 17:05:27 by jrimpila         ###   ########.fr       */
+/*   Created: 2025/08/28 18:34:32 by jrimpila          #+#    #+#             */
+/*   Updated: 2025/08/29 11:28:34 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #pragma once
 
-#include "AUnit.hpp"
-#include "vector"
-#include "Utility.hpp"
-#include "Human.hpp"
+#define REDTEAM 1
+#define BLUETEAM 2
 
-class Priest : public Human
-{
-    public:
-        Priest(int setTeam) noexcept;
-        Priest() noexcept;
-        ~Priest() noexcept = default ;
-        int mana = 99;
-        bool spellcaster = true;
 
-        void special();
-        void castBless();
-};
+#define RED "\033[31m"
+#define BLUE "\033[34m"
+#define RESET "\033[0m"
+#define RED_ON_YELLOW "\033[31;103m"
+#define BLUE_ON_YELLOW "\033[34;103m"
+#define RED_ON_ORANGE  "\033[31;101m"  // Red text on bright red (used as orange)
+#define BLUE_ON_ORANGE "\033[34;101m"  // Blue text on bright red (used as orange)
+
+#define CLEAR_TERMINAL "\033[2J\033[1;1H";
+
+

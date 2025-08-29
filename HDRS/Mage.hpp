@@ -1,12 +1,12 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   Priest.hpp                                         :+:      :+:    :+:   */
+/*   Mage.hpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/19 15:03:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/28 17:05:27 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/20 11:26:47 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,15 +17,17 @@
 #include "Utility.hpp"
 #include "Human.hpp"
 
-class Priest : public Human
+class Mage : public Human
 {
     public:
-        Priest(int setTeam) noexcept;
-        Priest() noexcept;
-        ~Priest() noexcept = default ;
+        Mage(int setTeam) noexcept;
+        Mage() noexcept;
+        ~Mage() noexcept = default ;
         int mana = 99;
         bool spellcaster = true;
 
         void special();
-        void castBless();
+        void castFireball();
+        Cell *findTarget(Cell &source);
 };
+

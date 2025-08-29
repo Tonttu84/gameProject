@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/27 18:32:37 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/29 11:29:40 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,17 +16,12 @@
 #include "../HDRS/Human.hpp"
 #include "../HDRS/Priest.hpp"
 
-#define RED "\033[31m"
-#define BLUE "\033[34m"
-#define RESET "\033[0m"
-#define RED_ON_YELLOW "\033[31;103m"
-#define BLUE_ON_YELLOW "\033[34;103m"
 
-#define BG_RED   "\033[41m"
-#define BG_BLUE  "\033[44m"
 
 
 class Human;
+
+
 
 int getRandomNumber(int min = 0, int max = (Battlefield::height - 1)) {
 	static std::random_device rd;  // Non-deterministic seed
@@ -146,35 +141,36 @@ void Battlefield::print()
 		for (int k = 0; k < width; k++)
 		{
 			if (_battlefield[i][k].getUnit() == nullptr)
-				std::cout << ".";
+			{
+				if (_battlefield[i][k].fire == true)
+					std::cout << RED_ON_ORANGE << "."<< RESET;
+				else
+					std::cout << ".";
+			}
+
+				
 			else if( _battlefield[i][k].getUnit()->getTeam() == 1)
 			{
-				if(dynamic_cast<Priest *>(_battlefield[i][k].getUnit()))
-				{
-					if (_battlefield[i][k].getUnit()->getCast() != 0)
-						std::cout << RED_ON_YELLOW "P" RESET;
-					else 
-						std::cout << RED "P" RESET;
+				if (_battlefield[i][k].fire == true)
+					std::cout << RED_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+				else if (_battlefield[i][k].getUnit()->getCast() != 0)
+					std::cout << RED_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+				else 
+					std::cout << RED << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
 
-				}
-				else
-					std::cout << RED "X" RESET;
 			}
 			else if( _battlefield[i][k].getUnit()->getTeam() == 2)
-			{	if(dynamic_cast<Priest *>(_battlefield[i][k].getUnit()))
-				{
-					if (_battlefield[i][k].getUnit()->getCast() != 0)
-						std::cout << BLUE_ON_YELLOW "P" RESET;
-					else 
-						std::cout << BLUE "P" RESET;
+			{
+				if (_battlefield[i][k].fire == true)
+					std::cout << BLUE_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+				else if (_battlefield[i][k].getUnit()->getCast() != 0)
+					std::cout << BLUE_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+				else 
+					std::cout << BLUE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
 
-				}
-				else
-					std::cout << BLUE "X" RESET;
 			}
 			else 
 				std::cout << "?";
-				
 		}
 		std::cout << "\n";
 	}
@@ -585,14 +581,14 @@ void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wS
 			HIter++;
 			
 		}
-		if (_battlefield[HIter][WIter].getUnit() == nullptr)
+		if(_battlefield[HIter][WIter].getUnit() == nullptr)
 		   {
 			_battlefield[HIter][WIter].setUnit(unit.get());
 			unit->setPlaced(true);
 			std::cout << "Created unit" << std::endl;    
 			safeguard = 0;
 		}
-		else if (safeguard == 20)
+		else if(safeguard == 20)
 		{
 			
 			std::cout << "Map is full" << std::endl;
@@ -614,11 +610,22 @@ void Battlefield::triggerSpecialPhase()
 {
     for (auto& unit : teamRED)
     {
-        if (unit) unit->special();
+        if(unit) 
+			unit->special();
     }
 
     for (auto& unit : teamBLUE)
     {
-        if (unit) unit->special();
+        if(unit) 
+			unit->special();
     }
+}
+
+Cell* Battlefield::safeGetCell(int h, int w)
+{
+	if (h < 0 || h >= height)
+		return nullptr;	
+	if (w < 0 || w >= width)
+		return nullptr;
+	return &_battlefield[h][w];
 }

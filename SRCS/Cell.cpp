@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:43:10 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/27 19:15:47 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/27 19:21:55 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -40,7 +40,6 @@ AUnit* Cell::getUnit() const
 
 int Cell::getRange(const Cell &target) //simplified range calculator that gets the highest of x and y difference 
 {
-    int range;
 
     int hDelta = std::abs(target.hLoc - hLoc);
     int wDelta = std::abs(target.wLoc - wLoc);

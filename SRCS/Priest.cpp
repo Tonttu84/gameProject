@@ -3,9 +3,10 @@
 
 #include "../HDRS/Priest.hpp"
 
-Priest::Priest(int setTeam) noexcept: AUnit::AUnit(setTeam)
+Priest::Priest(int setTeam) noexcept: Human::Human(setTeam)
 {
     setSpellcaster(true);
+    printSymbol = 'P';
 } 
 
 Priest::Priest() noexcept {
