@@ -1,12 +1,12 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   Mage.hpp                                         :+:      :+:    :+:   */
+/*   Archer.hpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/19 15:03:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/20 11:26:47 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/31 10:12:18 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,20 +17,22 @@
 #include "Utility.hpp"
 #include "Human.hpp"
 
-#define FIREBALL_CENTRE 12
-#define FIREBALL_BLAST 6
+#define BOWDAMAGE 5
+#define BOWMAXRANGE 50
+#define BOWAMMO 30
 
-class Mage : public Human
+class Archer : public Human
 {
     public:
-        Mage(int setTeam) noexcept;
-        Mage() noexcept;
-        ~Mage() noexcept = default ;
-        int mana = 99;
-        bool spellcaster = true;
+        Archer(int setTeam) noexcept;
+        Archer() noexcept;
+        ~Archer() noexcept = default ;
 
         void special();
-        void castFireball();
-        Cell *findMageTarget(Cell &source);
-};
+        int fireBow();
+        Cell *findArcherTarget();
+        int calcCellValue(const Cell &targetCell, int myTeam);
+        int calcShot(const AUnit& target, int myTeam);
+        bool accurateShot(const AUnit &target, int myTeam);
 
+};

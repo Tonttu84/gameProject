@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:46:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 10:36:23 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/30 13:56:11 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -262,4 +262,21 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		setBroken(true);
 		std::cout << "One coward valued his life more than his honor" << std::endl;
 		return false;
+	}
+
+
+	bool AUnit::getUndead()
+	{
+		return undead;
+	}
+
+
+	size_t AUnit::getSpentMove()
+	{
+		return spentMove;
+	}
+
+	void AUnit::setSpentMove(size_t setMove)
+	{
+		spentMove = setMove;
 	}

@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 11:21:33 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/29 15:00:51 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,6 +18,7 @@
 #include "AUnit.hpp"
 #include <vector>
 #include <climits>
+#include "Mage.hpp"
 
 class Cell;
 
@@ -53,6 +54,7 @@ class Battlefield
         void placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEend);
         void placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team);
         void placeTeamBLUE(std::vector<std::unique_ptr<AUnit>>& team);
+        std::vector<std::unique_ptr<AUnit>> &getTeam(int team);
         std::vector<std::unique_ptr<AUnit>> &getTeamRED();
         std::vector<std::unique_ptr<AUnit>> &getTeamBLUE();
         Cell *findTarget(const AUnit &Searcher) const;
@@ -78,11 +80,14 @@ class Battlefield
         int moveS(AUnit &unit, Cell &myCell);
 
         Cell* safeGetCell(int h, int w);
+        size_t getCorpses();
+        void setCorpses(size_t setCorpses);
 
     private:
          
-         std::vector<std::unique_ptr<AUnit>> teamRED;
-         std::vector<std::unique_ptr<AUnit>> teamBLUE;
+        std::vector<std::unique_ptr<AUnit>> teamRED;
+        std::vector<std::unique_ptr<AUnit>> teamBLUE;
+        size_t corpses = 0; 
 
     
 };

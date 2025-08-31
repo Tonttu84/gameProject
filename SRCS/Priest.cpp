@@ -13,16 +13,18 @@ Priest::Priest() noexcept {
         setSpellcaster(true);
 }
 
-static bool isWounded(const AUnit &unit)
+static bool isWounded(const AUnit &unit, int myTeam)
 {
+    (void) myTeam;
     if (unit.getHp() < unit.getmaxHP())
         return 1;
     return 0;
 
 }
 
-static bool isBroken(const AUnit &unit)
+static bool isBroken(const AUnit &unit, int myTeam)
 {
+    (void) myTeam;
     if (unit.getBroken())
         return 1;
     return 0;
@@ -42,10 +44,8 @@ void Priest::castBless(void)
     }    
     
    AUnit *target = nullptr;
-    if (getTeam() == 1)
-        target = Utility::findTarget(Utility::getBattlefield().getTeamRED(), isBroken, isWounded);
-    else if (getTeam() == 2) 
-        target = Utility::findTarget(Utility::getBattlefield().getTeamBLUE(),isBroken ,isWounded);
+    
+    target = Utility::findTarget(Utility::getBattlefield().getTeam(getTeam()), isBroken, isWounded, getTeam());
 
     if (target == nullptr)
         return;
@@ -55,13 +55,13 @@ void Priest::castBless(void)
     {   std::cout << "The divine healing helps a soldier find his courage" << std::endl;
         target->setBroken(false);
         target->heal(1 + Utility::throwDice());
-        setCast(1);
+        setCast(2);
     } 
     else 
     {
         std::cout << "The divine healing helps a soldier" << std::endl;
         target->heal(1 + Utility::throwDice());
-        setCast(1);
+        setCast(2);
     }
     
 }

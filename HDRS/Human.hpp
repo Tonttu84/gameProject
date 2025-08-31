@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 09:00:00 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/28 17:44:26 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/29 15:06:42 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -39,16 +39,6 @@ class Human : public AUnit
         BodyPart leftLeg;
         BodyPart rightLeg;
         
-        int team;
-
-        int strength = 10;
-        int hitpoints = 10;
-        int attackPWR = 10;
-        int defence = 10;
-        int morale = 10;
-        int resistance = 10;
-        int value = 10; //relative value that mages etc consider when trying to hit opponents, zombies etc chaff is not a priority target
-        size_t size = 1; //how many grids it takes, humans should start at more than 1 so you can create smaller creatures more easily
         
     
 };

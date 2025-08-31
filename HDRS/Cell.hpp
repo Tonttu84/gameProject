@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:16:55 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 08:58:45 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/31 12:00:05 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -39,14 +39,3 @@ class Cell{
         
 };
 
-
-
-// if (auto unit = ptr.lock()) {
-//     // Safe to use unit
-// } else {
-//     // Unit was destroyed; ptr is expired
-// }
-
-// Step 1: Make AUnit managed by std::shared_ptr
-// cpp
-// std::shared_ptr<AUnit> unit = std::make_shared

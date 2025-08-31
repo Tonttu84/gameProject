@@ -1,36 +1,37 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   Mage.hpp                                         :+:      :+:    :+:   */
+/*   Zombie.hpp                                          :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/08/19 15:03:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/20 11:26:47 by jrimpila         ###   ########.fr       */
+/*   Created: 2025/08/16 09:00:00 by jrimpila          #+#    #+#             */
+/*   Updated: 2025/08/28 17:44:26 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #pragma once
-
+#include <unistd.h>
+#include "BodyPart.hpp"
 #include "AUnit.hpp"
-#include "vector"
-#include "Utility.hpp"
-#include "Human.hpp"
 
-#define FIREBALL_CENTRE 12
-#define FIREBALL_BLAST 6
+class TODO;
+class Hittable;
 
-class Mage : public Human
+class Zombie : public AUnit
 {
+
     public:
-        Mage(int setTeam) noexcept;
-        Mage() noexcept;
-        ~Mage() noexcept = default ;
-        int mana = 99;
-        bool spellcaster = true;
+        size_t takeHit(TODO source, TODO type);
+        void attacks(); //  cycles through all attacks
+        Zombie() = default;
+        ~Zombie() noexcept = default;
+        Zombie(const Zombie &target) = default;
+        
+        Zombie(int team);
 
-        void special();
-        void castFireball();
-        Cell *findMageTarget(Cell &source);
+    protected:
+
+        
+    
 };
-

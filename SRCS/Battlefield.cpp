@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 11:29:40 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/31 12:53:22 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -171,6 +171,8 @@ void Battlefield::print()
 			}
 			else 
 				std::cout << "?";
+			if (_battlefield[i][k].fire == true)
+				_battlefield[i][k].fire = false;
 		}
 		std::cout << "\n";
 	}
@@ -415,6 +417,12 @@ void Battlefield::moveOne(std::unique_ptr<AUnit> &unit, const Cell* cellptr)
 	assert(unit->getCell() != nullptr);
 	Cell &myCell = *unit->getCell();
 	
+	if (unit->getSpentMove())
+	{
+		unit->setSpentMove(unit->getSpentMove() - 1);
+		return;
+	}
+
 	int wDelta = cellptr->wLoc - (myCell.wLoc);
 	int hDelta = cellptr->hLoc - (myCell.hLoc);
 	if (wDelta > 1 && hDelta > 1)
@@ -499,6 +507,8 @@ void Battlefield::cleanup()
 		assert((*it).get() != nullptr && "Unexpected nullptr in teamBLUE");
         if (!(*it) || (*it)->getAlive() == 0) 
         {
+			if ((*it)->getUndead() == false)
+				corpses++;
             it = teamBLUE.erase(it); // erase returns the next valid iterator
         }
         else
@@ -548,63 +558,140 @@ void Battlefield::flee(std::unique_ptr<AUnit> &unit)
 	}
 }
 
+std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeam(int team)
+{
+	if (team == BLUETEAM)
+		return teamBLUE;
+	if (team == REDTEAM)
+		return teamRED;
+	throw std::runtime_error("getTeam request is invalid");
+}
+
 std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeamBLUE() { 
 	return teamBLUE; 
 }
 
+// void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEnd)
+// {
+
+
+// 	assert(wEnd >= wStart && "wEnd must be greater than wStart");
+//     assert(hEnd >= hStart && "hEend must be greater than or equal to hStart");
+	
+// 	int safeguard = 0;
+// 	for (auto& unit : team)
+// 	{
+// 		if (unit->getPlaced() == true)
+// 			continue;
+
+// 		size_t HIter = hStart;
+// 		if (safeguard == 0)
+// 			HIter = getRandomNumber(hStart, hEnd);
+// 		size_t WIter = wStart;
+// 		if (safeguard == 0)
+// 			WIter = getRandomNumber(wStart, wEnd);
+// 	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < hEnd)
+// 	   {
+// 			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < wEnd)
+// 			{
+// 				WIter++;
+// 			}
+// 			WIter = wStart;
+// 			HIter++;
+			
+// 		}
+// 		if(_battlefield[HIter][WIter].getUnit() == nullptr)
+// 		   {
+// 			_battlefield[HIter][WIter].setUnit(unit.get());
+// 			unit->setCell(&_battlefield[HIter][WIter]);
+// 			unit->setPlaced(true);
+// 			std::cout << "Created unit" << std::endl;    
+// 			safeguard = 0;
+// 		}
+// 		else if(safeguard == 20)
+// 		{
+			
+// 			std::cout << "Map is full" << std::endl;
+// 			exit(1);
+// 		}
+// 		else 
+// 		{
+// 			HIter = hStart;
+// 			WIter = wStart;
+// 			safeguard++;
+// 		}
+// 		if (HIter == hEnd )
+// 		{
+// 			HIter = hStart;
+// 			WIter = wStart;
+// 		}
+// 	}
+// 	for (const auto& unit : team) {
+//     assert(unit->getCell() && "Unit was not placed correctly");
+// }
+
+// }
+
+
+
+
+
 void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEnd)
 {
 
-
-	 assert(wEnd >= wStart && "wEnd must be greater than wStart");
+	assert(wEnd >= wStart && "wEnd must be greater than wStart");
     assert(hEnd >= hStart && "hEend must be greater than or equal to hStart");
 	
-	int safeguard = 0;
 	for (auto& unit : team)
 	{
 		if (unit->getPlaced() == true)
 			continue;
+	size_t HIter = getRandomNumber(hStart, hEnd);
+	size_t WIter = getRandomNumber(wStart, wEnd);
+	bool placed = false;
 
-		size_t HIter = hStart;
-		if (safeguard == 0)
-			HIter = getRandomNumber(hStart, hEnd);
-		size_t WIter = wStart;
-		if (safeguard == 0)
-			WIter = getRandomNumber(wStart, wEnd);
-	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < hEnd + 1)
-	   {
-			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < wEnd + 1)
-			{
-				WIter++;
+	// First pass: from random point to end
+	for (size_t h = HIter; h <= hEnd && !placed; ++h) {
+		for (size_t w = (h == HIter ? WIter : wStart); w <= wEnd && !placed; ++w) {
+			if (_battlefield[h][w].getUnit() == nullptr) {
+				_battlefield[h][w].setUnit(unit.get());
+				unit->setCell(&_battlefield[h][w]);
+				unit->setPlaced(true);
+				std::cout << "Created unit" << std::endl;
+				placed = true;
 			}
-			WIter = wStart;
-			HIter++;
-			
-		}
-		if(_battlefield[HIter][WIter].getUnit() == nullptr)
-		   {
-			_battlefield[HIter][WIter].setUnit(unit.get());
-			unit->setPlaced(true);
-			std::cout << "Created unit" << std::endl;    
-			safeguard = 0;
-		}
-		else if(safeguard == 20)
-		{
-			
-			std::cout << "Map is full" << std::endl;
-			exit(1);
-		}
-		else 
-		{
-			HIter = hStart;
-			safeguard++;
-		}
-		if (HIter == hEnd +1)
-		{
-			HIter = hStart;
 		}
 	}
+
+	// Second pass: from start to random point
+	if (!placed) {
+		for (size_t h = hStart; h < HIter && !placed; ++h) {
+			for (size_t w = wStart; w <= wEnd && !placed; ++w) {
+				if (_battlefield[h][w].getUnit() == nullptr) {
+					_battlefield[h][w].setUnit(unit.get());
+					unit->setCell(&_battlefield[h][w]);
+					unit->setPlaced(true);
+					std::cout << "Created unit (second pass)" << std::endl;
+					placed = true;
+				}
+			}
+		}
+	}
+
+	// Final fallback
+	if (!placed) {
+		std::cerr << "Map is full or placement logic failed" << std::endl;
+		exit(1);
+	}
+
+	}
+	for (const auto& unit : team) {
+	assert(unit->getCell() && "Unit was not placed correctly");
+	}
+
 }
+
+
 
 void Battlefield::triggerSpecialPhase()
 {
@@ -628,4 +715,14 @@ Cell* Battlefield::safeGetCell(int h, int w)
 	if (w < 0 || w >= width)
 		return nullptr;
 	return &_battlefield[h][w];
+}
+
+size_t Battlefield::getCorpses()
+{
+	return corpses;
+}
+
+void Battlefield::setCorpses(size_t setCorpses)
+{
+	corpses = setCorpses;
 }

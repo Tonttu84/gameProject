@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/28 18:34:32 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 11:28:34 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/31 10:45:11 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -25,5 +25,10 @@
 #define BLUE_ON_ORANGE "\033[34;101m"  // Blue text on bright red (used as orange)
 
 #define CLEAR_TERMINAL "\033[2J\033[1;1H";
+
+
+#define LIGHTARMOUR 2
+#define HEAVYARMOUR 5
+
 
 

@@ -1,7 +1,7 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   Mage.hpp                                         :+:      :+:    :+:   */
+/*   Necromancer.hpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
@@ -16,21 +16,22 @@
 #include "vector"
 #include "Utility.hpp"
 #include "Human.hpp"
+#include "Zombie.hpp"
 
-#define FIREBALL_CENTRE 12
-#define FIREBALL_BLAST 6
 
-class Mage : public Human
+
+class Necromancer : public Human
 {
     public:
-        Mage(int setTeam) noexcept;
-        Mage() noexcept;
-        ~Mage() noexcept = default ;
+        Necromancer(int setTeam) noexcept;
+        Necromancer() noexcept;
+        ~Necromancer() noexcept = default ;
         int mana = 99;
         bool spellcaster = true;
 
         void special();
-        void castFireball();
-        Cell *findMageTarget(Cell &source);
+        void raiseDead();
+        bool placeZombie(Cell *targetCell);
+
 };
 

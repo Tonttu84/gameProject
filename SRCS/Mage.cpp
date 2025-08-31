@@ -6,17 +6,20 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/28 17:18:44 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 10:43:34 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/31 12:22:46 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../HDRS/Mage.hpp"
 #include "Cell.hpp"
 
+
+
 Mage::Mage(int setTeam) noexcept: Human::Human(setTeam)
 {
     setSpellcaster(true);
     printSymbol = 'M';
+    accuracy = 8; //mages are no longer young
 } 
 
 Mage::Mage() noexcept {
@@ -27,18 +30,18 @@ Mage::Mage() noexcept {
 static int calcCellValue(const Cell &targetCell, int myTeam)
 {
     
-    if (targetCell.getUnit() == nullptr)
+    if (targetCell.getUnit() == nullptr || targetCell.getUnit()->getAlive() == false)
         return 0;
 
     AUnit &targetUnit = *targetCell.getUnit();
     int retval = 0;
-    if (10 + 2 > targetUnit.getArmour())
+    if (FIREBALL_CENTRE + 2 > targetUnit.getArmour())
     {
-        if (10 + 2 - targetUnit.getArmour() > targetUnit.getHp())
+        if (FIREBALL_CENTRE + 2 - targetUnit.getArmour() > targetUnit.getHp())
         {
             retval = (targetUnit.getHp() + 2) * targetUnit.getValue();
         }
-        retval = (10 + 2 - targetUnit.getArmour()) * targetUnit.getValue();
+        retval = (FIREBALL_CENTRE + 2 - targetUnit.getArmour()) * targetUnit.getValue();
     }
     else 
         retval = targetUnit.getValue();
@@ -52,6 +55,7 @@ static int calcCellValue(const Cell &targetCell, int myTeam)
 static int calcFireballValue(const AUnit& target, int myTeam)
 {
     int retval = 0;
+    assert(target.getCell() && "Target doesnt have a valid location\n");
     int CellW = target.getCell()->wLoc;
     int CellH = target.getCell()->hLoc;
     Battlefield &myBattle = Utility::getBattlefield();
@@ -71,42 +75,15 @@ static int calcFireballValue(const AUnit& target, int myTeam)
 }
 
 
-static Cell *FindPriorityTarget(const std::vector<std::unique_ptr<AUnit>>& targetTeam, int (*validPriorityTarget)(const AUnit&, int), int myTeam)
-{
-     if (targetTeam.begin() == targetTeam.end())
-     {
-                return nullptr;
-     }
-     auto it = targetTeam.begin();
-     int castValue = -1;
-     Cell *targetPtr = nullptr;
-     
-     while (it != targetTeam.end())
-     {
-        int value = validPriorityTarget(*(*it), myTeam);
-        if (value > castValue)
-        {
-            castValue = value;
-            targetPtr = (*it)->getCell();
-        }
-        it++;
-     }
-     if (castValue > 0)
-        return targetPtr;
-    return nullptr;
-}
 
 
-Cell *Mage::findTarget(Cell &source)
+
+Cell *Mage::findMageTarget(Cell &source)
 {
     (void) source;
     Cell *target = nullptr;
     
-
-    if (getTeam() == BLUETEAM)
-        target = FindPriorityTarget(Utility::getBattlefield().getTeamRED(), calcFireballValue, BLUETEAM);
-    else if (getTeam() == REDTEAM) 
-        target = FindPriorityTarget(Utility::getBattlefield().getTeamBLUE(), calcFireballValue, REDTEAM);
+    target = Utility::FindPriorityTarget(Utility::getBattlefield().getTeam(3 - getTeam()), calcFireballValue, getTeam());
 
     return target;
 }
@@ -117,12 +94,10 @@ static void fireball(Cell &targetCell)
     int wLoc = targetCell.wLoc;
     int hLoc = targetCell.hLoc;
 
-    if (targetCell.getUnit() == nullptr)
-        return;
     targetCell.fire = true;
     if (targetCell.getUnit())
     {
-        targetCell.getUnit()->takeDamage(10 + Utility::throwDice() - Utility::throwDice());
+        targetCell.getUnit()->takeDamage(FIREBALL_CENTRE + Utility::throwDice() - Utility::throwDice());
         
     }
 
@@ -131,7 +106,7 @@ static void fireball(Cell &targetCell)
         if (target)
             target->fire = true;
         if (target && target->getUnit())
-            target->getUnit()->takeDamage(10 + Utility::throwDice() - Utility::throwDice());
+            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
     }
 
     {
@@ -139,7 +114,7 @@ static void fireball(Cell &targetCell)
         if (target)
             target->fire = true;
         if (target && target->getUnit())
-            target->getUnit()->takeDamage(10 + Utility::throwDice() - Utility::throwDice());
+            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
     }
 
     {
@@ -147,7 +122,7 @@ static void fireball(Cell &targetCell)
         if (target)
             target->fire = true;
         if (target && target->getUnit())
-            target->getUnit()->takeDamage(10 + Utility::throwDice() - Utility::throwDice());
+            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
     }
 
     {
@@ -155,7 +130,7 @@ static void fireball(Cell &targetCell)
         if (target)
             target->fire = true;
         if (target && target->getUnit())
-            target->getUnit()->takeDamage(10 + Utility::throwDice() - Utility::throwDice());
+            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
     }
     
 }
@@ -171,16 +146,18 @@ void Mage::castFireball()
         setCast(getCast() - 1);
         return;
     }    
-       
-    Cell *targetCell = findTarget(*getCell());
     
+    Cell *targetCell = findMageTarget(*getCell());
+    
+    if (!targetCell)
+        return;
+    targetCell = Utility::Deviate(*getCell(), targetCell->hLoc, targetCell->wLoc, accuracy -4);
     if (targetCell)
     {
         fireball(*targetCell);
-        setCast(3);
+        setCast(5);
         mana--;
     }
-    
 }
 
 void Mage::special()

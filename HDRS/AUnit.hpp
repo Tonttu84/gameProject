@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:27:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 10:34:34 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/08/31 14:57:28 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -54,7 +54,11 @@ public:
     bool getPlaced();
      int getArmour();
      int getValue();
+     bool getUndead();
+    
 
+    void setSpentMove(size_t setMove);
+    size_t getSpentMove();
     char getPrintSymbol();
 
 protected:
@@ -67,7 +71,9 @@ protected:
     int strength = 10;
     int maxHP = 10;
     int cast = 0;
-    int armour = 2;
+    int armour = 0;
+    int accuracy = 10;
+    int ammunition = 0;
     
     int resistance = 10;
     int value = 10; //relative value that mages etc consider when trying to hit opponents, zombies etc chaff is not a priority target
@@ -78,6 +84,9 @@ protected:
     bool broken = false;
     bool spellcaster = false;
     bool placed = false;
+    bool undead = false;
+    size_t spentMove = 0;
+
 };
 
 
