@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   main.cpp                                           :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 08:31:32 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 13:32:31 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/20 11:30:49 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -39,6 +39,7 @@ void clearBattlefieldArea(int startRow, int height) {
     }
 }
 
+
 int main(void)
 {
     int termHeight = getTerminalHeight();
@@ -47,19 +48,25 @@ int main(void)
 
     Battlefield &myBattle = Utility::getBattlefield();
 
-    myBattle.createTeam<Mage>(5, REDTEAM);
-    myBattle.createTeam<Priest>(4, REDTEAM);
-    myBattle.createTeam<Archer>(40, REDTEAM);
-    myBattle.placeTeam(myBattle.getTeamRED(), myBattle.width * 5/6, myBattle.width -1, 0, myBattle.height - 1);
-
-    myBattle.createTeam<Necromancer>(2, BLUETEAM);
-     myBattle.placeTeam(myBattle.getTeamBLUE(), 0, myBattle.width / 6, 0, myBattle.height - 1);
+    myBattle.createTeam<Mage>(3, REDTEAM);
+    myBattle.createTeam<Priest>(2, REDTEAM);
+    myBattle.createTeam<Archer>(50, REDTEAM);
+    myBattle.placeTeam(myBattle.getTeam(REDTEAM), myBattle.width * 5/6, myBattle.width -1, 0, myBattle.height - 1);
 
 
-    myBattle.createTeam<Soldier>(150, REDTEAM);
-    myBattle.createTeam<Soldier>(230, BLUETEAM); 
-    myBattle.placeTeam(myBattle.getTeamRED(), myBattle.width * 2/3, myBattle.width -1, 0, myBattle.height - 1);
-    myBattle.placeTeam(myBattle.getTeamBLUE(), 0, myBattle.width /3, 0, myBattle.height -1);
+    myBattle.createTeam<Archer>(30, BLUETEAM);
+
+    myBattle.createTeam<Necromancer>(3, BLUETEAM);
+     myBattle.placeTeam(myBattle.getTeam(BLUETEAM), 0, myBattle.width / 6, 0, myBattle.height - 1);
+
+
+    myBattle.createTeam<Soldier>(175, REDTEAM);
+    myBattle.createTeam<Soldier>(250, BLUETEAM); 
+    myBattle.placeTeam(myBattle.getTeam(REDTEAM), myBattle.width * 2/3, myBattle.width -1, 0, myBattle.height - 1);
+    myBattle.placeTeam(myBattle.getTeam(BLUETEAM), 0, myBattle.width /3, 0, myBattle.height -1);
+
+
+    int counter = 0;
 
     while (myBattle.countTeam(REDTEAM) && myBattle.countTeam(BLUETEAM))
     {
@@ -70,6 +77,8 @@ int main(void)
         myBattle.moveUnits();
         myBattle.makeBattle();
         myBattle.cleanup();
+        counter++;
+        std::cout << "Turn number: " << counter << "\n";
         myBattle.print();
 
         std::this_thread::sleep_for(std::chrono::milliseconds(200));

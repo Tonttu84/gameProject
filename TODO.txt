@@ -3,10 +3,10 @@
 #                                                         :::      ::::::::    #
 #    TODO.txt                                           :+:      :+:    :+:    #
 #                                                     +:+ +:+         +:+      #
-#    By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+         #
+#    By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2025/08/28 16:45:50 by jrimpila          #+#    #+#              #
-#    Updated: 2025/08/31 13:39:19 by jrimpila         ###   ########.fr        #
+#    Updated: 2025/09/20 12:26:55 by jrimpila         ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -17,7 +17,6 @@ Near hit
 
 Add shield wall
 
-ranged attacks, deviation, accuracy
 
 pre battle buffs for mages?
 
@@ -25,13 +24,23 @@ targeting, value for casts, pick the highest value cast
 
 damage types bludgeon good vs armor, edged good once past armor, piercing?
 
-deviaion on int range / accuracy, spellissa jne voi olla accuracy penalty 
 
-add weapons
+
 
 add large creatures
 
 //when moving forward the targets have an option to try to dodge backwards if they pass a defence check, 
 if they fail they take damage and are moved to the grids after the creature
 
-Add an array of attacks
+
+
+First shot should test vs shield * 2 if distracted vs shield * 1, I need to figure out distraction mechanics 
+
+impliment Battlemage can still attack and move while get_cast() is ongoing 
+
+
+Formations
+
+Units being pushed back
+
+Space mattering, crowded units needing space to win  but needs to change logiic

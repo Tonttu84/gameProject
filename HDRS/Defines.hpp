@@ -1,25 +1,15 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   Human.cpp                                          :+:      :+:    :+:   */
+/*   Defines.hpp                                        :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/08/16 08:59:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/19 13:08:11 by jrimpila         ###   ########.fr       */
+/*   Created: 2025/09/19 13:54:25 by jrimpila          #+#    #+#             */
+/*   Updated: 2025/09/20 11:23:14 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/Human.hpp"
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/Utility.hpp"
+constexpr int FATIGUERECOVERY = 4; 
 
-
-Human::Human(int setTeam, Weapon setWeapon): AUnit::AUnit(setTeam)
-{
-    this->printSymbol = 'X';
-    addWeapon(setWeapon);
-}
-
-
-
+constexpr int SHIELDREDUCTION = 5; 

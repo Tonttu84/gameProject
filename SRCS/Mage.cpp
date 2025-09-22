@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Mage.cpp                                           :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/28 17:18:44 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 12:22:46 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/19 20:23:54 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -15,7 +15,7 @@
 
 
 
-Mage::Mage(int setTeam) noexcept: Human::Human(setTeam)
+Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
     setSpellcaster(true);
     printSymbol = 'M';
@@ -151,7 +151,7 @@ void Mage::castFireball()
     
     if (!targetCell)
         return;
-    targetCell = Utility::Deviate(*getCell(), targetCell->hLoc, targetCell->wLoc, accuracy -4);
+    targetCell = Utility::Deviate(*getCell(), targetCell->hLoc, targetCell->wLoc, accuracy -3);
     if (targetCell)
     {
         fireball(*targetCell);

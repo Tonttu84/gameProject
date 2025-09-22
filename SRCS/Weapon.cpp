@@ -1,25 +1,37 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   Human.cpp                                          :+:      :+:    :+:   */
+/*   Weapon.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/08/16 08:59:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/19 13:08:11 by jrimpila         ###   ########.fr       */
+/*   Created: 2025/08/31 15:22:26 by jrimpila          #+#    #+#             */
+/*   Updated: 2025/09/19 13:22:13 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/Human.hpp"
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/Utility.hpp"
+#include "../HDRS/Weapon.hpp"
 
 
-Human::Human(int setTeam, Weapon setWeapon): AUnit::AUnit(setTeam)
-{
-    this->printSymbol = 'X';
-    addWeapon(setWeapon);
-}
 
-
+    int Weapon::getDefence() const
+    {
+        return defenceBonus;
+    }
+    int Weapon::getDamage() const
+    {
+        return damageBonus;
+    }
+    int Weapon::getAttack() const
+    {
+        return attackBonus;
+    }
+    int Weapon::getShield() const
+    {
+        return shield;
+    }
+    int Weapon::getStrDivider() const
+    {
+        return strDivider;
+    }
 

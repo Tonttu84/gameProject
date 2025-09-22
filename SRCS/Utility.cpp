@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Utility.cpp                                        :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/17 13:00:08 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 10:15:54 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/19 16:11:41 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -117,12 +117,14 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
         {
                     return nullptr;
         }
+        
         auto it = targetTeam.begin();
         int castValue = -1;
         Cell *targetPtr = nullptr;
         
         while (it != targetTeam.end())
         {
+            // std::cout << "Checking unit: "  << " Team: " << (*it)->getTeam() << " Value: " << (*it)->getValue() << " Alive is :" << (*it)->getAlive() << std::endl;
             int value = validPriorityTarget(*(*it), myTeam);
             if (value > castValue)
             {

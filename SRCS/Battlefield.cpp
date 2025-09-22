@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Battlefield.cpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 12:53:22 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/20 12:23:05 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -205,15 +205,17 @@ void Battlefield::makeBattle()
 	auto blue = teamBLUE.begin();
 	
 	while (red != teamRED.end() || blue != teamBLUE.end())
-	if (red != teamRED.end() && ((getRandomNumber(1, 2) == 1) || blue == teamBLUE.end()))
 	{
-		(*red)->battle(*this);
-		red++;
-	}
-	else if (blue != teamBLUE.end())
-	{
-		(*blue)->battle(*this);
-		blue++;
+		if (red != teamRED.end() && ((getRandomNumber(1, 2) == 1) || blue == teamBLUE.end()))
+		{
+			(*red)->battle(*this);
+			red++;
+		}
+		else if (blue != teamBLUE.end())
+		{
+			(*blue)->battle(*this);
+			blue++;
+		}
 	}
 }
 
@@ -235,10 +237,6 @@ void Battlefield::debugPrint()
 
 
 
-std::vector<std::unique_ptr<AUnit>>& Battlefield::getTeamRED()
-{
-	return teamRED;
-}
 
 static Cell *searchCell(const AUnit &Searcher, const std::vector<std::unique_ptr<AUnit>> &team)
 {
@@ -473,14 +471,20 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>> &team)
 {
 	for (auto IT = team.begin(); IT != team.end(); IT++)
 	{
-		if ((*IT)->getBroken() == true)
+		AUnit &unit = **IT;
+		if (unit.getBroken() == true)
 		{
 			flee(*IT);
 			continue;	
 		}
-		if ((*IT)->getCast() > 0)
+		if (unit.getFatigue() >= 100 || unit.getCast()> 0 || (unit.getFatigue() > 30 && unit.getEngaged(*this) == false)) // units wants to rest
+		{
+		
+			unit.recover();
 			continue;
-		Cell *target = findTarget(**IT);
+		} 
+	
+		Cell *target = findTarget(unit);
 		if (target == nullptr)
 			return;
 		moveOne(*IT, target);
@@ -533,14 +537,22 @@ void Battlefield::cleanup()
 
 void Battlefield::flee(std::unique_ptr<AUnit> &unit)
 {
+	if (!unit->getAlive())
+		return;
+	if (unit->getFatigue() > 100)
+	{
+		unit->recover();
+		return;
+	}
+
 	Cell *myCell = unit->getCell();
 	if (!myCell)
 		return; 
 	if (myCell->hLoc == 0 || myCell->wLoc == 0 || myCell->hLoc == height -1 || myCell->wLoc == width - 1)
-		{
-			std::cout << "A soldier fled the battlefield and turns to banditry" << std::endl;
-			unit->setAlive(0); //For the purpose of the battlefield he died
-		}
+	{
+		std::cout << "A soldier fled the battlefield and turns to banditry" << std::endl;
+		unit->setAlive(0); //For the purpose of the battlefield he died
+	}
 	if (unit->getTeam() == 1)
 	{
 		if (moveE(*unit, *unit->getCell()) == 1)
@@ -567,9 +579,6 @@ std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeam(int team)
 	throw std::runtime_error("getTeam request is invalid");
 }
 
-std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeamBLUE() { 
-	return teamBLUE; 
-}
 
 // void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEnd)
 // {
@@ -697,13 +706,13 @@ void Battlefield::triggerSpecialPhase()
 {
     for (auto& unit : teamRED)
     {
-        if(unit) 
+        if(unit && unit->getFatigue() < 100 && unit->getAlive()) 
 			unit->special();
     }
 
     for (auto& unit : teamBLUE)
     {
-        if(unit) 
+        if(unit && unit->getFatigue() < 100 && unit->getAlive()) 
 			unit->special();
     }
 }

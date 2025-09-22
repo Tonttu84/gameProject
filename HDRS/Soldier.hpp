@@ -17,15 +17,11 @@
 #include "Utility.hpp"
 #include "Human.hpp"
 
-#define BOWDAMAGE 5
-#define BOWMAXRANGE 50
-#define BOWAMMO 30
 
 class Soldier : public Human
 {
     public:
         Soldier(int setTeam) noexcept;
-        Soldier() noexcept;
         ~Soldier() noexcept = default ;
 
         void special();

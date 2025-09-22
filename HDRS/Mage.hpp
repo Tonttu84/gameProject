@@ -17,7 +17,7 @@
 #include "Utility.hpp"
 #include "Human.hpp"
 
-#define FIREBALL_CENTRE 12
+#define FIREBALL_CENTRE 13
 #define FIREBALL_BLAST 6
 
 class Mage : public Human

@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Zombie.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 08:59:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 11:54:53 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/20 11:39:38 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,13 +17,18 @@
 
 Zombie::Zombie(int setTeam): AUnit::AUnit(setTeam)
 {
-    this->printSymbol = 'Z';
-    this->undead = true;
+    printSymbol = 'Z';
+    undead = true;
     morale = 99;
-    attackPWR = 7;
-    defence = 5;
+    attackPWR = 8;
+    defence = 6;
     maxHP = 20;
     hitpoints = 20;
+    value = 5;
+    strength = 12;
+    addWeapon(MeleeWeapons::Claws);
+    fatigueCost = 0; //Undead dont need rest
+
 }
 
 

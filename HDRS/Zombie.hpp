@@ -24,7 +24,6 @@ class Zombie : public AUnit
     public:
         size_t takeHit(TODO source, TODO type);
         void attacks(); //  cycles through all attacks
-        Zombie() = default;
         ~Zombie() noexcept = default;
         Zombie(const Zombie &target) = default;
         

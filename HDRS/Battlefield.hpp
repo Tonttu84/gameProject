@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Battlefield.hpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/29 15:00:51 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/19 15:57:58 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -55,8 +55,6 @@ class Battlefield
         void placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team);
         void placeTeamBLUE(std::vector<std::unique_ptr<AUnit>>& team);
         std::vector<std::unique_ptr<AUnit>> &getTeam(int team);
-        std::vector<std::unique_ptr<AUnit>> &getTeamRED();
-        std::vector<std::unique_ptr<AUnit>> &getTeamBLUE();
         Cell *findTarget(const AUnit &Searcher) const;
         void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);
         void flee(std::unique_ptr<AUnit> &unit);

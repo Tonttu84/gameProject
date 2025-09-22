@@ -3,7 +3,7 @@
 
 #include "../HDRS/Priest.hpp"
 
-Priest::Priest(int setTeam) noexcept: Human::Human(setTeam)
+Priest::Priest(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::MaceAndShield)
 {
     setSpellcaster(true);
     printSymbol = 'P';
@@ -55,12 +55,14 @@ void Priest::castBless(void)
     {   std::cout << "The divine healing helps a soldier find his courage" << std::endl;
         target->setBroken(false);
         target->heal(1 + Utility::throwDice());
+        target->recover();
         setCast(2);
     } 
     else 
     {
         std::cout << "The divine healing helps a soldier" << std::endl;
         target->heal(1 + Utility::throwDice());
+        target->recover();
         setCast(2);
     }
     

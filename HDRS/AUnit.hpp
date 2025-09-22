@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   AUnit.hpp                                          :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:27:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 14:57:28 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/20 11:44:11 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,6 +14,10 @@
 #include <memory>
 #include <assert.h>
 #include "Macros.hpp"
+#include "Weapon.hpp"
+#include "WeaponList.hpp"
+#include <vector>
+#include "Defines.hpp"
 class Battlefield;
 
 class Cell;
@@ -25,7 +29,7 @@ public:
     AUnit(const int newTeam);
 
     void setCell(Cell* cell);
-    void attack(AUnit &target);
+    void attack(AUnit &target, const Weapon &attackWeapon);
     
     Cell* getCell() const;
     void reset();
@@ -43,7 +47,7 @@ public:
     void setBroken(bool value);
     void heal(int value);
     virtual void special(){};
-    int getCast();
+    int getCast() const;
     void setCast(int setCast);
     bool testMorale(int damage);
 
@@ -51,15 +55,27 @@ public:
     bool getSpellCaster() const;
 
     void setPlaced(bool value);
-    bool getPlaced();
-     int getArmour();
-     int getValue();
-     bool getUndead();
+    bool getPlaced() const;
+     int getArmour() const;
+     
+    int getShield() const;
+    void setShield(int newVal);
+
+
+     int getValue() const;
+     bool getUndead() const;
+    void addWeapon(Weapon newWeapon);
+    int getFatigue() const;
+    bool getEngaged(Battlefield &myBattlefield) const;
     
+    void increaseFatigue();
+
+    void recover();
 
     void setSpentMove(size_t setMove);
     size_t getSpentMove();
     char getPrintSymbol();
+
 
 protected:
     int team = 0;
@@ -74,6 +90,11 @@ protected:
     int armour = 0;
     int accuracy = 10;
     int ammunition = 0;
+    int shield = 0;
+
+    int fatigue = 0;
+    int fatiguelvl = 0;
+    int fatigueCost = 4;
     
     int resistance = 10;
     int value = 10; //relative value that mages etc consider when trying to hit opponents, zombies etc chaff is not a priority target
@@ -86,6 +107,8 @@ protected:
     bool placed = false;
     bool undead = false;
     size_t spentMove = 0;
+
+    std::vector<Weapon> _attacks;
 
 };
 

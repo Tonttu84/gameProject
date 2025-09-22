@@ -15,7 +15,7 @@
 
 
 
-Necromancer::Necromancer(int setTeam) noexcept: Human::Human(setTeam)
+Necromancer::Necromancer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
     setSpellcaster(true);
     printSymbol = 'N';
@@ -31,11 +31,15 @@ bool Necromancer::placeZombie(Cell *targetCell)
 {
     if (targetCell && targetCell->getUnit() == nullptr)
     {
-        Utility::getBattlefield().setCorpses(Utility::getBattlefield().getCorpses() - 1);
+        if (Utility::getBattlefield().getCorpses())
+            Utility::getBattlefield().setCorpses(Utility::getBattlefield().getCorpses() - 1);
         std::unique_ptr<AUnit> Bob = std::make_unique<Zombie>(getTeam());
         targetCell->setUnit(&(*Bob));
         Bob ->setCell(targetCell);
+        std::cout << "Checking unit: "  << " Team: " << (Bob)->getTeam() << " Value: " << Bob->getValue() << " Alive is :" << Bob->getAlive() << std::endl;
+
         Utility::getBattlefield().getTeam(team).push_back(std::move(Bob));
+
         return true;
     }
     return false;
@@ -52,7 +56,7 @@ void Necromancer:: raiseDead()
         return;
     }    
 
-    if (mana <= 0 || broken || alive == false || getCell() == nullptr || myBattle.getCorpses() == 0)
+    if (mana <= 0 || broken || alive == false || getCell() == nullptr)
         return;
     int wLoc = getCell()->wLoc;
     int hLoc = getCell()->hLoc;
@@ -60,7 +64,11 @@ void Necromancer:: raiseDead()
     mana--;
     size_t summons = 3;
     if (myBattle.getCorpses() < 3)
-        summons = myBattle.getCorpses();
+    {
+        summons = 1; //just summons a single skelleton but Ill use a zombie as a placeholder
+    }
+    else 
+        myBattle.setCorpses(myBattle.getCorpses()- 3);
     if (summons)
     {
         Cell *targetCell = myBattle.safeGetCell(hLoc + 1, wLoc + 1);

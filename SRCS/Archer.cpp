@@ -4,11 +4,11 @@
 #include "../HDRS/Archer.hpp"
 
 
-Archer::Archer(int setTeam) noexcept: Human::Human(setTeam)
+Archer::Archer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Shortsword)
 {
     printSymbol = 'A';
     ammunition = BOWAMMO;
-    armour = LIGHTARMOUR; 
+    armour = LIGHTARMOUR;
 } 
 
 Archer::Archer() noexcept {
@@ -118,7 +118,20 @@ int Archer::fireBow()
         AUnit *targetUnit = targetCell->getUnit();
         if (targetUnit)
         {
-            targetCell->getUnit()->takeDamage(BOWDAMAGE);
+            // First arrow would preferrably test against shield * 2, then later ones vs shield, arrows should cause distracted status
+            //additional distraction if it wounds, maybe also just for hit
+
+            if (targetUnit->getShield() > 0 && Utility::throwDice() <= targetUnit->getShield())
+            {
+                int damage = BOWDAMAGE - SHIELDREDUCTION + Utility::throwDice() - Utility::throwDice();
+                if (damage > 0)
+                {   
+                    targetUnit->setShield(getShield() - 1);
+                    targetCell->getUnit()->takeDamage(damage);
+                }
+            }
+
+            targetCell->getUnit()->takeDamage(BOWDAMAGE + Utility::throwDice() - Utility::throwDice());
         }
         targetCell->fire = true;
     }

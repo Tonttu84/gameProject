@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   AUnit.cpp                                          :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:46:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/30 13:56:11 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/09/20 11:44:01 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,11 +37,11 @@ void AUnit::setCell(Cell* cell) {
 	currentCell = cell;
 }
 
- Cell* AUnit::getCell() const {
-		return currentCell;
-	}
+Cell* AUnit::getCell() const {
+	return currentCell;
+}
 
-	void AUnit::reset()
+void AUnit::reset()
 {
 	currentCell = nullptr;
 }
@@ -49,15 +49,63 @@ void AUnit::setCell(Cell* cell) {
 
 int AUnit::getTeam() const
 {
+	assert(team != 0);
 	return team;
+}
+
+int AUnit::getFatigue() const
+{
+	return fatigue;
+}
+
+
+int AUnit::getShield() const
+{
+	return shield;
+}
+
+bool AUnit::getEngaged(Battlefield &myBattlefield) const
+{
+
+	if (getCell() == nullptr)
+		return false;
+	int W = getCell()->wLoc;
+	int H = getCell()->hLoc;
+
+	Cell *targetCell = nullptr;
+
+	for (int it = W-1; it <= W+1; it++)
+	{
+		for (int it2 = H-1; it2 <= H+1; it2++)
+		{
+			targetCell = myBattlefield.safeGetCell(it2, it);
+			if (targetCell && targetCell->getUnit() && targetCell->getUnit()->getTeam() != getTeam())
+				return true;
+		}
+	} 
+	return false;
 }
 
 int AUnit::defend(int AttackAttempt, int damage)
 {
-	if (defence + Utility::throwDice() >= AttackAttempt)
+
+	int defenceroll = Utility::throwDice();
+
+	if (defence - fatiguelvl * 2 + defenceroll >= AttackAttempt)
 		return 0;
 	
+	
 	int resultDMG = damage + Utility::throwDice() - Utility::throwDice();
+
+	if (resultDMG >0 && shield > 0 && (defence + shield - fatiguelvl * 2 + defenceroll >= AttackAttempt)) //Result is not completely dodged and hits the shield
+	{
+		resultDMG = resultDMG - SHIELDREDUCTION - shield * 2; //Shields have a basic reduction but bigger shields block more
+		if (resultDMG > 0)
+		{
+			shield--; //If shield fails to stop the blow, its quality suffers
+			std::cout << "Shield damaged by a strong blow" << std::endl;
+		}	
+	}
 	if (resultDMG > 0)
 	{
 		testMorale(resultDMG);
@@ -69,13 +117,13 @@ int AUnit::defend(int AttackAttempt, int damage)
 	return 0;
 }
 
-int constexpr placeholderWeapon = 5;
 
-void AUnit::attack(AUnit &target)
+
+void AUnit::attack(AUnit &target, const Weapon &attackWeapon)
 {   
-	int HitResult = this -> attackPWR + Utility::throwDice();
+	int HitResult = attackPWR - fatiguelvl + attackWeapon.getAttack() + Utility::throwDice();
 	
-	target.defend(HitResult, placeholderWeapon + strength / 3);
+	target.defend(HitResult, attackWeapon.getDamage() + strength / attackWeapon.getStrDivider());
 	
 }
 
@@ -92,16 +140,16 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		if (thisCell -> wLoc >0)
 		{
 			retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc - 1].getUnit();
-			if (retval && retval->team != team && retval -> getAlive())
+			if (retval && retval->getTeam() != team && retval -> getAlive())
 				return retval;
 		}
 		retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc].getUnit();
-		if (retval && retval->team != team && retval -> getAlive())
+		if (retval && retval->getTeam() != team && retval -> getAlive())
 			return retval;
 		if (thisCell->wLoc < myBattlefield.width - 2)
 		{
 			retval = myBattlefield._battlefield[thisCell->hLoc -1][thisCell->wLoc + 1].getUnit();
-			if (retval && retval->team != team && retval -> getAlive())
+			if (retval && retval->getTeam() != team && retval -> getAlive())
 			return retval;
 		}
 	}
@@ -110,16 +158,16 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		if (thisCell->wLoc > 0)
 		{
 			retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc - 1].getUnit();
-			if (retval && retval->team != team && retval -> getAlive())
+			if (retval && retval->getTeam() != team && retval -> getAlive())
 				return retval;
 		}
 		retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc].getUnit();
-		if (retval && retval->team != team && retval -> getAlive())
+		if (retval && retval->getTeam() != team && retval -> getAlive())
 			return retval;
 		if (thisCell->wLoc < myBattlefield.width - 2)
 		{
 			retval = myBattlefield._battlefield[thisCell->hLoc +1][thisCell->wLoc + 1].getUnit();
-			if (retval && retval->team != team && retval -> getAlive())
+			if (retval && retval->getTeam() != team && retval -> getAlive())
 			return retval;
 		}
 	}
@@ -143,9 +191,34 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	{
 		if (broken || getCell() == nullptr)
 			return;
-		AUnit *target = find_target(myBattlefield);
-		if (target)
-			attack(*target);
+		if (fatigue > 100)
+		{
+			recover();
+			return;
+		}
+		bool attacked = false;
+		auto it = _attacks.begin();
+		while (it != _attacks.end())
+		{
+			AUnit *target = find_target(myBattlefield);
+			if (target)
+			{
+				while(it != _attacks.end() && target->getAlive())
+				{
+					attack(*target, *it);
+					attacked = true;
+					it++;
+				}
+			}
+			else
+			{
+				if (attacked)
+					increaseFatigue();
+				return;
+			}
+		}
+		if (attacked)
+			increaseFatigue();
 	}
 
 	bool AUnit::getAlive() const
@@ -162,6 +235,12 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	{
 		alive = newAlive;
 	}
+
+	void AUnit::setShield(int newVal)
+	{
+		shield = newVal;
+	}
+
 
 	bool AUnit::rally()
 	{
@@ -209,7 +288,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	return spellcaster;
 	}
 
-	int AUnit::getCast(){
+	int AUnit::getCast() const{
 	return cast;
 	}
 
@@ -222,7 +301,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	{
 		placed = value;
 	}
-	bool AUnit::getPlaced(){
+	bool AUnit::getPlaced() const{
 		return placed;
 	}
 
@@ -230,12 +309,12 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return printSymbol;
 	}
 
-	int AUnit::getArmour(){
+	int AUnit::getArmour() const{
 		return armour;
 	}
 
-	int AUnit::getValue(){
-		return armour;
+	int AUnit::getValue() const{
+		return value;
 	}
 	int AUnit::takeDamage(int amount)
 	{
@@ -264,8 +343,22 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return false;
 	}
 
+	void AUnit::recover()
+	{
+		if (fatigue - FATIGUERECOVERY <= 0)
+			fatigue = 0; 
+		else
+			fatigue = fatigue - FATIGUERECOVERY;
+		fatiguelvl = fatigue / 20;
+	}
 
-	bool AUnit::getUndead()
+	void AUnit::increaseFatigue()
+	{
+		fatigue = fatigue + fatigueCost;
+		fatiguelvl = fatigue / 20;
+	}
+
+	bool AUnit::getUndead() const
 	{
 		return undead;
 	}
@@ -279,4 +372,11 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	void AUnit::setSpentMove(size_t setMove)
 	{
 		spentMove = setMove;
+	}
+
+	void AUnit::addWeapon(Weapon newWeapon)
+	{
+		_attacks.push_back(newWeapon);
+		defence = defence + newWeapon.getDefence();
+		shield = shield + newWeapon.getShield();
 	}

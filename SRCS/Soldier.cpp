@@ -11,22 +11,17 @@
 /* ************************************************************************** */
 
 
-
-
 #include "../HDRS/Soldier.hpp"
 
 
-Soldier::Soldier(int setTeam) noexcept: Human::Human(setTeam)
+Soldier::Soldier(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::SwordAndShield)
 {
     armour = HEAVYARMOUR;
     attackPWR = 11;
     defence = 12;
+    fatigueCost++; // Ekstra +1 fatigue from heavy armor
 } 
 
-Soldier::Soldier() noexcept {
-    
-    armour = HEAVYARMOUR;
-}
 
 
 
