@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 08:31:32 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/20 11:30:49 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/04 17:45:28 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,6 +26,10 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <SFML/Graphics.hpp>
+
+
+
 
 int getTerminalHeight() {
     struct winsize w;
@@ -42,13 +46,18 @@ void clearBattlefieldArea(int startRow, int height) {
 
 int main(void)
 {
+    Utility::load(); //initializes the font
+
     int termHeight = getTerminalHeight();
     int battlefieldHeight = Battlefield::height;
     int battlefieldStartRow = termHeight - battlefieldHeight;
 
     Battlefield &myBattle = Utility::getBattlefield();
+    sf::RenderWindow myWindow(sf::VideoMode(BATTLEFIELD_WIDTH * Cell::cellSize, BATTLEFIELD_HEIGHT * Cell::cellSize), "Battlefield");
+    myBattle.window = &myWindow;
 
-    myBattle.createTeam<Mage>(3, REDTEAM);
+
+    myBattle.createTeam<Mage>(4, REDTEAM);
     myBattle.createTeam<Priest>(2, REDTEAM);
     myBattle.createTeam<Archer>(50, REDTEAM);
     myBattle.placeTeam(myBattle.getTeam(REDTEAM), myBattle.width * 5/6, myBattle.width -1, 0, myBattle.height - 1);
@@ -60,7 +69,7 @@ int main(void)
      myBattle.placeTeam(myBattle.getTeam(BLUETEAM), 0, myBattle.width / 6, 0, myBattle.height - 1);
 
 
-    myBattle.createTeam<Soldier>(175, REDTEAM);
+    myBattle.createTeam<Soldier>(185, REDTEAM);
     myBattle.createTeam<Soldier>(250, BLUETEAM); 
     myBattle.placeTeam(myBattle.getTeam(REDTEAM), myBattle.width * 2/3, myBattle.width -1, 0, myBattle.height - 1);
     myBattle.placeTeam(myBattle.getTeam(BLUETEAM), 0, myBattle.width /3, 0, myBattle.height -1);
@@ -70,6 +79,15 @@ int main(void)
 
     while (myBattle.countTeam(REDTEAM) && myBattle.countTeam(BLUETEAM))
     {
+        sf::Event event;
+        while (myBattle.window->pollEvent(event)) {
+        if (event.type == sf::Event::Closed)
+        {
+            myBattle.window->close();
+                return 0;
+        }
+    }
+
         clearBattlefieldArea(battlefieldStartRow, battlefieldHeight);
         std::cout << "\033[" << battlefieldStartRow << ";1H"; // Move cursor to battlefield start
 
@@ -90,6 +108,15 @@ int main(void)
         std::cout << "Red team won" << std::endl;
     else
         std::cout << "Blue team won" << std::endl;
+
+    sf::Event event;
+    while (myBattle.window->pollEvent(event)) {
+        if (event.type == sf::Event::Closed)
+        {
+            myBattle.window->close();
+                return 0;
+        }
+    }
 
     return 0;
 }

@@ -3,19 +3,24 @@
 /*                                                        :::      ::::::::   */
 /*   Archer.hpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/19 15:03:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 10:12:18 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/06 10:56:47 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #pragma once
 
 #include "AUnit.hpp"
-#include "vector"
 #include "Utility.hpp"
 #include "Human.hpp"
+
+class AUnit;
+#include "Defines.hpp"
+#include "Human.hpp"
+#include "Cell.hpp"
+#include "Battlefield.hpp"
 
 #define BOWDAMAGE 5
 #define BOWMAXRANGE 50

@@ -6,15 +6,15 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/20 12:23:05 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/06 10:58:13 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../HDRS/Battlefield.hpp"
 #include <random>
-#include "../HDRS/Cell.hpp"
-#include "../HDRS/Human.hpp"
-#include "../HDRS/Priest.hpp"
+// #include "../HDRS/Cell.hpp"
+// #include "../HDRS/Human.hpp"
+// #include "../HDRS/Priest.hpp"
 
 
 
@@ -136,48 +136,61 @@ Battlefield::Battlefield()
 
 void Battlefield::print()
 {
-	for(int i = 0; i < height; i++)
-	{
-		for (int k = 0; k < width; k++)
-		{
-			if (_battlefield[i][k].getUnit() == nullptr)
-			{
-				if (_battlefield[i][k].fire == true)
-					std::cout << RED_ON_ORANGE << "."<< RESET;
-				else
-					std::cout << ".";
-			}
+	window->clear(); // Clear previous frame
+
+	for (int i = 0; i < height; ++i) {
+		for (int k = 0; k < width; ++k) {
+			_battlefield[i][k].render(*window); // Each cell queues its own drawables
+		}
+	}
+
+window->display(); // Flush and show everything
+}
+
+// void Battlefield::print()
+// {
+// 	for(int i = 0; i < height; i++)
+// 	{
+// 		for (int k = 0; k < width; k++)
+// 		{
+// 			if (_battlefield[i][k].getUnit() == nullptr)
+// 			{
+// 				if (_battlefield[i][k].fire == true)
+// 					std::cout << RED_ON_ORANGE << "."<< RESET;
+// 				else
+// 					std::cout << ".";
+// 			}
 
 				
-			else if( _battlefield[i][k].getUnit()->getTeam() == 1)
-			{
-				if (_battlefield[i][k].fire == true)
-					std::cout << RED_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-				else if (_battlefield[i][k].getUnit()->getCast() != 0)
-					std::cout << RED_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-				else 
-					std::cout << RED << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+// 			else if( _battlefield[i][k].getUnit()->getTeam() == 1)
+// 			{
+// 				if (_battlefield[i][k].fire == true)
+// 					std::cout << RED_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+// 				else if (_battlefield[i][k].getUnit()->getCast() != 0)
+// 					std::cout << RED_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+// 				else 
+// 					std::cout << RED << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
 
-			}
-			else if( _battlefield[i][k].getUnit()->getTeam() == 2)
-			{
-				if (_battlefield[i][k].fire == true)
-					std::cout << BLUE_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-				else if (_battlefield[i][k].getUnit()->getCast() != 0)
-					std::cout << BLUE_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-				else 
-					std::cout << BLUE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+// 			}
+// 			else if( _battlefield[i][k].getUnit()->getTeam() == 2)
+// 			{
+// 				if (_battlefield[i][k].fire == true)
+// 					std::cout << BLUE_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+// 				else if (_battlefield[i][k].getUnit()->getCast() != 0)
+// 					std::cout << BLUE_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
+// 				else 
+// 					std::cout << BLUE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
 
-			}
-			else 
-				std::cout << "?";
-			if (_battlefield[i][k].fire == true)
-				_battlefield[i][k].fire = false;
-		}
-		std::cout << "\n";
-	}
-	std::cout << std::endl;
-}
+// 			}
+// 			else 
+// 				std::cout << "?";
+// 			if (_battlefield[i][k].fire == true)
+// 				_battlefield[i][k].fire = false;
+// 		}
+// 		std::cout << "\n";
+// 	}
+// 	std::cout << std::endl;
+// }
 
 size_t Battlefield::countTeam(const int team) const
 {

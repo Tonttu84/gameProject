@@ -3,18 +3,21 @@
 /*                                                        :::      ::::::::   */
 /*   Cell.hpp                                           :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@student.hive.fi>        +#+  +:+       +#+        */
+/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:16:55 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/08/31 12:00:05 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/04 17:24:30 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #pragma once
 #include <memory>
+#include <SFML/Graphics.hpp>
+
+class AUnit;
 
 int constexpr empty = 0;
-class AUnit;
+
 
 
 class Cell{
@@ -30,6 +33,8 @@ class Cell{
         int  wLoc;
         int  hLoc;
         int getRange(const Cell &target);
+        static constexpr int cellSize = 32;
+        void render(sf::RenderWindow& window);
 
         bool fire = false;
     private:

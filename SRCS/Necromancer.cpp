@@ -36,8 +36,6 @@ bool Necromancer::placeZombie(Cell *targetCell)
         std::unique_ptr<AUnit> Bob = std::make_unique<Zombie>(getTeam());
         targetCell->setUnit(&(*Bob));
         Bob ->setCell(targetCell);
-        std::cout << "Checking unit: "  << " Team: " << (Bob)->getTeam() << " Value: " << Bob->getValue() << " Alive is :" << Bob->getAlive() << std::endl;
-
         Utility::getBattlefield().getTeam(team).push_back(std::move(Bob));
 
         return true;

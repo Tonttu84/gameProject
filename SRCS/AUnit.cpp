@@ -6,14 +6,14 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:46:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/20 11:44:01 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/06 10:57:37 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../HDRS/AUnit.hpp"
-#include "../HDRS/Cell.hpp"
-#include "../HDRS/Utility.hpp"
-#include "../HDRS/Battlefield.hpp"
+// #include "../HDRS/Cell.hpp"
+// #include "../HDRS/Utility.hpp"
+
 
 
 AUnit::AUnit(const int newTeam)

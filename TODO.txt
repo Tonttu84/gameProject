@@ -6,7 +6,7 @@
 #    By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2025/08/28 16:45:50 by jrimpila          #+#    #+#              #
-#    Updated: 2025/09/20 12:26:55 by jrimpila         ###   ########.fr        #
+#    Updated: 2025/10/04 13:08:19 by jrimpila         ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -43,4 +43,8 @@ Formations
 
 Units being pushed back
 
-Space mattering, crowded units needing space to win  but needs to change logiic
+Space mattering, crowded units needing space to win  but needs to change logic 
+
+change to square Formations
+
+arrows distrurb the whole square? 

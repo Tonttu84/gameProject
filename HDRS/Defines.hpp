@@ -6,10 +6,19 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/19 13:54:25 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/20 11:23:14 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/04 17:30:36 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
+#pragma once
+
 constexpr int FATIGUERECOVERY = 4; 
 
-constexpr int SHIELDREDUCTION = 5; 
+constexpr int SHIELDREDUCTION = 5;
+
+constexpr int BATTLEFIELD_WIDTH = 150;
+constexpr int BATTLEFIELD_HEIGHT = 50;
+
+class Battlefield;
+class Cell;
+class AUnit;

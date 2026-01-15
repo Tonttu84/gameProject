@@ -6,7 +6,7 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 09:00:00 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/19 13:05:36 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/04 17:26:56 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,6 +17,7 @@
 
 class TODO;
 class Hittable;
+class Cell;
 
 class Human : public AUnit
 {

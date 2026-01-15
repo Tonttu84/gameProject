@@ -6,11 +6,13 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/17 13:00:08 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/19 16:11:41 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/04 17:23:16 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../HDRS/Utility.hpp"
+#include "../HDRS/Battlefield.hpp"
+
 
 
 ssize_t Utility::calcDistance(const Cell *target,const Cell *source)
@@ -110,6 +112,14 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
         return (getBattlefield().safeGetCell(targetH, targetW));    
     }
 
+    sf::Font Utility::font;
+    void Utility::load()
+    {
+        if (!font.loadFromFile("assets/fonts/DejaVuSans.ttf")) // or any placeholder
+        {std::cerr << "Fatal: Could not load font\n";
+        std::exit(EXIT_FAILURE);
+        }
+    }
     
      Cell *Utility::FindPriorityTarget(const std::vector<std::unique_ptr<AUnit>>& targetTeam, const std::function<int(const AUnit&, int)>& validPriorityTarget, int myTeam)
     {

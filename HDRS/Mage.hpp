@@ -12,10 +12,10 @@
 
 #pragma once
 
-#include "AUnit.hpp"
-#include "vector"
-#include "Utility.hpp"
 #include "Human.hpp"
+#include "vector"
+
+
 
 #define FIREBALL_CENTRE 13
 #define FIREBALL_BLAST 6

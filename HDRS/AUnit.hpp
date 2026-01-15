@@ -6,11 +6,12 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:27:43 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/20 11:44:11 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/06 10:57:50 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #pragma once
+
 #include <memory>
 #include <assert.h>
 #include "Macros.hpp"
@@ -18,9 +19,12 @@
 #include "WeaponList.hpp"
 #include <vector>
 #include "Defines.hpp"
-class Battlefield;
+#include "Battlefield.hpp"
+#include "Cell.hpp"
+#include "Utility.hpp"
 
-class Cell;
+
+
 
 class AUnit : public std::enable_shared_from_this<AUnit> {
 public:
@@ -46,7 +50,7 @@ public:
     int getmaxHP() const;
     void setBroken(bool value);
     void heal(int value);
-    virtual void special(){};
+    virtual void special() {};
     int getCast() const;
     void setCast(int setCast);
     bool testMorale(int damage);

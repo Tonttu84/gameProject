@@ -6,25 +6,31 @@
 /*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/08/16 11:09:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/09/19 15:57:58 by jrimpila         ###   ########.fr       */
+/*   Updated: 2025/10/06 10:59:01 by jrimpila         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #pragma once
+#include "Defines.hpp"
+#include "AUnit.hpp"
+#include "Cell.hpp"
 #include <array>
 #include <unistd.h>
 #include <iostream>
-#include "Cell.hpp"
-#include "AUnit.hpp"
+
+
 #include <vector>
 #include <climits>
-#include "Mage.hpp"
 
-class Cell;
+#include "Utility.hpp"
+#include <SFML/Graphics.hpp>
+
 
 class Battlefield
 {
     public:
+
+        sf::RenderWindow *window;
 
         template<typename UnitType>
         void createTeam(size_t amount, int team)
@@ -44,8 +50,8 @@ class Battlefield
         Battlefield &operator=(Battlefield &target) = default;
         
         void print(void);
-        static int constexpr height = 50;
-        static int constexpr  width = 150;
+        static int constexpr height = BATTLEFIELD_HEIGHT;
+        static int constexpr  width = BATTLEFIELD_WIDTH;
         size_t countTeam(const int team) const;
         void moveUnits(void);
         void makeBattle(void);
