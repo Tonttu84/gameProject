@@ -67,12 +67,26 @@ $(SFML_TAR):
 # Include dependency files
 -include $(DEPS)
 
+# Test build
+TEST_DIR  = TESTS
+TEST_NAME = run_tests
+TEST_OBJS = $(filter-out $(OBJ_DIR)/main.o, $(OBJS))
+
+$(OBJ_DIR)/test_main.o: $(TEST_DIR)/test_main.cpp
+	$(CC) $(CFLAGS) -I$(TEST_DIR) -MMD -MP -c $< -o $@
+
+$(TEST_NAME): $(TEST_OBJS) $(OBJ_DIR)/test_main.o
+	$(CC) $(CFLAGS) -o $@ $^ $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
+
+test: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
+	./$(TEST_NAME)
+
 # Cleanup
 clean:
 	rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d
 
 fclean: clean
-	rm -f $(NAME)
+	rm -f $(NAME) $(TEST_NAME)
 
 re: fclean all
 
