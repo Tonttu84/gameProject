@@ -24,7 +24,7 @@
 #define RED_ON_ORANGE  "\033[31;101m"  // Red text on bright red (used as orange)
 #define BLUE_ON_ORANGE "\033[34;101m"  // Blue text on bright red (used as orange)
 
-#define CLEAR_TERMINAL "\033[2J\033[1;1H";
+#define CLEAR_TERMINAL "\033[2J\033[1;1H"
 
 
 #define LIGHTARMOUR 2

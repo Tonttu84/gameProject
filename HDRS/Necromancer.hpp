@@ -27,7 +27,6 @@ class Necromancer : public Human
         Necromancer() noexcept;
         ~Necromancer() noexcept = default ;
         int mana = 99;
-        bool spellcaster = true;
 
         void special();
         void raiseDead();

@@ -27,7 +27,6 @@ class Mage : public Human
         Mage() noexcept;
         ~Mage() noexcept = default ;
         int mana = 99;
-        bool spellcaster = true;
 
         void special();
         void castFireball();

@@ -58,8 +58,6 @@ class Battlefield
         void debugPrint(void);
         
         void placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEend);
-        void placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team);
-        void placeTeamBLUE(std::vector<std::unique_ptr<AUnit>>& team);
         std::vector<std::unique_ptr<AUnit>> &getTeam(int team);
         Cell *findTarget(const AUnit &Searcher) const;
         void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);

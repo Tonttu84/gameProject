@@ -28,7 +28,6 @@ class Cell{
 
         void setUnit(AUnit *target);
         AUnit* getUnit() const;
-        void setUnitRaw(AUnit* unit);
         void reset();
         int  wLoc;
         int  hLoc;

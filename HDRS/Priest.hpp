@@ -24,7 +24,6 @@ class Priest : public Human
         Priest() noexcept;
         ~Priest() noexcept = default ;
         int mana = 99;
-        bool spellcaster = true;
 
         void special();
         void castBless();

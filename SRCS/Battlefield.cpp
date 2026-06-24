@@ -12,14 +12,6 @@
 
 #include "../HDRS/Battlefield.hpp"
 #include <random>
-// #include "../HDRS/Cell.hpp"
-// #include "../HDRS/Human.hpp"
-// #include "../HDRS/Priest.hpp"
-
-
-
-
-class Human;
 
 
 
@@ -29,98 +21,6 @@ int getRandomNumber(int min = 0, int max = (Battlefield::height - 1)) {
 	std::uniform_int_distribution<> dist(min, max);
 	return dist(gen);
 }
-
-void Battlefield::placeTeamRED(std::vector<std::unique_ptr<AUnit>>& team)
-{
-	int safeguard = 0;
-	for (auto& unit : team)
-	{
-		int HIter = 1;
-		if (safeguard == 0)
-			HIter = getRandomNumber(1, height - 2);
-		int WIter = width * 2 / 3;
-		if (safeguard == 0)
-			WIter = getRandomNumber(width * 2 / 3, width - 2);
-	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < height -2)
-	   {
-			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < width -2)
-			{
-				WIter++;
-			}
-			WIter = width * 2 / 3;
-			HIter++;
-			
-		}
-		if (_battlefield[HIter][WIter].getUnit() == nullptr)
-		   {
-			_battlefield[HIter][WIter].setUnit(unit.get());
-		
-			std::cout << "Created unit" << std::endl;    
-			safeguard = 0;
-		}
-		else if (safeguard == 20)
-		{
-			
-			std::cout << "Map is full" << std::endl;
-			exit(1);
-		}
-		else 
-		{
-			HIter = 1;
-			safeguard++;
-		}
-		if (HIter == height -1)
-		{
-			HIter = 1;
-		}
-	}
-} 
-
-void Battlefield::placeTeamBLUE(std::vector<std::unique_ptr<AUnit>>& team)
-{
-	int safeguard = 0;
-	for (auto& unit : team)
-	{
-		int HIter = 1;
-		if (safeguard == 0)
-			HIter = getRandomNumber(1, height - 2);
-		int WIter = 1;
-		if (safeguard == 0)
-			WIter = getRandomNumber(1, width / 3);
-	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < height -2)
-	   {
-			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < (width / 3) - 1)
-			{
-				WIter++;
-			}
-			WIter = 1;
-			HIter++;
-			
-		}
-		if (_battlefield[HIter][WIter].getUnit() == nullptr)
-		   {
-			_battlefield[HIter][WIter].setUnit(unit.get());
-		
-			std::cout << "Created unit" << std::endl;    
-			safeguard = 0;
-		}
-		else if (safeguard == 20)
-		{
-			
-			std::cout << "Map is full" << std::endl;
-			exit(1);
-		}
-		else 
-		{
-			HIter = 1;
-			safeguard++;
-		}
-		if (HIter == height -1)
-		{
-			HIter = 1;
-		}
-	}
-} 
 
 Battlefield::Battlefield()
 {
