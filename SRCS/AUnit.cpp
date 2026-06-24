@@ -30,9 +30,8 @@ AUnit::~AUnit()
 }
 
 void AUnit::setCell(Cell* cell) {
-	
-	if (cell &&  cell->getUnit() && cell->getUnit() != this) {
-		assert(currentCell->getUnit() == this && "Unit's current cell doesn't match!");
+	if (cell && cell->getUnit() && cell->getUnit() != this) {
+		assert(currentCell && currentCell->getUnit() == this && "Unit's current cell doesn't match!");
 	}
 	currentCell = cell;
 }
@@ -179,7 +178,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		}
 	if (thisCell->wLoc < myBattlefield.width - 2)
 		{
-			retval = myBattlefield._battlefield[thisCell->hLoc][thisCell->wLoc - 1].getUnit();
+			retval = myBattlefield._battlefield[thisCell->hLoc][thisCell->wLoc + 1].getUnit();
 			if (retval && retval->team != team && retval -> getAlive() )
 				return retval;
 		}
@@ -245,14 +244,14 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	bool AUnit::rally()
 	{
 		if (broken == false)
-			return 0; //unnecessary rally always fails
+			return false;
 		if ((morale + Utility::throwDice() - Utility::throwDice()) >= 12)
 		{
 			std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
-			broken = true;
-			return 0;
+			broken = false;
+			return true;
 		}
-		return 1;
+		return false;
 	}
 
 	int AUnit::getHp() const

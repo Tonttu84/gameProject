@@ -128,13 +128,15 @@ int Archer::fireBow()
             {
                 int damage = BOWDAMAGE - SHIELDREDUCTION + Utility::throwDice() - Utility::throwDice();
                 if (damage > 0)
-                {   
-                    targetUnit->setShield(getShield() - 1);
-                    targetCell->getUnit()->takeDamage(damage);
+                {
+                    targetUnit->setShield(targetUnit->getShield() - 1);
+                    targetUnit->takeDamage(damage);
                 }
             }
-
-            targetCell->getUnit()->takeDamage(BOWDAMAGE + Utility::throwDice() - Utility::throwDice());
+            else
+            {
+                targetUnit->takeDamage(BOWDAMAGE + Utility::throwDice() - Utility::throwDice());
+            }
         }
         targetCell->fire = true;
     }

@@ -81,7 +81,7 @@ void Necromancer:: raiseDead()
     }
      if (summons)
     {
-        Cell *targetCell = myBattle.safeGetCell(hLoc + 1, wLoc);
+        Cell *targetCell = myBattle.safeGetCell(hLoc + 1, wLoc - 1);
         if (placeZombie(targetCell) == true)
             summons--;
     }

@@ -499,7 +499,7 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>> &team)
 	
 		Cell *target = findTarget(unit);
 		if (target == nullptr)
-			return;
+			continue;
 		moveOne(*IT, target);
 	}
 }
