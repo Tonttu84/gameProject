@@ -43,8 +43,27 @@ Every hex in a straight battle line has identical engagement geometry — no alt
 junction problem. The NW face maps 1-to-1 onto one enemy hex's SE face; NE maps onto
 another enemy's SW face.
 
-**Corner rule**: a unit can only advance through the corner point between NW and NE if
-both adjacent enemy hexes are empty or routing. A contested corner is impassable.
+**Standard front engagement**: a hex in a battle line is simultaneously engaged through
+both its NW and NE faces at once — one HexSide shared with the enemy-left hex, one with
+the enemy-right hex. This is the normal state, not a special case.
+
+```
+        [Your Hex A]
+       /             \
+     NW               NE
+    /                   \
+─────────           ─────────
+[Enemy B]  corner  [Enemy C]
+─────────           ─────────
+```
+
+The corner point is where all three hexes meet. A unit can only advance through it if
+both adjacent enemy hexes (B and C) are empty or routing — a contested corner is
+impassable.
+
+**Pushing through empty hexsides**: a unit may push through any empty hexside later,
+making outflanking natural — if an enemy's E or W flank face is uncontested, friendly
+units can advance through it to engage the hex from the side or rear. Design for later.
 
 **Hex capacity**: 640 size-points.
 - 64 humans (size 10) per hex at tight formation
