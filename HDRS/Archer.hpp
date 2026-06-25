@@ -17,9 +17,7 @@
 #include "Human.hpp"
 #include "Defines.hpp"
 #include "Battlefield.hpp"
-#include <unordered_map>
-
-void resetArcheryCache();
+#include "RangedCombat.hpp"
 
 class Archer : public Human
 {

@@ -14,8 +14,8 @@
 #include "../HDRS/BattleSetup.hpp"
 #include "../HDRS/Soldier.hpp"
 #include "../HDRS/Archer.hpp"
+#include "../HDRS/Mage.hpp"
 // #include "../HDRS/Priest.hpp"
-// #include "../HDRS/Mage.hpp"
 // #include "../HDRS/Necromancer.hpp"
 
 #include <sys/ioctl.h>
@@ -52,13 +52,15 @@ int main(void)
     field.window = &myWindow;
 
     Army red;
-    appendArmy<Soldier>(red, 600, REDTEAM);
+    appendArmy<Soldier>(red, 500, REDTEAM);
     appendArmy<Archer> (red, 200, REDTEAM);
+    appendArmy<Mage>   (red,  50, REDTEAM);
     randomPlaceArmy(red, field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
 
     Army blue;
-    appendArmy<Soldier>(blue, 600, BLUETEAM);
+    appendArmy<Soldier>(blue, 500, BLUETEAM);
     appendArmy<Archer> (blue, 200, BLUETEAM);
+    appendArmy<Mage>   (blue,  50, BLUETEAM);
     randomPlaceArmy(blue, field, {0, field.width / 4, 0, field.height - 1});
 
     field.loadArmies(std::move(red), std::move(blue));

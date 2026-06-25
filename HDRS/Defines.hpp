@@ -32,6 +32,12 @@ constexpr int BOWDAMAGE   = 5;
 constexpr int BOWMAXRANGE = 8;   // max hex distance an archer can shoot
 constexpr int BOWAMMO     = 30;
 
+// Fireball
+constexpr int FIREBALL_CENTRE    = 10; // damage to the primary hit
+constexpr int FIREBALL_BLAST     = 5;  // damage per secondary hit
+constexpr int FIREBALL_SECONDARY = 5;  // number of secondary blast hits
+constexpr int SPELLRANGE         = 10; // max hex distance for spells
+
 // Battlefield dimensions
 constexpr int BATTLEFIELD_WIDTH  = 30;  // hex columns (q)
 constexpr int BATTLEFIELD_HEIGHT = 16;  // hex rows (r)

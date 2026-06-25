@@ -1,5 +1,5 @@
 #include "../HDRS/Battlefield.hpp"
-#include "../HDRS/Archer.hpp"
+#include "../HDRS/RangedCombat.hpp"
 #include <algorithm>
 
 Battlefield::Battlefield()
@@ -414,9 +414,9 @@ BattleResult Battlefield::extractResult()
 
 void Battlefield::triggerSpecialPhase()
 {
-    // Reset the archer slot cache once per phase. It rebuilds lazily per hex
-    // and stays valid as long as no unit dies in that hex.
-    resetArcheryCache();
+    // Reset the ranged-combat slot cache once per phase so every hex's unit
+    // list is rebuilt fresh from current occupants.
+    RangedCombat::resetCache();
 
     for (auto& unit : teamRED)
         if (unit && unit->getFatigue() < 100 && unit->getAlive())

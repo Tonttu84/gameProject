@@ -13,21 +13,20 @@
 #pragma once
 
 #include "Human.hpp"
-#include "vector"
-
-
-
-#define FIREBALL_CENTRE 13
-#define FIREBALL_BLAST 6
+#include "Defines.hpp"
+#include "RangedCombat.hpp"
+#include "Utility.hpp"
+#include "Battlefield.hpp"
 
 class Mage : public Human
 {
     public:
         Mage(int setTeam) noexcept;
         Mage() noexcept;
-        ~Mage() noexcept = default ;
+        ~Mage() noexcept = default;
         int mana = 99;
 
         void special();
+        AUnit* findFireballTarget();
 };
 
