@@ -16,6 +16,9 @@
 #include <memory>
 
 #include <random>
+#ifdef TESTING
+#include <queue>
+#endif
 #include "Battlefield.hpp"
 #include <iostream>
 #include <functional>
@@ -41,8 +44,16 @@ public:
         static Cell *FindPriorityTarget(const std::vector<std::unique_ptr<AUnit>>& targetTeam, const std::function<int(const AUnit&, int)>&, int myTeam);
         static ssize_t calcDistance(const Cell *target, const Cell*source);
 
+#ifdef TESTING
+        static void pushDiceRoll(int value);
+        static void clearDiceRolls();
+#endif
+
     private:
         static std::mt19937 gen;
+#ifdef TESTING
+        static std::queue<int> mockValues;
+#endif
         Utility() = delete;
         ~Utility() = delete;
 };

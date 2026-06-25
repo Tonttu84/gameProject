@@ -38,13 +38,36 @@ int Utility::throwDice()
 }
 
     std::mt19937 Utility::gen(std::random_device{}());
+#ifdef TESTING
+    std::queue<int> Utility::mockValues;
+#endif
 
-    int Utility::getRandom(int lowerBound, int upperBound) 
+    int Utility::getRandom(int lowerBound, int upperBound)
     {
         assert(lowerBound <= upperBound && "lowerBound must be <= upperBound");
+#ifdef TESTING
+        if (!mockValues.empty()) {
+            int val = mockValues.front();
+            mockValues.pop();
+            return val;
+        }
+#endif
         std::uniform_int_distribution<int> dist(lowerBound, upperBound);
         return dist(gen);
     }
+
+#ifdef TESTING
+    void Utility::pushDiceRoll(int value)
+    {
+        mockValues.push(value);
+    }
+
+    void Utility::clearDiceRolls()
+    {
+        while (!mockValues.empty())
+            mockValues.pop();
+    }
+#endif
 
 AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, const std::function<bool(const AUnit&, int)>& validPriorityTarget, const std::function<int(const AUnit&, int)>& validTarget,
     int myTeam)
