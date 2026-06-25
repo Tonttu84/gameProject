@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <map>
 
 static constexpr float PI = 3.14159265358979323846f;
 
@@ -151,10 +152,25 @@ void HexGrid::render(sf::RenderWindow& window) {
         window.draw(hex.shape);
 
         if (_font && first) {
+            // Group alive units by symbol, preserving insertion order via map.
+            std::map<char, int> groups;
+            for (AUnit* u : hex.units)
+                if (u && u->getAlive())
+                    groups[u->getPrintSymbol()]++;
+
+            // Build one line per unit type: "27X\n1M"
+            std::string labelStr;
+            for (auto& [ch, cnt] : groups) {
+                if (!labelStr.empty()) labelStr += '\n';
+                labelStr += std::to_string(cnt) + ch;
+            }
+
+            // Slightly smaller font when multiple types share the hex.
+            float scale = (groups.size() > 1) ? 0.45f : 0.65f;
             sf::Text sym;
             sym.setFont(*_font);
-            sym.setCharacterSize(static_cast<unsigned int>(_hexSize * 0.65f));
-            sym.setString(std::to_string(aliveCount) + std::string(1, first->getPrintSymbol()));
+            sym.setCharacterSize(static_cast<unsigned int>(_hexSize * scale));
+            sym.setString(labelStr);
             sf::Color col = (first->getTeam() == 1) ? sf::Color::Red : sf::Color::Cyan;
             if (first->getCast() != 0) col = sf::Color::Yellow;
             if (first->getBroken())    col = sf::Color(255, 140, 0);
