@@ -28,6 +28,24 @@ Human = size 10 is the anchor. Scaling is open-ended in both directions.
 **Coordinate system**: cube coordinates (q, r, s where q + r + s = 0).
 Standard library for neighbor lookup, distance, rotation and line-of-sight.
 
+**Orientation**: pointy-top hexes. Battle lines run east-west.
+
+```
+     /\
+    /NW\NE      ← 2 front faces (toward enemy)
+   |    |
+   | E  W       ← 2 flank faces (touch friendly neighbors in line)
+    \SW/SE
+     \/          ← 2 rear faces
+```
+
+Every hex in a straight battle line has identical engagement geometry — no alternating
+junction problem. The NW face maps 1-to-1 onto one enemy hex's SE face; NE maps onto
+another enemy's SW face.
+
+**Corner rule**: a unit can only advance through the corner point between NW and NE if
+both adjacent enemy hexes are empty or routing. A contested corner is impassable.
+
 **Hex capacity**: 640 size-points.
 - 64 humans (size 10) per hex at tight formation
 - Larger creatures scale naturally: a size 640 entity fills the hex alone
@@ -45,10 +63,13 @@ A hex has 6 sides. At any tick some sides are in contact with an enemy hex.
 
 **Front rank width = 4 fighters per engaged hexside.**
 
-This is the number of individual fighters (or player characters) who can simultaneously
-engage enemies across one hexside. Chosen as a compromise — small enough that a single
-hero is a meaningful fraction of the line, large enough to represent a real formation front.
-Easy to tune later.
+A hex in a standard battle line has 2 front faces (NW and NE), giving 8 total front rank
+fighters when engaged from the front. Both front faces draw from the same reserve pool
+behind them.
+
+Frontage of 4 is a deliberate compromise: small enough that a single hero or player
+character is a meaningful fraction of the line, large enough to represent a real formation
+front. Easy to tune later.
 
 ### Support ranks and weapon reach
 
