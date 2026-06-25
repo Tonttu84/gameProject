@@ -12,6 +12,7 @@
 
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/BattleSetup.hpp"
+#include "../HDRS/HexGrid.hpp"
 #include "../HDRS/Human.hpp"
 #include "../HDRS/Priest.hpp"
 #include "../HDRS/Mage.hpp"
@@ -43,12 +44,16 @@ int main(void)
 {
     Utility::load();
 
+    HexGrid hexGrid(Utility::font, {350.f, 320.f});
+    hexGrid.buildGrid(5);
+
     int termHeight = getTerminalHeight();
     int battlefieldStartRow = termHeight - Battlefield::height;
 
     Battlefield& field = Utility::getBattlefield();
     sf::RenderWindow myWindow(sf::VideoMode(Battlefield::width * Cell::cellSize, Battlefield::height * Cell::cellSize), "Battlefield");
     field.window = &myWindow;
+    field.hexGrid = &hexGrid;
 
     // Build red army
     Army red;

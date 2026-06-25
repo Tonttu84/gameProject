@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "../HDRS/Battlefield.hpp"
+#include "../HDRS/HexGrid.hpp"
 
 Battlefield::Battlefield()
 {
@@ -30,11 +31,14 @@ void Battlefield::print()
 
 	for (int i = 0; i < height; ++i) {
 		for (int k = 0; k < width; ++k) {
-			_battlefield[i][k].render(*window); // Each cell queues its own drawables
+			_battlefield[i][k].render(*window);
 		}
 	}
 
-window->display(); // Flush and show everything
+	if (hexGrid)
+		hexGrid->render(*window);
+
+	window->display();
 }
 
 size_t Battlefield::countTeam(const int team) const

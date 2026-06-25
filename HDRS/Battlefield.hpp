@@ -36,11 +36,14 @@ struct BattleResult
     size_t corpses;
 };
 
+class HexGrid;
+
 class Battlefield
 {
     public:
 
         sf::RenderWindow *window;
+        HexGrid *hexGrid = nullptr;
 
         Battlefield();
         ~Battlefield() = default;
