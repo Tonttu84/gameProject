@@ -28,10 +28,9 @@ constexpr int SWAPFATIGUE     = 60;  // engaged units retreat to rest above this
 constexpr int SHIELDREDUCTION = 5;
 
 // Archery
-constexpr int BOWDAMAGE        = 5;
-constexpr int BOWMAXRANGE      = 8;   // max hex distance an archer can shoot
-constexpr int BOWAMMO          = 30;
-constexpr int BOWACCURATERANGE = 2;   // within this range archers can attempt an aimed individual shot
+constexpr int BOWDAMAGE   = 5;
+constexpr int BOWMAXRANGE = 8;   // max hex distance an archer can shoot
+constexpr int BOWAMMO     = 30;
 
 // Battlefield dimensions
 constexpr int BATTLEFIELD_WIDTH  = 30;  // hex columns (q)

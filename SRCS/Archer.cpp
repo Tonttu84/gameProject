@@ -4,8 +4,11 @@
 Archer::Archer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Shortsword)
 {
     printSymbol = 'A';
-    ammunition = BOWAMMO;
-    armour = LIGHTARMOUR;
+    ammunition  = BOWAMMO;
+    armour      = LIGHTARMOUR;
+    // accuracy is used as a 0-100 percentage: aimed-shot success chance and
+    // aimed range (accuracy/10 hexes). 50 → 50% chance, 5-hex aimed range.
+    accuracy    = 50;
 }
 
 Archer::Archer() noexcept {
@@ -143,15 +146,19 @@ int Archer::fireBow()
 
     AUnit* targetUnit = nullptr;
 
-    if (dist <= BOWACCURATERANGE && Utility::throwDice() >= 4) {
-        // Close enough for an aimed shot. On a decent roll (4+) the archer
-        // picks out the intended target directly; if that unit has moved out
-        // of the landed hex, fall back to a random hex hit instead.
+    // Aimed range scales with accuracy: accuracy/10 hexes.
+    // A human archer (accuracy=50) can aim individually up to 5 hexes away.
+    // A gaze/mind-blast unit (accuracy=99) covers nearly the full bow range.
+    int aimedRange = accuracy / 10;
+
+    if (dist <= aimedRange && Utility::getRandom(1, 100) <= accuracy) {
+        // Aimed individual shot: accuracy is the percentage success chance.
+        // If the target stepped out of the landed hex, fall back to a hex hit.
         targetUnit = (aimUnit->getAlive() && aimUnit->getHex() == targetHex)
                    ? aimUnit : pickHexTarget(targetHex);
     } else {
-        // Normal range: arrow lands in a hex and hits whoever is there.
-        // Use weighted random so larger units are harder to miss.
+        // Normal range or failed aim: arrow lands in a hex and hits whoever
+        // is there. Weighted random so larger units are harder to miss.
         targetUnit = pickHexTarget(targetHex);
     }
 
