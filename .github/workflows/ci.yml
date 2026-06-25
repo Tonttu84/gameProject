@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Cache the extracted SFML directory so we don't re-download it every run.
+      # The key is fixed because we always use the same SFML version.
+      - name: Cache SFML
+        uses: actions/cache@v4
+        with:
+          path: SFML-2.6.0
+          key: sfml-2.6.0-linux-gcc-64
+
+      # The SFML prebuilt binary needs these runtime libs to load on the runner.
+      # We also need wget (for the Makefile's SFML download if cache misses)
+      # and the DejaVu font (copied by the Makefile's font rule).
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q \
+            wget \
+            fonts-dejavu-core \
+            libx11-6 libxrandr2 libxcursor1 libudev1 \
+            libgl1 libfreetype6 libogg0 libvorbis0a
+
+      - name: Build and run tests
+        run: make test
