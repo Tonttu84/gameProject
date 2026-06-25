@@ -41,6 +41,7 @@ class Battlefield
         void makeBattle(void);
 
         void loadArmies(Army red, Army blue);
+        void reset(); // clear hex occupancy and corpse count between battles
         bool tick();
         BattleResult extractResult();
 

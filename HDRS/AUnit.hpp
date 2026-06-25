@@ -60,6 +60,8 @@ public:
     void setPlaced(bool value);
     bool getPlaced() const;
 
+    virtual void restoreForNextBattle(); // heal to full and reset battle state for campaign carry-over
+
     void setBattleSummon(bool value);
     bool getBattleSummon() const;
      int getArmour() const;

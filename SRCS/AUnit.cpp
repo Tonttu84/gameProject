@@ -312,6 +312,20 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 
 	int AUnit::getFatigueCost() const { return fatigueCost; }
 
+void AUnit::restoreForNextBattle()
+{
+	reset();           // detach from hex
+	hitpoints        = maxHP;
+	fatigue          = 0;
+	fatiguelvl       = 0;
+	broken           = false;
+	placed           = false;
+	cast             = 0;
+	canFightThisTurn = false;
+	engagedSide      = nullptr;
+	spentMove        = 0;
+}
+
 	void AUnit::addFatigue(int amount)
 	{
 		fatigue = fatigue + amount;

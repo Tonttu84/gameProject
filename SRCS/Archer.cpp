@@ -120,3 +120,10 @@ void Archer::special()
 {
     spentMove = fireBow();
 }
+
+void Archer::restoreForNextBattle()
+{
+    AUnit::restoreForNextBattle();
+    ammunition     = BOWAMMO;
+    preferredRange = 3; // reset to bow range — was set to 1 when ammo ran out
+}

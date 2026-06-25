@@ -32,5 +32,6 @@ class Archer : public Human
         int calcUnitValue(const AUnit& target, int myTeam);
         int calcShot(const AUnit& target, int myTeam);
         bool accurateShot(const AUnit &target, int myTeam);
+        void restoreForNextBattle() override;
 
 };

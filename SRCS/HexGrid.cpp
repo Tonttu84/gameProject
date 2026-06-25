@@ -201,6 +201,13 @@ void HexGrid::render(sf::RenderWindow& window) {
     }
 }
 
+void HexGrid::clearUnits() {
+    for (auto& [coord, hex] : _hexes) {
+        hex.units.clear();
+        hex.sizeUsed = 0;
+    }
+}
+
 Hex* HexGrid::getHex(HexCoord c) {
     auto it = _hexes.find(c);
     return it != _hexes.end() ? &it->second : nullptr;

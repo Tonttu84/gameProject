@@ -52,6 +52,7 @@ public:
     void buildRect(int cols, int rows); // rectangular grid
 
     void render(sf::RenderWindow& window);
+    void clearUnits(); // remove all units from hexes and reset sizeUsed — call between battles
 
     Hex*        getHex(HexCoord c);
     const Hex*  getHex(HexCoord c) const;

@@ -332,6 +332,17 @@ std::vector<std::unique_ptr<AUnit>>& Battlefield::getTeam(int team)
     throw std::runtime_error("getTeam: invalid team");
 }
 
+void Battlefield::reset()
+{
+    // Survivors had restoreForNextBattle() called (which unlinks them from hexes).
+    // Dead units' destructors already cleaned their hexes during cleanup().
+    // This call handles any residual pointers and resets state.
+    hexGrid.clearUnits();
+    teamRED.clear();
+    teamBLUE.clear();
+    corpses = 0;
+}
+
 void Battlefield::loadArmies(Army red, Army blue)
 {
     teamRED  = std::move(red);
