@@ -249,6 +249,8 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
         if (!unit || !unit->getAlive()) continue;
         AUnit& u = *unit;
 
+        if (u.getMovementSpeed() == 0) continue; // immobile unit — never moves
+
         if (u.getBroken()) {
             flee(unit);
             continue;

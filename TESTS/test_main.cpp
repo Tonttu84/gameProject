@@ -506,6 +506,53 @@ TEST_CASE("extractResult excludes battleSummon units and includes real survivors
         REQUIRE(unit->getBattleSummon() == false);
 }
 
+// ── Archer ammo depletion ─────────────────────────────────────────────────────
+// An unkillable, immobile dummy gives the archer a permanent target.
+// After enough ticks all 30 arrows are spent and the archer switches to melee.
+
+// Cannot be harmed by bow fire (armour=200 >> BOWDAMAGE=5) and never moves.
+// Used only in the ammo-depletion test below.
+class HighArmorDummy : public AUnit {
+public:
+    explicit HighArmorDummy(int t) : AUnit(t) {
+        armour        = 200;
+        hitpoints     = 9999;
+        maxHP         = 9999;
+        morale        = 99;
+        movementSpeed = 0;   // stays in place
+        printSymbol   = 'D';
+    }
+};
+
+TEST_CASE("archer exhausts ammo against unkillable target and switches to melee range") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Archer at (22,8), dummy at (14,8) — distance 8 (= BOWMAXRANGE).
+    // Archer advances to preferredRange=3 then shoots; dummy never moves.
+    auto archerUnit = std::make_unique<Archer>(REDTEAM);
+    archerUnit->setHex(field.hexGrid.getHex({22, 8}));
+
+    auto dummyUnit = std::make_unique<HighArmorDummy>(BLUETEAM);
+    dummyUnit->setHex(field.hexGrid.getHex({14, 8}));
+
+    Army red, blue;
+    red.push_back(std::move(archerUnit));
+    blue.push_back(std::move(dummyUnit));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    // 30 shots × 4 ticks each + some travel time = well under 200 ticks
+    for (int i = 0; i < 200; ++i)
+        field.tick();
+
+    auto& redTeam = field.getTeam(REDTEAM);
+    REQUIRE_FALSE(redTeam.empty());
+    AUnit* archer = redTeam[0].get();
+    REQUIRE(archer->getAmmunition() == 0);
+    REQUIRE(archer->getPreferredRange() == 1);
+
+    field.extractResult();
+}
+
 // ── Debug visualization — run with: ./run_tests "[debug]" ─────────────────────
 // Prints a compact ASCII map each tick so we can watch movement without SFML.
 // Excluded from normal test runs by the [.] hidden tag.

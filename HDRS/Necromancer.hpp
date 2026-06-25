@@ -17,6 +17,7 @@
 #include "Utility.hpp"
 #include "Human.hpp"
 #include "Zombie.hpp"
+#include "Skeleton.hpp"
 
 
 
@@ -31,6 +32,7 @@ class Necromancer : public Human
         void special();
         void raiseDead();
         bool placeZombie(Hex* targetHex);
+        bool placeSkeleton(Hex* targetHex);
 
 };
 

@@ -43,6 +43,19 @@ bool Necromancer::placeZombie(Hex* targetHex)
 }
 
 
+bool Necromancer::placeSkeleton(Hex* targetHex)
+{
+    if (!targetHex) return false;
+    std::unique_ptr<AUnit> sk = std::make_unique<Skeleton>(getTeam());
+    if (targetHex->sizeUsed + static_cast<int>(sk->getSize()) > Hex::CAPACITY) return false;
+    for (AUnit* u : targetHex->units)
+        if (u && u->getAlive() && u->getTeam() != getTeam()) return false;
+    sk->setBattleSummon(true);
+    sk->setHex(targetHex);
+    Utility::getBattlefield().getTeam(team).push_back(std::move(sk));
+    return true;
+}
+
 void Necromancer::raiseDead()
 {
     if (getCast() > 0)
@@ -57,18 +70,22 @@ void Necromancer::raiseDead()
     Battlefield& myBattle = Utility::getBattlefield();
     mana--;
 
-    size_t summons = (myBattle.getCorpses() >= 3) ? 3 : 1;
-    if (myBattle.getCorpses() >= 3)
-        myBattle.setCorpses(myBattle.getCorpses() - 3);
-
     auto nbCoords = myBattle.hexGrid.neighbors(getHex()->coord);
-    for (const HexCoord& nc : nbCoords)
-    {
-        if (!summons)
-            break;
-        Hex* targetHex = myBattle.hexGrid.getHex(nc);
-        if (placeZombie(targetHex))
-            summons--;
+
+    if (myBattle.getCorpses() == 0) {
+        // No fresh corpses — conjure a skeleton from ancient bones at no corpse cost
+        for (const HexCoord& nc : nbCoords) {
+            if (placeSkeleton(myBattle.hexGrid.getHex(nc))) break;
+        }
+    } else {
+        size_t summons = (myBattle.getCorpses() >= 3) ? 3 : 1;
+        if (myBattle.getCorpses() >= 3)
+            myBattle.setCorpses(myBattle.getCorpses() - 3);
+
+        for (const HexCoord& nc : nbCoords) {
+            if (!summons) break;
+            if (placeZombie(myBattle.hexGrid.getHex(nc))) summons--;
+        }
     }
     setCast(6);
 }

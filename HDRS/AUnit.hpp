@@ -90,8 +90,10 @@ public:
     void     setEngagedSide(HexSide* s) { engagedSide = s; }
     HexSide* getEngagedSide() const { return engagedSide; }
 
-    int  getPreferredRange() const  { return preferredRange; }
-    void setPreferredRange(int r)   { preferredRange = r; }
+    int  getPreferredRange()  const  { return preferredRange; }
+    void setPreferredRange(int r)    { preferredRange = r; }
+    int  getMovementSpeed()  const  { return movementSpeed; }
+    int  getAmmunition()     const  { return ammunition; }
 
 
 protected:
@@ -113,7 +115,8 @@ protected:
     int fatiguelvl = 0;
     int fatigueCost = 4;
     int fatigueRecovery = FATIGUERECOVERY;
-    int preferredRange = 0; // 0/1 = advance to melee; >1 = try to hold this hex distance
+    int preferredRange  = 0; // 0/1 = advance to melee; >1 = try to hold this hex distance
+    int movementSpeed   = 1; // hexes moved per tick; 0 = immobile (never moves)
     
     int resistance = 10;
     int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff
