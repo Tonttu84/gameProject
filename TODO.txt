@@ -10,6 +10,11 @@
 #                                                                              #
 # **************************************************************************** #
 
+Armor fatigue: heavier armor should increase fatigueCost in combat (and possibly MARCHFATIGUE for
+marching). Currently all unit fatigue costs are flat — armor type should be a multiplier or addend
+on fatigueCost so plate > chain > leather > none. Soldier already has +1 heavy armor penalty as a
+start; generalize this across all unit/armor types when adding more variety.
+
 Archer accuracy values need retuning — hex distance is much larger than old cell distance
 (BOWMAXRANGE=50 and accuracy thresholds were calibrated for cells, not hexes)
 

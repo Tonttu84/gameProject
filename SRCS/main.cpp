@@ -48,7 +48,7 @@ int main(void)
     Battlefield& field = Utility::getBattlefield();
     field.hexGrid.setFont(&Utility::font);
 
-    sf::RenderWindow myWindow(sf::VideoMode(2000, 720), "Battlefield");
+    sf::RenderWindow myWindow(sf::VideoMode(2400, 1000), "Battlefield");
     field.window = &myWindow;
 
     // Red army — dense right flank so hexes stack and frontage limits kick in
@@ -65,6 +65,7 @@ int main(void)
 
     int counter = 0;
     bool ongoing = true;
+    bool paused  = false;
     while (ongoing)
     {
         sf::Event event;
@@ -75,6 +76,19 @@ int main(void)
                 field.window->close();
                 return 0;
             }
+            if (event.type == sf::Event::KeyPressed
+                && event.key.code == sf::Keyboard::Space)
+            {
+                paused = !paused;
+                std::cout << (paused ? "  [PAUSED]\n" : "  [RESUMED]\n");
+            }
+        }
+
+        if (paused)
+        {
+            field.print(); // keep window responsive while paused
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
         }
 
         clearBattlefieldArea(battlefieldStartRow, Battlefield::height);

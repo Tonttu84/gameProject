@@ -53,8 +53,9 @@ public:
 
     void render(sf::RenderWindow& window);
 
-    Hex*     getHex(HexCoord c);
-    Hex*     safeGetHex(int q, int r);
+    Hex*        getHex(HexCoord c);
+    const Hex*  getHex(HexCoord c) const;
+    Hex*        safeGetHex(int q, int r);
     HexSide* getSide(HexCoord c, HexDirection dir);
     std::array<HexCoord, 6> neighbors(HexCoord c) const;
     HexCoord neighborCoord(HexCoord c, HexDirection d) const;

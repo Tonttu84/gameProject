@@ -207,16 +207,16 @@ TEST_CASE("fatigue starts at 0") {
 }
 
 TEST_CASE("increaseFatigue raises fatigue each call") {
-    Soldier s(REDTEAM);           // fatigueCost = 5 (4 base + 1 heavy armour)
+    Soldier s(REDTEAM);           // fatigueCost = 5 (4 base + 1 heavy armor)
     s.increaseFatigue();
     REQUIRE(s.getFatigue() == 5);
     s.increaseFatigue();
     REQUIRE(s.getFatigue() == 10);
 }
 
-TEST_CASE("recover reduces fatigue by FATIGUERECOVERY") {
+TEST_CASE("recover reduces fatigue by fatigueRecovery") {
     Soldier s(REDTEAM);
-    s.increaseFatigue();          // +5
+    s.increaseFatigue();          // +5 → 5
     s.increaseFatigue();          // +5 → 10
     s.recover();                  // -4 → 6
     REQUIRE(s.getFatigue() == 6);
@@ -228,9 +228,9 @@ TEST_CASE("recover does not let fatigue go below 0") {
     REQUIRE(s.getFatigue() == 0);
 }
 
-TEST_CASE("Zombie has 0 fatigueCost so fatigue never increases") {
+TEST_CASE("Zombie has 0 fatigueCost so combat never tires it") {
     Zombie z(REDTEAM);
-    z.increaseFatigue();
+    z.increaseFatigue();   // 0 fatigueCost → no change
     z.increaseFatigue();
     REQUIRE(z.getFatigue() == 0);
 }
@@ -368,7 +368,7 @@ TEST_CASE("setBattleSummon round-trip") {
 
 TEST_CASE("randomPlaceArmy places all units within zone bounds") {
     Battlefield& field = Utility::getBattlefield();
-    PlacementZone zone = {20, 30, 5, 15};
+    PlacementZone zone = {20, 29, 5, 14};
 
     Army army;
     appendArmy<Soldier>(army, 5, REDTEAM);
@@ -389,7 +389,7 @@ TEST_CASE("randomPlaceArmy sets placed flag on every unit") {
 
     Army army;
     appendArmy<Soldier>(army, 4, REDTEAM);
-    randomPlaceArmy(army, field, {35, 45, 5, 15});
+    randomPlaceArmy(army, field, {20, 25, 5, 10});
 
     for (const auto& unit : army)
         REQUIRE(unit->getPlaced() == true);
@@ -401,8 +401,8 @@ TEST_CASE("countTeam matches placed army sizes after loadArmies") {
     Army red, blue;
     appendArmy<Soldier>(red, 3, REDTEAM);
     appendArmy<Zombie>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {30, 40, 0, 10});
-    randomPlaceArmy(blue, field, {30, 40, 13, 22});
+    randomPlaceArmy(red,  field, {0, 12, 0, 7});
+    randomPlaceArmy(blue, field, {0, 12, 8, 15});
     field.loadArmies(std::move(red), std::move(blue));
 
     REQUIRE(field.countTeam(REDTEAM) == 3);
@@ -418,8 +418,8 @@ TEST_CASE("tick returns true while both sides still have living units") {
     Army red, blue;
     appendArmy<Soldier>(red, 2, REDTEAM);
     appendArmy<Soldier>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {44, 49, 5, 10});
-    randomPlaceArmy(blue, field, {0,  10, 5, 10});
+    randomPlaceArmy(red,  field, {24, 29, 5, 10});
+    randomPlaceArmy(blue, field, {0,   5, 5, 10});
     field.loadArmies(std::move(red), std::move(blue));
 
     REQUIRE(field.tick() == true);
@@ -456,8 +456,8 @@ TEST_CASE("extractResult clears internal state so a second call returns empty") 
     Army red, blue;
     appendArmy<Soldier>(red, 2, REDTEAM);
     appendArmy<Soldier>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {35, 44, 0, 10});
-    randomPlaceArmy(blue, field, {35, 44, 13, 22});
+    randomPlaceArmy(red,  field, {10, 18, 0, 7});
+    randomPlaceArmy(blue, field, {10, 18, 8, 15});
     field.loadArmies(std::move(red), std::move(blue));
 
     field.extractResult(); // first call — clears teams
@@ -504,4 +504,24 @@ TEST_CASE("extractResult excludes battleSummon units and includes real survivors
 
     for (const auto& unit : result.redSurvivors)
         REQUIRE(unit->getBattleSummon() == false);
+}
+
+// ── Debug visualization — run with: ./run_tests "[debug]" ─────────────────────
+// Prints a compact ASCII map each tick so we can watch movement without SFML.
+// Excluded from normal test runs by the [.] hidden tag.
+TEST_CASE("battle map debug", "[.][debug]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    appendArmy<Soldier>(red,  50, REDTEAM);
+    appendArmy<Soldier>(blue, 50, BLUETEAM);
+    randomPlaceArmy(red,  field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
+    randomPlaceArmy(blue, field, {0, field.width / 4, 0, field.height - 1});
+    field.loadArmies(std::move(red), std::move(blue));
+
+    for (int turn = 1; turn <= 60; ++turn) {
+        field.printText(turn);
+        if (!field.tick()) break;
+    }
+    field.extractResult();
 }

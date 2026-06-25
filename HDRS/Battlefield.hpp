@@ -32,6 +32,7 @@ class Battlefield
         Battlefield &operator=(Battlefield &target) = default;
 
         void print(void);
+        void printText(int turn = -1) const;
         static constexpr int height = BATTLEFIELD_HEIGHT;
         static constexpr int width  = BATTLEFIELD_WIDTH;
 
@@ -50,6 +51,7 @@ class Battlefield
         void moveToward(std::unique_ptr<AUnit> &unit, const Hex* target);
         void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);
         void flee(std::unique_ptr<AUnit> &unit);
+        void swapOut(std::unique_ptr<AUnit> &unit);
         void cleanup();
         void triggerSpecialPhase();
         void resolveEngagements();

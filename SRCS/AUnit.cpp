@@ -300,16 +300,22 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 
 	void AUnit::recover()
 	{
-		if (fatigue - FATIGUERECOVERY <= 0)
-			fatigue = 0; 
-		else
-			fatigue = fatigue - FATIGUERECOVERY;
+		fatigue = (fatigue <= fatigueRecovery) ? 0 : fatigue - fatigueRecovery;
 		fatiguelvl = fatigue / 20;
 	}
 
 	void AUnit::increaseFatigue()
 	{
 		fatigue = fatigue + fatigueCost;
+		fatiguelvl = fatigue / 20;
+	}
+
+	int AUnit::getFatigueCost() const { return fatigueCost; }
+
+	void AUnit::addFatigue(int amount)
+	{
+		fatigue = fatigue + amount;
+		if (fatigue < 0) fatigue = 0;
 		fatiguelvl = fatigue / 20;
 	}
 

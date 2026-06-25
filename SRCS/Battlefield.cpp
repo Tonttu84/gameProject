@@ -14,6 +14,33 @@ void Battlefield::print()
     window->display();
 }
 
+void Battlefield::printText(int turn) const
+{
+    if (turn >= 0) std::cout << "--- turn " << turn << " ---\n";
+    for (int r = 0; r < height; ++r) {
+        if (r % 2 == 1) std::cout << "  ";
+        for (int q = 0; q < width; ++q) {
+            const Hex* h = hexGrid.getHex({q, r});
+            int aliveR = 0, aliveB = 0;
+            if (h) {
+                for (const AUnit* u : h->units)
+                    if (u && u->getAlive())
+                        (u->getTeam() == REDTEAM ? aliveR : aliveB)++;
+            }
+            int total = aliveR + aliveB;
+            if (total == 0) {
+                std::cout << ".. ";
+            } else {
+                char t = (aliveR > 0) ? 'R' : 'B';
+                if (total < 10) std::cout << t << ' ' << total << ' ';
+                else            std::cout << t << total << ' ';
+            }
+        }
+        std::cout << '\n';
+    }
+    std::cout << '\n';
+}
+
 size_t Battlefield::countTeam(const int team) const
 {
     size_t count = 0;
@@ -51,11 +78,24 @@ static bool hexAcceptsUnit(const Hex* hex, const AUnit& unit) {
     return true;
 }
 
+// Returns true if moving to nc would keep the unit adjacent to at least one live enemy.
+static bool wouldRemainEngaged(const AUnit& unit, HexCoord nc, HexGrid& hexGrid) {
+    for (const HexCoord& nc2 : hexGrid.neighbors(nc)) {
+        Hex* nh = hexGrid.getHex(nc2);
+        if (!nh) continue;
+        for (AUnit* u2 : nh->units)
+            if (u2 && u2->getAlive() && u2->getTeam() != unit.getTeam())
+                return true;
+    }
+    return false;
+}
+
 int Battlefield::moveAUnit(AUnit& unit, HexCoord target)
 {
     Hex* tgt = hexGrid.getHex(target);
     if (!hexAcceptsUnit(tgt, unit)) return 1;
 
+    unit.addFatigue(unit.getFatigueCost() / 2);
     unit.reset();
     unit.setHex(tgt);
     return 0;
@@ -74,8 +114,10 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     HexCoord to   = target->coord;
     if (from == to) return;
 
-    // Pick the passable neighbor that reduces distance to target the most
-    int bestDist = HexGrid::distance(from, to);
+    int curDist = HexGrid::distance(from, to);
+
+    // Pass 1: pick the passable neighbor that closes distance the most
+    int bestDist = curDist;
     int bestDir  = -1;
     for (int i = 0; i < 6; ++i) {
         HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
@@ -87,9 +129,30 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
             bestDir  = i;
         }
     }
-
-    if (bestDir >= 0)
+    if (bestDir >= 0) {
         moveAUnit(unit, hexGrid.neighborCoord(from, static_cast<HexDirection>(bestDir)));
+        return;
+    }
+
+    // Pass 2: forward is blocked — try a lateral move (same distance to target).
+    // Non-engaged units maneuver around the jam.
+    // Engaged + crowded units may expand frontage if they'd stay in contact.
+    bool engaged = unit.getEngaged(*this);
+    // Expand frontage if the hex has 40+ size-points. Stops naturally when
+    // sizeUsed drops below 400, keeping ~39 units on the line.
+    bool crowded = unit.getHex()->sizeUsed >= 400;
+
+    for (int i = 0; i < 6; ++i) {
+        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        Hex* nh = hexGrid.getHex(nc);
+        if (!hexAcceptsUnit(nh, unit)) continue;
+        if (HexGrid::distance(nc, to) != curDist) continue;
+
+        if (!engaged || (crowded && wouldRemainEngaged(unit, nc, hexGrid))) {
+            moveAUnit(unit, nc);
+            return;
+        }
+    }
 }
 
 void Battlefield::flee(std::unique_ptr<AUnit>& unit)
@@ -128,6 +191,29 @@ void Battlefield::moveUnits()
     moveTeam(teamBLUE);
 }
 
+void Battlefield::swapOut(std::unique_ptr<AUnit>& unitPtr)
+{
+    AUnit& unit = *unitPtr;
+    if (!unit.getHex()) return;
+
+    Hex* target = findTarget(unit);
+    if (!target) return;
+
+    HexCoord from = unit.getHex()->coord;
+    HexCoord to   = target->coord;
+    int curDist   = HexGrid::distance(from, to);
+
+    for (int i = 0; i < 6; ++i) {
+        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        Hex* nh = hexGrid.getHex(nc);
+        if (!hexAcceptsUnit(nh, unit)) continue;
+        if (HexGrid::distance(nc, to) > curDist) {
+            moveAUnit(unit, nc);
+            return;
+        }
+    }
+}
+
 void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
 {
     for (auto& unit : team) {
@@ -138,11 +224,14 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
             flee(unit);
             continue;
         }
-        if (u.getFatigue() >= 100 || u.getCast() > 0
-            || (u.getFatigue() > 30 && !u.getEngaged(*this))) {
-            u.recover();
+        if (u.getFatigue() >= 100 || u.getCast() > 0) continue; // exhausted or casting
+
+        // Fatigued fighters rotate out so fresh units can take the front
+        if (u.getEngaged(*this) && u.getFatigue() > SWAPFATIGUE) {
+            swapOut(unit);
             continue;
         }
+
         Hex* target = findTarget(u);
         if (!target) continue;
         moveToward(unit, target);
@@ -243,6 +332,10 @@ void Battlefield::resolveEngagements() {
 
 bool Battlefield::tick()
 {
+    // Passive fatigue recovery — all alive units recover each tick regardless of action
+    for (auto& u : teamRED)  if (u && u->getAlive()) u->recover();
+    for (auto& u : teamBLUE) if (u && u->getAlive()) u->recover();
+
     triggerSpecialPhase();
     moveUnits();
     resolveEngagements();

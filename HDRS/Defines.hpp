@@ -12,12 +12,13 @@
 
 #pragma once
 
-constexpr int FATIGUERECOVERY = 4; 
+constexpr int FATIGUERECOVERY = 4;   // default per-unit passive recovery every tick
+constexpr int SWAPFATIGUE     = 60;  // engaged units retreat to rest above this
 
 constexpr int SHIELDREDUCTION = 5;
 
-constexpr int BATTLEFIELD_WIDTH = 50;   // hex columns (q)
-constexpr int BATTLEFIELD_HEIGHT = 25;  // hex rows (r)
+constexpr int BATTLEFIELD_WIDTH = 30;   // hex columns (q)
+constexpr int BATTLEFIELD_HEIGHT = 16;  // hex rows (r)
 
 class Battlefield;
 class HexGrid;

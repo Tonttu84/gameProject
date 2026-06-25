@@ -73,12 +73,14 @@ public:
      bool getUndead() const;
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
+    int getFatigueCost() const;
     bool getEngaged(Battlefield &myBattlefield) const;
-    
+
     void increaseFatigue();
 
     void recover();
 
+    void addFatigue(int amount);
     void setSpentMove(size_t setMove);
     size_t getSpentMove();
     char getPrintSymbol();
@@ -107,6 +109,7 @@ protected:
     int fatigue = 0;
     int fatiguelvl = 0;
     int fatigueCost = 4;
+    int fatigueRecovery = FATIGUERECOVERY;
     
     int resistance = 10;
     int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff

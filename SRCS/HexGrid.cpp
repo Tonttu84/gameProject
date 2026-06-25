@@ -11,7 +11,7 @@ static constexpr int DQ[6] = { 1,  1,  0, -1, -1,  0};
 static constexpr int DR[6] = {-1,  0,  1,  1,  0, -1};
 
 HexGrid::HexGrid()
-    : _font(nullptr), _origin(20.f, 25.f), _hexSize(20.f)
+    : _font(nullptr), _origin(30.f, 30.f), _hexSize(35.f)
 {}
 
 void HexGrid::setFont(sf::Font* font) {
@@ -52,8 +52,8 @@ void HexGrid::buildShape(Hex& hex) {
 void HexGrid::buildLabel(Hex& hex) {
     if (!_font) return;
     hex.label.setFont(*_font);
-    hex.label.setCharacterSize(8);
-    hex.label.setFillColor(sf::Color(120, 120, 150));
+    hex.label.setCharacterSize(10);
+    hex.label.setFillColor(sf::Color(100, 100, 130));
     hex.label.setString(std::to_string(hex.coord.q) + "," + std::to_string(hex.coord.r));
     sf::FloatRect b = hex.label.getLocalBounds();
     hex.label.setOrigin(b.left + b.width * 0.5f, b.top + b.height * 0.5f);
@@ -149,15 +149,12 @@ void HexGrid::render(sf::RenderWindow& window) {
             hex.shape.setFillColor(sf::Color(30, 30, 40, 200));
         }
         window.draw(hex.shape);
-        if (_font) window.draw(hex.label);
 
         if (_font && first) {
             sf::Text sym;
             sym.setFont(*_font);
-            sym.setCharacterSize(static_cast<unsigned int>(_hexSize * 0.7f));
-            sym.setString(aliveCount > 1
-                ? std::to_string(aliveCount)
-                : std::string(1, first->getPrintSymbol()));
+            sym.setCharacterSize(static_cast<unsigned int>(_hexSize * 0.65f));
+            sym.setString(std::to_string(aliveCount) + std::string(1, first->getPrintSymbol()));
             sf::Color col = (first->getTeam() == 1) ? sf::Color::Red : sf::Color::Cyan;
             if (first->getCast() != 0) col = sf::Color::Yellow;
             if (first->getBroken())    col = sf::Color(255, 140, 0);
@@ -166,11 +163,18 @@ void HexGrid::render(sf::RenderWindow& window) {
             sym.setOrigin(sb.left + sb.width * 0.5f, sb.top + sb.height * 0.5f);
             sym.setPosition(hexToPixel(coord));
             window.draw(sym);
+        } else if (_font) {
+            window.draw(hex.label);
         }
     }
 }
 
 Hex* HexGrid::getHex(HexCoord c) {
+    auto it = _hexes.find(c);
+    return it != _hexes.end() ? &it->second : nullptr;
+}
+
+const Hex* HexGrid::getHex(HexCoord c) const {
     auto it = _hexes.find(c);
     return it != _hexes.end() ? &it->second : nullptr;
 }
