@@ -26,7 +26,7 @@ class Mage : public Human
         ~Mage() noexcept = default;
         int mana = 99;
 
-        void special();
+        void special() override;
         AUnit* findFireballTarget();
 };
 

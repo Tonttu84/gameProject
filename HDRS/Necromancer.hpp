@@ -29,7 +29,7 @@ class Necromancer : public Human
         ~Necromancer() noexcept = default ;
         int mana = 99;
 
-        void special();
+        void special() override;
         void raiseDead();
         bool placeZombie(Hex* targetHex);
         bool placeSkeleton(Hex* targetHex);

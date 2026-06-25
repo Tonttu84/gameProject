@@ -25,6 +25,6 @@ class Priest : public Human
         ~Priest() noexcept = default ;
         int mana = 99;
 
-        void special();
+        void special() override;
         void castBless();
 };

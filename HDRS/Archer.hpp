@@ -26,7 +26,7 @@ class Archer : public Human
         Archer() noexcept;
         ~Archer() noexcept = default ;
 
-        void special();
+        void special() override;
         int fireBow();
         AUnit* findArcherTarget();
         int calcUnitValue(const AUnit& target, int myTeam);
