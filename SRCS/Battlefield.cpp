@@ -215,6 +215,34 @@ void Battlefield::swapOut(std::unique_ptr<AUnit>& unitPtr)
     }
 }
 
+// Move one hex away from the nearest enemy. hexAcceptsUnit returning false
+// for off-map hexes means the unit naturally can't retreat beyond the edge.
+void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
+{
+    AUnit& unit = *unitPtr;
+    if (!unit.getHex()) return;
+
+    Hex* enemyHex = findTarget(unit);
+    if (!enemyHex) return;
+
+    HexCoord from   = unit.getHex()->coord;
+    HexCoord to     = enemyHex->coord;
+    int      curDist = HexGrid::distance(from, to);
+
+    int bestDist = curDist;
+    int bestDir  = -1;
+    for (int i = 0; i < 6; ++i) {
+        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        Hex* nh = hexGrid.getHex(nc);
+        if (!hexAcceptsUnit(nh, unit)) continue;
+        int d = HexGrid::distance(nc, to);
+        if (d > bestDist) { bestDist = d; bestDir = i; }
+    }
+    if (bestDir >= 0)
+        moveAUnit(unit, hexGrid.neighborCoord(from, static_cast<HexDirection>(bestDir)));
+    // If no retreat hex is available the unit holds its position.
+}
+
 void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
 {
     for (auto& unit : team) {
@@ -226,6 +254,25 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
             continue;
         }
         if (u.getFatigue() >= 100 || u.getCast() > 0) continue; // exhausted or casting
+
+        // Ranged units (archers, mages, necromancers) maintain a preferred
+        // distance. preferredRange > 1 means they back away when enemies
+        // close in and hold position once at the right distance, rather than
+        // advancing into melee. Falls through to normal melee logic when
+        // preferredRange drops to 0 or 1 (e.g. archer out of ammo).
+        int pref = u.getPreferredRange();
+        if (pref > 1) {
+            Hex* enemyHex = findTarget(u);
+            if (enemyHex) {
+                int dist = HexGrid::distance(u.getHex()->coord, enemyHex->coord);
+                if (dist < pref)
+                    retreatToRange(unit);   // too close — back away
+                else if (dist > pref)
+                    moveToward(unit, enemyHex); // too far — close to preferred range
+                // dist == pref: hold position
+            }
+            continue;
+        }
 
         // Fatigued fighters rotate out so fresh units can take the front
         if (u.getEngaged(*this) && u.getFatigue() > SWAPFATIGUE) {

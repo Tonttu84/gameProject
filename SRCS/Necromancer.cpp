@@ -17,7 +17,8 @@
 Necromancer::Necromancer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
     setSpellcaster(true);
-    printSymbol = 'N';
+    printSymbol    = 'N';
+    preferredRange = 3;
 }
 
 Necromancer::Necromancer() noexcept {

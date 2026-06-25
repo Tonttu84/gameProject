@@ -17,8 +17,9 @@
 Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
     setSpellcaster(true);
-    printSymbol = 'M';
-    accuracy = 8;
+    printSymbol    = 'M';
+    accuracy       = 8;
+    preferredRange = 3;
 }
 
 Mage::Mage() noexcept {

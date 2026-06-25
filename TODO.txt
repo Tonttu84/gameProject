@@ -10,6 +10,13 @@
 #                                                                              #
 # **************************************************************************** #
 
+Movement speed / retreat cost: currently all units move 1 hex per tick in any
+direction. Retreating while in contact with an enemy should be slower or costlier
+than advancing — historically backing away under pressure was dangerous and tiring.
+Needs a speed/movement-points system before this is expressible. Consider adding a
+per-unit movementSpeed field (default 1) so faster units and penalties can be layered
+on top without reworking all movement logic at once.
+
 Accuracy system — needs design review:
   Currently accuracy is a 0-100 percentage used by ranged units for two things:
     1. Aimed range: accuracy/10 hexes — within this distance the unit can attempt

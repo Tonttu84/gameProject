@@ -8,7 +8,8 @@ Archer::Archer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Shorts
     armour      = LIGHTARMOUR;
     // accuracy is used as a 0-100 percentage: aimed-shot success chance and
     // aimed range (accuracy/10 hexes). 50 → 50% chance, 5-hex aimed range.
-    accuracy    = 50;
+    accuracy       = 50;
+    preferredRange = 3; // hold bow range; drops to 1 when ammo runs out
 }
 
 Archer::Archer() noexcept {
@@ -141,6 +142,7 @@ int Archer::fireBow()
     Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q,
                                       aimUnit->getHex()->coord.r, accuracy);
     ammunition--;
+    if (ammunition == 0) preferredRange = 1; // out of arrows — advance to melee
 
     if (!targetHex) return 3;
 

@@ -52,6 +52,7 @@ class Battlefield
         void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);
         void flee(std::unique_ptr<AUnit> &unit);
         void swapOut(std::unique_ptr<AUnit> &unit);
+        void retreatToRange(std::unique_ptr<AUnit> &unit);
         void cleanup();
         void triggerSpecialPhase();
         void resolveEngagements();

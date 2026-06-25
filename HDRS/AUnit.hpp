@@ -90,6 +90,9 @@ public:
     void     setEngagedSide(HexSide* s) { engagedSide = s; }
     HexSide* getEngagedSide() const { return engagedSide; }
 
+    int  getPreferredRange() const  { return preferredRange; }
+    void setPreferredRange(int r)   { preferredRange = r; }
+
 
 protected:
     int team = 0;
@@ -110,6 +113,7 @@ protected:
     int fatiguelvl = 0;
     int fatigueCost = 4;
     int fatigueRecovery = FATIGUERECOVERY;
+    int preferredRange = 0; // 0/1 = advance to melee; >1 = try to hold this hex distance
     
     int resistance = 10;
     int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff
