@@ -30,6 +30,6 @@ class Mage : public Human
 
         void special();
         void castFireball();
-        Cell *findMageTarget(Cell &source);
+        Cell *findMageTarget();
 };
 

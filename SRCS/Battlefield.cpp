@@ -37,51 +37,6 @@ void Battlefield::print()
 window->display(); // Flush and show everything
 }
 
-// void Battlefield::print()
-// {
-// 	for(int i = 0; i < height; i++)
-// 	{
-// 		for (int k = 0; k < width; k++)
-// 		{
-// 			if (_battlefield[i][k].getUnit() == nullptr)
-// 			{
-// 				if (_battlefield[i][k].fire == true)
-// 					std::cout << RED_ON_ORANGE << "."<< RESET;
-// 				else
-// 					std::cout << ".";
-// 			}
-
-				
-// 			else if( _battlefield[i][k].getUnit()->getTeam() == 1)
-// 			{
-// 				if (_battlefield[i][k].fire == true)
-// 					std::cout << RED_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-// 				else if (_battlefield[i][k].getUnit()->getCast() != 0)
-// 					std::cout << RED_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-// 				else 
-// 					std::cout << RED << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-
-// 			}
-// 			else if( _battlefield[i][k].getUnit()->getTeam() == 2)
-// 			{
-// 				if (_battlefield[i][k].fire == true)
-// 					std::cout << BLUE_ON_ORANGE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-// 				else if (_battlefield[i][k].getUnit()->getCast() != 0)
-// 					std::cout << BLUE_ON_YELLOW << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-// 				else 
-// 					std::cout << BLUE << _battlefield[i][k].getUnit()->getPrintSymbol() << RESET;
-
-// 			}
-// 			else 
-// 				std::cout << "?";
-// 			if (_battlefield[i][k].fire == true)
-// 				_battlefield[i][k].fire = false;
-// 		}
-// 		std::cout << "\n";
-// 	}
-// 	std::cout << std::endl;
-// }
-
 size_t Battlefield::countTeam(const int team) const
 {
 	size_t retval = 0;
@@ -454,7 +409,8 @@ void Battlefield::flee(std::unique_ptr<AUnit> &unit)
 	if (myCell->hLoc == 0 || myCell->wLoc == 0 || myCell->hLoc == height -1 || myCell->wLoc == width - 1)
 	{
 		std::cout << "A soldier fled the battlefield and turns to banditry" << std::endl;
-		unit->setAlive(0); //For the purpose of the battlefield he died
+		unit->setAlive(false);
+		return; // unit is gone, skip movement
 	}
 	if (unit->getTeam() == 1)
 	{
@@ -481,69 +437,6 @@ std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeam(int team)
 		return teamRED;
 	throw std::runtime_error("getTeam request is invalid");
 }
-
-
-// void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEnd)
-// {
-
-
-// 	assert(wEnd >= wStart && "wEnd must be greater than wStart");
-//     assert(hEnd >= hStart && "hEend must be greater than or equal to hStart");
-	
-// 	int safeguard = 0;
-// 	for (auto& unit : team)
-// 	{
-// 		if (unit->getPlaced() == true)
-// 			continue;
-
-// 		size_t HIter = hStart;
-// 		if (safeguard == 0)
-// 			HIter = getRandomNumber(hStart, hEnd);
-// 		size_t WIter = wStart;
-// 		if (safeguard == 0)
-// 			WIter = getRandomNumber(wStart, wEnd);
-// 	   while(_battlefield[HIter][WIter].getUnit() != nullptr && HIter < hEnd)
-// 	   {
-// 			while (_battlefield[HIter][WIter].getUnit() != nullptr && WIter < wEnd)
-// 			{
-// 				WIter++;
-// 			}
-// 			WIter = wStart;
-// 			HIter++;
-			
-// 		}
-// 		if(_battlefield[HIter][WIter].getUnit() == nullptr)
-// 		   {
-// 			_battlefield[HIter][WIter].setUnit(unit.get());
-// 			unit->setCell(&_battlefield[HIter][WIter]);
-// 			unit->setPlaced(true);
-// 			std::cout << "Created unit" << std::endl;    
-// 			safeguard = 0;
-// 		}
-// 		else if(safeguard == 20)
-// 		{
-			
-// 			std::cout << "Map is full" << std::endl;
-// 			exit(1);
-// 		}
-// 		else 
-// 		{
-// 			HIter = hStart;
-// 			WIter = wStart;
-// 			safeguard++;
-// 		}
-// 		if (HIter == hEnd )
-// 		{
-// 			HIter = hStart;
-// 			WIter = wStart;
-// 		}
-// 	}
-// 	for (const auto& unit : team) {
-//     assert(unit->getCell() && "Unit was not placed correctly");
-// }
-
-// }
-
 
 
 

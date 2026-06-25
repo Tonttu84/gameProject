@@ -45,79 +45,41 @@ bool Necromancer::placeZombie(Cell *targetCell)
 }
 
 
-void Necromancer:: raiseDead()
+void Necromancer::raiseDead()
 {
-    Battlefield &myBattle = Utility::getBattlefield();
-    
     if (getCast() > 0)
     {
         setCast(getCast() - 1);
         return;
-    }    
+    }
 
-    if (mana <= 0 || broken || alive == false || getCell() == nullptr)
+    if (mana <= 0 || broken || !alive || !getCell())
         return;
+
+    Battlefield &myBattle = Utility::getBattlefield();
     int wLoc = getCell()->wLoc;
     int hLoc = getCell()->hLoc;
-    
     mana--;
-    size_t summons = 3;
-    if (myBattle.getCorpses() < 3)
+
+    size_t summons = (myBattle.getCorpses() >= 3) ? 3 : 1;
+    if (myBattle.getCorpses() >= 3)
+        myBattle.setCorpses(myBattle.getCorpses() - 3);
+
+    // Spiral outward from necromancer: front row first, then sides, then behind
+    const int offsets[][2] = {
+        {1, 1}, {1, 0}, {1, -1},
+        {0, 1}, {0, -1},
+        {-1, 1}, {-1, 0}, {-1, -1}
+    };
+    for (auto &off : offsets)
     {
-        summons = 1; //just summons a single skelleton but Ill use a zombie as a placeholder
-    }
-    else 
-        myBattle.setCorpses(myBattle.getCorpses()- 3);
-    if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc + 1, wLoc + 1);
-        if (placeZombie(targetCell) == true)
-            summons--;
-    }
-    if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc + 1, wLoc);
-        if (placeZombie(targetCell) == true)
-            summons--;
-    }
-     if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc + 1, wLoc - 1);
-        if (placeZombie(targetCell) == true)
-            summons--;
-    }
-    if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc, wLoc + 1);
-        if (placeZombie(targetCell) == true)
-            summons--;
-    }
-    if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc, wLoc -1);
-        if (placeZombie(targetCell) == true)
-            summons--;
-    }
-    if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc -1, wLoc +1);
-        if (placeZombie(targetCell) == true)
-            summons--;
-    }
-    if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc -1, wLoc);
-        if (placeZombie(targetCell) == true)
-            summons--;
-    }
-    if (summons)
-    {
-        Cell *targetCell = myBattle.safeGetCell(hLoc -1, wLoc -1);
-        if (placeZombie(targetCell) == true)
+        if (!summons)
+            break;
+        Cell *targetCell = myBattle.safeGetCell(hLoc + off[0], wLoc + off[1]);
+        if (placeZombie(targetCell))
             summons--;
     }
     setCast(6);
-
 }
 
 void Necromancer::special()

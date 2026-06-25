@@ -16,19 +16,13 @@ Priest::Priest() noexcept {
 static bool isWounded(const AUnit &unit, int myTeam)
 {
     (void) myTeam;
-    if (unit.getHp() < unit.getmaxHP())
-        return 1;
-    return 0;
-
+    return unit.getHp() < unit.getmaxHP();
 }
 
 static bool isBroken(const AUnit &unit, int myTeam)
 {
     (void) myTeam;
-    if (unit.getBroken())
-        return 1;
-    return 0;
-    
+    return unit.getBroken();
 }
 
 
@@ -51,20 +45,16 @@ void Priest::castBless(void)
         return;
     mana--;
 
-    if (target->getBroken() == true)
-    {   std::cout << "The divine healing helps a soldier find his courage" << std::endl;
-        target->setBroken(false);
-        target->heal(1 + Utility::throwDice());
-        target->recover();
-        setCast(2);
-    } 
-    else 
+    if (target->getBroken())
     {
-        std::cout << "The divine healing helps a soldier" << std::endl;
-        target->heal(1 + Utility::throwDice());
-        target->recover();
-        setCast(2);
+        std::cout << "The divine healing helps a soldier find his courage" << std::endl;
+        target->setBroken(false);
     }
+    else
+        std::cout << "The divine healing helps a soldier" << std::endl;
+    target->heal(1 + Utility::throwDice());
+    target->recover();
+    setCast(2);
     
 }
 

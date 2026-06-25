@@ -104,7 +104,7 @@ protected:
     int fatigueCost = 4;
     
     int resistance = 10;
-    int value = 10; //relative value that mages etc consider when trying to hit opponents, zombies etc chaff is not a priority target
+    int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff
     size_t size = 1;
     char printSymbol = '?';
 

@@ -13,7 +13,9 @@
 # Compiler and flags
 CC      = c++
 CFLAGS  = -std=c++17 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
-          -fsanitize=address -fsanitize=undefined -fsanitize=leak
+          -Wshadow -Wnull-dereference -Wformat=2 -fstack-protector-strong \
+          -fsanitize=address -fsanitize=undefined -fsanitize=leak \
+          -fsanitize=float-divide-by-zero
 
 # Directories
 SRC_DIR = SRCS

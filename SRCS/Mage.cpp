@@ -29,27 +29,21 @@ Mage::Mage() noexcept {
 
 static int calcCellValue(const Cell &targetCell, int myTeam)
 {
-    
-    if (targetCell.getUnit() == nullptr || targetCell.getUnit()->getAlive() == false)
+    if (!targetCell.getUnit() || !targetCell.getUnit()->getAlive())
         return 0;
 
     AUnit &targetUnit = *targetCell.getUnit();
-    int retval = 0;
+    int retval;
     if (FIREBALL_CENTRE + 2 > targetUnit.getArmour())
     {
-        if (FIREBALL_CENTRE + 2 - targetUnit.getArmour() > targetUnit.getHp())
-        {
-            retval = (targetUnit.getHp() + 2) * targetUnit.getValue();
-        }
-        retval = (FIREBALL_CENTRE + 2 - targetUnit.getArmour()) * targetUnit.getValue();
+        // cap effective damage at hp+2 to avoid overvaluing overkill shots
+        int pen = FIREBALL_CENTRE + 2 - targetUnit.getArmour();
+        retval = (pen > targetUnit.getHp() ? targetUnit.getHp() + 2 : pen) * targetUnit.getValue();
     }
-    else 
+    else
         retval = targetUnit.getValue();
 
-    if (targetUnit.getTeam() == myTeam)
-        return retval * -1;
-    return retval; 
-        
+    return targetUnit.getTeam() == myTeam ? retval * -1 : retval;
 }
 
 static int calcFireballValue(const AUnit& target, int myTeam)
@@ -78,61 +72,33 @@ static int calcFireballValue(const AUnit& target, int myTeam)
 
 
 
-Cell *Mage::findMageTarget(Cell &source)
+Cell *Mage::findMageTarget()
 {
-    (void) source;
-    Cell *target = nullptr;
-    
-    target = Utility::FindPriorityTarget(Utility::getBattlefield().getTeam(3 - getTeam()), calcFireballValue, getTeam());
+    return Utility::FindPriorityTarget(
+        Utility::getBattlefield().getTeam(3 - getTeam()),
+        calcFireballValue, getTeam());
+}
 
-    return target;
+static void blastCell(Cell *cell, int damage)
+{
+    if (!cell)
+        return;
+    cell->fire = true;
+    if (cell->getUnit())
+        cell->getUnit()->takeDamage(damage + Utility::throwDice() - Utility::throwDice());
 }
 
 static void fireball(Cell &targetCell)
 {
-    Battlefield &myBattlefield = Utility::getBattlefield();
-    int wLoc = targetCell.wLoc;
-    int hLoc = targetCell.hLoc;
+    Battlefield &field = Utility::getBattlefield();
+    int h = targetCell.hLoc;
+    int w = targetCell.wLoc;
 
-    targetCell.fire = true;
-    if (targetCell.getUnit())
-    {
-        targetCell.getUnit()->takeDamage(FIREBALL_CENTRE + Utility::throwDice() - Utility::throwDice());
-        
-    }
-
-    {
-        Cell *target = myBattlefield.safeGetCell(hLoc -1, wLoc);
-        if (target)
-            target->fire = true;
-        if (target && target->getUnit())
-            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
-    }
-
-    {
-         Cell *target = myBattlefield.safeGetCell(hLoc +1, wLoc);
-        if (target)
-            target->fire = true;
-        if (target && target->getUnit())
-            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
-    }
-
-    {
-        Cell *target = myBattlefield.safeGetCell(hLoc, wLoc -1);
-        if (target)
-            target->fire = true;
-        if (target && target->getUnit())
-            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
-    }
-
-    {
-        Cell *target = myBattlefield.safeGetCell(hLoc, wLoc +1);
-        if (target)
-            target->fire = true;
-        if (target && target->getUnit())
-            target->getUnit()->takeDamage(FIREBALL_BLAST + Utility::throwDice() - Utility::throwDice());
-    }
-    
+    blastCell(&targetCell,                        FIREBALL_CENTRE);
+    blastCell(field.safeGetCell(h - 1, w),        FIREBALL_BLAST);
+    blastCell(field.safeGetCell(h + 1, w),        FIREBALL_BLAST);
+    blastCell(field.safeGetCell(h,     w - 1),    FIREBALL_BLAST);
+    blastCell(field.safeGetCell(h,     w + 1),    FIREBALL_BLAST);
 }
 
 void Mage::castFireball()
@@ -147,7 +113,7 @@ void Mage::castFireball()
         return;
     }    
     
-    Cell *targetCell = findMageTarget(*getCell());
+    Cell *targetCell = findMageTarget();
     
     if (!targetCell)
         return;

@@ -27,5 +27,4 @@ Soldier::Soldier(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Swor
 
 void Soldier::special()
 {
-    return;
 }

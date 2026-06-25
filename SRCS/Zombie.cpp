@@ -24,7 +24,7 @@ Zombie::Zombie(int setTeam): AUnit::AUnit(setTeam)
     defence = 6;
     maxHP = 20;
     hitpoints = 20;
-    value = 5;
+    unitValue = 5;
     strength = 12;
     addWeapon(MeleeWeapons::Claws);
     fatigueCost = 0; //Undead dont need rest
