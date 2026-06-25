@@ -6,7 +6,8 @@
 Priest::Priest(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::MaceAndShield)
 {
     setSpellcaster(true);
-    printSymbol = 'P';
+    printSymbol    = 'P';
+    preferredRange = 3;
 } 
 
 Priest::Priest() noexcept {
