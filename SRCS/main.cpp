@@ -33,6 +33,11 @@ void clearBattlefieldArea(int startRow, int height) {
 }
 
 
+constexpr unsigned int WINDOW_WIDTH    = 2400; // SFML window width in pixels
+constexpr unsigned int WINDOW_HEIGHT   = 1000; // SFML window height in pixels
+constexpr int          PAUSED_SLEEP_MS = 50;   // poll interval while paused (keeps window responsive)
+constexpr int          TICK_SLEEP_MS   = 200;  // delay between simulation ticks — lower = faster battle
+
 int main(void)
 {
     Utility::load();
@@ -43,7 +48,7 @@ int main(void)
     Battlefield& field = Utility::getBattlefield();
     field.hexGrid.setFont(&Utility::font);
 
-    sf::RenderWindow myWindow(sf::VideoMode(2400, 1000), "Battlefield");
+    sf::RenderWindow myWindow(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "Battlefield");
     field.window = &myWindow;
 
     setupSampleBattle(field);
@@ -72,7 +77,7 @@ int main(void)
         if (paused)
         {
             field.print(); // keep window responsive while paused
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::this_thread::sleep_for(std::chrono::milliseconds(PAUSED_SLEEP_MS));
             continue;
         }
 
@@ -84,7 +89,7 @@ int main(void)
         std::cout << "Turn number: " << counter << "\n";
         field.print();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(TICK_SLEEP_MS));
     }
 
     BattleResult result = field.extractResult();

@@ -108,8 +108,8 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
     Hex* Utility::Deviate(const Hex& source, int targetQ, int targetR, int accuracy)
     {
         int dist = HexGrid::distance(source.coord, {targetQ, targetR});
-        int deviation = (accuracy > 0) ? dist / accuracy : 40;
-        if (deviation > 40) deviation = 40;
+        int deviation = (accuracy > 0) ? dist / accuracy : MAX_DEVIATION;
+        if (deviation > MAX_DEVIATION) deviation = MAX_DEVIATION;
         while (deviation) {
             targetQ += getRandom(-1, 1);
             targetR += getRandom(-1, 1);

@@ -11,8 +11,26 @@ static constexpr float PI = 3.14159265358979323846f;
 static constexpr int DQ[6] = { 1,  1,  0, -1, -1,  0};
 static constexpr int DR[6] = {-1,  0,  1,  1,  0, -1};
 
+// Rendering layout — adjust these to reposition or rescale the entire grid.
+// HEX_SIZE controls the radius of each hex in pixels; origin is the top-left pixel offset.
+// Scale constants control text size relative to hex size (fraction of HEX_SIZE).
+static constexpr float        HEX_ORIGIN_X          = 30.f;
+static constexpr float        HEX_ORIGIN_Y          = 30.f;
+static constexpr float        HEX_SIZE_DEFAULT      = 35.f;
+static constexpr unsigned int HEX_LABEL_FONT_SIZE   = 10u;   // coord label size (pixels), shown on empty hexes
+static constexpr float        HEX_SINGLE_TYPE_SCALE = 0.65f; // unit symbol font = this * HEX_SIZE, single type
+static constexpr float        HEX_MULTI_TYPE_SCALE  = 0.45f; // reduced size when multiple unit types share a hex
+
+// Hex fill/outline colors — RGBA. Alpha 200/220 keeps the grid slightly transparent.
+// Tweak RED/BLUE tints here to change team territory appearance.
+static const sf::Color HEX_FILL_EMPTY   (30,  30,  40,  200); // empty hex, dark neutral
+static const sf::Color HEX_OUTLINE_COLOR(160, 160, 200);       // pale blue-grey grid lines
+static const sf::Color HEX_FILL_RED     (60,  15,  15,  220); // dark red tint for red-team hexes
+static const sf::Color HEX_FILL_BLUE    (15,  15,  60,  220); // dark blue tint for blue-team hexes
+static const sf::Color HEX_COORD_COLOR  (100, 100, 130);       // muted label for q,r coords
+
 HexGrid::HexGrid()
-    : _font(nullptr), _origin(30.f, 30.f), _hexSize(35.f)
+    : _font(nullptr), _origin(HEX_ORIGIN_X, HEX_ORIGIN_Y), _hexSize(HEX_SIZE_DEFAULT)
 {}
 
 void HexGrid::setFont(sf::Font* font) {
@@ -45,16 +63,16 @@ void HexGrid::buildShape(Hex& hex) {
             center.y + _hexSize * std::sin(angle)
         ));
     }
-    hex.shape.setFillColor(sf::Color(30, 30, 40, 200));
-    hex.shape.setOutlineColor(sf::Color(160, 160, 200));
+    hex.shape.setFillColor(HEX_FILL_EMPTY);
+    hex.shape.setOutlineColor(HEX_OUTLINE_COLOR);
     hex.shape.setOutlineThickness(1.5f);
 }
 
 void HexGrid::buildLabel(Hex& hex) {
     if (!_font) return;
     hex.label.setFont(*_font);
-    hex.label.setCharacterSize(10);
-    hex.label.setFillColor(sf::Color(100, 100, 130));
+    hex.label.setCharacterSize(HEX_LABEL_FONT_SIZE);
+    hex.label.setFillColor(HEX_COORD_COLOR);
     hex.label.setString(std::to_string(hex.coord.q) + "," + std::to_string(hex.coord.r));
     sf::FloatRect b = hex.label.getLocalBounds();
     hex.label.setOrigin(b.left + b.width * 0.5f, b.top + b.height * 0.5f);
@@ -143,11 +161,9 @@ void HexGrid::render(sf::RenderWindow& window) {
         }
 
         if (first) {
-            hex.shape.setFillColor(first->getTeam() == 1
-                ? sf::Color(60, 15, 15, 220)
-                : sf::Color(15, 15, 60, 220));
+            hex.shape.setFillColor(first->getTeam() == 1 ? HEX_FILL_RED : HEX_FILL_BLUE);
         } else {
-            hex.shape.setFillColor(sf::Color(30, 30, 40, 200));
+            hex.shape.setFillColor(HEX_FILL_EMPTY);
         }
         window.draw(hex.shape);
 
@@ -166,7 +182,7 @@ void HexGrid::render(sf::RenderWindow& window) {
             }
 
             // Slightly smaller font when multiple types share the hex.
-            float scale = (groups.size() > 1) ? 0.45f : 0.65f;
+            float scale = (groups.size() > 1) ? HEX_MULTI_TYPE_SCALE : HEX_SINGLE_TYPE_SCALE;
             sf::Text sym;
             sym.setFont(*_font);
             sym.setCharacterSize(static_cast<unsigned int>(_hexSize * scale));

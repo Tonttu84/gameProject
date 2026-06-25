@@ -145,7 +145,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	{
 		if (!canFightThisTurn || !getHex())
 			return;
-		if (fatigue > 100)
+		if (fatigue > FATIGUE_MAX)
 		{
 			recover();
 			return;
@@ -301,13 +301,13 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	void AUnit::recover()
 	{
 		fatigue = (fatigue <= fatigueRecovery) ? 0 : fatigue - fatigueRecovery;
-		fatiguelvl = fatigue / 20;
+		fatiguelvl = fatigue / FATIGUE_LEVEL_DIV;
 	}
 
 	void AUnit::increaseFatigue()
 	{
 		fatigue = fatigue + fatigueCost;
-		fatiguelvl = fatigue / 20;
+		fatiguelvl = fatigue / FATIGUE_LEVEL_DIV;
 	}
 
 	int AUnit::getFatigueCost() const { return fatigueCost; }
@@ -316,7 +316,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	{
 		fatigue = fatigue + amount;
 		if (fatigue < 0) fatigue = 0;
-		fatiguelvl = fatigue / 20;
+		fatiguelvl = fatigue / FATIGUE_LEVEL_DIV;
 	}
 
 	bool AUnit::getUndead() const

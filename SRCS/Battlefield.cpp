@@ -141,7 +141,7 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     bool engaged = unit.getEngaged(*this);
     // Expand frontage if the hex has 40+ size-points. Stops naturally when
     // sizeUsed drops below 400, keeping ~39 units on the line.
-    bool crowded = unit.getHex()->sizeUsed >= 400;
+    bool crowded = unit.getHex()->sizeUsed >= CROWDED_THRESHOLD;
 
     for (int i = 0; i < 6; ++i) {
         HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
@@ -159,7 +159,7 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
 void Battlefield::flee(std::unique_ptr<AUnit>& unit)
 {
     if (!unit->getAlive()) return;
-    if (unit->getFatigue() > 100) { unit->recover(); return; }
+    if (unit->getFatigue() > FATIGUE_MAX) { unit->recover(); return; }
 
     Hex* myHex = unit->getHex();
     if (!myHex) return;
@@ -421,11 +421,11 @@ void Battlefield::triggerSpecialPhase()
     RangedCombat::resetCache();
 
     for (auto& unit : teamRED)
-        if (unit && unit->getFatigue() < 100 && unit->getAlive())
+        if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
             unit->special();
 
     for (auto& unit : teamBLUE)
-        if (unit && unit->getFatigue() < 100 && unit->getAlive())
+        if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
             unit->special();
 }
 

@@ -21,8 +21,10 @@ constexpr int LIGHTARMOUR = 2;
 constexpr int HEAVYARMOUR = 5;
 
 // Fatigue
-constexpr int FATIGUERECOVERY = 4;   // default per-unit passive recovery every tick
-constexpr int SWAPFATIGUE     = 60;  // engaged units retreat to rest above this
+constexpr int FATIGUERECOVERY     = 4;   // default per-unit passive recovery every tick
+constexpr int SWAPFATIGUE         = 60;  // engaged units retreat to rest above this
+constexpr int FATIGUE_MAX         = 100; // exhausted above this — must rest before acting
+constexpr int FATIGUE_LEVEL_DIV   = 20;  // fatigue / this = fatigue tier (0-5)
 
 // Combat
 constexpr int SHIELDREDUCTION = 5;
@@ -41,6 +43,12 @@ constexpr int SPELLRANGE         = 10; // max hex distance for spells
 // Battlefield dimensions
 constexpr int BATTLEFIELD_WIDTH  = 30;  // hex columns (q)
 constexpr int BATTLEFIELD_HEIGHT = 16;  // hex rows (r)
+
+// Movement / formation
+constexpr int CROWDED_THRESHOLD = 400; // sizeUsed at which a hex is "crowded" (~40 humans)
+
+// Projectile deviation
+constexpr int MAX_DEVIATION = 40; // maximum hexes a projectile can drift off-target
 
 class Battlefield;
 class HexGrid;
