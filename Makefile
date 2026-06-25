@@ -69,12 +69,10 @@ $(FONT_DIR)/$(FONT_FILE):
 	chmod 644 $@
 
 # ── SFML ──────────────────────────────────────────────────────────────────────
-$(SFML_DIR)/include/SFML/Config.hpp: $(SFML_TAR)
+$(SFML_DIR)/include/SFML/Config.hpp:
+	wget $(SFML_URL) -O $(SFML_TAR)
 	tar -xzf $(SFML_TAR)
 	rm $(SFML_TAR)
-
-$(SFML_TAR):
-	wget $(SFML_URL)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 $(TEST_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp

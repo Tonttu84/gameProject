@@ -21,6 +21,8 @@ class AUnit;
 struct Hex;
 
 struct HexSide {
+    static constexpr int FRONTAGE = 40;   // size-points that can fight across one face
+
     Hex*         hexA     = nullptr;
     Hex*         hexB     = nullptr;
     HexDirection dirFromA = HexDirection::NE;
@@ -59,6 +61,7 @@ public:
 
     static int distance(HexCoord a, HexCoord b);
     sf::Vector2f pixelCenter(HexCoord c) const;
+    std::vector<HexSide>& getSides();
 
 private:
     sf::Font*    _font;

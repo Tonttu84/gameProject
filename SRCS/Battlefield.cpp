@@ -1,4 +1,5 @@
 #include "../HDRS/Battlefield.hpp"
+#include <algorithm>
 
 Battlefield::Battlefield()
 {
@@ -198,10 +199,53 @@ void Battlefield::loadArmies(Army red, Army blue)
     teamBLUE = std::move(blue);
 }
 
+static void assignFighters(const std::vector<AUnit*>& units, HexSide* side) {
+    std::vector<AUnit*> normal, brokenOnes;
+    for (AUnit* u : units) {
+        if (!u || !u->getAlive() || u->getCanFight()) continue;
+        if (u->getBroken()) brokenOnes.push_back(u);
+        else                normal.push_back(u);
+    }
+
+    auto bySize = [](const AUnit* a, const AUnit* b) {
+        return a->getSize() > b->getSize();
+    };
+    std::sort(normal.begin(),    normal.end(),    bySize);
+    std::sort(brokenOnes.begin(), brokenOnes.end(), bySize);
+    normal.insert(normal.end(), brokenOnes.begin(), brokenOnes.end());
+
+    int total = 0;
+    for (AUnit* u : normal) {
+        if (total >= HexSide::FRONTAGE) break;
+        u->setCanFight(true);
+        u->setEngagedSide(side);
+        total += static_cast<int>(u->getSize());
+    }
+}
+
+void Battlefield::resolveEngagements() {
+    for (auto& u : teamRED)  if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
+    for (auto& u : teamBLUE) if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
+
+    for (HexSide& side : hexGrid.getSides()) {
+        if (!side.hexA || !side.hexB) continue;
+
+        // Only engage sides where both hexes have living units of opposing teams
+        int teamA = 0, teamB = 0;
+        for (AUnit* u : side.hexA->units) if (u && u->getAlive()) { teamA = u->getTeam(); break; }
+        for (AUnit* u : side.hexB->units) if (u && u->getAlive()) { teamB = u->getTeam(); break; }
+        if (teamA == 0 || teamB == 0 || teamA == teamB) continue;
+
+        assignFighters(side.hexA->units, &side);
+        assignFighters(side.hexB->units, &side);
+    }
+}
+
 bool Battlefield::tick()
 {
     triggerSpecialPhase();
     moveUnits();
+    resolveEngagements();
     makeBattle();
     cleanup();
     return countTeam(REDTEAM) > 0 && countTeam(BLUETEAM) > 0;

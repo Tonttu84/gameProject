@@ -83,6 +83,11 @@ public:
     size_t getSpentMove();
     char getPrintSymbol();
 
+    void     setCanFight(bool v)    { canFightThisTurn = v; }
+    bool     getCanFight()   const  { return canFightThisTurn; }
+    void     setEngagedSide(HexSide* s) { engagedSide = s; }
+    HexSide* getEngagedSide() const { return engagedSide; }
+
 
 protected:
     int team = 0;
@@ -110,6 +115,8 @@ protected:
 
     bool alive = true;
     bool broken = false;
+    bool canFightThisTurn = false;
+    HexSide* engagedSide = nullptr;
     bool spellcaster = false;
     bool placed = false;
     bool undead = false;

@@ -51,15 +51,15 @@ int main(void)
     sf::RenderWindow myWindow(sf::VideoMode(2000, 720), "Battlefield");
     field.window = &myWindow;
 
-    // Red army — Soldiers only for now
+    // Red army — dense right flank so hexes stack and frontage limits kick in
     Army red;
-    appendArmy<Soldier>(red, 200, REDTEAM);
-    randomPlaceArmy(red, field, {field.width * 2/3, field.width - 1, 0, field.height - 1});
+    appendArmy<Soldier>(red, 800, REDTEAM);
+    randomPlaceArmy(red, field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
 
-    // Blue army — Soldiers only for now
+    // Blue army — dense left flank
     Army blue;
-    appendArmy<Soldier>(blue, 250, BLUETEAM);
-    randomPlaceArmy(blue, field, {0, field.width / 3, 0, field.height - 1});
+    appendArmy<Soldier>(blue, 800, BLUETEAM);
+    randomPlaceArmy(blue, field, {0, field.width / 4, 0, field.height - 1});
 
     field.loadArmies(std::move(red), std::move(blue));
 

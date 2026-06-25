@@ -52,6 +52,7 @@ class Battlefield
         void flee(std::unique_ptr<AUnit> &unit);
         void cleanup();
         void triggerSpecialPhase();
+        void resolveEngagements();
 
         size_t getCorpses();
         void   setCorpses(size_t setCorpses);

@@ -179,6 +179,10 @@ Hex* HexGrid::safeGetHex(int q, int r) {
     return getHex({q, r});
 }
 
+std::vector<HexSide>& HexGrid::getSides() {
+    return _sides;
+}
+
 HexSide* HexGrid::getSide(HexCoord c, HexDirection dir) {
     Hex* h = getHex(c);
     return h ? h->sides[static_cast<size_t>(dir)] : nullptr;

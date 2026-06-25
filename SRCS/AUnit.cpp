@@ -130,21 +130,20 @@ void AUnit::attack(AUnit &target, const Weapon &attackWeapon)
 
 AUnit *AUnit::find_target(Battlefield &myBattlefield)
 {
-	if (!currentHex) return nullptr;
-	auto nbCoords = myBattlefield.hexGrid.neighbors(currentHex->coord);
-	for (const HexCoord& nc : nbCoords) {
-		Hex* nh = myBattlefield.hexGrid.getHex(nc);
-		if (!nh) continue;
-		for (AUnit* u : nh->units)
-			if (u && u->getTeam() != team && u->getAlive())
-				return u;
-	}
+	(void)myBattlefield;
+	if (!currentHex || !engagedSide) return nullptr;
+	Hex* enemyHex = (engagedSide->hexA == currentHex)
+	              ? engagedSide->hexB : engagedSide->hexA;
+	if (!enemyHex) return nullptr;
+	for (AUnit* u : enemyHex->units)
+		if (u && u->getTeam() != team && u->getAlive())
+			return u;
 	return nullptr;
 }
 
 	void AUnit::battle(Battlefield &myBattlefield)
 	{
-		if (broken || !getHex())
+		if (!canFightThisTurn || !getHex())
 			return;
 		if (fatigue > 100)
 		{
