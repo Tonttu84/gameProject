@@ -12,12 +12,23 @@
 
 #pragma once
 
+// Teams
+constexpr int REDTEAM  = 1;
+constexpr int BLUETEAM = 2;
+
+// Armour values
+constexpr int LIGHTARMOUR = 2;
+constexpr int HEAVYARMOUR = 5;
+
+// Fatigue
 constexpr int FATIGUERECOVERY = 4;   // default per-unit passive recovery every tick
 constexpr int SWAPFATIGUE     = 60;  // engaged units retreat to rest above this
 
+// Combat
 constexpr int SHIELDREDUCTION = 5;
 
-constexpr int BATTLEFIELD_WIDTH = 30;   // hex columns (q)
+// Battlefield dimensions
+constexpr int BATTLEFIELD_WIDTH  = 30;  // hex columns (q)
 constexpr int BATTLEFIELD_HEIGHT = 16;  // hex rows (r)
 
 class Battlefield;
