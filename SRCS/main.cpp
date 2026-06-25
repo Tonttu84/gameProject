@@ -13,7 +13,7 @@
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/BattleSetup.hpp"
 #include "../HDRS/Soldier.hpp"
-// #include "../HDRS/Archer.hpp"
+#include "../HDRS/Archer.hpp"
 // #include "../HDRS/Priest.hpp"
 // #include "../HDRS/Mage.hpp"
 // #include "../HDRS/Necromancer.hpp"
@@ -51,14 +51,14 @@ int main(void)
     sf::RenderWindow myWindow(sf::VideoMode(2400, 1000), "Battlefield");
     field.window = &myWindow;
 
-    // Red army — dense right flank so hexes stack and frontage limits kick in
     Army red;
-    appendArmy<Soldier>(red, 800, REDTEAM);
+    appendArmy<Soldier>(red, 600, REDTEAM);
+    appendArmy<Archer> (red, 200, REDTEAM);
     randomPlaceArmy(red, field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
 
-    // Blue army — dense left flank
     Army blue;
-    appendArmy<Soldier>(blue, 800, BLUETEAM);
+    appendArmy<Soldier>(blue, 600, BLUETEAM);
+    appendArmy<Archer> (blue, 200, BLUETEAM);
     randomPlaceArmy(blue, field, {0, field.width / 4, 0, field.height - 1});
 
     field.loadArmies(std::move(red), std::move(blue));

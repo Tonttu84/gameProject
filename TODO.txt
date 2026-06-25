@@ -15,8 +15,18 @@ marching). Currently all unit fatigue costs are flat — armor type should be a 
 on fatigueCost so plate > chain > leather > none. Soldier already has +1 heavy armor penalty as a
 start; generalize this across all unit/armor types when adding more variety.
 
-Archer accuracy values need retuning — hex distance is much larger than old cell distance
-(BOWMAXRANGE=50 and accuracy thresholds were calibrated for cells, not hexes)
+Historical archer mechanics (not yet implemented):
+  - Morale suppression from volleys: arrow hits should inflict a temporary morale penalty
+    on all units in the target hex, not just kill points. Historically the psychological
+    effect of a volley was often larger than the casualties.
+  - Forced advance under fire: units taking arrow fire should have a chance to fail a
+    discipline check and advance early, breaking formation (Agincourt-style — French knights
+    charged through mud because they couldn't endure the arrow storm).
+  - Skirmisher behaviour: archers should automatically try to maintain a minimum distance
+    from approaching enemies and retreat when melee units close in, baiting charges then
+    falling back.
+  - Volley bonus for massed fire: multiple archers targeting the same hex should multiply
+    the morale suppression effect. A lone archer is irritating; a hundred is terrifying.
 
 Mage fireball (disabled pending rewrite): direct hit = 10 damage to unit in target hex;
 splash hits neighboring hexes for partial damage only if sizeUsed in that hex >= 40;

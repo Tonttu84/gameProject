@@ -17,10 +17,9 @@
 #include "Human.hpp"
 #include "Defines.hpp"
 #include "Battlefield.hpp"
+#include <unordered_map>
 
-#define BOWDAMAGE 5
-#define BOWMAXRANGE 50
-#define BOWAMMO 30
+void resetArcheryCache();
 
 class Archer : public Human
 {

@@ -78,6 +78,51 @@ AUnit* Archer::findArcherTarget()
 }
 
 
+// Slot table: built once per hex at the start of each archery phase and kept
+// for the whole phase. Units that die during the phase stay in the table —
+// arrows don't have infinite speed, so hitting a freshly-dead unit is fine.
+struct SlotCache {
+    std::vector<AUnit*> units; // units present when the phase began
+};
+static std::unordered_map<const Hex*, SlotCache> gSlotCache;
+
+// Call once at the start of every archery phase to clear the previous phase's data.
+void resetArcheryCache() { gSlotCache.clear(); }
+
+// Return (or build) the slot list for a hex. Built at most once per phase.
+static const SlotCache& getSlotCache(const Hex* hex)
+{
+    auto it = gSlotCache.find(hex);
+    if (it != gSlotCache.end()) return it->second;
+
+    SlotCache& sc = gSlotCache[hex];
+    for (AUnit* u : hex->units)
+        if (u) sc.units.push_back(u);
+    return sc;
+}
+
+// Pick a random unit in a hex weighted by size.
+// Treat the hex as a 640-slot pool: roll 1–640 and find which unit's
+// cumulative size range covers the roll. A hex with 3 size-10 humans
+// occupies slots 1-10, 11-20, 21-30; the remaining 610 slots are empty,
+// so most rolls miss — modelling arrows flying past a thin line.
+// Returns nullptr if the hex was empty at phase start, or the shot missed
+// everyone (empty slots). Returns a dead unit if they died earlier this phase
+// — the arrow still hits, it just does nothing.
+static AUnit* pickHexTarget(const Hex* hex)
+{
+    const SlotCache& sc = getSlotCache(hex);
+    if (sc.units.empty()) return nullptr;
+
+    int roll = Utility::getRandom(1, Hex::CAPACITY);
+    int cumulative = 0;
+    for (AUnit* u : sc.units) {
+        cumulative += static_cast<int>(u->getSize());
+        if (roll <= cumulative) return u;
+    }
+    return nullptr; // arrow hit empty ground
+}
+
 // Returns the spentMove cost (3) if a shot was fired, 0 otherwise.
 int Archer::fireBow()
 {
@@ -88,17 +133,29 @@ int Archer::fireBow()
     if (!aimUnit || !aimUnit->getHex())
         return 0;
 
-    Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q, aimUnit->getHex()->coord.r, accuracy);
+    int dist = Utility::calcDistance(getHex(), aimUnit->getHex());
+    // Deviate may land the shot in an adjacent hex based on range and accuracy.
+    Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q,
+                                      aimUnit->getHex()->coord.r, accuracy);
     ammunition--;
 
-    if (!targetHex)
-        return 3;
+    if (!targetHex) return 3;
 
     AUnit* targetUnit = nullptr;
-    for (AUnit* u : targetHex->units)
-        if (u && u->getAlive()) { targetUnit = u; break; }
-    if (!targetUnit)
-        return 3;
+
+    if (dist <= BOWACCURATERANGE && Utility::throwDice() >= 4) {
+        // Close enough for an aimed shot. On a decent roll (4+) the archer
+        // picks out the intended target directly; if that unit has moved out
+        // of the landed hex, fall back to a random hex hit instead.
+        targetUnit = (aimUnit->getAlive() && aimUnit->getHex() == targetHex)
+                   ? aimUnit : pickHexTarget(targetHex);
+    } else {
+        // Normal range: arrow lands in a hex and hits whoever is there.
+        // Use weighted random so larger units are harder to miss.
+        targetUnit = pickHexTarget(targetHex);
+    }
+
+    if (!targetUnit || !targetUnit->getAlive()) return 3; // missed or hit a corpse
 
     if (targetUnit->getShield() > 0 && Utility::throwDice() <= targetUnit->getShield())
     {
