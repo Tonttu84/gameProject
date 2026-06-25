@@ -304,6 +304,14 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return placed;
 	}
 
+	void AUnit::setBattleSummon(bool value)
+	{
+		battleSummon = value;
+	}
+	bool AUnit::getBattleSummon() const{
+		return battleSummon;
+	}
+
 	char  AUnit::getPrintSymbol(){
 		return printSymbol;
 	}

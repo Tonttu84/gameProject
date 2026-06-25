@@ -26,29 +26,27 @@
 #include <SFML/Graphics.hpp>
 
 
+using Army = std::vector<std::unique_ptr<AUnit>>;
+
+struct BattleResult
+{
+    int winner;
+    Army redSurvivors;
+    Army blueSurvivors;
+    size_t corpses;
+};
+
 class Battlefield
 {
     public:
 
         sf::RenderWindow *window;
 
-        template<typename UnitType>
-        void createTeam(size_t amount, int team)
-        {
-            for (size_t i = 0; i < amount; ++i)
-            {
-                if (team == 1)
-                    teamRED.push_back(std::make_unique<UnitType>(team));
-                else if (team == 2)
-                    teamBLUE.push_back(std::make_unique<UnitType>(team));
-            }
-        }
-        
         Battlefield();
         ~Battlefield() = default;
         Battlefield(Battlefield &cpy) = delete;
         Battlefield &operator=(Battlefield &target) = default;
-        
+
         void print(void);
         static int constexpr height = BATTLEFIELD_HEIGHT;
         static int constexpr  width = BATTLEFIELD_WIDTH;
@@ -56,8 +54,11 @@ class Battlefield
         void moveUnits(void);
         void makeBattle(void);
         void debugPrint(void);
-        
-        void placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEend);
+
+        void loadArmies(Army red, Army blue);
+        bool tick();
+        BattleResult extractResult();
+
         std::vector<std::unique_ptr<AUnit>> &getTeam(int team);
         Cell *findTarget(const AUnit &Searcher) const;
         void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);

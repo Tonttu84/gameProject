@@ -11,16 +11,6 @@
 /* ************************************************************************** */
 
 #include "../HDRS/Battlefield.hpp"
-#include <random>
-
-
-
-int getRandomNumber(int min = 0, int max = (Battlefield::height - 1)) {
-	static std::random_device rd;  // Non-deterministic seed
-	static std::mt19937 gen(rd()); // Mersenne Twister engine
-	std::uniform_int_distribution<> dist(min, max);
-	return dist(gen);
-}
 
 Battlefield::Battlefield()
 {
@@ -119,7 +109,7 @@ void Battlefield::makeBattle()
 	
 	while (red != teamRED.end() || blue != teamBLUE.end())
 	{
-		if (red != teamRED.end() && ((getRandomNumber(1, 2) == 1) || blue == teamBLUE.end()))
+		if (red != teamRED.end() && ((Utility::getRandom(1, 2) == 1) || blue == teamBLUE.end()))
 		{
 			(*red)->battle(*this);
 			red++;
@@ -558,62 +548,43 @@ std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeam(int team)
 
 
 
-void Battlefield::placeTeam(std::vector<std::unique_ptr<AUnit>>& team, size_t wStart, size_t wEnd, size_t hStart, size_t hEnd)
+
+
+
+void Battlefield::loadArmies(Army red, Army blue)
 {
-
-	assert(wEnd >= wStart && "wEnd must be greater than wStart");
-    assert(hEnd >= hStart && "hEend must be greater than or equal to hStart");
-	
-	for (auto& unit : team)
-	{
-		if (unit->getPlaced() == true)
-			continue;
-	size_t HIter = getRandomNumber(hStart, hEnd);
-	size_t WIter = getRandomNumber(wStart, wEnd);
-	bool placed = false;
-
-	// First pass: from random point to end
-	for (size_t h = HIter; h <= hEnd && !placed; ++h) {
-		for (size_t w = (h == HIter ? WIter : wStart); w <= wEnd && !placed; ++w) {
-			if (_battlefield[h][w].getUnit() == nullptr) {
-				_battlefield[h][w].setUnit(unit.get());
-				unit->setCell(&_battlefield[h][w]);
-				unit->setPlaced(true);
-				std::cout << "Created unit" << std::endl;
-				placed = true;
-			}
-		}
-	}
-
-	// Second pass: from start to random point
-	if (!placed) {
-		for (size_t h = hStart; h < HIter && !placed; ++h) {
-			for (size_t w = wStart; w <= wEnd && !placed; ++w) {
-				if (_battlefield[h][w].getUnit() == nullptr) {
-					_battlefield[h][w].setUnit(unit.get());
-					unit->setCell(&_battlefield[h][w]);
-					unit->setPlaced(true);
-					std::cout << "Created unit (second pass)" << std::endl;
-					placed = true;
-				}
-			}
-		}
-	}
-
-	// Final fallback
-	if (!placed) {
-		std::cerr << "Map is full or placement logic failed" << std::endl;
-		exit(1);
-	}
-
-	}
-	for (const auto& unit : team) {
-	assert(unit->getCell() && "Unit was not placed correctly");
-	}
-
+    teamRED = std::move(red);
+    teamBLUE = std::move(blue);
 }
 
+bool Battlefield::tick()
+{
+    triggerSpecialPhase();
+    moveUnits();
+    makeBattle();
+    cleanup();
+    return countTeam(REDTEAM) > 0 && countTeam(BLUETEAM) > 0;
+}
 
+BattleResult Battlefield::extractResult()
+{
+    BattleResult result;
+    result.corpses = corpses;
+    result.winner = (countTeam(REDTEAM) > 0) ? REDTEAM :
+                    (countTeam(BLUETEAM) > 0) ? BLUETEAM : 0;
+
+    for (auto& unit : teamRED)
+        if (unit && unit->getAlive() && !unit->getBattleSummon())
+            result.redSurvivors.push_back(std::move(unit));
+
+    for (auto& unit : teamBLUE)
+        if (unit && unit->getAlive() && !unit->getBattleSummon())
+            result.blueSurvivors.push_back(std::move(unit));
+
+    teamRED.clear();
+    teamBLUE.clear();
+    return result;
+}
 
 void Battlefield::triggerSpecialPhase()
 {

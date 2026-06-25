@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "../HDRS/Battlefield.hpp"
+#include "../HDRS/BattleSetup.hpp"
 #include "../HDRS/Human.hpp"
 #include "../HDRS/Priest.hpp"
 #include "../HDRS/Mage.hpp"
@@ -20,15 +21,10 @@
 
 #include <sys/ioctl.h>
 #include <unistd.h>
-
-#include <sys/ioctl.h>
-#include <unistd.h>
 #include <iostream>
 #include <thread>
 #include <chrono>
 #include <SFML/Graphics.hpp>
-
-
 
 
 int getTerminalHeight() {
@@ -38,86 +34,89 @@ int getTerminalHeight() {
 }
 
 void clearBattlefieldArea(int startRow, int height) {
-    for (int i = 0; i < height; ++i) {
-        std::cout << "\033[" << (startRow + i) << ";1H\033[2K"; // Move to line and clear it
-    }
+    for (int i = 0; i < height; ++i)
+        std::cout << "\033[" << (startRow + i) << ";1H\033[2K";
 }
 
 
 int main(void)
 {
-    Utility::load(); //initializes the font
+    Utility::load();
 
     int termHeight = getTerminalHeight();
-    int battlefieldHeight = Battlefield::height;
-    int battlefieldStartRow = termHeight - battlefieldHeight;
+    int battlefieldStartRow = termHeight - Battlefield::height;
 
-    Battlefield &myBattle = Utility::getBattlefield();
-    sf::RenderWindow myWindow(sf::VideoMode(BATTLEFIELD_WIDTH * Cell::cellSize, BATTLEFIELD_HEIGHT * Cell::cellSize), "Battlefield");
-    myBattle.window = &myWindow;
+    Battlefield& field = Utility::getBattlefield();
+    sf::RenderWindow myWindow(sf::VideoMode(Battlefield::width * Cell::cellSize, Battlefield::height * Cell::cellSize), "Battlefield");
+    field.window = &myWindow;
 
+    // Build red army
+    Army red;
+    appendArmy<Mage>(red, 4, REDTEAM);
+    appendArmy<Priest>(red, 2, REDTEAM);
+    appendArmy<Archer>(red, 50, REDTEAM);
+    randomPlaceArmy(red, field, {field.width * 5/6, field.width - 1, 0, field.height - 1});
+    appendArmy<Soldier>(red, 185, REDTEAM);
+    randomPlaceArmy(red, field, {field.width * 2/3, field.width - 1, 0, field.height - 1});
 
-    myBattle.createTeam<Mage>(4, REDTEAM);
-    myBattle.createTeam<Priest>(2, REDTEAM);
-    myBattle.createTeam<Archer>(50, REDTEAM);
-    myBattle.placeTeam(myBattle.getTeam(REDTEAM), myBattle.width * 5/6, myBattle.width -1, 0, myBattle.height - 1);
+    // Build blue army
+    Army blue;
+    appendArmy<Archer>(blue, 30, BLUETEAM);
+    appendArmy<Necromancer>(blue, 3, BLUETEAM);
+    randomPlaceArmy(blue, field, {0, field.width / 6, 0, field.height - 1});
+    appendArmy<Soldier>(blue, 250, BLUETEAM);
+    randomPlaceArmy(blue, field, {0, field.width / 3, 0, field.height - 1});
 
-
-    myBattle.createTeam<Archer>(30, BLUETEAM);
-
-    myBattle.createTeam<Necromancer>(3, BLUETEAM);
-     myBattle.placeTeam(myBattle.getTeam(BLUETEAM), 0, myBattle.width / 6, 0, myBattle.height - 1);
-
-
-    myBattle.createTeam<Soldier>(185, REDTEAM);
-    myBattle.createTeam<Soldier>(250, BLUETEAM); 
-    myBattle.placeTeam(myBattle.getTeam(REDTEAM), myBattle.width * 2/3, myBattle.width -1, 0, myBattle.height - 1);
-    myBattle.placeTeam(myBattle.getTeam(BLUETEAM), 0, myBattle.width /3, 0, myBattle.height -1);
-
+    field.loadArmies(std::move(red), std::move(blue));
 
     int counter = 0;
-
-    while (myBattle.countTeam(REDTEAM) && myBattle.countTeam(BLUETEAM))
+    bool ongoing = true;
+    while (ongoing)
     {
         sf::Event event;
-        while (myBattle.window->pollEvent(event)) {
-        if (event.type == sf::Event::Closed)
+        while (field.window->pollEvent(event))
         {
-            myBattle.window->close();
+            if (event.type == sf::Event::Closed)
+            {
+                field.window->close();
                 return 0;
+            }
         }
-    }
 
-        clearBattlefieldArea(battlefieldStartRow, battlefieldHeight);
-        std::cout << "\033[" << battlefieldStartRow << ";1H"; // Move cursor to battlefield start
+        clearBattlefieldArea(battlefieldStartRow, Battlefield::height);
+        std::cout << "\033[" << battlefieldStartRow << ";1H";
 
-        myBattle.triggerSpecialPhase();
-        myBattle.moveUnits();
-        myBattle.makeBattle();
-        myBattle.cleanup();
+        ongoing = field.tick();
         counter++;
         std::cout << "Turn number: " << counter << "\n";
-        myBattle.print();
+        field.print();
 
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
-    std::cout << "Battle ended. ";
+    BattleResult result = field.extractResult();
 
-    if (myBattle.countTeam(REDTEAM))
-        std::cout << "Red team won" << std::endl;
+    std::cout << "Battle ended after " << counter << " turns. ";
+    if (result.winner == REDTEAM)
+        std::cout << "Red team won\n";
+    else if (result.winner == BLUETEAM)
+        std::cout << "Blue team won\n";
     else
-        std::cout << "Blue team won" << std::endl;
+        std::cout << "Draw\n";
+
+    std::cout << "Red survivors: " << result.redSurvivors.size()
+              << "  Blue survivors: " << result.blueSurvivors.size()
+              << "  Corpses: " << result.corpses << "\n";
 
     sf::Event event;
-    while (myBattle.window->pollEvent(event)) {
+    while (field.window->pollEvent(event))
+    {
         if (event.type == sf::Event::Closed)
         {
-            myBattle.window->close();
-                return 0;
+            field.window->close();
+            return 0;
         }
     }
 
     return 0;
 }
-

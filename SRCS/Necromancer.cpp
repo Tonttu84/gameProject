@@ -34,8 +34,9 @@ bool Necromancer::placeZombie(Cell *targetCell)
         if (Utility::getBattlefield().getCorpses())
             Utility::getBattlefield().setCorpses(Utility::getBattlefield().getCorpses() - 1);
         std::unique_ptr<AUnit> Bob = std::make_unique<Zombie>(getTeam());
+        Bob->setBattleSummon(true);
         targetCell->setUnit(&(*Bob));
-        Bob ->setCell(targetCell);
+        Bob->setCell(targetCell);
         Utility::getBattlefield().getTeam(team).push_back(std::move(Bob));
 
         return true;

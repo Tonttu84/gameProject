@@ -60,6 +60,9 @@ public:
 
     void setPlaced(bool value);
     bool getPlaced() const;
+
+    void setBattleSummon(bool value);
+    bool getBattleSummon() const;
      int getArmour() const;
      
     int getShield() const;
@@ -110,6 +113,7 @@ protected:
     bool spellcaster = false;
     bool placed = false;
     bool undead = false;
+    bool battleSummon = false;
     size_t spentMove = 0;
 
     std::vector<Weapon> _attacks;
