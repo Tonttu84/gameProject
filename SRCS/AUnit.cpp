@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "../HDRS/AUnit.hpp"
+#include <algorithm>
 
 
 
@@ -20,28 +21,39 @@ AUnit::AUnit(const int newTeam)
 	
 }
 
+static void removeFromHex(Hex* hex, AUnit* unit) {
+	if (!hex) return;
+	auto& v = hex->units;
+	v.erase(std::remove(v.begin(), v.end(), unit), v.end());
+	hex->sizeUsed -= static_cast<int>(unit->getSize());
+	if (hex->sizeUsed < 0) hex->sizeUsed = 0;
+}
+
 AUnit::~AUnit()
 {
-	if (getCell())
-		getCell() -> reset();
-	currentCell = nullptr;
+	removeFromHex(currentHex, this);
+	currentHex = nullptr;
 }
 
-void AUnit::setCell(Cell* cell) {
-	if (cell && cell->getUnit() && cell->getUnit() != this) {
-		assert(currentCell && currentCell->getUnit() == this && "Unit's current cell doesn't match!");
+void AUnit::setHex(Hex* hex) {
+	currentHex = hex;
+	if (hex) {
+		hex->units.push_back(this);
+		hex->sizeUsed += static_cast<int>(size);
 	}
-	currentCell = cell;
 }
 
-Cell* AUnit::getCell() const {
-	return currentCell;
+Hex* AUnit::getHex() const {
+	return currentHex;
 }
 
 void AUnit::reset()
 {
-	currentCell = nullptr;
+	removeFromHex(currentHex, this);
+	currentHex = nullptr;
 }
+
+size_t AUnit::getSize() const { return size; }
 
 
 int AUnit::getTeam() const
@@ -63,23 +75,15 @@ int AUnit::getShield() const
 
 bool AUnit::getEngaged(Battlefield &myBattlefield) const
 {
-
-	if (getCell() == nullptr)
-		return false;
-	int W = getCell()->wLoc;
-	int H = getCell()->hLoc;
-
-	Cell *targetCell = nullptr;
-
-	for (int it = W-1; it <= W+1; it++)
-	{
-		for (int it2 = H-1; it2 <= H+1; it2++)
-		{
-			targetCell = myBattlefield.safeGetCell(it2, it);
-			if (targetCell && targetCell->getUnit() && targetCell->getUnit()->getTeam() != getTeam())
+	if (!currentHex) return false;
+	auto nbCoords = myBattlefield.hexGrid.neighbors(currentHex->coord);
+	for (const HexCoord& nc : nbCoords) {
+		Hex* nh = myBattlefield.hexGrid.getHex(nc);
+		if (!nh) continue;
+		for (AUnit* u : nh->units)
+			if (u && u->getAlive() && u->getTeam() != team)
 				return true;
-		}
-	} 
+	}
 	return false;
 }
 
@@ -126,28 +130,21 @@ void AUnit::attack(AUnit &target, const Weapon &attackWeapon)
 
 AUnit *AUnit::find_target(Battlefield &myBattlefield)
 {
-	if (!getCell())
-		return nullptr;
-	int H = getCell()->hLoc;
-	int W = getCell()->wLoc;
-
-	for (int dh = -1; dh <= 1; ++dh)
-	{
-		for (int dw = -1; dw <= 1; ++dw)
-		{
-			if (dh == 0 && dw == 0)
-				continue;
-			Cell *c = myBattlefield.safeGetCell(H + dh, W + dw);
-			if (c && c->getUnit() && c->getUnit()->getTeam() != team && c->getUnit()->getAlive())
-				return c->getUnit();
-		}
+	if (!currentHex) return nullptr;
+	auto nbCoords = myBattlefield.hexGrid.neighbors(currentHex->coord);
+	for (const HexCoord& nc : nbCoords) {
+		Hex* nh = myBattlefield.hexGrid.getHex(nc);
+		if (!nh) continue;
+		for (AUnit* u : nh->units)
+			if (u && u->getTeam() != team && u->getAlive())
+				return u;
 	}
 	return nullptr;
 }
 
 	void AUnit::battle(Battlefield &myBattlefield)
 	{
-		if (broken || !getCell())
+		if (broken || !getHex())
 			return;
 		if (fatigue > 100)
 		{

@@ -11,7 +11,6 @@
 /* ************************************************************************** */
 
 #include "../HDRS/Necromancer.hpp"
-#include "Cell.hpp"
 
 
 
@@ -19,29 +18,27 @@ Necromancer::Necromancer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapo
 {
     setSpellcaster(true);
     printSymbol = 'N';
-} 
+}
 
 Necromancer::Necromancer() noexcept {
         setSpellcaster(true);
         printSymbol = 'N';
 }
 
-//returns true on success
-bool Necromancer::placeZombie(Cell *targetCell)
+bool Necromancer::placeZombie(Hex* targetHex)
 {
-    if (targetCell && targetCell->getUnit() == nullptr)
-    {
-        if (Utility::getBattlefield().getCorpses())
-            Utility::getBattlefield().setCorpses(Utility::getBattlefield().getCorpses() - 1);
-        std::unique_ptr<AUnit> Bob = std::make_unique<Zombie>(getTeam());
-        Bob->setBattleSummon(true);
-        targetCell->setUnit(&(*Bob));
-        Bob->setCell(targetCell);
-        Utility::getBattlefield().getTeam(team).push_back(std::move(Bob));
+    if (!targetHex) return false;
+    std::unique_ptr<AUnit> Bob = std::make_unique<Zombie>(getTeam());
+    if (targetHex->sizeUsed + static_cast<int>(Bob->getSize()) > Hex::CAPACITY) return false;
+    for (AUnit* u : targetHex->units)
+        if (u && u->getAlive() && u->getTeam() != getTeam()) return false;
 
-        return true;
-    }
-    return false;
+    if (Utility::getBattlefield().getCorpses())
+        Utility::getBattlefield().setCorpses(Utility::getBattlefield().getCorpses() - 1);
+    Bob->setBattleSummon(true);
+    Bob->setHex(targetHex);
+    Utility::getBattlefield().getTeam(team).push_back(std::move(Bob));
+    return true;
 }
 
 
@@ -53,30 +50,23 @@ void Necromancer::raiseDead()
         return;
     }
 
-    if (mana <= 0 || broken || !alive || !getCell())
+    if (mana <= 0 || broken || !alive || !getHex())
         return;
 
-    Battlefield &myBattle = Utility::getBattlefield();
-    int wLoc = getCell()->wLoc;
-    int hLoc = getCell()->hLoc;
+    Battlefield& myBattle = Utility::getBattlefield();
     mana--;
 
     size_t summons = (myBattle.getCorpses() >= 3) ? 3 : 1;
     if (myBattle.getCorpses() >= 3)
         myBattle.setCorpses(myBattle.getCorpses() - 3);
 
-    // Spiral outward from necromancer: front row first, then sides, then behind
-    const int offsets[][2] = {
-        {1, 1}, {1, 0}, {1, -1},
-        {0, 1}, {0, -1},
-        {-1, 1}, {-1, 0}, {-1, -1}
-    };
-    for (auto &off : offsets)
+    auto nbCoords = myBattle.hexGrid.neighbors(getHex()->coord);
+    for (const HexCoord& nc : nbCoords)
     {
         if (!summons)
             break;
-        Cell *targetCell = myBattle.safeGetCell(hLoc + off[0], wLoc + off[1]);
-        if (placeZombie(targetCell))
+        Hex* targetHex = myBattle.hexGrid.getHex(nc);
+        if (placeZombie(targetHex))
             summons--;
     }
     setCast(6);

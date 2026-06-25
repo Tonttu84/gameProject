@@ -29,7 +29,5 @@ class Mage : public Human
         int mana = 99;
 
         void special();
-        void castFireball();
-        Cell *findMageTarget();
 };
 

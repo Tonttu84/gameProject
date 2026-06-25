@@ -10,6 +10,13 @@
 #                                                                              #
 # **************************************************************************** #
 
+Archer accuracy values need retuning — hex distance is much larger than old cell distance
+(BOWMAXRANGE=50 and accuracy thresholds were calibrated for cells, not hexes)
+
+Mage fireball (disabled pending rewrite): direct hit = 10 damage to unit in target hex;
+splash hits neighboring hexes for partial damage only if sizeUsed in that hex >= 40;
+Deviate() deviation radius also needs retuning for hex scale
+
 Add a solid mechanism for units to be pushed back. I think it will add natural mechanism how outflanking can pushe
 unit together
 
@@ -47,4 +54,9 @@ Space mattering, crowded units needing space to win  but needs to change logic
 
 change to square Formations
 
-arrows distrurb the whole square? 
+arrows distrurb the whole square?
+
+
+Lisaa strateginen kartta
+    -luo taistelukentta dynaamisesti
+    -paranna grafiikat

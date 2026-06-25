@@ -5,7 +5,7 @@
 #include "../HDRS/Zombie.hpp"
 #include "../HDRS/Archer.hpp"
 #include "../HDRS/Mage.hpp"
-#include "../HDRS/Cell.hpp"
+#include "../HDRS/HexGrid.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/BattleSetup.hpp"
 
@@ -244,63 +244,61 @@ TEST_CASE("addWeapon accumulates shield value") {
 }
 
 
-// ── Cell::getRange ───────────────────────────────────────────────────────────
+// ── HexGrid::distance ────────────────────────────────────────────────────────
 
-TEST_CASE("getRange returns 0 for identical position") {
-    Cell a;
-    a.wLoc = 5; a.hLoc = 3;
-    REQUIRE(a.getRange(a) == 0);
+TEST_CASE("HexGrid::distance returns 0 for identical coord") {
+    REQUIRE(HexGrid::distance({5, 3}, {5, 3}) == 0);
 }
 
-TEST_CASE("getRange uses Chebyshev (max of axis deltas)") {
-    Cell a, b;
-    a.wLoc = 0; a.hLoc = 0;
-    b.wLoc = 3; b.hLoc = 5;
-    REQUIRE(a.getRange(b) == 5);   // max(3, 5)
+TEST_CASE("HexGrid::distance computes hex distance correctly") {
+    // dq=3, dr=5, dq+dr=8 → (3+5+8)/2 = 8
+    REQUIRE(HexGrid::distance({0, 0}, {3, 5}) == 8);
 }
 
-TEST_CASE("getRange is symmetric") {
-    Cell a, b;
-    a.wLoc = 2; a.hLoc = 7;
-    b.wLoc = 9; b.hLoc = 1;
-    REQUIRE(a.getRange(b) == b.getRange(a));
+TEST_CASE("HexGrid::distance is symmetric") {
+    REQUIRE(HexGrid::distance({2, 7}, {9, 1}) == HexGrid::distance({9, 1}, {2, 7}));
 }
 
-TEST_CASE("getRange handles negative deltas correctly") {
-    Cell a, b;
-    a.wLoc = 10; a.hLoc = 10;
-    b.wLoc = 7;  b.hLoc = 3;
-    REQUIRE(a.getRange(b) == 7);   // max(3, 7)
+TEST_CASE("HexGrid::distance handles negative deltas") {
+    // dq=-3, dr=-7, dq+dr=-10 → (3+7+10)/2 = 10
+    REQUIRE(HexGrid::distance({10, 10}, {7, 3}) == 10);
 }
 
 
 // ── Utility::calcDistance ────────────────────────────────────────────────────
 
 TEST_CASE("calcDistance returns -1 for null source") {
-    Cell c; c.wLoc = 0; c.hLoc = 0;
-    REQUIRE(Utility::calcDistance(&c, nullptr) == -1);
+    HexGrid g;
+    g.buildRect(20, 20);
+    Hex* c = g.getHex({0, 0});
+    REQUIRE(Utility::calcDistance(c, nullptr) == -1);
 }
 
 TEST_CASE("calcDistance returns -1 for null target") {
-    Cell c; c.wLoc = 0; c.hLoc = 0;
-    REQUIRE(Utility::calcDistance(nullptr, &c) == -1);
+    HexGrid g;
+    g.buildRect(20, 20);
+    Hex* c = g.getHex({0, 0});
+    REQUIRE(Utility::calcDistance(nullptr, c) == -1);
 }
 
 TEST_CASE("calcDistance returns -1 for two nulls") {
     REQUIRE(Utility::calcDistance(nullptr, nullptr) == -1);
 }
 
-TEST_CASE("calcDistance returns Chebyshev distance") {
-    Cell a, b;
-    a.wLoc = 0; a.hLoc = 0;
-    b.wLoc = 4; b.hLoc = 2;
-    REQUIRE(Utility::calcDistance(&a, &b) == 4);   // max(4, 2)
+TEST_CASE("calcDistance returns hex distance") {
+    HexGrid g;
+    g.buildRect(20, 20);
+    Hex* a = g.getHex({0, 0});
+    Hex* b = g.getHex({4, 2});
+    // dq=4, dr=2, dq+dr=6 → (4+2+6)/2 = 6
+    REQUIRE(Utility::calcDistance(a, b) == 6);
 }
 
-TEST_CASE("calcDistance returns 0 for same cell") {
-    Cell a;
-    a.wLoc = 3; a.hLoc = 7;
-    REQUIRE(Utility::calcDistance(&a, &a) == 0);
+TEST_CASE("calcDistance returns 0 for same hex") {
+    HexGrid g;
+    g.buildRect(20, 20);
+    Hex* a = g.getHex({3, 7});
+    REQUIRE(Utility::calcDistance(a, a) == 0);
 }
 
 
@@ -365,8 +363,8 @@ TEST_CASE("setBattleSummon round-trip") {
 
 // ── BattleSetup / Battlefield integration ────────────────────────────────────
 // These tests use the global battlefield singleton. Each test cleans up:
-//   - tests that only call randomPlaceArmy: army goes out of scope → cells reset
-//   - tests that call loadArmies: end with extractResult() → teams/cells cleared
+//   - tests that only call randomPlaceArmy: army goes out of scope → hexes reset
+//   - tests that call loadArmies: end with extractResult() → teams/hexes cleared
 
 TEST_CASE("randomPlaceArmy places all units within zone bounds") {
     Battlefield& field = Utility::getBattlefield();
@@ -377,13 +375,13 @@ TEST_CASE("randomPlaceArmy places all units within zone bounds") {
     randomPlaceArmy(army, field, zone);
 
     for (const auto& unit : army) {
-        REQUIRE(unit->getCell() != nullptr);
-        REQUIRE(unit->getCell()->wLoc >= (int)zone.wStart);
-        REQUIRE(unit->getCell()->wLoc <= (int)zone.wEnd);
-        REQUIRE(unit->getCell()->hLoc >= (int)zone.hStart);
-        REQUIRE(unit->getCell()->hLoc <= (int)zone.hEnd);
+        REQUIRE(unit->getHex() != nullptr);
+        REQUIRE(unit->getHex()->coord.q >= (int)zone.wStart);
+        REQUIRE(unit->getHex()->coord.q <= (int)zone.wEnd);
+        REQUIRE(unit->getHex()->coord.r >= (int)zone.hStart);
+        REQUIRE(unit->getHex()->coord.r <= (int)zone.hEnd);
     }
-    // army leaves scope → units destroyed → cells reset
+    // army leaves scope → units destroyed → hexes reset
 }
 
 TEST_CASE("randomPlaceArmy sets placed flag on every unit") {
@@ -391,7 +389,7 @@ TEST_CASE("randomPlaceArmy sets placed flag on every unit") {
 
     Army army;
     appendArmy<Soldier>(army, 4, REDTEAM);
-    randomPlaceArmy(army, field, {35, 45, 20, 30});
+    randomPlaceArmy(army, field, {35, 45, 5, 15});
 
     for (const auto& unit : army)
         REQUIRE(unit->getPlaced() == true);
@@ -403,14 +401,14 @@ TEST_CASE("countTeam matches placed army sizes after loadArmies") {
     Army red, blue;
     appendArmy<Soldier>(red, 3, REDTEAM);
     appendArmy<Zombie>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {60, 70, 20, 30});
-    randomPlaceArmy(blue, field, {80, 90, 20, 30});
+    randomPlaceArmy(red,  field, {30, 40, 0, 10});
+    randomPlaceArmy(blue, field, {30, 40, 13, 22});
     field.loadArmies(std::move(red), std::move(blue));
 
     REQUIRE(field.countTeam(REDTEAM) == 3);
     REQUIRE(field.countTeam(BLUETEAM) == 2);
 
-    field.extractResult(); // temporary → destroyed immediately → cells reset
+    field.extractResult(); // temporary → destroyed immediately → hexes reset
 }
 
 TEST_CASE("tick returns true while both sides still have living units") {
@@ -420,8 +418,8 @@ TEST_CASE("tick returns true while both sides still have living units") {
     Army red, blue;
     appendArmy<Soldier>(red, 2, REDTEAM);
     appendArmy<Soldier>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {130, 140, 5, 10});
-    randomPlaceArmy(blue, field, {0,   10,  5, 10});
+    randomPlaceArmy(red,  field, {44, 49, 5, 10});
+    randomPlaceArmy(blue, field, {0,  10, 5, 10});
     field.loadArmies(std::move(red), std::move(blue));
 
     REQUIRE(field.tick() == true);
@@ -458,8 +456,8 @@ TEST_CASE("extractResult clears internal state so a second call returns empty") 
     Army red, blue;
     appendArmy<Soldier>(red, 2, REDTEAM);
     appendArmy<Soldier>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {60, 70, 35, 45});
-    randomPlaceArmy(blue, field, {80, 90, 35, 45});
+    randomPlaceArmy(red,  field, {35, 44, 0, 10});
+    randomPlaceArmy(blue, field, {35, 44, 13, 22});
     field.loadArmies(std::move(red), std::move(blue));
 
     field.extractResult(); // first call — clears teams

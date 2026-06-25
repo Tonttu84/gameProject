@@ -15,15 +15,10 @@
 
 
 
-ssize_t Utility::calcDistance(const Cell *target,const Cell *source)
+int Utility::calcDistance(const Hex* a, const Hex* b)
 {
-    if (!target || !source)
-        return -1;
-    ssize_t hDist = std::abs(target->hLoc - source->hLoc);
-    ssize_t wDist = std::abs(target->wLoc - source->wLoc);
-    if (hDist > wDist)
-        return hDist;
-    return wDist;
+    if (!a || !b) return -1;
+    return HexGrid::distance(a->coord, b->coord);
 }
 
 int Utility::throwDice()
@@ -110,29 +105,17 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
 
     }
     
-    Cell *Utility::Deviate(const Cell &source, int targetH, int targetW, int accuracy)
+    Hex* Utility::Deviate(const Hex& source, int targetQ, int targetR, int accuracy)
     {
-        int distance;
-        int hDiff = std::abs(targetH - source.hLoc);
-        int wDiff = std::abs(targetW - source.wLoc);
-        int deviation = 40;
-
-        if (hDiff > wDiff)
-            distance = hDiff;
-        else 
-            distance = wDiff;
-        if (accuracy > 0)
-            deviation = distance / accuracy;
-        if (deviation > 40)
-            deviation = 40;
-        while (deviation)
-        {
-            targetH = targetH + getRandom(-1, 1);
-            targetW = targetW + getRandom(-1, 1);
-            deviation--;
+        int dist = HexGrid::distance(source.coord, {targetQ, targetR});
+        int deviation = (accuracy > 0) ? dist / accuracy : 40;
+        if (deviation > 40) deviation = 40;
+        while (deviation) {
+            targetQ += getRandom(-1, 1);
+            targetR += getRandom(-1, 1);
+            --deviation;
         }
-
-        return (getBattlefield().safeGetCell(targetH, targetW));    
+        return getBattlefield().hexGrid.safeGetHex(targetQ, targetR);
     }
 
     sf::Font Utility::font;
@@ -144,29 +127,3 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
         }
     }
     
-     Cell *Utility::FindPriorityTarget(const std::vector<std::unique_ptr<AUnit>>& targetTeam, const std::function<int(const AUnit&, int)>& validPriorityTarget, int myTeam)
-    {
-        if (targetTeam.begin() == targetTeam.end())
-        {
-                    return nullptr;
-        }
-        
-        auto it = targetTeam.begin();
-        int castValue = -1;
-        Cell *targetPtr = nullptr;
-        
-        while (it != targetTeam.end())
-        {
-            // std::cout << "Checking unit: "  << " Team: " << (*it)->getTeam() << " Value: " << (*it)->getValue() << " Alive is :" << (*it)->getAlive() << std::endl;
-            int value = validPriorityTarget(*(*it), myTeam);
-            if (value > castValue)
-            {
-                castValue = value;
-                targetPtr = (*it)->getCell();
-            }
-            it++;
-        }
-        if (castValue > 0)
-            return targetPtr;
-        return nullptr;
-    }

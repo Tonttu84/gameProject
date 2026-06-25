@@ -1,30 +1,14 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   Battlefield.hpp                                    :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/08/16 11:09:16 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/10/06 10:59:01 by jrimpila         ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
 #pragma once
 #include "Defines.hpp"
+#include "HexGrid.hpp"
 #include "AUnit.hpp"
-#include "Cell.hpp"
 #include <array>
 #include <unistd.h>
 #include <iostream>
-
-
 #include <vector>
 #include <climits>
-
 #include "Utility.hpp"
 #include <SFML/Graphics.hpp>
-
 
 using Army = std::vector<std::unique_ptr<AUnit>>;
 
@@ -36,14 +20,11 @@ struct BattleResult
     size_t corpses;
 };
 
-class HexGrid;
-
 class Battlefield
 {
     public:
-
-        sf::RenderWindow *window;
-        HexGrid *hexGrid = nullptr;
+        sf::RenderWindow *window = nullptr;
+        HexGrid hexGrid;
 
         Battlefield();
         ~Battlefield() = default;
@@ -51,49 +32,32 @@ class Battlefield
         Battlefield &operator=(Battlefield &target) = default;
 
         void print(void);
-        static int constexpr height = BATTLEFIELD_HEIGHT;
-        static int constexpr  width = BATTLEFIELD_WIDTH;
+        static constexpr int height = BATTLEFIELD_HEIGHT;
+        static constexpr int width  = BATTLEFIELD_WIDTH;
+
         size_t countTeam(const int team) const;
         void moveUnits(void);
         void makeBattle(void);
-        void debugPrint(void);
 
         void loadArmies(Army red, Army blue);
         bool tick();
         BattleResult extractResult();
 
         std::vector<std::unique_ptr<AUnit>> &getTeam(int team);
-        Cell *findTarget(const AUnit &Searcher) const;
+        Hex* findTarget(const AUnit &searcher) const;
+
+        int  moveAUnit(AUnit &unit, HexCoord target);
+        void moveToward(std::unique_ptr<AUnit> &unit, const Hex* target);
         void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);
         void flee(std::unique_ptr<AUnit> &unit);
-
-        int moveAUnit(AUnit &unit, int w, int h);
-
-        void moveOne(std::unique_ptr<AUnit> &, const Cell* const cellptr);
-
-        std::array<std::array<Cell, width>, height> _battlefield;
         void cleanup();
         void triggerSpecialPhase();
 
-
-        int moveSE(AUnit &unit, Cell &myCell);
-        int moveSW(AUnit &unit, Cell &myCell);
-        int moveE(AUnit &unit, Cell &myCell);
-        int moveW(AUnit &unit, Cell &myCell);
-        int moveNE(AUnit &unit, Cell &myCell);
-        int moveNW(AUnit &unit, Cell &myCell);
-        int moveN(AUnit &unit, Cell &myCell);
-        int moveS(AUnit &unit, Cell &myCell);
-
-        Cell* safeGetCell(int h, int w);
         size_t getCorpses();
-        void setCorpses(size_t setCorpses);
+        void   setCorpses(size_t setCorpses);
 
     private:
-         
         std::vector<std::unique_ptr<AUnit>> teamRED;
         std::vector<std::unique_ptr<AUnit>> teamBLUE;
-        size_t corpses = 0; 
-
-    
+        size_t corpses = 0;
 };

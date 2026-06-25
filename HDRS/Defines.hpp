@@ -16,9 +16,9 @@ constexpr int FATIGUERECOVERY = 4;
 
 constexpr int SHIELDREDUCTION = 5;
 
-constexpr int BATTLEFIELD_WIDTH = 150;
-constexpr int BATTLEFIELD_HEIGHT = 50;
+constexpr int BATTLEFIELD_WIDTH = 50;   // hex columns (q)
+constexpr int BATTLEFIELD_HEIGHT = 25;  // hex rows (r)
 
 class Battlefield;
-class Cell;
+class HexGrid;
 class AUnit;

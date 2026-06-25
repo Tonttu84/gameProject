@@ -24,33 +24,35 @@ OBJ_DIR = BUILD
 
 # SFML setup
 SFML_VERSION = 2.6.0
-SFML_DIR = SFML-$(SFML_VERSION)
-SFML_TAR = SFML-$(SFML_VERSION)-linux-gcc-64-bit.tar.gz
-SFML_URL = https://www.sfml-dev.org/files/$(SFML_TAR)
-SFML_LIBS = -L$(SFML_DIR)/lib -lsfml-graphics -lsfml-window -lsfml-system
+SFML_DIR     = SFML-$(SFML_VERSION)
+SFML_TAR     = SFML-$(SFML_VERSION)-linux-gcc-64-bit.tar.gz
+SFML_URL     = https://www.sfml-dev.org/files/$(SFML_TAR)
+SFML_LIBS    = -L$(SFML_DIR)/lib -lsfml-graphics -lsfml-window -lsfml-system
 
-
-# Fonts 
-FONT_DIR = assets/fonts
+# Fonts
+FONT_DIR  = assets/fonts
 FONT_FILE = DejaVuSans.ttf
 
-$(FONT_DIR)/$(FONT_FILE):
-	@mkdir -p $(FONT_DIR)
-	cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf $@
-	chmod 644 $@
+# Files
+NAME = game
+SRCS = $(wildcard $(SRC_DIR)/*.cpp)
+OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRCS))
+DEPS = $(OBJS:.o=.d)
 
+# Test build
+TEST_DIR     = TESTS
+TEST_NAME    = run_tests
+TEST_OBJ_DIR = BUILD/test
+TEST_SRCS    = $(filter-out $(SRC_DIR)/main.cpp, $(SRCS))
+TEST_OBJS    = $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS))
+TEST_DEPS    = $(TEST_OBJS:.o=.d)
+
+.PHONY: all clean fclean re test run
+
+# ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
 
-
-# Files
-SRCS    = $(wildcard $(SRC_DIR)/*.cpp)
-OBJS    = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRCS))
-DEPS    = $(OBJS:.o=.d)
-NAME    = game
-
-# Build rules
-all: $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
-
+# ── Main binary ───────────────────────────────────────────────────────────────
 $(NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
 
@@ -58,7 +60,15 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
-# SFML download and extraction
+-include $(DEPS)
+
+# ── Font ──────────────────────────────────────────────────────────────────────
+$(FONT_DIR)/$(FONT_FILE):
+	@mkdir -p $(FONT_DIR)
+	cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf $@
+	chmod 644 $@
+
+# ── SFML ──────────────────────────────────────────────────────────────────────
 $(SFML_DIR)/include/SFML/Config.hpp: $(SFML_TAR)
 	tar -xzf $(SFML_TAR)
 	rm $(SFML_TAR)
@@ -66,17 +76,7 @@ $(SFML_DIR)/include/SFML/Config.hpp: $(SFML_TAR)
 $(SFML_TAR):
 	wget $(SFML_URL)
 
-# Include dependency files
--include $(DEPS)
-
-# Test build — compiled separately with -DTESTING so #ifdef guards are active
-TEST_DIR      = TESTS
-TEST_NAME     = run_tests
-TEST_OBJ_DIR  = BUILD/test
-TEST_SRCS     = $(filter-out $(SRC_DIR)/main.cpp, $(SRCS))
-TEST_OBJS     = $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS))
-TEST_DEPS     = $(TEST_OBJS:.o=.d)
-
+# ── Tests ─────────────────────────────────────────────────────────────────────
 $(TEST_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(TEST_OBJ_DIR)
 	$(CC) $(CFLAGS) -DTESTING -MMD -MP -c $< -o $@
@@ -93,7 +93,7 @@ $(TEST_NAME): $(TEST_OBJS) $(TEST_OBJ_DIR)/test_main.o
 test: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
 	./$(TEST_NAME)
 
-# Cleanup
+# ── Cleanup ───────────────────────────────────────────────────────────────────
 clean:
 	rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(TEST_OBJ_DIR)/*.o $(TEST_OBJ_DIR)/*.d
 

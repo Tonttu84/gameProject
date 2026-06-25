@@ -13,18 +13,25 @@ void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
         if (unit->getPlaced())
             continue;
 
-        int HIter = Utility::getRandom(zone.hStart, zone.hEnd);
-        int WIter = Utility::getRandom(zone.wStart, zone.wEnd);
+        int hIter = Utility::getRandom(zone.hStart, zone.hEnd);
+        int wIter = Utility::getRandom(zone.wStart, zone.wEnd);
         bool placed = false;
 
-        for (int h = HIter; h <= zone.hEnd && !placed; ++h)
+        auto canPlace = [&](Hex* hex) -> bool {
+            if (!hex) return false;
+            if (hex->sizeUsed + static_cast<int>(unit->getSize()) > Hex::CAPACITY) return false;
+            for (AUnit* u : hex->units)
+                if (u && u->getAlive() && u->getTeam() != unit->getTeam()) return false;
+            return true;
+        };
+
+        for (int h = hIter; h <= zone.hEnd && !placed; ++h)
         {
-            for (int w = (h == HIter ? WIter : zone.wStart); w <= zone.wEnd && !placed; ++w)
+            for (int w = (h == hIter ? wIter : zone.wStart); w <= zone.wEnd && !placed; ++w)
             {
-                if (field._battlefield[h][w].getUnit() == nullptr)
-                {
-                    field._battlefield[h][w].setUnit(unit.get());
-                    unit->setCell(&field._battlefield[h][w]);
+                Hex* hex = field.hexGrid.getHex({w, h});
+                if (canPlace(hex)) {
+                    unit->setHex(hex);
                     unit->setPlaced(true);
                     placed = true;
                 }
@@ -33,14 +40,13 @@ void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
 
         if (!placed)
         {
-            for (int h = zone.hStart; h < HIter && !placed; ++h)
+            for (int h = zone.hStart; h < hIter && !placed; ++h)
             {
                 for (int w = zone.wStart; w <= zone.wEnd && !placed; ++w)
                 {
-                    if (field._battlefield[h][w].getUnit() == nullptr)
-                    {
-                        field._battlefield[h][w].setUnit(unit.get());
-                        unit->setCell(&field._battlefield[h][w]);
+                    Hex* hex = field.hexGrid.getHex({w, h});
+                    if (canPlace(hex)) {
+                        unit->setHex(hex);
                         unit->setPlaced(true);
                         placed = true;
                     }
@@ -56,5 +62,5 @@ void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
     }
 
     for (const auto& unit : army)
-        assert(unit->getCell() && "Unit was not placed");
+        assert(unit->getHex() && "Unit was not placed");
 }

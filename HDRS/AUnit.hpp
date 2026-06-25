@@ -20,7 +20,6 @@
 #include <vector>
 #include "Defines.hpp"
 #include "Battlefield.hpp"
-#include "Cell.hpp"
 #include "Utility.hpp"
 
 
@@ -32,10 +31,10 @@ public:
     virtual ~AUnit();
     AUnit(const int newTeam);
 
-    void setCell(Cell* cell);
+    void setHex(Hex* hex);
     void attack(AUnit &target, const Weapon &attackWeapon);
-    
-    Cell* getCell() const;
+
+    Hex* getHex() const;
     void reset();
     int getTeam() const;
     int takeDamage(int amount);
@@ -70,6 +69,7 @@ public:
 
 
      int getValue() const;
+     size_t getSize() const;
      bool getUndead() const;
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
@@ -86,7 +86,7 @@ public:
 
 protected:
     int team = 0;
-    Cell* currentCell = nullptr;
+    Hex* currentHex = nullptr;
     int hitpoints = 10;
     int attackPWR = 10;
     int defence = 10;
@@ -105,7 +105,7 @@ protected:
     
     int resistance = 10;
     int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff
-    size_t size = 1;
+    size_t size = 10;
     char printSymbol = '?';
 
     bool alive = true;

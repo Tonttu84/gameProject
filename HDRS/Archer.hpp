@@ -15,11 +15,7 @@
 #include "AUnit.hpp"
 #include "Utility.hpp"
 #include "Human.hpp"
-
-class AUnit;
 #include "Defines.hpp"
-#include "Human.hpp"
-#include "Cell.hpp"
 #include "Battlefield.hpp"
 
 #define BOWDAMAGE 5
@@ -35,8 +31,8 @@ class Archer : public Human
 
         void special();
         int fireBow();
-        Cell *findArcherTarget();
-        int calcCellValue(const Cell &targetCell, int myTeam);
+        AUnit* findArcherTarget();
+        int calcUnitValue(const AUnit& target, int myTeam);
         int calcShot(const AUnit& target, int myTeam);
         bool accurateShot(const AUnit &target, int myTeam);
 

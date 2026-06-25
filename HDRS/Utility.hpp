@@ -39,10 +39,9 @@ public:
         static AUnit* findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, const std::function<bool(const AUnit&, int)>& validPriorityTarget, \
         const std::function<int(const AUnit&, int)>& validTarget, int myTeam);
         static Battlefield &getBattlefield();
-        static Cell *Deviate(const Cell &source, int OriginalH, int OriginalW, int accuracy);
+        static Hex* Deviate(const Hex& source, int targetQ, int targetR, int accuracy);
         static int getRandom(int lowerBound, int upperBound);
-        static Cell *FindPriorityTarget(const std::vector<std::unique_ptr<AUnit>>& targetTeam, const std::function<int(const AUnit&, int)>&, int myTeam);
-        static ssize_t calcDistance(const Cell *target, const Cell*source);
+        static int calcDistance(const Hex* a, const Hex* b);
 
 #ifdef TESTING
         static void pushDiceRoll(int value);

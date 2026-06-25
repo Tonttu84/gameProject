@@ -30,7 +30,7 @@ class Necromancer : public Human
 
         void special();
         void raiseDead();
-        bool placeZombie(Cell *targetCell);
+        bool placeZombie(Hex* targetHex);
 
 };
 

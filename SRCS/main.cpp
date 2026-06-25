@@ -12,13 +12,11 @@
 
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/BattleSetup.hpp"
-#include "../HDRS/HexGrid.hpp"
-#include "../HDRS/Human.hpp"
-#include "../HDRS/Priest.hpp"
-#include "../HDRS/Mage.hpp"
-#include "../HDRS/Necromancer.hpp"
-#include "../HDRS/Archer.hpp"
 #include "../HDRS/Soldier.hpp"
+// #include "../HDRS/Archer.hpp"
+// #include "../HDRS/Priest.hpp"
+// #include "../HDRS/Mage.hpp"
+// #include "../HDRS/Necromancer.hpp"
 
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -44,31 +42,22 @@ int main(void)
 {
     Utility::load();
 
-    HexGrid hexGrid(Utility::font, {350.f, 320.f});
-    hexGrid.buildGrid(5);
-
     int termHeight = getTerminalHeight();
     int battlefieldStartRow = termHeight - Battlefield::height;
 
     Battlefield& field = Utility::getBattlefield();
-    sf::RenderWindow myWindow(sf::VideoMode(Battlefield::width * Cell::cellSize, Battlefield::height * Cell::cellSize), "Battlefield");
-    field.window = &myWindow;
-    field.hexGrid = &hexGrid;
+    field.hexGrid.setFont(&Utility::font);
 
-    // Build red army
+    sf::RenderWindow myWindow(sf::VideoMode(2000, 720), "Battlefield");
+    field.window = &myWindow;
+
+    // Red army — Soldiers only for now
     Army red;
-    appendArmy<Mage>(red, 4, REDTEAM);
-    appendArmy<Priest>(red, 2, REDTEAM);
-    appendArmy<Archer>(red, 50, REDTEAM);
-    randomPlaceArmy(red, field, {field.width * 5/6, field.width - 1, 0, field.height - 1});
-    appendArmy<Soldier>(red, 185, REDTEAM);
+    appendArmy<Soldier>(red, 200, REDTEAM);
     randomPlaceArmy(red, field, {field.width * 2/3, field.width - 1, 0, field.height - 1});
 
-    // Build blue army
+    // Blue army — Soldiers only for now
     Army blue;
-    appendArmy<Archer>(blue, 30, BLUETEAM);
-    appendArmy<Necromancer>(blue, 3, BLUETEAM);
-    randomPlaceArmy(blue, field, {0, field.width / 6, 0, field.height - 1});
     appendArmy<Soldier>(blue, 250, BLUETEAM);
     randomPlaceArmy(blue, field, {0, field.width / 3, 0, field.height - 1});
 

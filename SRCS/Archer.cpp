@@ -13,16 +13,14 @@ Archer::Archer() noexcept {
     ammunition = BOWAMMO;
 }
 
-int Archer::calcCellValue(const Cell &targetCell, int myTeam)
+int Archer::calcUnitValue(const AUnit& targetUnit, int myTeam)
 {
-    if (!targetCell.getUnit() || !targetCell.getUnit()->getAlive())
+    if (!targetUnit.getAlive())
         return 0;
 
-    AUnit &targetUnit = *targetCell.getUnit();
     int retval;
     if (BOWDAMAGE + 2 > targetUnit.getArmour())
     {
-        // cap effective damage at hp+2 to avoid overvaluing overkill shots
         int pen = BOWDAMAGE + 2 - targetUnit.getArmour();
         retval = (pen > targetUnit.getHp() ? targetUnit.getHp() + 2 : pen) * targetUnit.getValue();
     }
@@ -34,25 +32,22 @@ int Archer::calcCellValue(const Cell &targetCell, int myTeam)
 
 int Archer::calcShot(const AUnit& target, int myTeam)
 {
-    assert(target.getCell() && "Input with a target that doesn't have a location");
-    ssize_t distance = Utility::calcDistance(target.getCell(), getCell());
+    assert(target.getHex() && "Input with a target that doesn't have a location");
+    int distance = Utility::calcDistance(target.getHex(), getHex());
 
     if (distance > BOWMAXRANGE || !target.getAlive())
         return -1;
 
-    int CellW = target.getCell()->wLoc;
-    int CellH = target.getCell()->hLoc;
-    Battlefield &myBattle = Utility::getBattlefield();
+    Battlefield& myBattle = Utility::getBattlefield();
+    int retval = calcUnitValue(target, myTeam) * 2;
 
-    int retval = calcCellValue(myBattle._battlefield[CellH][CellW], myTeam) * 2;
-    if (CellH - 1 >= 0)
-        retval += calcCellValue(myBattle._battlefield[CellH - 1][CellW], myTeam);
-    if (CellW - 1 >= 0)
-        retval += calcCellValue(myBattle._battlefield[CellH][CellW - 1], myTeam);
-    if (CellH < myBattle.height - 2)
-        retval += calcCellValue(myBattle._battlefield[CellH + 1][CellW], myTeam);
-    if (CellW < myBattle.width - 2)
-        retval += calcCellValue(myBattle._battlefield[CellH][CellW + 1], myTeam);
+    auto nbCoords = myBattle.hexGrid.neighbors(target.getHex()->coord);
+    for (const HexCoord& nc : nbCoords) {
+        Hex* nh = myBattle.hexGrid.getHex(nc);
+        if (!nh) continue;
+        for (AUnit* u : nh->units)
+            if (u) retval += calcUnitValue(*u, myTeam);
+    }
 
     if (retval <= 1)
         return retval;
@@ -64,24 +59,22 @@ bool Archer::accurateShot(const AUnit &target, int myTeam)
 {
     if (!target.getAlive() || target.getTeam() == myTeam)
         return false;
-    return Utility::calcDistance(target.getCell(), getCell()) < accuracy;
+    return Utility::calcDistance(target.getHex(), getHex()) < accuracy;
 }
 
 
-Cell *Archer::findArcherTarget()
+AUnit* Archer::findArcherTarget()
 {
     auto shotCalculator = [this](const AUnit& target, int myTeam) -> int {
         return this->calcShot(target, myTeam);
     };
-    auto findShot = [this](const AUnit& target, int myTeam) -> int {
+    auto findShot = [this](const AUnit& target, int myTeam) -> bool {
         return this->accurateShot(target, myTeam);
     };
 
-    AUnit *targetUnit = Utility::findTarget(
+    return Utility::findTarget(
         Utility::getBattlefield().getTeam(3 - getTeam()),
         findShot, shotCalculator, getTeam());
-
-    return targetUnit ? targetUnit->getCell() : nullptr;
 }
 
 
@@ -91,24 +84,24 @@ int Archer::fireBow()
     if (broken || !alive || spentMove || ammunition == 0)
         return 0;
 
-    Cell *targetCell = findArcherTarget();
-    if (!targetCell)
+    AUnit* aimUnit = findArcherTarget();
+    if (!aimUnit || !aimUnit->getHex())
         return 0;
 
-    targetCell = Utility::Deviate(*getCell(), targetCell->hLoc, targetCell->wLoc, accuracy);
+    Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q, aimUnit->getHex()->coord.r, accuracy);
     ammunition--;
 
-    if (!targetCell)
+    if (!targetHex)
         return 3;
 
-    targetCell->fire = true;
-    AUnit *targetUnit = targetCell->getUnit();
+    AUnit* targetUnit = nullptr;
+    for (AUnit* u : targetHex->units)
+        if (u && u->getAlive()) { targetUnit = u; break; }
     if (!targetUnit)
         return 3;
 
     if (targetUnit->getShield() > 0 && Utility::throwDice() <= targetUnit->getShield())
     {
-        // Arrow hits shield; reduced damage, shield degrades on partial penetration
         int damage = BOWDAMAGE - SHIELDREDUCTION + Utility::throwDice() - Utility::throwDice();
         if (damage > 0)
         {

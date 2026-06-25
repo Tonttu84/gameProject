@@ -17,7 +17,6 @@
 
 class TODO;
 class Hittable;
-class Cell;
 
 class Human : public AUnit
 {

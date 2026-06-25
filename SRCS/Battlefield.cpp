@@ -1,456 +1,200 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   Battlefield.cpp                                    :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/08/16 11:09:45 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/10/06 10:58:13 by jrimpila         ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
 #include "../HDRS/Battlefield.hpp"
-#include "../HDRS/HexGrid.hpp"
 
 Battlefield::Battlefield()
 {
-	for (int yIT = 0; yIT < height; yIT++)
-	{
-		for (int xIT = 0; xIT < width; xIT++)
-		{
-			_battlefield[yIT][xIT].wLoc = xIT;
-			_battlefield[yIT][xIT].hLoc = yIT;
-		}
-	}
+    hexGrid.buildRect(width, height);
 }
 
 void Battlefield::print()
 {
-	window->clear(); // Clear previous frame
-
-	for (int i = 0; i < height; ++i) {
-		for (int k = 0; k < width; ++k) {
-			_battlefield[i][k].render(*window);
-		}
-	}
-
-	if (hexGrid)
-		hexGrid->render(*window);
-
-	window->display();
+    if (!window) return;
+    window->clear();
+    hexGrid.render(*window);
+    window->display();
 }
 
 size_t Battlefield::countTeam(const int team) const
 {
-	size_t retval = 0;
-	for(int i = 0; i < height ; i++)
-	{
-		for (int k = 0; k < width ; k++)
-		{
-		   if( _battlefield[i][k].getUnit() && _battlefield[i][k].getUnit()->getTeam() == team)
-			   retval++;
-		}
-	}
-	return retval;
+    size_t count = 0;
+    const auto& t = (team == REDTEAM) ? teamRED : teamBLUE;
+    for (const auto& u : t)
+        if (u && u->getAlive()) ++count;
+    return count;
+}
+
+Hex* Battlefield::findTarget(const AUnit& searcher) const
+{
+    if (!searcher.getHex()) return nullptr;
+    HexCoord myCoord = searcher.getHex()->coord;
+
+    const auto& enemyTeam = (searcher.getTeam() == REDTEAM) ? teamBLUE : teamRED;
+    int bestDist = std::numeric_limits<int>::max();
+    Hex* bestHex = nullptr;
+
+    for (const auto& enemy : enemyTeam) {
+        if (!enemy || !enemy->getAlive() || !enemy->getHex()) continue;
+        int d = HexGrid::distance(myCoord, enemy->getHex()->coord);
+        if (d < bestDist) {
+            bestDist = d;
+            bestHex  = enemy->getHex();
+        }
+    }
+    return bestHex;
+}
+
+static bool hexAcceptsUnit(const Hex* hex, const AUnit& unit) {
+    if (!hex) return false;
+    if (hex->sizeUsed + static_cast<int>(unit.getSize()) > Hex::CAPACITY) return false;
+    for (AUnit* u : hex->units)
+        if (u && u->getAlive() && u->getTeam() != unit.getTeam()) return false;
+    return true;
+}
+
+int Battlefield::moveAUnit(AUnit& unit, HexCoord target)
+{
+    Hex* tgt = hexGrid.getHex(target);
+    if (!hexAcceptsUnit(tgt, unit)) return 1;
+
+    unit.reset();
+    unit.setHex(tgt);
+    return 0;
+}
+
+void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
+{
+    AUnit& unit = *unitPtr;
+    if (!target || !unit.getHex()) return;
+    if (unit.getSpentMove()) {
+        unit.setSpentMove(unit.getSpentMove() - 1);
+        return;
+    }
+
+    HexCoord from = unit.getHex()->coord;
+    HexCoord to   = target->coord;
+    if (from == to) return;
+
+    // Pick the passable neighbor that reduces distance to target the most
+    int bestDist = HexGrid::distance(from, to);
+    int bestDir  = -1;
+    for (int i = 0; i < 6; ++i) {
+        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        Hex* nh = hexGrid.getHex(nc);
+        if (!hexAcceptsUnit(nh, unit)) continue;
+        int d = HexGrid::distance(nc, to);
+        if (d < bestDist) {
+            bestDist = d;
+            bestDir  = i;
+        }
+    }
+
+    if (bestDir >= 0)
+        moveAUnit(unit, hexGrid.neighborCoord(from, static_cast<HexDirection>(bestDir)));
+}
+
+void Battlefield::flee(std::unique_ptr<AUnit>& unit)
+{
+    if (!unit->getAlive()) return;
+    if (unit->getFatigue() > 100) { unit->recover(); return; }
+
+    Hex* myHex = unit->getHex();
+    if (!myHex) return;
+    HexCoord c = myHex->coord;
+
+    if (c.q == 0 || c.q == width - 1 || c.r == 0 || c.r == height - 1) {
+        std::cout << "A soldier fled the battlefield and turns to banditry\n";
+        unit->setAlive(false);
+        return;
+    }
+
+    // Red team flees east, blue team flees west
+    HexDirection fleeDir = (unit->getTeam() == REDTEAM) ? HexDirection::E : HexDirection::W;
+    int base = static_cast<int>(fleeDir);
+    for (int delta : {0, 1, -1, 2, -2, 3}) {
+        HexDirection d = static_cast<HexDirection>((base + delta + 6) % 6);
+        HexCoord nc = hexGrid.neighborCoord(c, d);
+        Hex* next = hexGrid.getHex(nc);
+        if (hexAcceptsUnit(next, *unit)) {
+            moveAUnit(*unit, nc);
+            return;
+        }
+    }
+    unit->rally();
 }
 
 void Battlefield::moveUnits()
 {
-	moveTeam(teamRED);
-	moveTeam(teamBLUE);
+    moveTeam(teamRED);
+    moveTeam(teamBLUE);
+}
+
+void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
+{
+    for (auto& unit : team) {
+        if (!unit || !unit->getAlive()) continue;
+        AUnit& u = *unit;
+
+        if (u.getBroken()) {
+            flee(unit);
+            continue;
+        }
+        if (u.getFatigue() >= 100 || u.getCast() > 0
+            || (u.getFatigue() > 30 && !u.getEngaged(*this))) {
+            u.recover();
+            continue;
+        }
+        Hex* target = findTarget(u);
+        if (!target) continue;
+        moveToward(unit, target);
+    }
 }
 
 void Battlefield::makeBattle()
 {
-	auto red = teamRED.begin();
-	auto blue = teamBLUE.begin();
-	
-	while (red != teamRED.end() || blue != teamBLUE.end())
-	{
-		if (red != teamRED.end() && ((Utility::getRandom(1, 2) == 1) || blue == teamBLUE.end()))
-		{
-			(*red)->battle(*this);
-			red++;
-		}
-		else if (blue != teamBLUE.end())
-		{
-			(*blue)->battle(*this);
-			blue++;
-		}
-	}
+    auto red  = teamRED.begin();
+    auto blue = teamBLUE.begin();
+
+    while (red != teamRED.end() || blue != teamBLUE.end()) {
+        if (red != teamRED.end()
+            && ((Utility::getRandom(1, 2) == 1) || blue == teamBLUE.end())) {
+            (*red)->battle(*this);
+            ++red;
+        } else if (blue != teamBLUE.end()) {
+            (*blue)->battle(*this);
+            ++blue;
+        }
+    }
 }
-
-void Battlefield::debugPrint()
-{
-	for(int i = 0; i < height; i++)
-	{
-		for (int k = 0; k < width; k++)
-		{
-			
-			std::cout <<"(" << _battlefield[i][k].hLoc << "|" << _battlefield[i][k].wLoc << ")";
-				
-		}
-		std::cout << "\n";
-	}
-	std::cout << std::endl;
-}
-
-
-
-
-
-static Cell *searchCell(const AUnit &Searcher, const std::vector<std::unique_ptr<AUnit>> &team)
-{
-	int ClosestDistance = std::numeric_limits<int>::max();
-	int W;
-	int H;
-	Cell *finalTarget = nullptr;
-	if (Searcher.getCell())
-	{
-		W = Searcher.getCell()->wLoc;
-		H = Searcher.getCell()->hLoc;
-	}
-	else
-		return nullptr;
-
-	for (auto it = team.begin(); it != team.end(); ++it) {
-    if (*it) { 
-			const AUnit& unit = **it;
-			if (unit.getTeam() == Searcher.getTeam())
-			{
-				return nullptr; // We are looking for an enemy
-			}
-			Cell *targetCell = unit.getCell();
-			if (targetCell)
-			{
-				int Distance = std::abs(targetCell->wLoc - W);
-				if (Distance < std::abs(targetCell->hLoc - H))
-					Distance = std::abs(targetCell->hLoc - H);
-				if (ClosestDistance > Distance)
-				{
-					ClosestDistance = Distance;
-					finalTarget = targetCell;
-				}
-			}
-    	}
-	}
-	return finalTarget;
-}
-
-Cell *Battlefield::findTarget(const AUnit &Searcher) const
-{
-	if (Searcher.getCell() == nullptr)
-		return nullptr;
-	int X = Searcher.getCell()->wLoc;
-	int Y = Searcher.getCell()->hLoc;
-		
-	
-	Cell *OptionA = searchCell(Searcher, teamBLUE);
-	Cell *OptionB = searchCell(Searcher, teamRED);
-	
-	
-	if (OptionA && OptionB)
-	{
-		int ADistance = std::abs(OptionA->wLoc - X);
-				if (ADistance > std::abs(OptionA->hLoc - Y))
-					ADistance = std::abs(OptionA->hLoc - Y);
-		int BDistance = std::abs(OptionB->wLoc - X);
-				if (BDistance > std::abs(OptionB->hLoc - Y))
-					BDistance = std::abs(OptionB->hLoc - Y);;
-		
-
-		if (ADistance < BDistance)
-			return OptionA;
-		else
-			return OptionB;
-		
-	}
-	if (OptionA)
-		return OptionA;
-	return OptionB;
-	
-}
-//0 on success, 1 on fail
-
-int  Battlefield::moveN(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc , myCell.hLoc - 1) == 0)
-		return 0;	
-	else if (myCell.wLoc > 0 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc - 1) == 0))
-		return 0;	
-	else if (myCell.wLoc < width -2 && (moveAUnit(unit, myCell.wLoc +1 , myCell.hLoc - 1) == 0))
-		return 0;
-	return 1;		
-}
-
-int  Battlefield::moveNE(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc -1) == 0)
-		return 0;	
-	else if ((moveAUnit(unit, myCell.wLoc, myCell.hLoc -1) == 0))
-		return 0;	
-	else if ((moveAUnit(unit, myCell.wLoc +1  , myCell.hLoc ) == 0))
-		return 0;
-	return 1;
-	
-}
-
-int  Battlefield::moveE(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc) == 0)
-		return 0;
-	else if (myCell.hLoc > 0 && (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc -1) == 0))
-		return 0;
-	else if (myCell.hLoc < height -2 && (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc +1) == 0))
-		return 0;
-
-	return 1;
-}
-
-
-int  Battlefield::moveSE(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc + 1) == 0)
-			return 0;
-	else if (moveAUnit(unit, myCell.wLoc + 1, myCell.hLoc) == 0)
-		return 0;
-	else if (moveAUnit(unit, myCell.wLoc, myCell.hLoc +1) == 0)
-		return 0;
-	return 1; 
-}
-
-int  Battlefield::moveS(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc , myCell.hLoc + 1) == 0)
-		return 0;	
-	else if (myCell.wLoc > 0 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc +1) == 0))
-		return 0;	
-	else if ((myCell.wLoc < width -2 && moveAUnit(unit, myCell.wLoc +1 , myCell.hLoc +1) == 0))
-		return 0;
-	return 1;	
-}
-
-int  Battlefield::moveSW(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc + 1) == 0)
-		return 0;	
-	else if (moveAUnit(unit, myCell.wLoc, myCell.hLoc + 1) == 0)
-		return 0;
-	else if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc) == 0)
-		return 0;
-
-	return 1;
-}
-
-int  Battlefield::moveW(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc) == 0)
-		return 0;	
-	else if (myCell.hLoc > 0 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc -1) == 0))
-		return 0;
-	else if (myCell.hLoc < height -2 && (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc +1) == 0))
-		return 0;
-
-	return 1;
-}
-
-int  Battlefield::moveNW(AUnit &unit, Cell &myCell)
-{
-	if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc -1) == 0)
-		return 0;	
-	else if (moveAUnit(unit, myCell.wLoc, myCell.hLoc - 1) == 0)
-		return 0;
-	else if (moveAUnit(unit, myCell.wLoc -1 , myCell.hLoc) == 0)
-		return 0;
-	return 1;	
-}
-
-void Battlefield::moveOne(std::unique_ptr<AUnit> &unit, const Cell* cellptr)
-{
-	
-	
-	if (cellptr == nullptr || unit == nullptr || unit->getCell() == nullptr)
-	{
-		return;
-	}
-	assert(unit->getCell() != nullptr);
-	Cell &myCell = *unit->getCell();
-	
-	if (unit->getSpentMove())
-	{
-		unit->setSpentMove(unit->getSpentMove() - 1);
-		return;
-	}
-
-	int wDelta = cellptr->wLoc - (myCell.wLoc);
-	int hDelta = cellptr->hLoc - (myCell.hLoc);
-	if (wDelta > 1 && hDelta > 1)
-	{
-		moveSE(*unit, myCell);
-		return;
-	}
-	else if (wDelta > 1 && hDelta < -1)
-	{
-		moveNE(*unit, myCell);
-		return;
-	}
-	else if (wDelta > 1)
-	{
-		moveE(*unit, myCell);
-		return;
-		
-	}
-	else if (wDelta < -1 && hDelta > 1)
-	{
-		moveSW(*unit, myCell);
-		return;
-	}
-	else if (wDelta < -1 && hDelta < -1)
-	{
-		moveNW(*unit, myCell);
-		return;
-	}
-	else if (wDelta < -1)
-	{
-		moveW(*unit, myCell);
-		return;
-	}
-	else if (hDelta > 1)
-	{
-		moveS(*unit, myCell);
-		return;
-	}
-	else if (hDelta < -1)
-	{
-		moveN(*unit, myCell);
-		return;
-	}
-		
-}
-
-void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>> &team)
-{
-	for (auto IT = team.begin(); IT != team.end(); IT++)
-	{
-		AUnit &unit = **IT;
-		if (unit.getBroken() == true)
-		{
-			flee(*IT);
-			continue;	
-		}
-		if (unit.getFatigue() >= 100 || unit.getCast()> 0 || (unit.getFatigue() > 30 && unit.getEngaged(*this) == false)) // units wants to rest
-		{
-		
-			unit.recover();
-			continue;
-		} 
-	
-		Cell *target = findTarget(unit);
-		if (target == nullptr)
-			continue;
-		moveOne(*IT, target);
-	}
-}
-
-
-int Battlefield::moveAUnit(AUnit &unit, int w, int h)
-{
-	if (_battlefield[h][w].getUnit())
-		return 1;
-	unit.getCell()->reset();
-	unit.reset();
-	_battlefield[h][w].setUnit(&unit);
-	return 0;
-}
-
 
 void Battlefield::cleanup()
 {
     auto it = teamBLUE.begin();
-    while (it != teamBLUE.end())
-    {
-		assert((*it).get() != nullptr && "Unexpected nullptr in teamBLUE");
-        if (!(*it) || (*it)->getAlive() == 0) 
-        {
-			if ((*it)->getUndead() == false)
-				corpses++;
-            it = teamBLUE.erase(it); // erase returns the next valid iterator
-        }
-        else
-        {
+    while (it != teamBLUE.end()) {
+        if (!(*it) || !(*it)->getAlive()) {
+            if (*it && !(*it)->getUndead()) ++corpses;
+            it = teamBLUE.erase(it);
+        } else {
             ++it;
         }
     }
-	auto itred = teamRED.begin();
-    while (itred != teamRED.end())
-    {
-		assert((*itred).get() != nullptr && "Unexpected nullptr in teamRED");
-        if (!(*itred) ||(*itred)->getAlive() == 0) 
-        {
-            itred = teamRED.erase(itred); // erase returns the next valid iterator
-        }
+    auto ir = teamRED.begin();
+    while (ir != teamRED.end()) {
+        if (!(*ir) || !(*ir)->getAlive())
+            ir = teamRED.erase(ir);
         else
-        {
-            ++itred;
-        }
+            ++ir;
     }
 }
 
-void Battlefield::flee(std::unique_ptr<AUnit> &unit)
+std::vector<std::unique_ptr<AUnit>>& Battlefield::getTeam(int team)
 {
-	if (!unit->getAlive())
-		return;
-	if (unit->getFatigue() > 100)
-	{
-		unit->recover();
-		return;
-	}
-
-	Cell *myCell = unit->getCell();
-	if (!myCell)
-		return; 
-	if (myCell->hLoc == 0 || myCell->wLoc == 0 || myCell->hLoc == height -1 || myCell->wLoc == width - 1)
-	{
-		std::cout << "A soldier fled the battlefield and turns to banditry" << std::endl;
-		unit->setAlive(false);
-		return; // unit is gone, skip movement
-	}
-	if (unit->getTeam() == 1)
-	{
-		if (moveE(*unit, *unit->getCell()) == 1)
-			unit->rally();
-	}
-	else if (unit->getTeam() == 2)
-	{
-		if (moveW(*unit, *unit->getCell()) == 1)
-			unit->rally();
-	}
-	else 
-	{
-		if (moveS(*unit, *unit->getCell()) == 1)
-			unit->rally();
-	}
+    if (team == BLUETEAM) return teamBLUE;
+    if (team == REDTEAM)  return teamRED;
+    throw std::runtime_error("getTeam: invalid team");
 }
-
-std::vector<std::unique_ptr<AUnit>> &Battlefield::getTeam(int team)
-{
-	if (team == BLUETEAM)
-		return teamBLUE;
-	if (team == REDTEAM)
-		return teamRED;
-	throw std::runtime_error("getTeam request is invalid");
-}
-
-
-
-
-
-
 
 void Battlefield::loadArmies(Army red, Army blue)
 {
-    teamRED = std::move(red);
+    teamRED  = std::move(red);
     teamBLUE = std::move(blue);
 }
 
@@ -467,8 +211,8 @@ BattleResult Battlefield::extractResult()
 {
     BattleResult result;
     result.corpses = corpses;
-    result.winner = (countTeam(REDTEAM) > 0) ? REDTEAM :
-                    (countTeam(BLUETEAM) > 0) ? BLUETEAM : 0;
+    result.winner  = (countTeam(REDTEAM) > 0) ? REDTEAM :
+                     (countTeam(BLUETEAM) > 0) ? BLUETEAM : 0;
 
     for (auto& unit : teamRED)
         if (unit && unit->getAlive() && !unit->getBattleSummon())
@@ -486,33 +230,13 @@ BattleResult Battlefield::extractResult()
 void Battlefield::triggerSpecialPhase()
 {
     for (auto& unit : teamRED)
-    {
-        if(unit && unit->getFatigue() < 100 && unit->getAlive()) 
-			unit->special();
-    }
+        if (unit && unit->getFatigue() < 100 && unit->getAlive())
+            unit->special();
 
     for (auto& unit : teamBLUE)
-    {
-        if(unit && unit->getFatigue() < 100 && unit->getAlive()) 
-			unit->special();
-    }
+        if (unit && unit->getFatigue() < 100 && unit->getAlive())
+            unit->special();
 }
 
-Cell* Battlefield::safeGetCell(int h, int w)
-{
-	if (h < 0 || h >= height)
-		return nullptr;	
-	if (w < 0 || w >= width)
-		return nullptr;
-	return &_battlefield[h][w];
-}
-
-size_t Battlefield::getCorpses()
-{
-	return corpses;
-}
-
-void Battlefield::setCorpses(size_t setCorpses)
-{
-	corpses = setCorpses;
-}
+size_t Battlefield::getCorpses()      { return corpses; }
+void   Battlefield::setCorpses(size_t c) { corpses = c; }

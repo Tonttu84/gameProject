@@ -17,6 +17,7 @@ struct HexCoordHash {
     }
 };
 
+class AUnit;
 struct Hex;
 
 struct HexSide {
@@ -32,30 +33,37 @@ struct Hex {
     static constexpr int CAPACITY = 640;
 
     HexCoord      coord    {};
-    int           team     = 0;
     int           sizeUsed = 0;
     FormationType formation = FormationType::NORMAL;
-    std::array<HexSide*, 6> sides {};  // indexed by HexDirection, null if no neighbor
+    std::array<HexSide*, 6> sides {};
+    std::vector<AUnit*>     units {};  // non-owning; ordered by arrival
     sf::ConvexShape shape;
     sf::Text        label;
 };
 
 class HexGrid {
 public:
-    static constexpr float HEX_SIZE = 40.f;
+    HexGrid();  // default: hexSize=20, origin=(20,25), no font
 
-    HexGrid(sf::Font& font, sf::Vector2f origin = {0.f, 0.f});
+    void setFont(sf::Font* font);   // call after font is loaded to enable labels
+    void buildGrid(int radius);     // hexagonal grid
+    void buildRect(int cols, int rows); // rectangular grid
 
-    void buildGrid(int radius);
     void render(sf::RenderWindow& window);
 
     Hex*     getHex(HexCoord c);
+    Hex*     safeGetHex(int q, int r);
     HexSide* getSide(HexCoord c, HexDirection dir);
     std::array<HexCoord, 6> neighbors(HexCoord c) const;
+    HexCoord neighborCoord(HexCoord c, HexDirection d) const;
+
+    static int distance(HexCoord a, HexCoord b);
+    sf::Vector2f pixelCenter(HexCoord c) const;
 
 private:
-    sf::Font&    _font;
+    sf::Font*    _font;
     sf::Vector2f _origin;
+    float        _hexSize;
 
     std::unordered_map<HexCoord, Hex, HexCoordHash> _hexes;
     std::vector<HexSide> _sides;
@@ -63,6 +71,6 @@ private:
     sf::Vector2f hexToPixel(HexCoord c) const;
     void         buildShape(Hex& hex);
     void         buildLabel(Hex& hex);
-    HexCoord     neighborCoord(HexCoord c, HexDirection d) const;
+    void         linkSides();
     HexDirection opposite(HexDirection d) const;
 };
