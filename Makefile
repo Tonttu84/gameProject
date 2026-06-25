@@ -12,7 +12,7 @@
 
 # Compiler and flags
 CC      = c++
-CFLAGS  = -std=c++17 -Wall -Wextra -Werror -g2 -I$(INC_DIR) -I$(SFML_DIR)/include \
+CFLAGS  = -std=c++17 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
           -fsanitize=address -fsanitize=undefined -fsanitize=leak
 
 # Directories
@@ -67,23 +67,33 @@ $(SFML_TAR):
 # Include dependency files
 -include $(DEPS)
 
-# Test build
-TEST_DIR  = TESTS
-TEST_NAME = run_tests
-TEST_OBJS = $(filter-out $(OBJ_DIR)/main.o, $(OBJS))
+# Test build — compiled separately with -DTESTING so #ifdef guards are active
+TEST_DIR      = TESTS
+TEST_NAME     = run_tests
+TEST_OBJ_DIR  = BUILD/test
+TEST_SRCS     = $(filter-out $(SRC_DIR)/main.cpp, $(SRCS))
+TEST_OBJS     = $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS))
+TEST_DEPS     = $(TEST_OBJS:.o=.d)
 
-$(OBJ_DIR)/test_main.o: $(TEST_DIR)/test_main.cpp
-	$(CC) $(CFLAGS) -I$(TEST_DIR) -MMD -MP -c $< -o $@
+$(TEST_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(TEST_OBJ_DIR)
+	$(CC) $(CFLAGS) -DTESTING -MMD -MP -c $< -o $@
 
-$(TEST_NAME): $(TEST_OBJS) $(OBJ_DIR)/test_main.o
-	$(CC) $(CFLAGS) -o $@ $^ $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
+$(TEST_OBJ_DIR)/test_main.o: $(TEST_DIR)/test_main.cpp
+	@mkdir -p $(TEST_OBJ_DIR)
+	$(CC) $(CFLAGS) -DTESTING -I$(TEST_DIR) -MMD -MP -c $< -o $@
+
+$(TEST_NAME): $(TEST_OBJS) $(TEST_OBJ_DIR)/test_main.o
+	$(CC) $(CFLAGS) -DTESTING -o $@ $^ $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
+
+-include $(TEST_DEPS)
 
 test: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
 	./$(TEST_NAME)
 
 # Cleanup
 clean:
-	rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d
+	rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(TEST_OBJ_DIR)/*.o $(TEST_OBJ_DIR)/*.d
 
 fclean: clean
 	rm -f $(NAME) $(TEST_NAME)

@@ -37,8 +37,8 @@ class Cell{
 
         bool fire = false;
     private:
-        int terrain = empty;
-        int elevation = 0;
+        [[maybe_unused]] int terrain = empty;
+        [[maybe_unused]] int elevation = 0;
         AUnit *ptr = nullptr; // Non-owning, auto-nullifying
         
 };
