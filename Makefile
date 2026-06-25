@@ -53,8 +53,12 @@ TEST_DEPS    = $(TEST_OBJS:.o=.d)
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
 
 # ── Main binary ───────────────────────────────────────────────────────────────
+# Ask the compiler itself where its libstdc++ lives and bake that path into the binary.
+# Prevents GLIBCXX version mismatches on machines where the system /lib has an older libstdc++.
+STDCXX_RPATH := $(shell dirname $$($(CC) -print-file-name=libstdc++.so.6))
+
 $(NAME): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib -Wl,-rpath,$(STDCXX_RPATH)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(OBJ_DIR)
