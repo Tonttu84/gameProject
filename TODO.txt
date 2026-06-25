@@ -10,6 +10,21 @@
 #                                                                              #
 # **************************************************************************** #
 
+Accuracy system — needs design review:
+  Currently accuracy is a 0-100 percentage used by ranged units for two things:
+    1. Aimed range: accuracy/10 hexes — within this distance the unit can attempt
+       to target an individual rather than just a hex.
+    2. Aimed shot success: getRandom(1,100) <= accuracy — human archer at 50 has
+       50-50, a gaze/mind-blast at 99 almost always picks its target.
+  Open questions:
+    - Should accuracy also affect the deviation of the shot (Deviate currently uses
+      dist/accuracy but with hex distances the integer division usually gives 0,
+      so it does nothing useful at the moment)?
+    - Should melee units have a meaningful accuracy stat, or is it only for ranged/special?
+    - The default accuracy=10 on AUnit means any unit with a special() that does a
+      targeted attack gets 10% aimed chance and 1-hex aimed range — is that a sensible
+      default or should it be 0 (no aimed shot) until explicitly set?
+
 Armor fatigue: heavier armor should increase fatigueCost in combat (and possibly MARCHFATIGUE for
 marching). Currently all unit fatigue costs are flat — armor type should be a multiplier or addend
 on fatigueCost so plate > chain > leather > none. Soldier already has +1 heavy armor penalty as a
