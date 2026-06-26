@@ -49,7 +49,7 @@ static PlayerRoster countSurvivors(const Army& survivors)
     for (const auto& u : survivors) {
         if (!u) continue;
         switch (u->getPrintSymbol()) {
-            case 'S': r.soldiers++; break;
+            case 'X': r.soldiers++; break;
             case 'A': r.archers++;  break;
             case 'M': r.mages++;    break;
             case 'P': r.priests++;  break;

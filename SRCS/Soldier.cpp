@@ -16,6 +16,7 @@
 
 Soldier::Soldier(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::SwordAndShield)
 {
+    printSymbol = 'X';
     armour = HEAVYARMOUR;
     attackPWR = 11;
     defence = 12;
