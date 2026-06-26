@@ -29,7 +29,7 @@ void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
         {
             for (int w = (h == hIter ? wIter : zone.wStart); w <= zone.wEnd && !placed; ++w)
             {
-                Hex* hex = field.hexGrid.getHex({w, h});
+                Hex* hex = field.hexGrid.getHex({w - h / 2, h}); // visual col → axial q
                 if (canPlace(hex)) {
                     unit->setHex(hex);
                     unit->setPlaced(true);
@@ -44,7 +44,7 @@ void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
             {
                 for (int w = zone.wStart; w <= zone.wEnd && !placed; ++w)
                 {
-                    Hex* hex = field.hexGrid.getHex({w, h});
+                    Hex* hex = field.hexGrid.getHex({w - h / 2, h}); // visual col → axial q
                     if (canPlace(hex)) {
                         unit->setHex(hex);
                         unit->setPlaced(true);

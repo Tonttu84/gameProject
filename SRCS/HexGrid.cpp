@@ -137,8 +137,10 @@ void HexGrid::buildRect(int cols, int rows) {
     _sides.reserve(static_cast<size_t>(numHexes) * 3);
 
     for (int r = 0; r < rows; ++r) {
-        for (int q = 0; q < cols; ++q) {
-            HexCoord c{q, r};
+        for (int col = 0; col < cols; ++col) {
+            // Even-r offset → axial: keeps the visual grid rectangular so armies
+            // face each other left-vs-right rather than along a diagonal.
+            HexCoord c{col - r / 2, r};
             Hex& hex = _hexes[c];
             hex.coord = c;
             buildShape(hex);
