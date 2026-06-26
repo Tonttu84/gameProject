@@ -8,7 +8,7 @@ static constexpr int DR[6] = {-1,  0,  1,  1,  0, -1};
 
 static constexpr float HEX_ORIGIN_X     = 30.f;
 static constexpr float HEX_ORIGIN_Y     = 30.f;
-static constexpr float HEX_SIZE_DEFAULT = 35.f;
+static constexpr float HEX_SIZE_DEFAULT = 60.f;
 
 HexGrid::HexGrid()
     : _origin(HEX_ORIGIN_X, HEX_ORIGIN_Y), _hexSize(HEX_SIZE_DEFAULT)

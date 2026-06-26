@@ -370,6 +370,7 @@ void Battlefield::resolveEngagements() {
     for (auto& u : teamBLUE) if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
 
     for (HexSide& side : hexGrid.getSides()) {
+        side.engaged = false;
         if (!side.hexA || !side.hexB) continue;
 
         // Only engage sides where both hexes have living units of opposing teams
@@ -378,6 +379,7 @@ void Battlefield::resolveEngagements() {
         for (AUnit* u : side.hexB->units) if (u && u->getAlive()) { teamB = u->getTeam(); break; }
         if (teamA == 0 || teamB == 0 || teamA == teamB) continue;
 
+        side.engaged = true;
         assignFighters(side.hexA->units, &side);
         assignFighters(side.hexB->units, &side);
     }

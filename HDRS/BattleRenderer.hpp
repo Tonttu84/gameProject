@@ -33,4 +33,7 @@ private:
     static sf::Vector2f toIso(sf::Vector2f flat);
     void buildHexShape(HexCoord c, sf::Vector2f flatCenter);
     void buildHexLabel(HexCoord c, sf::Vector2f isoCenter);
+    // SPRITE SWAP POINT: renderUnitsInHex places each unit symbol; replace sf::Text draw
+    // with sf::Sprite draw here when sprites are ready.
+    void renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter);
 };
