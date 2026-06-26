@@ -27,6 +27,7 @@ int main(int argc, char* argv[])
 
     sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "Battlefield");
     field.window = &window;
+    field.hexGrid.initView(window.getSize());
 
     bool sample = (argc > 1 && std::string(argv[1]) == "sample");
     if (sample)

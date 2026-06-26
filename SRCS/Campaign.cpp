@@ -217,6 +217,7 @@ static BattleResult runBattleLoop(Battlefield& field, sf::RenderWindow& window,
                 paused = !paused;
                 std::cout << (paused ? "  [PAUSED]\n" : "  [RESUMED]\n");
             }
+            field.hexGrid.handleEvent(event);
         }
 
         if (paused) {

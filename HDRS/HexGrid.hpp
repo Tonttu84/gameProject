@@ -45,7 +45,7 @@ struct Hex {
 
 class HexGrid {
 public:
-    HexGrid();  // default: hexSize=20, origin=(20,25), no font
+    HexGrid();  // default: hexSize=35, origin=(30,30), no font
 
     void setFont(sf::Font* font);   // call after font is loaded to enable labels
     void buildGrid(int radius);     // hexagonal grid
@@ -53,6 +53,9 @@ public:
 
     void render(sf::RenderWindow& window);
     void clearUnits(); // remove all units from hexes and reset sizeUsed — call between battles
+
+    void handleEvent(const sf::Event& e);            // zoom (mouse wheel) + R to reset view
+    void initView(sf::Vector2u windowSize);          // fit whole iso grid into view; call after buildRect/buildGrid
 
     Hex*        getHex(HexCoord c);
     const Hex*  getHex(HexCoord c) const;
@@ -62,18 +65,21 @@ public:
     HexCoord neighborCoord(HexCoord c, HexDirection d) const;
 
     static int distance(HexCoord a, HexCoord b);
-    sf::Vector2f pixelCenter(HexCoord c) const;
+    sf::Vector2f pixelCenter(HexCoord c) const;    // returns iso-projected center
     std::vector<HexSide>& getSides();
 
 private:
-    sf::Font*    _font;
-    sf::Vector2f _origin;
-    float        _hexSize;
+    sf::Font*      _font;
+    sf::Vector2f   _origin;
+    float          _hexSize;
+    sf::View       _view;
+    sf::Vector2u   _lastWindowSize;
 
     std::unordered_map<HexCoord, Hex, HexCoordHash> _hexes;
     std::vector<HexSide> _sides;
 
-    sf::Vector2f hexToPixel(HexCoord c) const;
+    sf::Vector2f hexToPixel(HexCoord c) const;      // flat 2D coords
+    static sf::Vector2f toIso(sf::Vector2f flat);   // 2:1 isometric squish (y *= 0.5)
     void         buildShape(Hex& hex);
     void         buildLabel(Hex& hex);
     void         linkSides();
