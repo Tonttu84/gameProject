@@ -1,5 +1,6 @@
 #include "../HDRS/Campaign.hpp"
 #include "../HDRS/BattleSetup.hpp"
+#include "../HDRS/SampleBattle.hpp"
 #include "../HDRS/Soldier.hpp"
 #include "../HDRS/Archer.hpp"
 #include "../HDRS/Mage.hpp"
@@ -168,22 +169,17 @@ static void clearBattlefieldArea(int startRow, int height) {
         std::cout << "\033[" << (startRow + i) << ";1H\033[2K";
 }
 
-// ── Battle runner ──────────────────────────────────────────────────────────────
-static BattleResult runBattle(Battlefield& field, Army playerArmy, Army enemy,
-                              sf::RenderWindow& window, int battleNum)
+// ── Battle loop — shared by campaign and sample battle ────────────────────────
+static BattleResult runBattleLoop(Battlefield& field, sf::RenderWindow& window,
+                                  const std::string& title)
 {
-    field.reset();
-    randomPlaceArmy(enemy,      field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
-    randomPlaceArmy(playerArmy, field, {0, field.width / 4,                 0, field.height - 1});
-    field.loadArmies(std::move(enemy), std::move(playerArmy));
-
     int  termHeight       = getTerminalHeight();
     int  battlefieldStart = termHeight - Battlefield::height;
     int  counter          = 0;
     bool paused           = false;
     bool ongoing          = true;
 
-    std::cout << "\n=== BATTLE " << battleNum << " — SPACE to pause ===\n";
+    std::cout << "\n=== " << title << " — SPACE to pause ===\n";
 
     while (ongoing && window.isOpen()) {
         sf::Event event;
@@ -216,6 +212,16 @@ static BattleResult runBattle(Battlefield& field, Army playerArmy, Army enemy,
     }
 
     return field.extractResult();
+}
+
+static BattleResult runBattle(Battlefield& field, Army playerArmy, Army enemy,
+                              sf::RenderWindow& window, int battleNum)
+{
+    field.reset();
+    randomPlaceArmy(enemy,      field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
+    randomPlaceArmy(playerArmy, field, {0, field.width / 4,                 0, field.height - 1});
+    field.loadArmies(std::move(enemy), std::move(playerArmy));
+    return runBattleLoop(field, window, "BATTLE " + std::to_string(battleNum));
 }
 
 // ── Campaign entry point ───────────────────────────────────────────────────────
@@ -264,4 +270,19 @@ void runCampaign(Battlefield& field, sf::RenderWindow& window)
               << roster.mages    << " mages, "
               << roster.priests  << " priests\n";
     std::cout << "============================================================\n";
+}
+
+// ── Sample battle — dev shortcut, no buy screen ────────────────────────────────
+void runSampleBattle(Battlefield& field, sf::RenderWindow& window)
+{
+    field.reset();
+    setupSampleBattle(field);
+    BattleResult result = runBattleLoop(field, window, "SAMPLE BATTLE");
+
+    std::cout << "\nBattle ended. ";
+    if      (result.winner == REDTEAM)  std::cout << "Red wins.\n";
+    else if (result.winner == BLUETEAM) std::cout << "Blue wins.\n";
+    else                                std::cout << "Draw.\n";
+    std::cout << "Red survivors: "  << result.redSurvivors.size()
+              << "  Blue survivors: " << result.blueSurvivors.size() << "\n";
 }

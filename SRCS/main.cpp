@@ -18,7 +18,7 @@
 constexpr unsigned int WINDOW_WIDTH  = 2400; // SFML window width in pixels
 constexpr unsigned int WINDOW_HEIGHT = 1000; // SFML window height in pixels
 
-int main()
+int main(int argc, char* argv[])
 {
     Utility::load();
 
@@ -28,7 +28,11 @@ int main()
     sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "Battlefield");
     field.window = &window;
 
-    runCampaign(field, window);
+    bool sample = (argc > 1 && std::string(argv[1]) == "sample");
+    if (sample)
+        runSampleBattle(field, window);
+    else
+        runCampaign(field, window);
 
     // Keep window open after campaign ends so the user can see the final state.
     sf::Event event;

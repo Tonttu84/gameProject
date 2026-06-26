@@ -2,6 +2,9 @@
 #include "Battlefield.hpp"
 #include <SFML/Graphics.hpp>
 
-// Top-level campaign entry point: runs the buy screen and three escalating battles.
-// Talks to the combat engine only through loadArmies / tick / extractResult.
+// Full campaign: buy screen + three escalating battles.
 void runCampaign(Battlefield& field, sf::RenderWindow& window);
+
+// Dev shortcut: run the sample battle directly, no buy screen.
+// Launch with:  ./game sample
+void runSampleBattle(Battlefield& field, sf::RenderWindow& window);
