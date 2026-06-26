@@ -38,7 +38,7 @@ void Battlefield::printText(int turn) const
 size_t Battlefield::countTeam(const int team) const
 {
     size_t count = 0;
-    const auto& t = (team == REDTEAM) ? teamRED : teamBLUE;
+    const auto& t = (team == REDTEAM) ? _red.units : _blue.units;
     for (const auto& u : t)
         if (u && u->getAlive()) ++count;
     return count;
@@ -49,7 +49,7 @@ Hex* Battlefield::findTarget(const AUnit& searcher) const
     if (!searcher.getHex()) return nullptr;
     HexCoord myCoord = searcher.getHex()->coord;
 
-    const auto& enemyTeam = (searcher.getTeam() == REDTEAM) ? teamBLUE : teamRED;
+    const auto& enemyTeam = (searcher.getTeam() == REDTEAM) ? _blue.units : _red.units;
     int bestDist = std::numeric_limits<int>::max();
     const AUnit* bestEnemy = nullptr;
     Hex* bestHex = nullptr;
@@ -191,8 +191,8 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
 
 void Battlefield::moveUnits()
 {
-    moveTeam(teamRED);
-    moveTeam(teamBLUE);
+    moveTeam(_red);
+    moveTeam(_blue);
 }
 
 void Battlefield::swapOut(std::unique_ptr<AUnit>& unitPtr)
@@ -246,9 +246,9 @@ void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
     // If no retreat hex is available the unit holds its position.
 }
 
-void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
+void Battlefield::moveTeam(Team& team)
 {
-    for (auto& unit : team) {
+    for (auto& unit : team.units) {
         if (!unit || !unit->getAlive()) continue;
         AUnit& u = *unit;
 
@@ -294,15 +294,15 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
 
 void Battlefield::makeBattle()
 {
-    auto red  = teamRED.begin();
-    auto blue = teamBLUE.begin();
+    auto red  = _red.units.begin();
+    auto blue = _blue.units.begin();
 
-    while (red != teamRED.end() || blue != teamBLUE.end()) {
-        if (red != teamRED.end()
-            && ((Utility::getRandom(1, 2) == 1) || blue == teamBLUE.end())) {
+    while (red != _red.units.end() || blue != _blue.units.end()) {
+        if (red != _red.units.end()
+            && ((Utility::getRandom(1, 2) == 1) || blue == _blue.units.end())) {
             (*red)->battle(*this);
             ++red;
-        } else if (blue != teamBLUE.end()) {
+        } else if (blue != _blue.units.end()) {
             (*blue)->battle(*this);
             ++blue;
         }
@@ -311,29 +311,30 @@ void Battlefield::makeBattle()
 
 void Battlefield::cleanup()
 {
-    auto it = teamBLUE.begin();
-    while (it != teamBLUE.end()) {
+    auto it = _blue.units.begin();
+    while (it != _blue.units.end()) {
         if (!(*it) || !(*it)->getAlive()) {
             if (*it && !(*it)->getUndead()) ++corpses;
-            it = teamBLUE.erase(it);
+            it = _blue.units.erase(it);
         } else {
             ++it;
         }
     }
-    auto ir = teamRED.begin();
-    while (ir != teamRED.end()) {
-        if (!(*ir) || !(*ir)->getAlive())
-            ir = teamRED.erase(ir);
-        else
-            ++ir;
-    }
+    _red.pruneDeadUnits();
 }
 
 std::vector<std::unique_ptr<AUnit>>& Battlefield::getTeam(int team)
 {
-    if (team == BLUETEAM) return teamBLUE;
-    if (team == REDTEAM)  return teamRED;
+    if (team == BLUETEAM) return _blue.units;
+    if (team == REDTEAM)  return _red.units;
     throw std::runtime_error("getTeam: invalid team");
+}
+
+Team& Battlefield::getTeamData(int team)
+{
+    if (team == REDTEAM)  return _red;
+    if (team == BLUETEAM) return _blue;
+    throw std::runtime_error("getTeamData: invalid team");
 }
 
 void Battlefield::reset()
@@ -342,20 +343,20 @@ void Battlefield::reset()
     // Dead units' destructors already cleaned their hexes during cleanup().
     // This call handles any residual pointers and resets state.
     hexGrid.clearUnits();
-    teamRED.clear();
-    teamBLUE.clear();
+    _red.units.clear();
+    _blue.units.clear();
     corpses = 0;
 }
 
 void Battlefield::loadArmies(Army red, Army blue)
 {
-    teamRED  = std::move(red);
-    teamBLUE = std::move(blue);
+    _red.units  = std::move(red);
+    _blue.units = std::move(blue);
 }
 
 void Battlefield::resolveEngagements() {
-    for (auto& u : teamRED)  if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
-    for (auto& u : teamBLUE) if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
+    _red.resetUnitFlags();
+    _blue.resetUnitFlags();
     for (HexSide& side : hexGrid.getSides()) side.engaged = false;
 
     // Mark sides where both hexes hold opposing living units
@@ -416,8 +417,8 @@ void Battlefield::resolveEngagements() {
 bool Battlefield::tick()
 {
     // Passive fatigue recovery — all alive units recover each tick regardless of action
-    for (auto& u : teamRED)  if (u && u->getAlive()) u->recover();
-    for (auto& u : teamBLUE) if (u && u->getAlive()) u->recover();
+    for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
+    for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
 
     triggerSpecialPhase();
     moveUnits();
@@ -434,16 +435,16 @@ BattleResult Battlefield::extractResult()
     result.winner  = (countTeam(REDTEAM) > 0) ? REDTEAM :
                      (countTeam(BLUETEAM) > 0) ? BLUETEAM : 0;
 
-    for (auto& unit : teamRED)
+    for (auto& unit : _red.units)
         if (unit && unit->getAlive() && !unit->getBattleSummon())
             result.redSurvivors.push_back(std::move(unit));
 
-    for (auto& unit : teamBLUE)
+    for (auto& unit : _blue.units)
         if (unit && unit->getAlive() && !unit->getBattleSummon())
             result.blueSurvivors.push_back(std::move(unit));
 
-    teamRED.clear();
-    teamBLUE.clear();
+    _red.units.clear();
+    _blue.units.clear();
     return result;
 }
 
@@ -453,11 +454,11 @@ void Battlefield::triggerSpecialPhase()
     // list is rebuilt fresh from current occupants.
     RangedCombat::resetCache();
 
-    for (auto& unit : teamRED)
+    for (auto& unit : _red.units)
         if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
             unit->special();
 
-    for (auto& unit : teamBLUE)
+    for (auto& unit : _blue.units)
         if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
             unit->special();
 }

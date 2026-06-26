@@ -95,8 +95,8 @@ public:
     // ── Leadership ───────────────────────────────────────────────────────────
     // Leader must already be a member of this squad.
     void setLeader(AUnit* unit);
-    AUnit* getLeader() const     { return _leader; }
-    bool   hasLeader() const     { return _leader && _leader->getAlive(); }
+    AUnit* getLeader() const { return _leader; }
+    bool   hasLeader() const; // defined in Squad.cpp — AUnit is incomplete here
 
     // ── Banner ───────────────────────────────────────────────────────────────
     // The banner is the persistent identity of the squad (carries prestige in roguelite).
@@ -170,11 +170,13 @@ public:
 
 private:
     std::string         _name;
+    int                 _prestige    = 0;
     std::vector<AUnit*> _members;    // non-owning; includes dead until pruned
     AUnit*              _leader     = nullptr;
     AUnit*              _flagBearer = nullptr;
     Wing*               _wing       = nullptr;  // non-owning; nullptr = wingless squad
     bool                _hasBanner;
+    bool                _shakenTested = false;  // true after shaken threshold fired; reset when % drops below
     MoraleState         _moraleState = MoraleState::Normal;
 
     // Starting member count recorded when the first battle tick begins.
