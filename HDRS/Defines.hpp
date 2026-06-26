@@ -42,8 +42,8 @@ constexpr int FIREBALL_SECONDARY = 5;  // number of secondary blast hits
 constexpr int SPELLRANGE         = 10; // max hex distance for spells
 
 // Battlefield dimensions
-constexpr int BATTLEFIELD_WIDTH  = 16;  // hex columns (q) — battle-line width
-constexpr int BATTLEFIELD_HEIGHT = 30;  // hex rows (r)  — depth between armies
+constexpr int BATTLEFIELD_WIDTH  = 30;  // visual width  — hex rows (r), depth between armies
+constexpr int BATTLEFIELD_HEIGHT = 16;  // visual height — hex columns (q), battle-line width
 
 // Movement / formation
 constexpr int CROWDED_THRESHOLD = 400; // sizeUsed at which a hex is "crowded" (~40 humans)

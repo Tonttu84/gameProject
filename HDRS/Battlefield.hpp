@@ -30,8 +30,8 @@ class Battlefield
         Battlefield &operator=(Battlefield &target) = default;
 
         void printText(int turn = -1) const;
-        static constexpr int height = BATTLEFIELD_HEIGHT;
-        static constexpr int width  = BATTLEFIELD_WIDTH;
+        static constexpr int height = BATTLEFIELD_WIDTH;   // 30 rows
+        static constexpr int width  = BATTLEFIELD_HEIGHT;  // 16 cols
 
         size_t countTeam(const int team) const;
         void moveUnits(void);
