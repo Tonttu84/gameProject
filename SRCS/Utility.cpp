@@ -74,26 +74,20 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
         }
 
         AUnit* secondary = nullptr;
+        int maxScore = 0;
 
-        auto it = targets.begin();
-        while (it != targets.end())
+        for (auto it = targets.begin(); it != targets.end(); ++it)
         {
-            if ((*it)->getAlive() == false)
-            {
-                it++;
-                continue;
-            }    
+            if (!(*it)->getAlive()) continue;
             if (validPriorityTarget(*(*it), myTeam))
-            {
-                return (&*(*it));
+                return &*(*it);
+            int score = validTarget(*(*it), myTeam);
+            if (score > maxScore) {
+                maxScore  = score;
+                secondary = &*(*it);
+            } else if (score == maxScore && score > 0 && (*it)->getSortKey() < secondary->getSortKey()) {
+                secondary = &*(*it);
             }
-            int targetValue = 0;
-            if (validTarget(*(*it), myTeam) > targetValue)
-                {
-                    targetValue = (validTarget(*(*it), myTeam));
-                    secondary = &*(*it);
-                }
-            it++;
         }
         return secondary;
     }

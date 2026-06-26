@@ -35,6 +35,7 @@ AUnit::~AUnit()
 }
 
 void AUnit::setHex(Hex* hex) {
+	removeFromHex(currentHex, this);
 	currentHex = hex;
 	if (hex) {
 		hex->units.push_back(this);
@@ -132,10 +133,12 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	Hex* enemyHex = (engagedSide->hexA == currentHex)
 	              ? engagedSide->hexB : engagedSide->hexA;
 	if (!enemyHex) return nullptr;
+	AUnit* best = nullptr;
 	for (AUnit* u : enemyHex->units)
 		if (u && u->getTeam() != team && u->getAlive())
-			return u;
-	return nullptr;
+			if (!best || u->getSortKey() < best->getSortKey())
+				best = u;
+	return best;
 }
 
 	void AUnit::battle(Battlefield &myBattlefield)
@@ -301,8 +304,8 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	//returns true if the test is passed
 	bool AUnit::testMorale(int damage)
 	{
-		if (damage <= 0)
-			return true;
+		if (undead) return true;
+		if (damage <= 0) return true;
 		if (morale + Utility::throwDice() - Utility::throwDice() > damage)
 			return true;
 		setBroken(true);
