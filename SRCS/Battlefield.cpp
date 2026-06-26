@@ -164,12 +164,20 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
         return;
     }
 
-    // Red (bottom, attacks north) flees south; Blue (top, attacks south) flees north
-    HexDirection fleeDir = (unit->getTeam() == REDTEAM) ? HexDirection::SE : HexDirection::NW;
-    int base = static_cast<int>(fleeDir);
-    for (int delta : {0, 1, -1, 2, -2, 3}) {
-        HexDirection d = static_cast<HexDirection>((base + delta + 6) % 6);
-        HexCoord nc = hexGrid.neighborCoord(c, d);
+    // SE and SW both reduce distance to Red's back edge equally (dr=+1 each); pick randomly
+    // so the path zigzags instead of going straight. Same logic for Blue (NW/NE).
+    // If the random path drifts to a flank edge the boundary check above removes the unit.
+    static const HexDirection RED_FLEE[6]  = { HexDirection::SE, HexDirection::SW,
+                                               HexDirection::E,  HexDirection::W,
+                                               HexDirection::NE, HexDirection::NW };
+    static const HexDirection BLUE_FLEE[6] = { HexDirection::NW, HexDirection::NE,
+                                               HexDirection::W,  HexDirection::E,
+                                               HexDirection::SW, HexDirection::SE };
+    const HexDirection* dirs = (unit->getTeam() == REDTEAM) ? RED_FLEE : BLUE_FLEE;
+    bool swap = Utility::getRandom(0, 1) == 0;
+    for (int i = 0; i < 6; ++i) {
+        int idx = (i < 2 && swap) ? (1 - i) : i;
+        HexCoord nc = hexGrid.neighborCoord(c, dirs[idx]);
         Hex* next = hexGrid.getHex(nc);
         if (hexAcceptsUnit(next, *unit)) {
             moveAUnit(*unit, nc);

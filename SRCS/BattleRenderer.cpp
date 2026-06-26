@@ -55,6 +55,7 @@ void BattleRenderer::buildHexLabel(HexCoord c, sf::Vector2f isoCenter) {
     sf::FloatRect b = label.getLocalBounds();
     label.setOrigin(b.left + b.width * 0.5f, b.top + b.height * 0.5f);
     label.setPosition(isoCenter);
+    label.setRotation(90.f);
 }
 
 void BattleRenderer::build(const HexGrid& grid) {
@@ -144,6 +145,7 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
 
     sf::Text sym;
     sym.setFont(_font);
+    sym.setRotation(90.f);
 
     // SPRITE SWAP POINT: replace setCharacterSize/setString/setFillColor/draw with sf::Sprite draw
     auto drawUnit = [&](AUnit* u, sf::Vector2f flatPos, unsigned int px, sf::Uint8 alpha = 255) {
