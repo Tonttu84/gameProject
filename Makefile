@@ -90,7 +90,7 @@ $(TEST_OBJ_DIR)/test_main.o: $(TEST_DIR)/test_main.cpp
 $(TEST_NAME): $(TEST_OBJS) $(TEST_OBJ_DIR)/test_main.o
 	$(CC) $(CFLAGS) -DTESTING -o $@ $^ $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
 
--include $(TEST_DEPS)
+-include $(TEST_DEPS) $(TEST_OBJ_DIR)/test_main.d
 
 test: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
 	./$(TEST_NAME)

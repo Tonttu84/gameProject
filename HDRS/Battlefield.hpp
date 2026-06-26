@@ -8,7 +8,6 @@
 #include <vector>
 #include <climits>
 #include "Utility.hpp"
-#include <SFML/Graphics.hpp>
 
 using Army = std::vector<std::unique_ptr<AUnit>>;
 
@@ -23,7 +22,6 @@ struct BattleResult
 class Battlefield
 {
     public:
-        sf::RenderWindow *window = nullptr;
         HexGrid hexGrid;
 
         Battlefield();
@@ -31,7 +29,6 @@ class Battlefield
         Battlefield(Battlefield &cpy) = delete;
         Battlefield &operator=(Battlefield &target) = default;
 
-        void print(void);
         void printText(int turn = -1) const;
         static constexpr int height = BATTLEFIELD_HEIGHT;
         static constexpr int width  = BATTLEFIELD_WIDTH;

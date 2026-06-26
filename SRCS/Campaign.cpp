@@ -194,9 +194,10 @@ static void clearBattlefieldArea(int startRow, int height) {
 }
 
 // ── Battle loop — shared by campaign and sample battle ────────────────────────
-static BattleResult runBattleLoop(Battlefield& field, sf::RenderWindow& window,
+static BattleResult runBattleLoop(Battlefield& field, BattleRenderer& renderer,
                                   const std::string& title)
 {
+    sf::RenderWindow& window = renderer.getWindow();
     int  termHeight       = getTerminalHeight();
     int  battlefieldStart = termHeight - Battlefield::height;
     int  counter          = 0;
@@ -217,11 +218,11 @@ static BattleResult runBattleLoop(Battlefield& field, sf::RenderWindow& window,
                 paused = !paused;
                 std::cout << (paused ? "  [PAUSED]\n" : "  [RESUMED]\n");
             }
-            field.hexGrid.handleEvent(event);
+            renderer.handleEvent(event);
         }
 
         if (paused) {
-            field.print();
+            renderer.render(field.hexGrid);
             std::this_thread::sleep_for(std::chrono::milliseconds(PAUSED_SLEEP_MS));
             continue;
         }
@@ -232,7 +233,7 @@ static BattleResult runBattleLoop(Battlefield& field, sf::RenderWindow& window,
         ongoing = field.tick();
         counter++;
         std::cout << "Turn " << counter << "\n";
-        field.print();
+        renderer.render(field.hexGrid);
         std::this_thread::sleep_for(std::chrono::milliseconds(TICK_SLEEP_MS));
     }
 
@@ -240,28 +241,28 @@ static BattleResult runBattleLoop(Battlefield& field, sf::RenderWindow& window,
 }
 
 static BattleResult runBattle(Battlefield& field, Army playerArmy, Army enemy,
-                              sf::RenderWindow& window, int battleNum)
+                              BattleRenderer& renderer, int battleNum)
 {
     field.reset();
     randomPlaceArmy(enemy,      field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
     randomPlaceArmy(playerArmy, field, {0, field.width / 4,                 0, field.height - 1});
     field.loadArmies(std::move(enemy), std::move(playerArmy));
-    return runBattleLoop(field, window, "BATTLE " + std::to_string(battleNum));
+    return runBattleLoop(field, renderer, "BATTLE " + std::to_string(battleNum));
 }
 
 // ── Campaign entry point ───────────────────────────────────────────────────────
-void runCampaign(Battlefield& field, sf::RenderWindow& window)
+void runCampaign(Battlefield& field, BattleRenderer& renderer)
 {
     int          gold = STARTING_GOLD;
     PlayerRoster roster;
 
     for (int battleNum = 1; battleNum <= NUM_BATTLES; ++battleNum) {
-        runBuyScreen(roster, gold, battleNum, window);
+        runBuyScreen(roster, gold, battleNum, renderer.getWindow());
 
         BattleResult result = runBattle(field,
                                         buildPlayerArmy(roster),
                                         buildEnemyArmy(battleNum),
-                                        window, battleNum);
+                                        renderer, battleNum);
 
         if (result.winner == BLUETEAM) {
             roster = countSurvivors(result.blueSurvivors);
@@ -298,11 +299,11 @@ void runCampaign(Battlefield& field, sf::RenderWindow& window)
 }
 
 // ── Sample battle — dev shortcut, no buy screen ────────────────────────────────
-void runSampleBattle(Battlefield& field, sf::RenderWindow& window)
+void runSampleBattle(Battlefield& field, BattleRenderer& renderer)
 {
     field.reset();
     setupSampleBattle(field);
-    BattleResult result = runBattleLoop(field, window, "SAMPLE BATTLE");
+    BattleResult result = runBattleLoop(field, renderer, "SAMPLE BATTLE");
 
     std::cout << "\nBattle ended. ";
     if      (result.winner == REDTEAM)  std::cout << "Red wins.\n";

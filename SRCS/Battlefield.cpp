@@ -7,14 +7,6 @@ Battlefield::Battlefield()
     hexGrid.buildRect(width, height);
 }
 
-void Battlefield::print()
-{
-    if (!window) return;
-    window->clear();
-    hexGrid.render(*window);
-    window->display();
-}
-
 void Battlefield::printText(int turn) const
 {
     if (turn >= 0) std::cout << "--- turn " << turn << " ---\n";
