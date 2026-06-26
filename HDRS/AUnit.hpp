@@ -22,6 +22,8 @@
 #include "Battlefield.hpp"
 #include "Utility.hpp"
 
+class Squad; // forward declare — Squad.hpp includes AUnit.hpp so we can't include it here
+
 
 
 
@@ -92,6 +94,11 @@ public:
     void     setEngagedSide(HexSide* s) { engagedSide = s; }
     HexSide* getEngagedSide() const { return engagedSide; }
 
+    // Squad back-pointer — non-owning. Set/cleared by Squad::addMember/removeMember.
+    // nullptr means this unit is a lone individual (mob, summon, overflow).
+    void   setSquad(Squad* s) { _squad = s; }
+    Squad* getSquad()   const { return _squad; }
+
     int  getPreferredRange()  const  { return preferredRange; }
     void setPreferredRange(int r)    { preferredRange = r; }
     int  getMovementSpeed()  const  { return movementSpeed; }
@@ -138,6 +145,7 @@ protected:
     bool battleSummon = false;
     size_t spentMove = 0;
 
+    Squad* _squad = nullptr;  // non-owning; nullptr = lone unit
     int sortKey = 0; // random tiebreaker set at construction, used for render ordering
     std::vector<Weapon> _attacks;
 

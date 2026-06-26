@@ -2,13 +2,19 @@
 #include "Defines.hpp"
 #include "HexGrid.hpp"
 #include "AUnit.hpp"
+#include "Squad.hpp"
+#include "Wing.hpp"
 #include <array>
 #include <unistd.h>
 #include <iostream>
+#include <memory>
 #include <vector>
 #include <climits>
 #include "Utility.hpp"
 
+// Army: units as purchased/carried by the campaign layer. Passed into loadArmies()
+// and returned in BattleResult survivors. Does not carry squads or wings —
+// those are assembled inside Battlefield for the duration of the battle.
 using Army = std::vector<std::unique_ptr<AUnit>>;
 
 struct BattleResult
@@ -17,6 +23,53 @@ struct BattleResult
     Army redSurvivors;
     Army blueSurvivors;
     size_t corpses;
+};
+
+// ─── Team ────────────────────────────────────────────────────────────────────
+// Owns all data belonging to one side of a battle: units, squads, wings.
+// Centralises operations that currently scatter across Battlefield (prune dead,
+// count alive, reset per-tick state) so Battlefield can call team.method()
+// instead of duplicating the loop for red and blue.
+//
+// Grows naturally as the command structure is implemented:
+//   - commanders (AUnit* with order budget) live here
+//   - per-tick order generation lives here
+//   - wing management lives here
+//
+// Not copyable — owns unique_ptrs.
+class Team {
+public:
+    explicit Team(int teamId) : id(teamId) {}
+    Team(const Team&)            = delete;
+    Team& operator=(const Team&) = delete;
+
+    const int id; // REDTEAM or BLUETEAM
+
+    // ── Unit storage ─────────────────────────────────────────────────────────
+    std::vector<std::unique_ptr<AUnit>> units;
+
+    // Erase dead and fully-fled units from the vector each tick.
+    // Mirrors the erase loops currently inlined in Battlefield::makeBattle.
+    void pruneDeadUnits();
+
+    // Count alive units (mirrors Battlefield::countTeam).
+    size_t countAlive() const;
+
+    // Reset per-battle-tick flags on all units (canFight, engagedSide).
+    void resetUnitFlags();
+
+    // ── Squad storage ─────────────────────────────────────────────────────────
+    std::vector<std::unique_ptr<Squad>> squads;
+
+    // Disband and erase squads that have no alive members.
+    void pruneEmptySquads();
+
+    // ── Wing storage ──────────────────────────────────────────────────────────
+    // Placeholder — populated once wing assignment is implemented.
+    std::vector<std::unique_ptr<Wing>> wings;
+
+    // Disband and erase wings that have no remaining squads.
+    void pruneEmptyWings();
 };
 
 class Battlefield
@@ -42,12 +95,16 @@ class Battlefield
         bool tick();
         BattleResult extractResult();
 
-        std::vector<std::unique_ptr<AUnit>> &getTeam(int team);
+        // Returns the unit vector from the matching Team — keeps existing callsites
+        // compiling while the Team refactor is in progress.
+        std::vector<std::unique_ptr<AUnit>>& getTeam(int team);
+        Team& getTeamData(int team); // full Team object when you need squads/wings too
+
         Hex* findTarget(const AUnit &searcher) const;
 
         int  moveAUnit(AUnit &unit, HexCoord target);
         void moveToward(std::unique_ptr<AUnit> &unit, const Hex* target);
-        void moveTeam(std::vector<std::unique_ptr<AUnit>> &team);
+        void moveTeam(Team& team);
         void flee(std::unique_ptr<AUnit> &unit);
         void swapOut(std::unique_ptr<AUnit> &unit);
         void retreatToRange(std::unique_ptr<AUnit> &unit);
@@ -59,7 +116,7 @@ class Battlefield
         void   setCorpses(size_t setCorpses);
 
     private:
-        std::vector<std::unique_ptr<AUnit>> teamRED;
-        std::vector<std::unique_ptr<AUnit>> teamBLUE;
+        Team   _red{REDTEAM};
+        Team   _blue{BLUETEAM};
         size_t corpses = 0;
 };
