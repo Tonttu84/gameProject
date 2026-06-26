@@ -8,6 +8,7 @@
 #include "../HDRS/Necromancer.hpp"
 
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <iostream>
 #include <thread>
@@ -90,8 +91,35 @@ static Army buildEnemyArmy(int battleNum)
     return enemy;
 }
 
+// Read one integer from stdin while continuing to pump SFML events every 100ms.
+// Prevents the window from being marked "not responding" during the buy screen.
+static int readChoicePolling(sf::RenderWindow& window)
+{
+    std::cout << std::flush;
+    int fd = fileno(stdin);
+    while (window.isOpen()) {
+        sf::Event event;
+        while (window.pollEvent(event))
+            if (event.type == sf::Event::Closed) { window.close(); return -1; }
+
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        struct timeval tv = {0, 100000}; // 100ms
+        if (select(fd + 1, &fds, nullptr, nullptr, &tv) > 0) {
+            int choice;
+            if (std::cin >> choice) return choice;
+            std::cin.clear();
+            std::cin.ignore(1000, '\n');
+            return -1;
+        }
+    }
+    return -1;
+}
+
 // ── Buy screen ─────────────────────────────────────────────────────────────────
-static void runBuyScreen(PlayerRoster& roster, int& gold, int battleNum)
+static void runBuyScreen(PlayerRoster& roster, int& gold, int battleNum,
+                         sf::RenderWindow& window)
 {
     std::cout << "\n";
     std::cout << "============================================================\n";
@@ -99,7 +127,7 @@ static void runBuyScreen(PlayerRoster& roster, int& gold, int battleNum)
     std::cout << "============================================================\n";
 
     bool done = false;
-    while (!done) {
+    while (!done && window.isOpen()) {
         std::cout << "\nGold: " << gold << "g    Army: "
                   << roster.soldiers << " soldiers, "
                   << roster.archers  << " archers, "
@@ -112,12 +140,8 @@ static void runBuyScreen(PlayerRoster& roster, int& gold, int battleNum)
         std::cout << "  [4] Priest                             " << PRIEST_COST << "g\n";
         std::cout << "  [0] Begin battle\n> ";
 
-        int choice = -1;
-        if (!(std::cin >> choice)) {
-            std::cin.clear();
-            std::cin.ignore(1000, '\n');
-            continue;
-        }
+        int choice = readChoicePolling(window);
+        if (choice == -1) return; // window closed
 
         switch (choice) {
             case 0:
@@ -231,7 +255,7 @@ void runCampaign(Battlefield& field, sf::RenderWindow& window)
     PlayerRoster roster;
 
     for (int battleNum = 1; battleNum <= NUM_BATTLES; ++battleNum) {
-        runBuyScreen(roster, gold, battleNum);
+        runBuyScreen(roster, gold, battleNum, window);
 
         BattleResult result = runBattle(field,
                                         buildPlayerArmy(roster),
