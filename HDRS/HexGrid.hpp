@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cstddef>
 #include <unordered_map>
 #include <vector>
 #include <SFML/System/Vector2.hpp>
