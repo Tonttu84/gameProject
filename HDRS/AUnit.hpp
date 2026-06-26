@@ -96,6 +96,7 @@ public:
     void setPreferredRange(int r)    { preferredRange = r; }
     int  getMovementSpeed()  const  { return movementSpeed; }
     int  getAmmunition()     const  { return ammunition; }
+    int  getSortKey()        const  { return sortKey; }
 
 
 protected:
@@ -135,6 +136,7 @@ protected:
     bool battleSummon = false;
     size_t spentMove = 0;
 
+    int sortKey = 0; // random tiebreaker set at construction, used for render ordering
     std::vector<Weapon> _attacks;
 
 };

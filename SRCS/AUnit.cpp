@@ -16,9 +16,8 @@
 
 
 AUnit::AUnit(const int newTeam)
-:team(newTeam)
+: team(newTeam), sortKey(Utility::getRandom(0, 1000000))
 {
-	
 }
 
 static void removeFromHex(Hex* hex, AUnit* unit) {

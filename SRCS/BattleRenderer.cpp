@@ -120,6 +120,8 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
     for (AUnit* u : hex.units)
         if (u && u->getAlive()) alive.push_back(u);
     if (alive.empty()) return;
+    std::sort(alive.begin(), alive.end(),
+              [](AUnit* a, AUnit* b) { return a->getSortKey() < b->getSortKey(); });
 
     // Edge midpoint angles (flat space, degrees) for HexDirection: NE=0,E=1,SE=2,SW=3,W=4,NW=5
     static const float EDGE_ANGLE[6] = { -60.f, 0.f, 60.f, 120.f, 180.f, -120.f };
