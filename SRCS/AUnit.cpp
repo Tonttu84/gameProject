@@ -105,7 +105,8 @@ int AUnit::defend(int AttackAttempt, int damage)
 		return 0;
 	
 	
-	int resultDMG = damage + Utility::throwDice() - Utility::throwDice();
+	int d1 = Utility::throwDice(), d2 = Utility::throwDice();
+	int resultDMG = damage + d1 - d2;
 
 	if (resultDMG >0 && shield > 0 && (defence + shield - fatiguelvl * 2 + defenceroll >= AttackAttempt)) //Result is not completely dodged and hits the shield
 	{
@@ -217,7 +218,8 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	{
 		if (broken == false)
 			return false;
-		if ((morale + Utility::throwDice() - Utility::throwDice()) >= 12)
+		int r1 = Utility::throwDice(), r2 = Utility::throwDice();
+		if ((morale + r1 - r2) >= 12)
 		{
 			std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
 			broken = false;
@@ -315,7 +317,8 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	{
 		if (undead) return true;
 		if (damage <= 0) return true;
-		if (morale + Utility::throwDice() - Utility::throwDice() > damage)
+		int m1 = Utility::throwDice(), m2 = Utility::throwDice();
+		if (morale + m1 - m2 > damage)
 			return true;
 		setBroken(true);
 		std::cout << "One coward valued his life more than his honor" << std::endl;

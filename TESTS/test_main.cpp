@@ -150,11 +150,12 @@ TEST_CASE("throwDice adds recursive roll when explosion triggers") {
 
 TEST_CASE("rally succeeds when net roll reaches threshold") {
     // dice1=5 (check=1), dice2=2 (check=1) → 10+5-2=13 >= 12
+    // Construct unit first so sortKey's getRandom() doesn't consume mock values.
+    Soldier s(REDTEAM);
+    s.setBroken(true);
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(5); Utility::pushDiceRoll(1);
     Utility::pushDiceRoll(2); Utility::pushDiceRoll(1);
-    Soldier s(REDTEAM);
-    s.setBroken(true);
     REQUIRE(s.rally() == true);
     REQUIRE(s.getBroken() == false);
     Utility::clearDiceRolls();
@@ -162,11 +163,11 @@ TEST_CASE("rally succeeds when net roll reaches threshold") {
 
 TEST_CASE("rally fails when net roll falls short of threshold") {
     // dice1=1 (check=1), dice2=5 (check=1) → 10+1-5=6 < 12
+    Soldier s(REDTEAM);
+    s.setBroken(true);
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
     Utility::pushDiceRoll(5); Utility::pushDiceRoll(1);
-    Soldier s(REDTEAM);
-    s.setBroken(true);
     REQUIRE(s.rally() == false);
     REQUIRE(s.getBroken() == true);
     Utility::clearDiceRolls();
@@ -178,10 +179,11 @@ TEST_CASE("rally fails when net roll falls short of threshold") {
 
 TEST_CASE("testMorale passes when roll exceeds damage") {
     // dice1=4 (check=1), dice2=1 (check=1) → 10+4-1=13 > 5
+    // Construct unit first so sortKey's getRandom() doesn't consume mock values.
+    Soldier s(REDTEAM);
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(4); Utility::pushDiceRoll(1);
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
-    Soldier s(REDTEAM);
     REQUIRE(s.testMorale(5) == true);
     REQUIRE(s.getBroken() == false);
     Utility::clearDiceRolls();
@@ -189,10 +191,10 @@ TEST_CASE("testMorale passes when roll exceeds damage") {
 
 TEST_CASE("testMorale fails and breaks unit when roll falls short") {
     // dice1=1 (check=1), dice2=2 (check=1) → 10+1-2=9, 9 > 10 is false
+    Soldier s(REDTEAM);
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
     Utility::pushDiceRoll(2); Utility::pushDiceRoll(1);
-    Soldier s(REDTEAM);
     REQUIRE(s.testMorale(10) == false);
     REQUIRE(s.getBroken() == true);
     Utility::clearDiceRolls();
