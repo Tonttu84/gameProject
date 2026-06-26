@@ -97,6 +97,8 @@ public:
     int  getMovementSpeed()  const  { return movementSpeed; }
     int  getAmmunition()     const  { return ammunition; }
     int  getSortKey()        const  { return sortKey; }
+    bool biggerThan(const AUnit* other) const;   // size descending; sortKey tiebreaker baked in
+    bool sortsBefore(const AUnit* other) const;  // sortKey tiebreaker only — use when size is irrelevant
 
 
 protected:

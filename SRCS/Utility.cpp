@@ -85,7 +85,7 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
             if (score > maxScore) {
                 maxScore  = score;
                 secondary = &*(*it);
-            } else if (score == maxScore && score > 0 && (*it)->getSortKey() < secondary->getSortKey()) {
+            } else if (score == maxScore && score > 0 && (*it)->sortsBefore(secondary)) {
                 secondary = &*(*it);
             }
         }

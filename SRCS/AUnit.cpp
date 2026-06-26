@@ -20,6 +20,15 @@ AUnit::AUnit(const int newTeam)
 {
 }
 
+bool AUnit::biggerThan(const AUnit* other) const {
+	if (size != other->size) return size > other->size;
+	return sortKey < other->sortKey;
+}
+
+bool AUnit::sortsBefore(const AUnit* other) const {
+	return sortKey < other->sortKey;
+}
+
 static void removeFromHex(Hex* hex, AUnit* unit) {
 	if (!hex) return;
 	auto& v = hex->units;
@@ -136,7 +145,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	AUnit* best = nullptr;
 	for (AUnit* u : enemyHex->units)
 		if (u && u->getTeam() != team && u->getAlive())
-			if (!best || u->getSortKey() < best->getSortKey())
+			if (!best || u->sortsBefore(best))
 				best = u;
 	return best;
 }

@@ -51,16 +51,16 @@ Hex* Battlefield::findTarget(const AUnit& searcher) const
 
     const auto& enemyTeam = (searcher.getTeam() == REDTEAM) ? teamBLUE : teamRED;
     int bestDist = std::numeric_limits<int>::max();
-    int bestKey  = std::numeric_limits<int>::max();
+    const AUnit* bestEnemy = nullptr;
     Hex* bestHex = nullptr;
 
     for (const auto& enemy : enemyTeam) {
         if (!enemy || !enemy->getAlive() || !enemy->getHex()) continue;
         int d = HexGrid::distance(myCoord, enemy->getHex()->coord);
-        if (d < bestDist || (d == bestDist && enemy->getSortKey() < bestKey)) {
-            bestDist = d;
-            bestKey  = enemy->getSortKey();
-            bestHex  = enemy->getHex();
+        if (d < bestDist || (d == bestDist && enemy->sortsBefore(bestEnemy))) {
+            bestDist  = d;
+            bestEnemy = enemy.get();
+            bestHex   = enemy->getHex();
         }
     }
     return bestHex;
@@ -382,8 +382,7 @@ void Battlefield::resolveEngagements() {
     // the two tiers. This guarantees e.g. 3 units across 4 sides → 1,1,1,0 not 2,1,0,0.
     auto bySize = [](const AUnit* a, const AUnit* b) {
         if (a->getBroken() != b->getBroken()) return !a->getBroken();
-        if (a->getSize() != b->getSize()) return a->getSize() > b->getSize();
-        return a->getSortKey() < b->getSortKey();
+        return a->biggerThan(b);
     };
 
     for (auto& [hex, sides] : hexSides) {
