@@ -85,22 +85,19 @@ void BattleRenderer::build(const HexGrid& grid) {
 void BattleRenderer::initView(sf::Vector2u windowSize) {
     _lastWindowSize = windowSize;
 
-    float pad    = _hexSize * 2.f;
+    float pad    = _hexSize * 0.1f;
     float worldW = (_isoMaxX - _isoMinX) + 2.f * pad;  // world X extent → screen height after rotation
-    float worldH = (_isoMaxY - _isoMinY) + 2.f * pad;  // world Y extent → screen width after rotation
     float cx     = (_isoMinX + _isoMaxX) * 0.5f;
     float cy     = (_isoMinY + _isoMaxY) * 0.5f;
 
-    // View is rotated 90° CW: world X maps to screen Y, world Y maps to screen X.
-    // setSize(vx, vy): vx visible in world-X (becomes screen height), vy in world-Y (becomes screen width).
-    // Screen aspect = vy/vx — fit to window.
-    float vx = worldW;
-    float vy = worldH;
+    // With 90° view rotation, SFML maps: world X → NDC Y (screen height) via vy,
+    // and world Y → NDC X (screen width) via vx.  So vy controls vertical coverage
+    // and vx controls horizontal coverage — the opposite of the unrotated case.
+    // vy = worldW: grid columns (world X) always fill screen height.
+    // vx = vy * winAspect: wider windows reveal more depth (world Y / grid rows).
     float winAspect = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
-    if (vy / vx < winAspect)
-        vy = vx * winAspect;
-    else
-        vx = vy / winAspect;
+    float vy = worldW;
+    float vx = vy * winAspect;
 
     _view.setSize(vx, vy);
     _view.setCenter(cx, cy);
@@ -108,6 +105,8 @@ void BattleRenderer::initView(sf::Vector2u windowSize) {
 }
 
 void BattleRenderer::handleEvent(const sf::Event& e) {
+    if (e.type == sf::Event::Resized)
+        initView({e.size.width, e.size.height});
     if (e.type == sf::Event::MouseWheelScrolled) {
         float factor = (e.mouseWheelScroll.delta > 0) ? 0.85f : 1.15f;
         _view.zoom(factor);
@@ -251,6 +250,8 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
 }
 
 void BattleRenderer::render(const HexGrid& grid) {
+    if (_window.getSize() != _lastWindowSize)
+        initView(_window.getSize());
     float panSpeed = _view.getSize().x * PAN_SPEED_FRACTION;
     sf::Vector2f moveDir(0.f, 0.f);
     // With 90° CW view rotation: world +X → screen up, world +Y → screen right.

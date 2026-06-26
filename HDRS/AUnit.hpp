@@ -32,7 +32,7 @@ public:
     AUnit(const int newTeam);
 
     void setHex(Hex* hex);
-    void attack(AUnit &target, const Weapon &attackWeapon);
+    void attack(AUnit &target, const Weapon &attackWeapon, int bonus = 0);
 
     Hex* getHex() const;
     void reset();

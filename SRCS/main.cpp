@@ -14,7 +14,7 @@
 
 #include <SFML/Graphics.hpp>
 
-constexpr unsigned int WINDOW_WIDTH  = 2400; // SFML window width in pixels
+constexpr unsigned int WINDOW_WIDTH  = 1000; // SFML window width in pixels
 constexpr unsigned int WINDOW_HEIGHT = 1000; // SFML window height in pixels
 
 int main(int argc, char* argv[])

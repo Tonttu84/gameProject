@@ -120,12 +120,10 @@ int AUnit::defend(int AttackAttempt, int damage)
 
 
 
-void AUnit::attack(AUnit &target, const Weapon &attackWeapon)
-{   
-	int HitResult = attackPWR - fatiguelvl + attackWeapon.getAttack() + Utility::throwDice();
-	
+void AUnit::attack(AUnit &target, const Weapon &attackWeapon, int bonus)
+{
+	int HitResult = attackPWR - fatiguelvl + attackWeapon.getAttack() + Utility::throwDice() + bonus;
 	target.defend(HitResult, attackWeapon.getDamage() + strength / attackWeapon.getStrDivider());
-	
 }
 
 AUnit *AUnit::find_target(Battlefield &myBattlefield)
@@ -150,6 +148,21 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			recover();
 			return;
 		}
+
+		// Bonus if the enemy hex assigned no unit to defend this side.
+		int attackBonus = 0;
+		if (engagedSide) {
+			Hex* enemyHex = (engagedSide->hexA == currentHex)
+			              ? engagedSide->hexB : engagedSide->hexA;
+			if (enemyHex) {
+				bool defended = false;
+				for (AUnit* u : enemyHex->units)
+					if (u && u->getAlive() && u->getEngagedSide() == engagedSide)
+						{ defended = true; break; }
+				if (!defended) attackBonus = UNDEFENDED_SIDE_BONUS;
+			}
+		}
+
 		bool attacked = false;
 		auto it = _attacks.begin();
 		while (it != _attacks.end())
@@ -159,7 +172,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				break;
 			while (it != _attacks.end() && target->getAlive())
 			{
-				attack(*target, *it);
+				attack(*target, *it, attackBonus);
 				attacked = true;
 				++it;
 			}
