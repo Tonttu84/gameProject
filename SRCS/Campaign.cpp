@@ -244,8 +244,8 @@ static BattleResult runBattle(Battlefield& field, Army playerArmy, Army enemy,
                               BattleRenderer& renderer, int battleNum)
 {
     field.reset();
-    randomPlaceArmy(enemy,      field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
-    randomPlaceArmy(playerArmy, field, {0, field.width / 4,                 0, field.height - 1});
+    randomPlaceArmy(enemy,      field, {0, field.width - 1, field.height * 3/4, field.height - 1});
+    randomPlaceArmy(playerArmy, field, {0, field.width - 1, 0,                  field.height / 4});
     field.loadArmies(std::move(enemy), std::move(playerArmy));
     return runBattleLoop(field, renderer, "BATTLE " + std::to_string(battleNum));
 }

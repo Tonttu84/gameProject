@@ -27,7 +27,8 @@ constexpr int FATIGUE_MAX         = 100; // exhausted above this — must rest b
 constexpr int FATIGUE_LEVEL_DIV   = 20;  // fatigue / this = fatigue tier (0-5)
 
 // Combat
-constexpr int SHIELDREDUCTION = 5;
+constexpr int SHIELDREDUCTION        = 5;
+constexpr int UNDEFENDED_SIDE_BONUS  = 3;  // attack bonus when no enemy unit defends the engaged side
 
 // Archery
 constexpr int BOWDAMAGE   = 5;
@@ -41,8 +42,8 @@ constexpr int FIREBALL_SECONDARY = 5;  // number of secondary blast hits
 constexpr int SPELLRANGE         = 10; // max hex distance for spells
 
 // Battlefield dimensions
-constexpr int BATTLEFIELD_WIDTH  = 30;  // hex columns (q)
-constexpr int BATTLEFIELD_HEIGHT = 16;  // hex rows (r)
+constexpr int BATTLEFIELD_WIDTH  = 16;  // hex columns (q) — battle-line width
+constexpr int BATTLEFIELD_HEIGHT = 30;  // hex rows (r)  — depth between armies
 
 // Movement / formation
 constexpr int CROWDED_THRESHOLD = 400; // sizeUsed at which a hex is "crowded" (~40 humans)

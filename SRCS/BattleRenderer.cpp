@@ -27,7 +27,7 @@ sf::RenderWindow& BattleRenderer::getWindow() {
 }
 
 sf::Vector2f BattleRenderer::toIso(sf::Vector2f flat) {
-    return { flat.x, flat.y * 0.5f };
+    return flat;
 }
 
 void BattleRenderer::buildHexShape(HexCoord c, sf::Vector2f flatCenter) {
@@ -84,20 +84,26 @@ void BattleRenderer::build(const HexGrid& grid) {
 void BattleRenderer::initView(sf::Vector2u windowSize) {
     _lastWindowSize = windowSize;
 
-    float pad = _hexSize * 2.f;
-    float w   = (_isoMaxX - _isoMinX) + 2.f * pad;
-    float h   = (_isoMaxY - _isoMinY) + 2.f * pad;
-    float cx  = (_isoMinX + _isoMaxX) * 0.5f;
-    float cy  = (_isoMinY + _isoMaxY) * 0.5f;
+    float pad    = _hexSize * 2.f;
+    float worldW = (_isoMaxX - _isoMinX) + 2.f * pad;  // world X extent → screen height after rotation
+    float worldH = (_isoMaxY - _isoMinY) + 2.f * pad;  // world Y extent → screen width after rotation
+    float cx     = (_isoMinX + _isoMaxX) * 0.5f;
+    float cy     = (_isoMinY + _isoMaxY) * 0.5f;
 
+    // View is rotated 90° CW: world X maps to screen Y, world Y maps to screen X.
+    // setSize(vx, vy): vx visible in world-X (becomes screen height), vy in world-Y (becomes screen width).
+    // Screen aspect = vy/vx — fit to window.
+    float vx = worldW;
+    float vy = worldH;
     float winAspect = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
-    if (w / h < winAspect)
-        w = h * winAspect;
+    if (vy / vx < winAspect)
+        vy = vx * winAspect;
     else
-        h = w / winAspect;
+        vx = vy / winAspect;
 
-    _view.setSize(w, h);
+    _view.setSize(vx, vy);
     _view.setCenter(cx, cy);
+    _view.setRotation(90.f);
 }
 
 void BattleRenderer::handleEvent(const sf::Event& e) {
@@ -164,18 +170,18 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
 
     if (engagedDirs.empty()) {
         // Unengaged: march formation, front rank toward attack direction.
-        // Red (team 1) attacks west — front at low-X edge; Blue attacks east — front at high-X edge.
+        // Red (team 1) at bottom rows, attacks north (low Y); Blue at top rows, attacks south.
         int   team   = alive[0]->getTeam();
         float step   = avgSym * 0.80f;
         int   perRow = std::max(1, static_cast<int>(_hexSize * 1.7f / step));
-        float frontX = flatCenter.x + (team == 1 ? -1.f : +1.f) * _hexSize * 0.75f;
-        float xDir   = (team == 1 ? +1.f : -1.f);
+        float frontY = flatCenter.y + (team == 1 ? -1.f : +1.f) * _hexSize * 0.75f;
+        float yDir   = (team == 1 ? +1.f : -1.f);
         for (int row = 0, idx = 0; idx < N; ++row) {
             int   rowCnt = std::min(perRow, N - idx);
-            float rowX   = frontX + xDir * static_cast<float>(row) * step;
-            float rowY0  = flatCenter.y - (rowCnt - 1) * step * 0.5f;
+            float rowY   = frontY + yDir * static_cast<float>(row) * step;
+            float rowX0  = flatCenter.x - (rowCnt - 1) * step * 0.5f;
             for (int i = 0; i < rowCnt; ++i, ++idx)
-                drawUnit(alive[idx], { rowX, rowY0 + static_cast<float>(i) * step }, symF(alive[idx]));
+                drawUnit(alive[idx], { rowX0 + static_cast<float>(i) * step, rowY }, symF(alive[idx]));
         }
         return;
     }
@@ -245,14 +251,15 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
 void BattleRenderer::render(const HexGrid& grid) {
     float panSpeed = _view.getSize().x * PAN_SPEED_FRACTION;
     sf::Vector2f moveDir(0.f, 0.f);
+    // With 90° CW view rotation: world +X → screen up, world +Y → screen right.
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)  || sf::Keyboard::isKeyPressed(sf::Keyboard::A))
-        moveDir.x -= panSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right) || sf::Keyboard::isKeyPressed(sf::Keyboard::D))
-        moveDir.x += panSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)    || sf::Keyboard::isKeyPressed(sf::Keyboard::W))
         moveDir.y -= panSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)  || sf::Keyboard::isKeyPressed(sf::Keyboard::S))
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right) || sf::Keyboard::isKeyPressed(sf::Keyboard::D))
         moveDir.y += panSpeed;
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)    || sf::Keyboard::isKeyPressed(sf::Keyboard::W))
+        moveDir.x += panSpeed;
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)  || sf::Keyboard::isKeyPressed(sf::Keyboard::S))
+        moveDir.x -= panSpeed;
     _view.move(moveDir);
 
     _window.clear();

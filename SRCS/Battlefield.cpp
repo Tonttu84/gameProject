@@ -1,6 +1,7 @@
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/RangedCombat.hpp"
 #include <algorithm>
+#include <unordered_map>
 
 Battlefield::Battlefield()
 {
@@ -163,8 +164,8 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
         return;
     }
 
-    // Red team flees east, blue team flees west
-    HexDirection fleeDir = (unit->getTeam() == REDTEAM) ? HexDirection::E : HexDirection::W;
+    // Red (bottom, attacks north) flees south; Blue (top, attacks south) flees north
+    HexDirection fleeDir = (unit->getTeam() == REDTEAM) ? HexDirection::SE : HexDirection::NW;
     int base = static_cast<int>(fleeDir);
     for (int delta : {0, 1, -1, 2, -2, 3}) {
         HexDirection d = static_cast<HexDirection>((base + delta + 6) % 6);
@@ -268,9 +269,10 @@ void Battlefield::moveTeam(std::vector<std::unique_ptr<AUnit>>& team)
             continue;
         }
 
-        // Fatigued fighters rotate out so fresh units can take the front
+        // Fatigued units adjacent to enemies hold position as reserves — assignment
+        // handles rotation within the hex each tick (fresh units fight, fatigued ones
+        // step back to support without leaving the hex).
         if (u.getEngaged(*this) && u.getFatigue() > SWAPFATIGUE) {
-            swapOut(unit);
             continue;
         }
 
@@ -341,47 +343,63 @@ void Battlefield::loadArmies(Army red, Army blue)
     teamBLUE = std::move(blue);
 }
 
-static void assignFighters(const std::vector<AUnit*>& units, HexSide* side) {
-    std::vector<AUnit*> normal, brokenOnes;
-    for (AUnit* u : units) {
-        if (!u || !u->getAlive() || u->getCanFight()) continue;
-        if (u->getBroken()) brokenOnes.push_back(u);
-        else                normal.push_back(u);
-    }
-
-    auto bySize = [](const AUnit* a, const AUnit* b) {
-        return a->getSize() > b->getSize();
-    };
-    std::sort(normal.begin(),    normal.end(),    bySize);
-    std::sort(brokenOnes.begin(), brokenOnes.end(), bySize);
-    normal.insert(normal.end(), brokenOnes.begin(), brokenOnes.end());
-
-    int total = 0;
-    for (AUnit* u : normal) {
-        if (total >= HexSide::FRONTAGE) break;
-        u->setCanFight(true);
-        u->setEngagedSide(side);
-        total += static_cast<int>(u->getSize());
-    }
-}
-
 void Battlefield::resolveEngagements() {
     for (auto& u : teamRED)  if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
     for (auto& u : teamBLUE) if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
+    for (HexSide& side : hexGrid.getSides()) side.engaged = false;
 
+    // Mark sides where both hexes hold opposing living units
     for (HexSide& side : hexGrid.getSides()) {
-        side.engaged = false;
         if (!side.hexA || !side.hexB) continue;
-
-        // Only engage sides where both hexes have living units of opposing teams
         int teamA = 0, teamB = 0;
         for (AUnit* u : side.hexA->units) if (u && u->getAlive()) { teamA = u->getTeam(); break; }
         for (AUnit* u : side.hexB->units) if (u && u->getAlive()) { teamB = u->getTeam(); break; }
         if (teamA == 0 || teamB == 0 || teamA == teamB) continue;
-
         side.engaged = true;
-        assignFighters(side.hexA->units, &side);
-        assignFighters(side.hexB->units, &side);
+    }
+
+    // Group each hex's engaged sides together for round-robin assignment
+    std::unordered_map<Hex*, std::vector<HexSide*>> hexSides;
+    for (HexSide& side : hexGrid.getSides()) {
+        if (!side.engaged) continue;
+        hexSides[side.hexA].push_back(&side);
+        hexSides[side.hexB].push_back(&side);
+    }
+
+    // Per hex: assign fighters round-robin so each side gets one unit before any
+    // side gets a second. Fresh units (fatigue < SWAPFATIGUE) go first; fatigued
+    // units extend the same pool so the round-robin cursor never resets between
+    // the two tiers. This guarantees e.g. 3 units across 4 sides → 1,1,1,0 not 2,1,0,0.
+    auto bySize = [](const AUnit* a, const AUnit* b) {
+        if (a->getBroken() != b->getBroken()) return !a->getBroken();
+        return a->getSize() > b->getSize();
+    };
+
+    for (auto& [hex, sides] : hexSides) {
+        // Build pool: fresh (normal→broken, size desc) then tired (same order).
+        std::vector<AUnit*> fresh, tired;
+        for (AUnit* u : hex->units) {
+            if (!u || !u->getAlive()) continue;
+            (u->getFatigue() < SWAPFATIGUE ? fresh : tired).push_back(u);
+        }
+        std::sort(fresh.begin(), fresh.end(), bySize);
+        std::sort(tired.begin(), tired.end(), bySize);
+        fresh.insert(fresh.end(), tired.begin(), tired.end());  // one continuous pool
+
+        std::vector<int> frontage(sides.size(), 0);
+        size_t ui = 0;
+        while (ui < fresh.size()) {
+            bool anyAssigned = false;
+            for (size_t si = 0; si < sides.size() && ui < fresh.size(); ++si) {
+                if (frontage[si] >= HexSide::FRONTAGE) continue;
+                AUnit* u = fresh[ui++];
+                u->setCanFight(true);
+                u->setEngagedSide(sides[si]);
+                frontage[si] += static_cast<int>(u->getSize());
+                anyAssigned = true;
+            }
+            if (!anyAssigned) break;
+        }
     }
 }
 

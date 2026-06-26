@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-// Axial neighbor offsets — NE E SE SW W NW (pointy-top, r increases southward)
+// Axial neighbor offsets for NE E SE SW W NW (r increases southward)
 static constexpr int DQ[6] = { 1,  1,  0, -1, -1,  0};
 static constexpr int DR[6] = {-1,  0,  1,  1,  0, -1};
 
@@ -89,8 +89,7 @@ void HexGrid::buildRect(int cols, int rows) {
 
     for (int r = 0; r < rows; ++r) {
         for (int col = 0; col < cols; ++col) {
-            // Even-r offset → axial: keeps the visual grid rectangular so armies
-            // face each other left-vs-right rather than along a diagonal.
+            // Even-r offset → axial: keeps the visual grid rectangular.
             HexCoord c{col - r / 2, r};
             Hex& hex = _hexes[c];
             hex.coord = c;

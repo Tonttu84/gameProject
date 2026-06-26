@@ -13,7 +13,7 @@ void setupSampleBattle(Battlefield& field)
     appendArmy<Soldier>     (red, 500, REDTEAM);
     appendArmy<Archer>      (red, 150, REDTEAM);
     appendArmy<Necromancer> (red,  10, REDTEAM);
-    randomPlaceArmy(red, field, {field.width * 3/4, field.width - 1, 0, field.height - 1});
+    randomPlaceArmy(red, field, {0, field.width - 1, field.height * 3/4, field.height - 1});
 
     // Blue: holy order — soldiers, archers, mages and priests
     Army blue;
@@ -21,7 +21,7 @@ void setupSampleBattle(Battlefield& field)
     appendArmy<Archer> (blue, 150, BLUETEAM);
     appendArmy<Mage>   (blue,  7, BLUETEAM);
     appendArmy<Priest> (blue,  7, BLUETEAM);
-    randomPlaceArmy(blue, field, {0, field.width / 4, 0, field.height - 1});
+    randomPlaceArmy(blue, field, {0, field.width - 1, 0, field.height / 4});
 
     field.loadArmies(std::move(red), std::move(blue));
 }
