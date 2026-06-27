@@ -79,8 +79,8 @@ class Battlefield
 
         Battlefield();
         ~Battlefield() = default;
-        Battlefield(Battlefield &cpy) = delete;
-        Battlefield &operator=(Battlefield &target) = default;
+        Battlefield(const Battlefield&)            = delete;
+        Battlefield& operator=(const Battlefield&) = delete;
 
         void printText(int turn = -1) const;
         static constexpr int height = BATTLEFIELD_WIDTH;   // 30 rows

@@ -11,11 +11,13 @@
 # **************************************************************************** #
 
 # Compiler and flags
-CC      = c++
+CC      = g++
 CFLAGS  = -std=c++17 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
           -Wshadow -Wnull-dereference -Wformat=2 -fstack-protector-strong \
           -fsanitize=address -fsanitize=undefined -fsanitize=leak \
           -fsanitize=float-divide-by-zero
+
+.DEFAULT_GOAL := all
 
 # Directories
 SRC_DIR = SRCS
@@ -40,14 +42,41 @@ OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRCS))
 DEPS = $(OBJS:.o=.d)
 
 # Test build
-TEST_DIR     = TESTS
-TEST_NAME    = run_tests
-TEST_OBJ_DIR = BUILD/test
-TEST_SRCS    = $(filter-out $(SRC_DIR)/main.cpp, $(SRCS))
-TEST_OBJS    = $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS))
-TEST_DEPS    = $(TEST_OBJS:.o=.d)
+TEST_DIR      = TESTS
+TEST_NAME     = run_tests
+TEST_OBJ_DIR  = BUILD/test
+TEST_SRCS     = $(filter-out $(SRC_DIR)/main.cpp, $(SRCS))
+TEST_OBJS     = $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/%.o,$(TEST_SRCS))
+TEST_DEPS     = $(TEST_OBJS:.o=.d)
+# All *.cpp files in TESTS/ are compiled and linked into the test binary.
+UNIT_SRCS     = $(wildcard $(TEST_DIR)/*.cpp)
+UNIT_OBJS     = $(patsubst $(TEST_DIR)/%.cpp,$(TEST_OBJ_DIR)/%.o,$(UNIT_SRCS))
+UNIT_DEPS     = $(UNIT_OBJS:.o=.d)
 
-.PHONY: all clean fclean re test run
+# ── Clang cross-check ────────────────────────────────────────────────────────
+# Compile with clang++ into a separate object directory so GCC and Clang
+# objects never mix. Use the same CFLAGS minus GCC-only sanitizer flags.
+CLANG         = clang++
+CLANG_OBJ_DIR = BUILD/clang
+CLANG_NAME    = game_clang
+CLANG_FLAGS   = -std=c++17 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
+                -Wshadow -Wnull-dereference -fstack-protector-strong \
+                -fsanitize=address -fsanitize=undefined -fsanitize=leak
+CLANG_OBJS    = $(patsubst $(SRC_DIR)/%.cpp,$(CLANG_OBJ_DIR)/%.o,$(SRCS))
+CLANG_DEPS    = $(CLANG_OBJS:.o=.d)
+
+$(CLANG_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(CLANG_OBJ_DIR)
+	$(CLANG) $(CLANG_FLAGS) -MMD -MP -c $< -o $@
+
+$(CLANG_NAME): $(CLANG_OBJS)
+	$(CLANG) $(CLANG_FLAGS) -o $@ $^ $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
+
+-include $(CLANG_DEPS)
+
+clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
+
+.PHONY: all clean fclean re test run clang
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -83,24 +112,25 @@ $(TEST_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(TEST_OBJ_DIR)
 	$(CC) $(CFLAGS) -DTESTING -MMD -MP -c $< -o $@
 
-$(TEST_OBJ_DIR)/test_main.o: $(TEST_DIR)/test_main.cpp
+$(TEST_OBJ_DIR)/%.o: $(TEST_DIR)/%.cpp
 	@mkdir -p $(TEST_OBJ_DIR)
 	$(CC) $(CFLAGS) -DTESTING -I$(TEST_DIR) -MMD -MP -c $< -o $@
 
-$(TEST_NAME): $(TEST_OBJS) $(TEST_OBJ_DIR)/test_main.o
+$(TEST_NAME): $(TEST_OBJS) $(UNIT_OBJS)
 	$(CC) $(CFLAGS) -DTESTING -o $@ $^ $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib
 
--include $(TEST_DEPS) $(TEST_OBJ_DIR)/test_main.d
+-include $(TEST_DEPS) $(UNIT_DEPS)
 
 test: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
 	./$(TEST_NAME)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean:
-	rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(TEST_OBJ_DIR)/*.o $(TEST_OBJ_DIR)/*.d
+	rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(TEST_OBJ_DIR)/*.o $(TEST_OBJ_DIR)/*.d \
+	      $(CLANG_OBJ_DIR)/*.o $(CLANG_OBJ_DIR)/*.d
 
 fclean: clean
-	rm -f $(NAME) $(TEST_NAME)
+	rm -f $(NAME) $(TEST_NAME) $(CLANG_NAME)
 
 re: fclean all
 
