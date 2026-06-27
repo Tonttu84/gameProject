@@ -156,6 +156,10 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
     if (!unit->getAlive()) return;
     if (unit->getFatigue() > FATIGUE_MAX) { unit->recover(); return; }
 
+    // A fleeing unit leaves its squad — it's no longer part of the formation.
+    if (Squad* sq = unit->getSquad())
+        sq->removeMember(unit.get());
+
     Hex* myHex = unit->getHex();
     if (!myHex) return;
     HexCoord c = myHex->coord;
@@ -518,6 +522,23 @@ bool Battlefield::tick()
     // Passive fatigue recovery — all alive units recover each tick regardless of action
     for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
     for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
+
+#ifdef TESTING
+    // Squad coherence: every alive member of a squad must be on the same hex.
+    // Fires before movement so the previous tick's movement result is verified.
+    for (const Team* t : {&_red, &_blue}) {
+        for (const auto& sq : t->squads) {
+            if (!sq) continue;
+            Hex* squadHex = nullptr;
+            for (AUnit* m : sq->getMembers()) {
+                if (!m || !m->getAlive() || !m->getHex()) continue;
+                if (!squadHex) { squadHex = m->getHex(); continue; }
+                assert(m->getHex() == squadHex &&
+                       "Squad coherence violation: member on different hex than rest of squad");
+            }
+        }
+    }
+#endif
 
     triggerSpecialPhase();
     moveUnits();
