@@ -253,6 +253,18 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
     for (AUnit* u : alive)
         if (!u->getEngagedSide()) support.push_back(u);
 
+    // Group support by squad so same-squad members draw together; loners last.
+    std::sort(support.begin(), support.end(), [](AUnit* a, AUnit* b) {
+        Squad* sa = a->getSquad();
+        Squad* sb = b->getSquad();
+        if (sa != sb) {
+            if (!sa) return false;
+            if (!sb) return true;
+            return reinterpret_cast<uintptr_t>(sa) < reinterpret_cast<uintptr_t>(sb);
+        }
+        return a->getSortKey() < b->getSortKey();
+    });
+
     // Draw support first so fighters render on top
     if (!support.empty()) {
         float sStep   = avgSym * 0.70f;

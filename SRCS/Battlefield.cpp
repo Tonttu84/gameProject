@@ -490,9 +490,122 @@ void Battlefield::resolveEngagements() {
             if (!seen) squadsHere.push_back(sq);
         }
 
+        // ── Pre-allocation: distribute sides proportionally between squads/loners ──
+        // Sets sideOwner upfront so all fatigue passes (1A-3B) respect the split.
+        // Each group gets at least 1 side (when sides ≥ groups); extras go to the
+        // largest groups first. When picking a second or third side a group prefers
+        // the direction adjacent to its first pick (fluffy, not a hard constraint).
+        {
+            struct Group {
+                Squad*             squad; // nullptr = loner pool
+                int                size;  // fatigue-weighted size: fresh×3, tired×2, vtired×1
+                std::vector<size_t> owned;
+            };
+            std::vector<Group> groups;
+
+            // Weight by fatigue: fresh=3, tired=2, very tired=1.
+            // Groups with mostly fresh troops earn proportionally more sides.
+            auto fatigueWeight = [](int f) -> int {
+                if (f < FATIGUE_TIRED)      return 3;
+                if (f < FATIGUE_VERY_TIRED) return 2;
+                return 1; // very tired but not exhausted
+            };
+
+            for (Squad* sq : squadsHere) {
+                int sz = 0;
+                for (AUnit* m : sq->getMembers()) {
+                    if (!m || !m->getAlive() || m->getBroken() || m->getHex() != hex) continue;
+                    int f = m->getFatigue();
+                    if (f >= FATIGUE_MAX) continue;
+                    sz += static_cast<int>(m->getSize()) * fatigueWeight(f);
+                }
+                if (sz > 0) groups.push_back({sq, sz, {}});
+            }
+            {
+                int lonerSz = 0;
+                for (AUnit* u : hex->units) {
+                    if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
+                    int f = u->getFatigue();
+                    if (f >= FATIGUE_MAX) continue;
+                    lonerSz += static_cast<int>(u->getSize()) * fatigueWeight(f);
+                }
+                if (lonerSz > 0) groups.push_back({nullptr, lonerSz, {}});
+            }
+
+            if (!groups.empty()) {
+                int G = static_cast<int>(groups.size());
+                int N = static_cast<int>(numSides);
+
+                // Sort largest first so the biggest group picks first.
+                std::sort(groups.begin(), groups.end(),
+                          [](const Group& a, const Group& b){ return a.size > b.size; });
+
+                // Share: min(1, proportional). If groups > sides, smallest lose theirs.
+                std::vector<int> share(G, 0);
+                if (G <= N) {
+                    for (int i = 0; i < G; ++i) share[i] = 1;
+                    for (int k = 0; k < N - G; ++k) share[k % G]++;
+                } else {
+                    for (int k = 0; k < N; ++k) share[k] = 1;
+                }
+
+                // Direction of a side as seen from this hex.
+                auto dirOf = [&](HexSide* s) -> int {
+                    int d = static_cast<int>(s->dirFromA);
+                    return (s->hexB == hex) ? (d + 3) % 6 : d;
+                };
+
+                std::vector<bool> claimed(numSides, false);
+
+                // Round 1: each group picks its first side (largest group goes first).
+                for (int gi = 0; gi < G; ++gi) {
+                    if (share[gi] == 0) continue;
+                    for (size_t si = 0; si < numSides; ++si) {
+                        if (!claimed[si]) {
+                            groups[gi].owned.push_back(si);
+                            claimed[si] = true;
+                            break;
+                        }
+                    }
+                }
+                // Round 2+: extra sides, adjacent-preferred.
+                bool progress = true;
+                while (progress) {
+                    progress = false;
+                    for (int gi = 0; gi < G; ++gi) {
+                        if (static_cast<int>(groups[gi].owned.size()) >= share[gi]) continue;
+                        size_t best = numSides; // sentinel = not found
+                        // Prefer a side adjacent (direction ±1 mod 6) to any owned side.
+                        for (size_t si = 0; si < numSides && best == numSides; ++si) {
+                            if (claimed[si]) continue;
+                            int dir = dirOf(sides[si]);
+                            for (size_t oi : groups[gi].owned) {
+                                int od = dirOf(sides[oi]);
+                                if ((dir - od + 6) % 6 == 1 || (od - dir + 6) % 6 == 1)
+                                    { best = si; break; }
+                            }
+                        }
+                        if (best == numSides) { // no adjacent — take first free
+                            for (size_t si = 0; si < numSides; ++si)
+                                if (!claimed[si]) { best = si; break; }
+                        }
+                        if (best == numSides) continue;
+                        groups[gi].owned.push_back(best);
+                        claimed[best] = true;
+                        progress = true;
+                    }
+                }
+
+                // Commit: squad sides get sideOwner set; loner sides stay nullptr.
+                for (const Group& g : groups)
+                    if (g.squad)
+                        for (size_t si : g.owned)
+                            sideOwner[si] = g.squad;
+            }
+        }
+
         // ── Pass 1A: fresh squad members ──────────────────────────────────────
-        // Each squad fills sides sequentially with non-broken, non-fatigued members.
-        // The first member placed on a side claims it for the squad, blocking loners.
+        // sideOwner is now pre-allocated so each squad only fills its own sides.
         // Assigned members receive a cohesion bonus tier from their squad.
         for (Squad* sq : squadsHere) {
             const int cohTier = sq->cohesionLevel();
@@ -506,7 +619,7 @@ void Battlefield::resolveEngagements() {
                       [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
             size_t mi = 0;
             for (size_t si = 0; si < numSides && mi < freshMembers.size(); ++si) {
-                if (sideOwner[si] != nullptr && sideOwner[si] != sq) continue;
+                if (sideOwner[si] != sq) continue;
                 while (mi < freshMembers.size() && frontage[si] < HexSide::FRONTAGE) {
                     AUnit* u = freshMembers[mi++];
                     u->setCanFight(true);
