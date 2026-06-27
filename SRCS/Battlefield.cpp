@@ -523,7 +523,6 @@ bool Battlefield::tick()
     for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
     for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
 
-#ifdef TESTING
     // Squad coherence: every alive member of a squad must be on the same hex.
     // Fires before movement so the previous tick's movement result is verified.
     for (const Team* t : {&_red, &_blue}) {
@@ -538,7 +537,6 @@ bool Battlefield::tick()
             }
         }
     }
-#endif
 
     triggerSpecialPhase();
     moveUnits();
