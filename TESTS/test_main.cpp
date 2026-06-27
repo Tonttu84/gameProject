@@ -370,7 +370,7 @@ TEST_CASE("setBattleSummon round-trip") {
 
 TEST_CASE("randomPlaceArmy places all units within zone bounds") {
     Battlefield& field = Utility::getBattlefield();
-    PlacementZone zone = {20, 29, 5, 14};
+    PlacementZone zone = {3, 12, 5, 14};
 
     Army army;
     appendArmy<Soldier>(army, 5, REDTEAM);
@@ -378,8 +378,10 @@ TEST_CASE("randomPlaceArmy places all units within zone bounds") {
 
     for (const auto& unit : army) {
         REQUIRE(unit->getHex() != nullptr);
-        REQUIRE(unit->getHex()->coord.q >= (int)zone.wStart);
-        REQUIRE(unit->getHex()->coord.q <= (int)zone.wEnd);
+        // Zone stores offset (col, row); axial q = col - r/2, so convert back.
+        int col = unit->getHex()->coord.q + unit->getHex()->coord.r / 2;
+        REQUIRE(col >= (int)zone.wStart);
+        REQUIRE(col <= (int)zone.wEnd);
         REQUIRE(unit->getHex()->coord.r >= (int)zone.hStart);
         REQUIRE(unit->getHex()->coord.r <= (int)zone.hEnd);
     }
@@ -391,7 +393,7 @@ TEST_CASE("randomPlaceArmy sets placed flag on every unit") {
 
     Army army;
     appendArmy<Soldier>(army, 4, REDTEAM);
-    randomPlaceArmy(army, field, {20, 25, 5, 10});
+    randomPlaceArmy(army, field, {3, 10, 5, 10});
 
     for (const auto& unit : army)
         REQUIRE(unit->getPlaced() == true);
@@ -420,8 +422,8 @@ TEST_CASE("tick returns true while both sides still have living units") {
     Army red, blue;
     appendArmy<Soldier>(red, 2, REDTEAM);
     appendArmy<Soldier>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {24, 29, 5, 10});
-    randomPlaceArmy(blue, field, {0,   5, 5, 10});
+    randomPlaceArmy(red,  field, {10, 14, 5, 10});
+    randomPlaceArmy(blue, field, {0,   4, 5, 10});
     field.loadArmies(std::move(red), std::move(blue));
 
     REQUIRE(field.tick() == true);
@@ -458,8 +460,8 @@ TEST_CASE("extractResult clears internal state so a second call returns empty") 
     Army red, blue;
     appendArmy<Soldier>(red, 2, REDTEAM);
     appendArmy<Soldier>(blue, 2, BLUETEAM);
-    randomPlaceArmy(red,  field, {10, 18, 0, 7});
-    randomPlaceArmy(blue, field, {10, 18, 8, 15});
+    randomPlaceArmy(red,  field, {3, 10, 0, 7});
+    randomPlaceArmy(blue, field, {3, 10, 8, 15});
     field.loadArmies(std::move(red), std::move(blue));
 
     field.extractResult(); // first call — clears teams
@@ -529,13 +531,14 @@ public:
 TEST_CASE("archer exhausts ammo against unkillable target and switches to melee range") {
     Battlefield& field = Utility::getBattlefield();
 
-    // Archer at (22,8), dummy at (14,8) — distance 8 (= BOWMAXRANGE).
+    // Archer at axial {11,8}, dummy at axial {3,8} — distance 8 (= BOWMAXRANGE).
+    // For the 16-col grid (buildRect(16,30)), r=8 gives valid axial q in -4..11.
     // Archer advances to preferredRange=3 then shoots; dummy never moves.
     auto archerUnit = std::make_unique<Archer>(REDTEAM);
-    archerUnit->setHex(field.hexGrid.getHex({22, 8}));
+    archerUnit->setHex(field.hexGrid.getHex({11, 8}));
 
     auto dummyUnit = std::make_unique<HighArmorDummy>(BLUETEAM);
-    dummyUnit->setHex(field.hexGrid.getHex({14, 8}));
+    dummyUnit->setHex(field.hexGrid.getHex({3, 8}));
 
     Army red, blue;
     red.push_back(std::move(archerUnit));
