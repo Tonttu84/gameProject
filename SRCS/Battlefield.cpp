@@ -191,6 +191,9 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
 
 void Battlefield::moveUnits()
 {
+    // Squad pre-pass: squads claim their target hex before lone units move.
+    for (auto& sq : _red.squads)  if (sq) moveSquad(*sq);
+    for (auto& sq : _blue.squads) if (sq) moveSquad(*sq);
     moveTeam(_red);
     moveTeam(_blue);
 }
@@ -246,6 +249,100 @@ void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
     // If no retreat hex is available the unit holds its position.
 }
 
+void Battlefield::moveSquad(Squad& squad)
+{
+    // Find reference unit for navigation (leader preferred, else first alive member with hex).
+    AUnit* ref = squad.hasLeader() ? squad.getLeader() : nullptr;
+    if (!ref) {
+        for (AUnit* m : squad.getMembers())
+            if (m && m->getAlive() && !m->getBroken() && m->getHex()) { ref = m; break; }
+    }
+    if (!ref || !ref->getHex()) return;
+
+    // Find enemy target and the best forward hex (Pass 1 of moveToward logic).
+    Hex* enemyTarget = findTarget(*ref);
+    if (!enemyTarget) return;
+
+    HexCoord from = ref->getHex()->coord;
+    HexCoord to   = enemyTarget->coord;
+    int curDist   = HexGrid::distance(from, to);
+    if (curDist == 0) return;
+
+    int bestDist = curDist;
+    int bestDir  = -1;
+    for (int i = 0; i < 6; ++i) {
+        HexCoord nc  = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        Hex*     nh  = hexGrid.getHex(nc);
+        if (!nh) continue;
+        // No enemies may already occupy the destination.
+        bool hasEnemy = false;
+        for (AUnit* u : nh->units)
+            if (u && u->getAlive() && u->getTeam() != ref->getTeam()) { hasEnemy = true; break; }
+        if (hasEnemy) continue;
+        int d = HexGrid::distance(nc, to);
+        if (d < bestDist) { bestDist = d; bestDir = i; }
+    }
+    if (bestDir < 0) return; // no forward hex available
+
+    HexCoord nextCoord = hexGrid.neighborCoord(from, static_cast<HexDirection>(bestDir));
+    Hex*     nextHex   = hexGrid.getHex(nextCoord);
+    if (!nextHex) return;
+
+    // Calculate squad's total size for alive non-broken members.
+    int squadSize = 0;
+    for (AUnit* m : squad.getMembers())
+        if (m && m->getAlive() && !m->getBroken())
+            squadSize += static_cast<int>(m->getSize());
+
+    // Space already occupied in nextHex by squad members that happen to be there already
+    // (they will "leave and re-enter" so we add them back to available space).
+    int squadFootprintInNext = 0;
+    for (AUnit* m : squad.getMembers())
+        if (m && m->getAlive() && !m->getBroken() && m->getHex() == nextHex)
+            squadFootprintInNext += static_cast<int>(m->getSize());
+
+    int available = Hex::CAPACITY - nextHex->sizeUsed + squadFootprintInNext;
+
+    // Displacement: only if needed and only lone (squad-less) units.
+    if (available < squadSize) {
+        int needed      = squadSize - available;
+        int maxDisplace = static_cast<int>(squadSize * Squad::DISPLACE_FRACTION);
+
+        // Collect displaceable lone units sorted smallest-first to minimise evictions.
+        std::vector<AUnit*> candidates;
+        for (AUnit* u : nextHex->units)
+            if (u && u->getAlive() && !u->getSquad())
+                candidates.push_back(u);
+        std::sort(candidates.begin(), candidates.end(),
+                  [](AUnit* a, AUnit* b){ return a->getSize() < b->getSize(); });
+
+        Hex* fromHex = hexGrid.getHex(from);
+        int  freed   = 0;
+        for (AUnit* victim : candidates) {
+            if (freed >= needed) break;
+            int vs = static_cast<int>(victim->getSize());
+            if (freed + vs > maxDisplace) break; // would exceed the displacement cap
+            // Only displace if the from-hex can absorb the unit.
+            if (fromHex && fromHex->sizeUsed + vs <= Hex::CAPACITY) {
+                victim->setHex(fromHex);
+                freed += vs;
+                available += vs;
+            }
+        }
+
+        if (available < squadSize) return; // still not enough room — squad holds position
+    }
+
+    // Move all alive non-broken members to nextHex. Each member's old hex is vacated
+    // via setHex (which calls removeFromHex internally). Fatigue cost mirrors moveAUnit.
+    for (AUnit* m : squad.getMembers()) {
+        if (!m || !m->getAlive() || m->getBroken()) continue;
+        if (m->getHex() == nextHex) continue; // already there
+        m->addFatigue(m->getFatigueCost() / 2);
+        m->setHex(nextHex);
+    }
+}
+
 void Battlefield::moveTeam(Team& team)
 {
     for (auto& unit : team.units) {
@@ -258,6 +355,8 @@ void Battlefield::moveTeam(Team& team)
             flee(unit);
             continue;
         }
+        // Non-broken squad members already moved in the squad pre-pass.
+        if (u.getSquad()) continue;
         if (u.getFatigue() >= 100 || u.getCast() > 0) continue; // exhausted or casting
 
         // Ranged units (archers, mages, necromancers) maintain a preferred

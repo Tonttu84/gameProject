@@ -105,6 +105,7 @@ class Battlefield
         int  moveAUnit(AUnit &unit, HexCoord target);
         void moveToward(std::unique_ptr<AUnit> &unit, const Hex* target);
         void moveTeam(Team& team);
+        void moveSquad(Squad& squad);
         void flee(std::unique_ptr<AUnit> &unit);
         void swapOut(std::unique_ptr<AUnit> &unit);
         void retreatToRange(std::unique_ptr<AUnit> &unit);
