@@ -35,9 +35,10 @@ SFML_LIBS    = -L$(SFML_DIR)/lib -lsfml-graphics -lsfml-window -lsfml-system
 FONT_DIR  = assets/fonts
 FONT_FILE = DejaVuSans.ttf
 
-# Files
+# Files — recursive discovery so subfolders (units/, render/, campaign/, debug/) are included.
+# patsubst with % is greedy over '/' so SRCS/units/Soldier.cpp → BUILD/units/Soldier.o.
 NAME = game
-SRCS = $(wildcard $(SRC_DIR)/*.cpp)
+SRCS = $(shell find $(SRC_DIR) -name '*.cpp')
 OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRCS))
 DEPS = $(OBJS:.o=.d)
 
@@ -66,7 +67,7 @@ CLANG_OBJS    = $(patsubst $(SRC_DIR)/%.cpp,$(CLANG_OBJ_DIR)/%.o,$(SRCS))
 CLANG_DEPS    = $(CLANG_OBJS:.o=.d)
 
 $(CLANG_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@mkdir -p $(CLANG_OBJ_DIR)
+	@mkdir -p $(dir $@)
 	$(CLANG) $(CLANG_FLAGS) -MMD -MP -c $< -o $@
 
 $(CLANG_NAME): $(CLANG_OBJS)
@@ -90,7 +91,7 @@ $(NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib -Wl,-rpath,$(STDCXX_RPATH)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@mkdir -p $(OBJ_DIR)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 -include $(DEPS)
@@ -109,7 +110,7 @@ $(SFML_DIR)/include/SFML/Config.hpp:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 $(TEST_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@mkdir -p $(TEST_OBJ_DIR)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DTESTING -MMD -MP -c $< -o $@
 
 $(TEST_OBJ_DIR)/%.o: $(TEST_DIR)/%.cpp
@@ -126,8 +127,8 @@ test: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean:
-	rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/*.d $(TEST_OBJ_DIR)/*.o $(TEST_OBJ_DIR)/*.d \
-	      $(CLANG_OBJ_DIR)/*.o $(CLANG_OBJ_DIR)/*.d
+	rm -f $(OBJS) $(DEPS) $(TEST_OBJS) $(TEST_DEPS) $(UNIT_OBJS) $(UNIT_DEPS) \
+	      $(CLANG_OBJS) $(CLANG_DEPS)
 
 fclean: clean
 	rm -f $(NAME) $(TEST_NAME) $(CLANG_NAME)

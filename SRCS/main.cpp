@@ -10,7 +10,7 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/Campaign.hpp"
+#include "../HDRS/campaign/Campaign.hpp"
 
 #include <SFML/Graphics.hpp>
 

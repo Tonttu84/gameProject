@@ -10,9 +10,9 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/Human.hpp"
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/Utility.hpp"
+#include "units/Human.hpp"
+#include "AUnit.hpp"
+#include "Utility.hpp"
 
 
 Human::Human(int setTeam, Weapon setWeapon): AUnit::AUnit(setTeam)

@@ -1,11 +1,11 @@
-#include "../HDRS/Campaign.hpp"
-#include "../HDRS/BattleSetup.hpp"
-#include "../HDRS/SampleBattle.hpp"
-#include "../HDRS/Soldier.hpp"
-#include "../HDRS/Archer.hpp"
-#include "../HDRS/Mage.hpp"
-#include "../HDRS/Priest.hpp"
-#include "../HDRS/Necromancer.hpp"
+#include "campaign/Campaign.hpp"
+#include "BattleSetup.hpp"
+#include "campaign/SampleBattle.hpp"
+#include "units/Soldier.hpp"
+#include "units/Archer.hpp"
+#include "units/Mage.hpp"
+#include "units/Priest.hpp"
+#include "units/Necromancer.hpp"
 
 #include <sys/ioctl.h>
 #include <sys/select.h>

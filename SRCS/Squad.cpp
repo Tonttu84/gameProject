@@ -180,3 +180,19 @@ bool Squad::canFitInHex(const Hex* hex) const {
     }
     return hex->sizeUsed + extra <= Hex::CAPACITY;
 }
+
+int Squad::cohesionLevel() const {
+    int total = 0, count = 0;
+    for (AUnit* m : _members) {
+        if (m && m->getAlive() && !m->getBroken()) {
+            total += m->getCohesion();
+            ++count;
+        }
+    }
+    if (count == 0) return 0;
+    int avg = total / count;
+    if (avg >= COHESION_SUPER)  return 3;
+    if (avg >= COHESION_HIGH)   return 2;
+    if (avg >= COHESION_NORMAL) return 1;
+    return 0;
+}

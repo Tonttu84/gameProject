@@ -1,6 +1,6 @@
 #pragma once
 #include "Battlefield.hpp"
-#include "BattleRenderer.hpp"
+#include "render/BattleRenderer.hpp"
 
 // Full campaign: buy screen + three escalating battles.
 void runCampaign(Battlefield& field, BattleRenderer& renderer);

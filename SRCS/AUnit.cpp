@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "../HDRS/AUnit.hpp"
+#include "../HDRS/Squad.hpp"
 #include <algorithm>
 
 
@@ -39,6 +40,7 @@ static void removeFromHex(Hex* hex, AUnit* unit) {
 
 AUnit::~AUnit()
 {
+	leaveSquad();
 	removeFromHex(currentHex, this);
 	currentHex = nullptr;
 }
@@ -101,7 +103,7 @@ int AUnit::defend(int AttackAttempt, int damage)
 
 	int defenceroll = Utility::throwDice();
 
-	if (defence - fatiguelvl * 2 + defenceroll >= AttackAttempt)
+	if (defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus() >= AttackAttempt)
 		return 0;
 	
 	
@@ -122,7 +124,7 @@ int AUnit::defend(int AttackAttempt, int damage)
 		testMorale(resultDMG);
 		hitpoints = hitpoints - resultDMG;
 		if (hitpoints < 1)
-			alive = false;
+			setAlive(false);
 		return resultDMG;
 	}
 	return 0;
@@ -133,7 +135,8 @@ int AUnit::defend(int AttackAttempt, int damage)
 void AUnit::attack(AUnit &target, const Weapon &attackWeapon, int bonus)
 {
 	int HitResult = attackPWR - fatiguelvl + attackWeapon.getAttack() + Utility::throwDice() + bonus;
-	target.defend(HitResult, attackWeapon.getDamage() + strength / attackWeapon.getStrDivider());
+	target.defend(HitResult, attackWeapon.getDamage() + strength / attackWeapon.getStrDivider()
+	              + cohesionDmgBonus());
 }
 
 AUnit *AUnit::find_target(Battlefield &myBattlefield)
@@ -162,7 +165,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		}
 
 		// Bonus if the enemy hex assigned no unit to defend this side.
-		int attackBonus = 0;
+		int attackBonus = cohesionStatBonus();
 		if (engagedSide) {
 			Hex* enemyHex = (engagedSide->hexA == currentHex)
 			              ? engagedSide->hexB : engagedSide->hexA;
@@ -171,7 +174,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				for (AUnit* u : enemyHex->units)
 					if (u && u->getAlive() && u->getEngagedSide() == engagedSide)
 						{ defended = true; break; }
-				if (!defended) attackBonus = UNDEFENDED_SIDE_BONUS;
+				if (!defended) attackBonus += UNDEFENDED_SIDE_BONUS;
 			}
 		}
 
@@ -203,8 +206,16 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return broken;
 	}
 
+	void AUnit::leaveSquad()
+	{
+		if (_squad)
+			_squad->removeMember(this);
+	}
+
 	void AUnit::setAlive(bool newAlive)
 	{
+		if (!newAlive)
+			leaveSquad();
 		alive = newAlive;
 	}
 
@@ -304,9 +315,9 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		hitpoints = hitpoints - (amount - armour);
 		if (hitpoints <= 0)
 		{
-			alive = false;
+			setAlive(false);
 		}
-		else 
+		else
 			testMorale(amount - armour);
 		return (amount - armour);
 		
@@ -318,7 +329,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		if (undead) return true;
 		if (damage <= 0) return true;
 		int m1 = Utility::throwDice(), m2 = Utility::throwDice();
-		if (morale + m1 - m2 > damage)
+		if (morale + cohesionStatBonus() + m1 - m2 > damage)
 			return true;
 		setBroken(true);
 		std::cout << "One coward valued his life more than his honor" << std::endl;

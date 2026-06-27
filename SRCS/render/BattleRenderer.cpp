@@ -1,5 +1,5 @@
-#include "../HDRS/BattleRenderer.hpp"
-#include "../HDRS/AUnit.hpp"
+#include "render/BattleRenderer.hpp"
+#include "AUnit.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -17,6 +17,22 @@ static const sf::Color HEX_OUTLINE_COLOR(160, 160, 200);
 static const sf::Color HEX_FILL_RED     (60,  15,  15,  220);
 static const sf::Color HEX_FILL_BLUE    (15,  15,  60,  220);
 static const sf::Color HEX_COORD_COLOR  (100, 100, 130);
+
+// Debug palette: one distinct colour per squad. Indexed by hashing the squad pointer.
+static const sf::Color SQUAD_PALETTE[] = {
+    sf::Color(255, 215,   0),  // gold
+    sf::Color(  0, 255, 180),  // mint
+    sf::Color(255,  80, 220),  // pink
+    sf::Color(  0, 200, 255),  // sky-blue
+    sf::Color(180, 255,   0),  // lime
+    sf::Color(255, 120,   0),  // orange
+    sf::Color(200,  80, 255),  // violet
+    sf::Color( 80, 255, 120),  // green
+    sf::Color(255, 255, 120),  // yellow
+    sf::Color(120, 200, 255),  // cornflower
+};
+static constexpr size_t SQUAD_PALETTE_SIZE =
+    sizeof(SQUAD_PALETTE) / sizeof(SQUAD_PALETTE[0]);
 
 BattleRenderer::BattleRenderer(sf::Font& font, sf::RenderWindow& window)
     : _font(font), _window(window)
@@ -150,7 +166,13 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
 
     // SPRITE SWAP POINT: replace setCharacterSize/setString/setFillColor/draw with sf::Sprite draw
     auto drawUnit = [&](AUnit* u, sf::Vector2f flatPos, unsigned int px, sf::Uint8 alpha = 255) {
-        sf::Color col = (u->getTeam() == 1) ? sf::Color(220, 60, 60) : sf::Color(60, 100, 220);
+        sf::Color col;
+        if (Squad* sq = u->getSquad()) {
+            size_t idx = (reinterpret_cast<uintptr_t>(sq) >> 4) % SQUAD_PALETTE_SIZE;
+            col = SQUAD_PALETTE[idx];
+        } else {
+            col = (u->getTeam() == 1) ? sf::Color(220, 60, 60) : sf::Color(60, 100, 220);
+        }
         if (u->getCast() != 0) col = sf::Color::Yellow;
         if (u->getBroken())    col = sf::Color(255, 140, 0);
         col.a = alpha;
@@ -189,46 +211,47 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
         return;
     }
 
-    // Engaged: assign fighters to each engaged edge, rest are support massed behind them.
-    // Fighters draw at 1.3× size, full brightness.
-    // Support draws at 0.7× size, dimmed — visually present but clearly in reserve.
-    int   fightSlots = std::max(1, static_cast<int>(
-        std::ceil(static_cast<float>(HexSide::FRONTAGE) / avgUnitSz)));
+    // Engaged: mirror the combat assignment from resolveEngagements().
+    // Units with getEngagedSide() set draw at their assigned edge (fighters, 1.3× size).
+    // Units with no assignment are support, massed behind the line (0.7× size, dimmed).
     float fStep = avgSym * 0.85f;
 
     struct Placement { AUnit* unit; sf::Vector2f pos; };
     std::vector<Placement> fighters;
     std::vector<AUnit*>    support;
-    int unitIdx = 0;
 
-    // Up to 3 ranks can show at each engaged edge (supports units with longer weapons later).
-    // Front rank at the edge, subsequent ranks step inward toward hex center.
     static constexpr int MAX_FIGHTER_RANKS = 3;
-    // How many units fit along the edge in one rank
     int edgeWidth = std::max(1, static_cast<int>(_hexSize * 1.5f / fStep));
 
     for (int d : engagedDirs) {
-        if (unitIdx >= N) break;
+        HexSide* side = hex.sides[d];
+        if (!side) continue;
         float angle = EDGE_ANGLE[d] * PI / 180.f;
         sf::Vector2f eDir  = { std::cos(angle), std::sin(angle) };
-        sf::Vector2f pDir  = { -eDir.y, eDir.x };          // along the edge
-        sf::Vector2f inDir = { -eDir.x, -eDir.y };          // inward toward center
+        sf::Vector2f pDir  = { -eDir.y, eDir.x };
+        sf::Vector2f inDir = { -eDir.x, -eDir.y };
         sf::Vector2f eMid  = { flatCenter.x + eDir.x * _hexSize * 0.78f,
                                flatCenter.y + eDir.y * _hexSize * 0.78f };
 
-        int remaining = std::min(fightSlots, N - unitIdx);
-        for (int rank = 0; rank < MAX_FIGHTER_RANKS && remaining > 0; ++rank) {
-            int   rankCount = std::min(edgeWidth, remaining);
+        // Collect only the units combat-assigned to this side.
+        std::vector<AUnit*> edgeUnits;
+        for (AUnit* u : alive)
+            if (u->getEngagedSide() == side) edgeUnits.push_back(u);
+
+        int rem = static_cast<int>(edgeUnits.size()), ei = 0;
+        for (int rank = 0; rank < MAX_FIGHTER_RANKS && ei < rem; ++rank) {
+            int   rankCount = std::min(edgeWidth, rem - ei);
             float t0        = -(rankCount - 1) * fStep * 0.5f;
             float rankOff   = static_cast<float>(rank) * fStep;
-            for (int i = 0; i < rankCount; ++i, ++unitIdx, --remaining)
-                fighters.push_back({ alive[unitIdx], {
+            for (int i = 0; i < rankCount; ++i, ++ei)
+                fighters.push_back({ edgeUnits[ei], {
                     eMid.x + pDir.x * (t0 + static_cast<float>(i) * fStep) + inDir.x * rankOff,
                     eMid.y + pDir.y * (t0 + static_cast<float>(i) * fStep) + inDir.y * rankOff }});
         }
     }
-    for (; unitIdx < N; ++unitIdx)
-        support.push_back(alive[unitIdx]);
+    // Unassigned units (no engagedSide from resolveEngagements) are support.
+    for (AUnit* u : alive)
+        if (!u->getEngagedSide()) support.push_back(u);
 
     // Draw support first so fighters render on top
     if (!support.empty()) {

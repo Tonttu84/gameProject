@@ -10,9 +10,9 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/Zombie.hpp"
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/Utility.hpp"
+#include "units/Zombie.hpp"
+#include "AUnit.hpp"
+#include "Utility.hpp"
 
 
 Zombie::Zombie(int setTeam): AUnit::AUnit(setTeam)

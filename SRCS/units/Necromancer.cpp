@@ -10,7 +10,7 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/Necromancer.hpp"
+#include "units/Necromancer.hpp"
 
 
 

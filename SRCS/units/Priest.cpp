@@ -1,7 +1,7 @@
 
 
 
-#include "../HDRS/Priest.hpp"
+#include "units/Priest.hpp"
 
 Priest::Priest(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::MaceAndShield)
 {

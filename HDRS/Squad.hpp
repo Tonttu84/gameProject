@@ -160,6 +160,18 @@ public:
     // still making large lone units impassable obstacles.
     static constexpr float DISPLACE_FRACTION = 0.25f; // displace if loners ≤ 25% of squad size
 
+    // ── Cohesion ──────────────────────────────────────────────────────────────
+    // Average member cohesion is mapped to a tier that resolveEngagements applies
+    // as a per-tick bonus to members assigned to this squad's border sides.
+    // Thresholds (and what the tiers mean) are defined in AUnit.hpp.
+    static constexpr int COHESION_NORMAL = 50;   // tier 1: +1 attack / defence / morale
+    static constexpr int COHESION_HIGH   = 80;   // tier 2: also +1 damage
+    static constexpr int COHESION_SUPER  = 100;  // tier 3: all bonuses become +2
+
+    // Returns the cohesion tier (0-3) for this squad based on the average cohesion
+    // of its alive non-broken members.
+    int cohesionLevel() const;
+
     // Sum of getSize() across all alive members — used for hex capacity checks.
     size_t totalSizePoints() const;
 

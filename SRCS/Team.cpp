@@ -19,7 +19,7 @@ size_t Team::countAlive() const {
 
 void Team::resetUnitFlags() {
     for (auto& u : units)
-        if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); }
+        if (u) { u->setCanFight(false); u->setEngagedSide(nullptr); u->setCohesionBonus(0); }
 }
 
 void Team::pruneEmptySquads() {

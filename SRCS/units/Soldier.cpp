@@ -11,7 +11,7 @@
 /* ************************************************************************** */
 
 
-#include "../HDRS/Soldier.hpp"
+#include "units/Soldier.hpp"
 
 
 Soldier::Soldier(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::SwordAndShield)

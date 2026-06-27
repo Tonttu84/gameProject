@@ -1,5 +1,5 @@
-#include "../HDRS/Skeleton.hpp"
-#include "../HDRS/Utility.hpp"
+#include "units/Skeleton.hpp"
+#include "Utility.hpp"
 
 Skeleton::Skeleton(int setTeam) : AUnit(setTeam)
 {

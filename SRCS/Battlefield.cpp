@@ -157,8 +157,7 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
     if (unit->getFatigue() > FATIGUE_MAX) { unit->recover(); return; }
 
     // A fleeing unit leaves its squad — it's no longer part of the formation.
-    if (Squad* sq = unit->getSquad())
-        sq->removeMember(unit.get());
+    unit->leaveSquad();
 
     Hex* myHex = unit->getHex();
     if (!myHex) return;
@@ -200,29 +199,6 @@ void Battlefield::moveUnits()
     for (auto& sq : _blue.squads) if (sq) moveSquad(*sq);
     moveTeam(_red);
     moveTeam(_blue);
-}
-
-void Battlefield::swapOut(std::unique_ptr<AUnit>& unitPtr)
-{
-    AUnit& unit = *unitPtr;
-    if (!unit.getHex()) return;
-
-    Hex* target = findTarget(unit);
-    if (!target) return;
-
-    HexCoord from = unit.getHex()->coord;
-    HexCoord to   = target->coord;
-    int curDist   = HexGrid::distance(from, to);
-
-    for (int i = 0; i < 6; ++i) {
-        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
-        Hex* nh = hexGrid.getHex(nc);
-        if (!hexAcceptsUnit(nh, unit)) continue;
-        if (HexGrid::distance(nc, to) > curDist) {
-            moveAUnit(unit, nc);
-            return;
-        }
-    }
 }
 
 // Move one hex away from the nearest enemy. hexAcceptsUnit returning false
@@ -385,7 +361,7 @@ void Battlefield::moveTeam(Team& team)
         // Fatigued units adjacent to enemies hold position as reserves — assignment
         // handles rotation within the hex each tick (fresh units fight, fatigued ones
         // step back to support without leaving the hex).
-        if (u.getEngaged(*this) && u.getFatigue() > SWAPFATIGUE) {
+        if (u.getEngaged(*this) && u.getFatigue() > FATIGUE_VERY_TIRED) {
             continue;
         }
 
@@ -460,9 +436,9 @@ void Battlefield::loadArmies(Army red, Army blue)
 void Battlefield::resolveEngagements() {
     _red.resetUnitFlags();
     _blue.resetUnitFlags();
-    for (HexSide& side : hexGrid.getSides()) side.engaged = false;
+    for (HexSide& side : hexGrid.getSides()) { side.engaged = false; side.combatScore = 0; }
 
-    // Mark sides where both hexes hold opposing living units
+    // Mark sides where both hexes hold opposing living units.
     for (HexSide& side : hexGrid.getSides()) {
         if (!side.hexA || !side.hexB) continue;
         int teamA = 0, teamB = 0;
@@ -472,7 +448,7 @@ void Battlefield::resolveEngagements() {
         side.engaged = true;
     }
 
-    // Group each hex's engaged sides together for round-robin assignment
+    // Group each hex's engaged sides.
     std::unordered_map<Hex*, std::vector<HexSide*>> hexSides;
     for (HexSide& side : hexGrid.getSides()) {
         if (!side.engaged) continue;
@@ -480,41 +456,180 @@ void Battlefield::resolveEngagements() {
         hexSides[side.hexB].push_back(&side);
     }
 
-    // Per hex: assign fighters round-robin so each side gets one unit before any
-    // side gets a second. Fresh units (fatigue < SWAPFATIGUE) go first; fatigued
-    // units extend the same pool so the round-robin cursor never resets between
-    // the two tiers. This guarantees e.g. 3 units across 4 sides → 1,1,1,0 not 2,1,0,0.
-    auto bySize = [](const AUnit* a, const AUnit* b) {
-        if (a->getBroken() != b->getBroken()) return !a->getBroken();
-        return a->biggerThan(b);
-    };
-
     for (auto& [hex, sides] : hexSides) {
-        // Build pool: fresh (normal→broken, size desc) then tired (same order).
-        std::vector<AUnit*> fresh, tired;
-        for (AUnit* u : hex->units) {
-            if (!u || !u->getAlive()) continue;
-            (u->getFatigue() < SWAPFATIGUE ? fresh : tired).push_back(u);
-        }
-        std::sort(fresh.begin(), fresh.end(), bySize);
-        std::sort(tired.begin(), tired.end(), bySize);
-        fresh.insert(fresh.end(), tired.begin(), tired.end());  // one continuous pool
+        const size_t numSides = sides.size();
+        std::vector<int>    frontage(numSides, 0);
+        std::vector<Squad*> sideOwner(numSides, nullptr);  // nullptr = unclaimed by any squad
 
-        std::vector<int> frontage(sides.size(), 0);
-        size_t ui = 0;
-        while (ui < fresh.size()) {
-            bool anyAssigned = false;
-            for (size_t si = 0; si < sides.size() && ui < fresh.size(); ++si) {
-                if (frontage[si] >= HexSide::FRONTAGE) continue;
-                AUnit* u = fresh[ui++];
-                u->setCanFight(true);
-                u->setEngagedSide(sides[si]);
-                frontage[si] += static_cast<int>(u->getSize());
-                anyAssigned = true;
+        // Helper: round-robin assignment from a unit pool across a set of side indices.
+        auto roundRobin = [&](std::vector<AUnit*>& pool, const std::vector<size_t>& sideIdxs) {
+            size_t pi = 0;
+            while (pi < pool.size()) {
+                bool anyAssigned = false;
+                for (size_t fi = 0; fi < sideIdxs.size() && pi < pool.size(); ++fi) {
+                    size_t si = sideIdxs[fi];
+                    if (frontage[si] >= HexSide::FRONTAGE) continue;
+                    AUnit* u = pool[pi++];
+                    u->setCanFight(true);
+                    u->setEngagedSide(sides[si]);
+                    frontage[si] += static_cast<int>(u->getSize());
+                    anyAssigned = true;
+                }
+                if (!anyAssigned) break;
             }
-            if (!anyAssigned) break;
+        };
+
+        // Build the list of squads represented by non-broken alive members in this hex.
+        std::vector<Squad*> squadsHere;
+        for (AUnit* u : hex->units) {
+            if (!u || !u->getAlive() || u->getBroken()) continue;
+            Squad* sq = u->getSquad();
+            if (!sq) continue;
+            bool seen = false;
+            for (Squad* s : squadsHere) if (s == sq) { seen = true; break; }
+            if (!seen) squadsHere.push_back(sq);
         }
+
+        // ── Pass 1A: fresh squad members ──────────────────────────────────────
+        // Each squad fills sides sequentially with non-broken, non-fatigued members.
+        // The first member placed on a side claims it for the squad, blocking loners.
+        // Assigned members receive a cohesion bonus tier from their squad.
+        for (Squad* sq : squadsHere) {
+            const int cohTier = sq->cohesionLevel();
+            std::vector<AUnit*> freshMembers;
+            for (AUnit* m : sq->getMembers()) {
+                if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
+                        && m->getFatigue() < FATIGUE_TIRED)
+                    freshMembers.push_back(m);
+            }
+            std::sort(freshMembers.begin(), freshMembers.end(),
+                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+            size_t mi = 0;
+            for (size_t si = 0; si < numSides && mi < freshMembers.size(); ++si) {
+                if (sideOwner[si] != nullptr && sideOwner[si] != sq) continue;
+                while (mi < freshMembers.size() && frontage[si] < HexSide::FRONTAGE) {
+                    AUnit* u = freshMembers[mi++];
+                    u->setCanFight(true);
+                    u->setEngagedSide(sides[si]);
+                    u->setCohesionBonus(cohTier);
+                    frontage[si] += static_cast<int>(u->getSize());
+                    sideOwner[si] = sq;
+                }
+            }
+        }
+
+        // ── Pass 2A: fatigued squad members fill their squad's own sides ───────
+        // Runs before lone-unit passes so squad sides are maximally filled by
+        // squad members before unclaimed sides are touched by anyone else.
+        // Lone units must not take unclaimed sides while squad sides still have
+        // room that tired squad members could fill.
+        for (Squad* sq : squadsHere) {
+            const int cohTier = sq->cohesionLevel();
+            std::vector<AUnit*> tiredMembers;
+            for (AUnit* m : sq->getMembers()) {
+                if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
+                        && m->getFatigue() >= FATIGUE_TIRED
+                        && m->getFatigue() < FATIGUE_VERY_TIRED)
+                    tiredMembers.push_back(m);
+            }
+            if (tiredMembers.empty()) continue;
+            std::sort(tiredMembers.begin(), tiredMembers.end(),
+                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+            size_t mi = 0;
+            for (size_t si = 0; si < numSides && mi < tiredMembers.size(); ++si) {
+                if (sideOwner[si] != sq) continue;  // only the squad's own sides
+                while (mi < tiredMembers.size() && frontage[si] < HexSide::FRONTAGE) {
+                    AUnit* u = tiredMembers[mi++];
+                    u->setCanFight(true);
+                    u->setEngagedSide(sides[si]);
+                    u->setCohesionBonus(cohTier);
+                    frontage[si] += static_cast<int>(u->getSize());
+                }
+            }
+        }
+
+        // ── Pass 1B: fresh lone units, round-robin across unclaimed sides ──────
+        // Runs after squad passes — squad sides are fully stocked before lone
+        // units claim any remaining unclaimed borders.
+        {
+            std::vector<AUnit*> freshLoners;
+            for (AUnit* u : hex->units) {
+                if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
+                if (u->getFatigue() < FATIGUE_TIRED) freshLoners.push_back(u);
+            }
+            std::sort(freshLoners.begin(), freshLoners.end(),
+                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+            std::vector<size_t> freeSides;
+            for (size_t si = 0; si < numSides; ++si)
+                if (sideOwner[si] == nullptr) freeSides.push_back(si);
+            roundRobin(freshLoners, freeSides);
+        }
+
+        // ── Pass 2B: fatigued lone units, round-robin across unclaimed sides ───
+        {
+            std::vector<AUnit*> tiredLoners;
+            for (AUnit* u : hex->units) {
+                if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
+                if (u->getFatigue() >= FATIGUE_TIRED && u->getFatigue() < FATIGUE_VERY_TIRED)
+                    tiredLoners.push_back(u);
+            }
+            std::sort(tiredLoners.begin(), tiredLoners.end(),
+                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+            std::vector<size_t> freeSides;
+            for (size_t si = 0; si < numSides; ++si)
+                if (sideOwner[si] == nullptr) freeSides.push_back(si);
+            roundRobin(tiredLoners, freeSides);
+        }
+
+        // ── Pass 3A: desperate — very tired squad members ─────────────────────
+        // Last resort. Only used when the earlier passes couldn't fill the side.
+        // Very tired units fight at severe penalty but holding a side is better
+        // than leaving it undefended.
+        for (Squad* sq : squadsHere) {
+            const int cohTier = sq->cohesionLevel();
+            std::vector<AUnit*> veryTired;
+            for (AUnit* m : sq->getMembers()) {
+                if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
+                        && m->getFatigue() >= FATIGUE_VERY_TIRED
+                        && m->getFatigue() < FATIGUE_MAX)
+                    veryTired.push_back(m);
+            }
+            if (veryTired.empty()) continue;
+            std::sort(veryTired.begin(), veryTired.end(),
+                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+            size_t mi = 0;
+            for (size_t si = 0; si < numSides && mi < veryTired.size(); ++si) {
+                if (sideOwner[si] != sq) continue;
+                while (mi < veryTired.size() && frontage[si] < HexSide::FRONTAGE) {
+                    AUnit* u = veryTired[mi++];
+                    u->setCanFight(true);
+                    u->setEngagedSide(sides[si]);
+                    u->setCohesionBonus(cohTier);
+                    frontage[si] += static_cast<int>(u->getSize());
+                }
+            }
+        }
+
+        // ── Pass 3B: desperate — very tired lone units, unclaimed sides ────────
+        {
+            std::vector<AUnit*> veryTiredLoners;
+            for (AUnit* u : hex->units) {
+                if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
+                if (u->getFatigue() >= FATIGUE_VERY_TIRED && u->getFatigue() < FATIGUE_MAX)
+                    veryTiredLoners.push_back(u);
+            }
+            std::sort(veryTiredLoners.begin(), veryTiredLoners.end(),
+                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+            std::vector<size_t> freeSides;
+            for (size_t si = 0; si < numSides; ++si)
+                if (sideOwner[si] == nullptr) freeSides.push_back(si);
+            roundRobin(veryTiredLoners, freeSides);
+        }
+
     }
+
+#ifndef TESTING
+#endif
 }
 
 bool Battlefield::tick()
@@ -523,20 +638,8 @@ bool Battlefield::tick()
     for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
     for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
 
-    // Squad coherence: every alive member of a squad must be on the same hex.
-    // Fires before movement so the previous tick's movement result is verified.
-    for (const Team* t : {&_red, &_blue}) {
-        for (const auto& sq : t->squads) {
-            if (!sq) continue;
-            Hex* squadHex = nullptr;
-            for (AUnit* m : sq->getMembers()) {
-                if (!m || !m->getAlive() || !m->getHex()) continue;
-                if (!squadHex) { squadHex = m->getHex(); continue; }
-                assert(m->getHex() == squadHex &&
-                       "Squad coherence violation: member on different hex than rest of squad");
-            }
-        }
-    }
+    // Full cross-reference consistency check — see DebugAsserts.cpp.
+    debugAsserts();
 
     triggerSpecialPhase();
     moveUnits();

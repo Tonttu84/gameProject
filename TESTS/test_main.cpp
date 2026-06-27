@@ -1,10 +1,10 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "../HDRS/Soldier.hpp"
-#include "../HDRS/Zombie.hpp"
-#include "../HDRS/Archer.hpp"
-#include "../HDRS/Mage.hpp"
+#include "../HDRS/units/Soldier.hpp"
+#include "../HDRS/units/Zombie.hpp"
+#include "../HDRS/units/Archer.hpp"
+#include "../HDRS/units/Mage.hpp"
 #include "../HDRS/HexGrid.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/BattleSetup.hpp"

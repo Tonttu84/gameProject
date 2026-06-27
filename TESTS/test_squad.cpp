@@ -2,8 +2,8 @@
 
 #include "../HDRS/Squad.hpp"
 #include "../HDRS/Wing.hpp"
-#include "../HDRS/Soldier.hpp"
-#include "../HDRS/Zombie.hpp"
+#include "../HDRS/units/Soldier.hpp"
+#include "../HDRS/units/Zombie.hpp"
 #include "../HDRS/Utility.hpp"
 
 
@@ -60,13 +60,14 @@ TEST_CASE("aliveCount counts only alive members") {
     REQUIRE(sq.aliveCount() == 1);
 }
 
-TEST_CASE("totalCount includes dead members until pruned") {
+TEST_CASE("setAlive(false) eagerly removes unit from squad") {
     Squad sq("Alpha", true);
     Soldier a(REDTEAM), b(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
     b.setAlive(false);
-    REQUIRE(sq.totalCount() == 2);
+    REQUIRE(sq.totalCount() == 1);
+    REQUIRE(b.getSquad() == nullptr);
 }
 
 TEST_CASE("pruneDeadMembers removes dead unit and clears its back-pointer") {

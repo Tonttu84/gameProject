@@ -22,8 +22,10 @@ constexpr int HEAVYARMOUR = 5;
 
 // Fatigue
 constexpr int FATIGUERECOVERY     = 4;   // default per-unit passive recovery every tick
-constexpr int SWAPFATIGUE         = 60;  // engaged units retreat to rest above this
-constexpr int FATIGUE_MAX         = 100; // exhausted above this — must rest before acting
+constexpr int FATIGUE_TIRED       = 30;  // border assignment: fresh → tired
+constexpr int FATIGUE_VERY_TIRED  = 60;  // border assignment: tired → very tired (desperate pool)
+                                          // also the threshold above which engaged units hold position
+constexpr int FATIGUE_MAX         = 100; // exhausted — must rest before acting
 constexpr int FATIGUE_LEVEL_DIV   = 20;  // fatigue / this = fatigue tier (0-5)
 
 // Combat

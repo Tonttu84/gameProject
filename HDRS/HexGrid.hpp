@@ -28,6 +28,15 @@ struct HexSide {
     Hex*         hexB     = nullptr;
     HexDirection dirFromA = HexDirection::NE;
     bool         engaged  = false;
+
+    // Accumulated during a tick's combat phase. Positive means hexA's side is
+    // winning (dealing more net damage), negative means hexB's side is winning.
+    // Reset to 0 at the start of each resolveEngagements call.
+    // Intended use: after makeBattle(), compare combatScore against a push
+    // threshold to decide whether the losing side is forced to retreat one hex,
+    // and the winning side advances. This lets sustained pressure translate into
+    // terrain gain rather than combat being purely attrition-based.
+    int combatScore = 0;
 };
 
 enum class FormationType { NORMAL, TIGHT, LOOSE };

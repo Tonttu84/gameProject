@@ -98,6 +98,29 @@ public:
     // nullptr means this unit is a lone individual (mob, summon, overflow).
     void   setSquad(Squad* s) { _squad = s; }
     Squad* getSquad()   const { return _squad; }
+    // Remove this unit from its squad immediately. No-op if not in a squad.
+    // Call before setting alive=false or triggering any state that severs the unit from formation.
+    void   leaveSquad();
+
+    // ── Formation cohesion ────────────────────────────────────────────────────
+    // Per-unit base score (0-100+). Subclasses or setup code set this; the
+    // default of 50 puts a regular soldier at tier-1 bonus territory.
+    int getCohesion()    const { return _cohesion; }
+    void setCohesion(int c)    { _cohesion = c; }
+
+    // Per-tick bonus tier set by resolveEngagements when this unit is assigned
+    // to a side while its squad owns that side. Reset to 0 each tick.
+    //   0 = no bonus  (lone unit or squad with low cohesion)
+    //   1 = normal    +1 attack / defence / morale
+    //   2 = high      +1 attack / defence / morale, +1 damage
+    //   3 = super     +2 attack / defence / morale, +2 damage
+    int  getCohesionBonus() const { return _cohesionBonus; }
+    void setCohesionBonus(int tier) { _cohesionBonus = tier; }
+
+    // Convenience — attack/defence/morale bonus from current tier (+1 or +2).
+    int cohesionStatBonus() const { return _cohesionBonus >= 3 ? 2 : _cohesionBonus >= 1 ? 1 : 0; }
+    // Damage bonus kicks in one tier later.
+    int cohesionDmgBonus()  const { return _cohesionBonus >= 3 ? 2 : _cohesionBonus >= 2 ? 1 : 0; }
 
     int  getPreferredRange()  const  { return preferredRange; }
     void setPreferredRange(int r)    { preferredRange = r; }
@@ -147,6 +170,8 @@ protected:
 
     Squad* _squad = nullptr;  // non-owning; nullptr = lone unit
     int sortKey = 0; // random tiebreaker set at construction, used for render ordering
+    int _cohesion      = 50; // base formation cohesion score; set by subclass or setup
+    int _cohesionBonus = 0;  // per-tick tier (0-3), set by resolveEngagements, reset each tick
     std::vector<Weapon> _attacks;
 
 };

@@ -95,6 +95,17 @@ class Battlefield
         bool tick();
         BattleResult extractResult();
 
+        // Cross-reference consistency checks. Called at the top of each tick.
+        // Uses assert() so violations abort under both make and make test.
+        // With ASan/UBSan enabled, dereferencing a stale pointer inside an assert
+        // condition produces a clean sanitizer fault rather than a silent corruption.
+        // [[gnu::noinline]]: keeps this as a discrete call site in the binary so the
+        // compiler cannot inline-then-DCE it under aggressive optimisation.
+        [[gnu::noinline]] void debugAsserts() const;
+        // Total individual assertion evaluations since program start.
+        // Non-zero proves debugAsserts() was not DCE'd.
+        static size_t debugAssertCount();
+
         // Returns the unit vector from the matching Team — keeps existing callsites
         // compiling while the Team refactor is in progress.
         std::vector<std::unique_ptr<AUnit>>& getTeam(int team);
@@ -107,7 +118,6 @@ class Battlefield
         void moveTeam(Team& team);
         void moveSquad(Squad& squad);
         void flee(std::unique_ptr<AUnit> &unit);
-        void swapOut(std::unique_ptr<AUnit> &unit);
         void retreatToRange(std::unique_ptr<AUnit> &unit);
         void cleanup();
         void triggerSpecialPhase();

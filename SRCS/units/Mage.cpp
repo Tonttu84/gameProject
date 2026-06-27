@@ -1,4 +1,4 @@
-#include "../HDRS/Mage.hpp"
+#include "units/Mage.hpp"
 
 Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
