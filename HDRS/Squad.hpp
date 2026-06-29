@@ -46,7 +46,10 @@ enum class MoraleState {
 //
 // Typical lifecycle:
 //   1. Created in BattleSetup alongside army placement.
-//   2. Battlefield calls pruneDeadMembers() and updateMoraleState() each tick.
+//   2. Battlefield calls updateMoraleState() each tick after makeBattle()
+//      once squad morale is fully implemented.
+//      (pruneDeadMembers() is superseded — members leave eagerly via leaveSquad()
+//       called from AUnit::setAlive(false) and ~AUnit().)
 //   3. Battlefield queries moraleModifier() when resolving individual morale checks.
 //   4. If the leader is alive, Battlefield calls attemptRally() during the rally phase.
 //   5. At battle end, Battlefield calls disband() before destroying each Squad.

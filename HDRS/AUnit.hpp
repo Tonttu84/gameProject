@@ -14,7 +14,6 @@
 
 #include <memory>
 #include <assert.h>
-#include "Macros.hpp"
 #include "Weapon.hpp"
 #include "WeaponList.hpp"
 #include <vector>

@@ -626,7 +626,6 @@ void Battlefield::resolveEngagements() {
                     u->setEngagedSide(sides[si]);
                     u->setCohesionBonus(cohTier);
                     frontage[si] += static_cast<int>(u->getSize());
-                    sideOwner[si] = sq;
                 }
             }
         }
