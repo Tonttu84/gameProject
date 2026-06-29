@@ -91,6 +91,8 @@ class Battlefield
         void makeBattle(void);
 
         void loadArmies(Army red, Army blue);
+        // Call whenever impassable/terrain/blocked flags change mid-battle (e.g. a spell).
+        void recomputeDistances();
         void reset(); // clear hex occupancy and corpse count between battles
         bool tick();
         BattleResult extractResult();

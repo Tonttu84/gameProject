@@ -130,7 +130,7 @@ bool AUnit::getEngaged(Battlefield &myBattlefield) const
 	return false;
 }
 
-int AUnit::defend(int AttackAttempt, int damage)
+int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen)
 {
 	int defenceroll = Utility::throwDice();
 
@@ -149,29 +149,45 @@ int AUnit::defend(int AttackAttempt, int damage)
 
 	if (defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus() - crampedPenalty >= AttackAttempt)
 		return 0;
-	
-	
+
 	int d1 = Utility::throwDice(), d2 = Utility::throwDice();
 	int resultDMG = damage + d1 - d2;
 
-	// Extra shields (force fields etc.): flat skill-independent roll, consumed on block.
+	// Extra shields (force fields): skill-independent flat roll, consumed on block.
+	// Bypass attacks are fully deflected by a force field (magical barriers stop ethereal);
+	// Piercing attacks halve the shield protection; Normal gets full SHIELDREDUCTION.
 	if (resultDMG > 0 && tryBlockExtraShield()) {
-		resultDMG -= SHIELDREDUCTION;
+		if (pen == ArmorPen::Bypass)
+			resultDMG = 0; // force field fully absorbs the ethereal strike
+		else if (pen == ArmorPen::Piercing)
+			resultDMG -= SHIELDREDUCTION / 2;
+		else
+			resultDMG -= SHIELDREDUCTION;
 	}
-	// Physical shield: skill-based block (defence stat contributes).
-	else if (resultDMG > 0 && shield > 0 && (defence + shield - fatiguelvl * 2 + defenceroll >= AttackAttempt))
+	// Physical shield: cannot stop Bypass attacks (ethereal passes straight through).
+	// Piercing attacks halve the total shield protection (SHIELDREDUCTION + shield bonus).
+	else if (pen != ArmorPen::Bypass && resultDMG > 0 && shield > 0
+	         && (defence + shield - fatiguelvl * 2 + defenceroll >= AttackAttempt))
 	{
-		resultDMG = resultDMG - SHIELDREDUCTION - shield * 2;
+		int shieldProt = SHIELDREDUCTION + shield * 2;
+		if (pen == ArmorPen::Piercing)
+			shieldProt /= 2;
+		resultDMG -= shieldProt;
 		if (resultDMG > 0)
 		{
 			shield--;
 			std::cout << "Shield damaged by a strong blow" << std::endl;
 		}
 	}
+
+	// Piercing weapons partially bypass melee armor.
+	if (resultDMG > 0 && pen == ArmorPen::Piercing)
+		resultDMG -= armour / 2;
+
 	if (resultDMG > 0)
 	{
 		testMorale(resultDMG);
-		hitpoints = hitpoints - resultDMG;
+		hitpoints -= resultDMG;
 		if (hitpoints < 1)
 			setAlive(false);
 		return resultDMG;
@@ -181,11 +197,11 @@ int AUnit::defend(int AttackAttempt, int damage)
 
 
 
-void AUnit::attack(AUnit &target, const Weapon &attackWeapon, int bonus)
+void AUnit::attack(AUnit &target, const Weapon &attackWeapon, int bonus, ArmorPen pen)
 {
 	int HitResult = attackPWR - fatiguelvl + attackWeapon.getAttack() + Utility::throwDice() + bonus;
 	target.defend(HitResult, attackWeapon.getDamage() + strength / attackWeapon.getStrDivider()
-	              + cohesionDmgBonus());
+	              + cohesionDmgBonus(), pen);
 }
 
 AUnit *AUnit::find_target(Battlefield &myBattlefield)
@@ -380,19 +396,19 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	int AUnit::getValue() const{
 		return unitValue;
 	}
-	int AUnit::takeDamage(int amount)
+	int AUnit::takeDamage(int amount, ArmorPen pen)
 	{
-		if (amount - armour <= 0)
+		int eff = (pen == ArmorPen::Piercing) ? armour / 2
+		        : (pen == ArmorPen::Bypass)   ? 0
+		        :                               armour;
+		if (amount - eff <= 0)
 			return 0;
-		hitpoints = hitpoints - (amount - armour);
+		hitpoints -= (amount - eff);
 		if (hitpoints <= 0)
-		{
 			setAlive(false);
-		}
 		else
-			testMorale(amount - armour);
-		return (amount - armour);
-		
+			testMorale(amount - eff);
+		return amount - eff;
 	}
 
 	//returns true if the test is passed
@@ -428,8 +444,9 @@ void AUnit::restoreForNextBattle()
 	hitpoints        = maxHP;
 	fatigue          = 0;
 	fatiguelvl       = 0;
-	broken           = false;
-	placed           = false;
+	broken                = false;
+	placed                = false;
+	_tookLateralLastMove  = false;
 	cast             = 0;
 	canFightThisTurn = false;
 	engagedSide      = nullptr;

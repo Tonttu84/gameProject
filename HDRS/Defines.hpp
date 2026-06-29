@@ -16,6 +16,13 @@
 constexpr int REDTEAM  = 1;
 constexpr int BLUETEAM = 2;
 
+// Armor penetration modes.
+//   Normal  – armor subtracts normally; shields reduce damage by SHIELDREDUCTION.
+//   Piercing – armor is halved; shields still apply.
+//   Bypass  – armor is ignored AND SHIELDREDUCTION is skipped; only extra shields
+//             (force fields) can deflect, and they do so completely.
+enum class ArmorPen { Normal, Piercing, Bypass };
+
 // Armour values
 constexpr int LIGHTARMOUR = 2;
 constexpr int HEAVYARMOUR = 5;

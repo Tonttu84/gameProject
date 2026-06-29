@@ -1,6 +1,7 @@
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/RangedCombat.hpp"
 #include <algorithm>
+#include <climits>
 #include <unordered_map>
 
 
@@ -147,58 +148,73 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
         return;
     }
 
-    HexCoord from = unit.getHex()->coord;
-    HexCoord to   = target->coord;
-    if (from == to) return;
+    const Hex* fromHex = unit.getHex();
+    if (fromHex == target) return;
 
-    int curDist = HexGrid::distance(from, to);
+    bool mounted = (unit.getCategory() == UnitCategory::Mounted);
+    bool flyer   = (unit.getCategory() == UnitCategory::Flyer);
 
-    // Pass 1: pick the passable neighbor that closes distance the most
-    int bestDist = curDist;
-    int bestDir  = -1;
+    int curDist = flyer ? HexGrid::distance(fromHex->coord, target->coord)
+                        : hexGrid.bfsDistance(fromHex, target, mounted);
+    if (curDist <= 0 || curDist == HexGrid::UNREACHABLE) return;
+
+    // If the unit took a lateral last turn it must decrease distance this turn.
+    bool mustDecrease = unit.getTookLateral();
+
+    HexCoord from = fromHex->coord;
+
+    // Track the best strictly-decreasing candidate and the best lateral candidate
+    // separately. Among equal-distance candidates, prefer the cheapest terrain.
+    int bestDecrDist = curDist, bestDecrCost = INT_MAX, bestDecrDir = -1;
+    int bestLatCost  = INT_MAX, bestLatDir   = -1;
+
     for (int i = 0; i < 6; ++i) {
         auto dir = static_cast<HexDirection>(i);
         if (!sidePassable(hexGrid.getSide(from, dir), unit.getCategory())) continue;
         HexCoord nc = hexGrid.neighborCoord(from, dir);
         Hex* nh = hexGrid.getHex(nc);
         if (!hexAcceptsUnit(nh, unit)) continue;
-        int d = HexGrid::distance(nc, to);
-        if (d < bestDist) {
-            bestDist = d;
-            bestDir  = i;
+
+        int d = flyer ? HexGrid::distance(nc, target->coord)
+                      : hexGrid.bfsDistance(nh, target, mounted);
+        if (d == HexGrid::UNREACHABLE) continue;
+
+        int cost = terrainMoveCost(nh, hexGrid.getSide(from, dir), unit.getCategory());
+
+        if (d < curDist) {
+            if (d < bestDecrDist || (d == bestDecrDist && cost < bestDecrCost)) {
+                bestDecrDist = d; bestDecrCost = cost; bestDecrDir = i;
+            }
+        } else if (d == curDist && cost < bestLatCost) {
+            bestLatCost = cost; bestLatDir = i;
         }
     }
-    if (bestDir >= 0) {
-        auto      dir      = static_cast<HexDirection>(bestDir);
-        HexCoord  destCoord = hexGrid.neighborCoord(from, dir);
-        moveAUnit(unit, destCoord);
-        int cost = terrainMoveCost(hexGrid.getHex(destCoord), hexGrid.getSide(from, dir),
+
+    // Prefer a decreasing move — clears the lateral flag.
+    if (bestDecrDir >= 0) {
+        auto dir = static_cast<HexDirection>(bestDecrDir);
+        HexCoord dest = hexGrid.neighborCoord(from, dir);
+        moveAUnit(unit, dest);
+        int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(from, dir),
                                    unit.getCategory());
         if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
+        unit.setTookLateral(false);
         return;
     }
 
-    // Pass 2: forward is blocked — try a lateral move (same distance to target).
-    // Non-engaged units maneuver around the jam.
-    // Engaged + crowded units may expand frontage if they'd stay in contact.
-    bool engaged = unit.getEngaged(*this);
-    // Expand frontage if the hex has 40+ size-points. Stops naturally when
-    // sizeUsed drops below 400, keeping ~39 units on the line.
-    bool crowded = unit.getHex()->sizeUsed >= CROWDED_THRESHOLD;
-
-    for (int i = 0; i < 6; ++i) {
-        auto dir = static_cast<HexDirection>(i);
-        if (!sidePassable(hexGrid.getSide(from, dir), unit.getCategory())) continue;
-        HexCoord nc = hexGrid.neighborCoord(from, dir);
-        Hex* nh = hexGrid.getHex(nc);
-        if (!hexAcceptsUnit(nh, unit)) continue;
-        if (HexGrid::distance(nc, to) != curDist) continue;
-
-        if (!engaged || (crowded && wouldRemainEngaged(unit, nc, hexGrid))) {
-            moveAUnit(unit, nc);
-            int cost = terrainMoveCost(hexGrid.getHex(nc), hexGrid.getSide(from, dir),
+    // Lateral: only if not mustDecrease, and respecting engaged/crowded constraints.
+    if (!mustDecrease && bestLatDir >= 0) {
+        bool engaged = unit.getEngaged(*this);
+        bool crowded = unit.getHex()->sizeUsed >= CROWDED_THRESHOLD;
+        HexCoord latDest = hexGrid.neighborCoord(from, static_cast<HexDirection>(bestLatDir));
+        if (!engaged || (crowded && wouldRemainEngaged(unit, latDest, hexGrid))) {
+            auto dir = static_cast<HexDirection>(bestLatDir);
+            HexCoord dest = hexGrid.neighborCoord(from, dir);
+            moveAUnit(unit, dest);
+            int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(from, dir),
                                        unit.getCategory());
             if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
+            unit.setTookLateral(true);
             return;
         }
     }
@@ -222,30 +238,59 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
         return;
     }
 
-    // SE and SW both reduce distance to Red's back edge equally (dr=+1 each); pick randomly
-    // so the path zigzags instead of going straight. Same logic for Blue (NW/NE).
-    // If the random path drifts to a flank edge the boundary check above removes the unit.
-    static const HexDirection RED_FLEE[6]  = { HexDirection::SE, HexDirection::SW,
-                                               HexDirection::E,  HexDirection::W,
-                                               HexDirection::NE, HexDirection::NW };
-    static const HexDirection BLUE_FLEE[6] = { HexDirection::NW, HexDirection::NE,
-                                               HexDirection::W,  HexDirection::E,
-                                               HexDirection::SW, HexDirection::SE };
-    const HexDirection* dirs = (unit->getTeam() == REDTEAM) ? RED_FLEE : BLUE_FLEE;
-    bool swap = Utility::getRandom(0, 1) == 0;
+    bool mounted = (unit->getCategory() == UnitCategory::Mounted);
+    bool isRed   = (unit->getTeam() == REDTEAM);
+    // Flyers use the ground flee table — direction-finding is the same since
+    // impassable hexes are walls in both graphs and flyers can cross any hexside.
+    int curFleeDist = hexGrid.fleeDistance(myHex, mounted, isRed);
+
+    bool mustDecrease = unit->getTookLateral();
+
+    int bestDecrFlee = curFleeDist, bestDecrCost = INT_MAX, bestDecrDir = -1;
+    int bestLatCost  = INT_MAX,     bestLatDir   = -1;
+
     for (int i = 0; i < 6; ++i) {
-        int idx = (i < 2 && swap) ? (1 - i) : i;
-        auto     dir  = dirs[idx];
-        HexCoord nc   = hexGrid.neighborCoord(c, dir);
-        Hex* next = hexGrid.getHex(nc);
+        auto dir = static_cast<HexDirection>(i);
         if (!sidePassable(hexGrid.getSide(c, dir), unit->getCategory())) continue;
-        if (hexAcceptsUnit(next, *unit)) {
-            moveAUnit(*unit, nc);
-            int cost = terrainMoveCost(next, hexGrid.getSide(c, dir), unit->getCategory());
-            if (cost > 1) unit->setSpentMove(static_cast<size_t>(cost - 1));
-            return;
+        HexCoord nc = hexGrid.neighborCoord(c, dir);
+        Hex* nh = hexGrid.getHex(nc);
+        if (!hexAcceptsUnit(nh, *unit)) continue;
+
+        int d    = hexGrid.fleeDistance(nh, mounted, isRed);
+        if (d == HexGrid::UNREACHABLE) continue;
+        int cost = terrainMoveCost(nh, hexGrid.getSide(c, dir), unit->getCategory());
+
+        if (d < curFleeDist) {
+            if (d < bestDecrFlee || (d == bestDecrFlee && cost < bestDecrCost)) {
+                bestDecrFlee = d; bestDecrCost = cost; bestDecrDir = i;
+            }
+        } else if (d == curFleeDist && cost < bestLatCost) {
+            bestLatCost = cost; bestLatDir = i;
         }
     }
+
+    if (bestDecrDir >= 0) {
+        auto dir = static_cast<HexDirection>(bestDecrDir);
+        HexCoord dest = hexGrid.neighborCoord(c, dir);
+        moveAUnit(*unit, dest);
+        int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(c, dir),
+                                   unit->getCategory());
+        if (cost > 1) unit->setSpentMove(static_cast<size_t>(cost - 1));
+        unit->setTookLateral(false);
+        return;
+    }
+
+    if (!mustDecrease && bestLatDir >= 0) {
+        auto dir = static_cast<HexDirection>(bestLatDir);
+        HexCoord dest = hexGrid.neighborCoord(c, dir);
+        moveAUnit(*unit, dest);
+        int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(c, dir),
+                                   unit->getCategory());
+        if (cost > 1) unit->setSpentMove(static_cast<size_t>(cost - 1));
+        unit->setTookLateral(true);
+        return;
+    }
+
     unit->rally();
 }
 
@@ -505,17 +550,22 @@ void Battlefield::loadArmies(Army red, Army blue)
 {
     _red.units  = std::move(red);
     _blue.units = std::move(blue);
+    // Red flees south (r = height-1); Blue flees north (r = 0).
+    hexGrid.computeDistances(height - 1, 0);
 }
 
-void Battlefield::resolveEngagements() {
-    _red.resetUnitFlags();
-    _blue.resetUnitFlags();
-    for (HexSide& side : hexGrid.getSides()) { side.engaged = false; side.combatScore = 0; }
+void Battlefield::recomputeDistances()
+{
+    hexGrid.computeDistances(height - 1, 0);
+}
 
-    // Mark sides where both hexes hold opposing living units.
-    for (HexSide& side : hexGrid.getSides()) {
+// ── resolveEngagements helpers ───────────────────────────────────────────────
+
+static void markEngagedSides(HexGrid& grid)
+{
+    for (HexSide& side : grid.getSides()) { side.engaged = false; side.combatScore = 0; }
+    for (HexSide& side : grid.getSides()) {
         if (!side.hexA || !side.hexB) continue;
-        // Blocked sides and cliff faces cannot be engaged across
         if (side.blocked) continue;
         if (std::abs(side.hexA->elevation - side.hexB->elevation) >= 2) continue;
         int teamA = 0, teamB = 0;
@@ -524,308 +574,235 @@ void Battlefield::resolveEngagements() {
         if (teamA == 0 || teamB == 0 || teamA == teamB) continue;
         side.engaged = true;
     }
+}
 
-    // Group each hex's engaged sides.
+static std::unordered_map<Hex*, std::vector<HexSide*>> buildHexSideMap(HexGrid& grid)
+{
     std::unordered_map<Hex*, std::vector<HexSide*>> hexSides;
-    for (HexSide& side : hexGrid.getSides()) {
+    for (HexSide& side : grid.getSides()) {
         if (!side.engaged) continue;
         hexSides[side.hexA].push_back(&side);
         hexSides[side.hexB].push_back(&side);
     }
+    return hexSides;
+}
 
-    for (auto& [hex, sides] : hexSides) {
-        const size_t numSides = sides.size();
-        std::vector<int>    frontage(numSides, 0);
-        std::vector<Squad*> sideOwner(numSides, nullptr);  // nullptr = unclaimed by any squad
+static std::vector<Squad*> collectSquadsInHex(const Hex* hex)
+{
+    std::vector<Squad*> result;
+    for (AUnit* u : hex->units) {
+        if (!u || !u->getAlive() || u->getBroken()) continue;
+        Squad* sq = u->getSquad();
+        if (!sq) continue;
+        bool seen = false;
+        for (Squad* s : result) if (s == sq) { seen = true; break; }
+        if (!seen) result.push_back(sq);
+    }
+    return result;
+}
 
-        // Forest and Rubble break formation dressing — squad cohesion bonus halved.
-        auto cohesionTier = [hex](int tier) -> int {
-            if (hex->terrain == TerrainType::Forest || hex->terrain == TerrainType::Rubble)
-                return tier / 2;
-            return tier;
-        };
+// Forest and Rubble break formation dressing — cohesion bonus halved.
+static int cohesionTierForHex(const Hex* hex, int tier)
+{
+    if (hex->terrain == TerrainType::Forest || hex->terrain == TerrainType::Rubble)
+        return tier / 2;
+    return tier;
+}
 
-        // Helper: round-robin assignment from a unit pool across a set of side indices.
-        auto roundRobin = [&](std::vector<AUnit*>& pool, const std::vector<size_t>& sideIdxs) {
-            size_t pi = 0;
-            while (pi < pool.size()) {
-                bool anyAssigned = false;
-                for (size_t fi = 0; fi < sideIdxs.size() && pi < pool.size(); ++fi) {
-                    size_t si = sideIdxs[fi];
-                    if (frontage[si] >= effectiveFrontage(*sides[si])) continue;
-                    AUnit* u = pool[pi++];
-                    u->setCanFight(true);
-                    u->setEngagedSide(sides[si]);
-                    frontage[si] += static_cast<int>(u->getSize());
-                    anyAssigned = true;
-                }
-                if (!anyAssigned) break;
-            }
-        };
+// Distribute sides proportionally between squads and the loner pool, writing into sideOwner.
+// Each group gets at least 1 side; extras go to largest groups first.
+// Adjacent-preferred picks keep each group's sides contiguous.
+static void allocateSidesToGroups(Hex* hex, const std::vector<HexSide*>& sides,
+                                   const std::vector<Squad*>& squadsHere,
+                                   std::vector<Squad*>& sideOwner)
+{
+    struct Group {
+        Squad*              squad; // nullptr = loner pool
+        int                 size;  // fatigue-weighted: fresh×3, tired×2, very tired×1
+        std::vector<size_t> owned;
+    };
 
-        // Build the list of squads represented by non-broken alive members in this hex.
-        std::vector<Squad*> squadsHere;
+    auto fatigueWeight = [](int f) -> int {
+        if (f < FATIGUE_TIRED)      return 3;
+        if (f < FATIGUE_VERY_TIRED) return 2;
+        return 1;
+    };
+
+    std::vector<Group> groups;
+    for (Squad* sq : squadsHere) {
+        int sz = 0;
+        for (AUnit* m : sq->getMembers()) {
+            if (!m || !m->getAlive() || m->getBroken() || m->getHex() != hex) continue;
+            int f = m->getFatigue();
+            if (f >= FATIGUE_MAX) continue;
+            sz += static_cast<int>(m->getSize()) * fatigueWeight(f);
+        }
+        if (sz > 0) groups.push_back({sq, sz, {}});
+    }
+    {
+        int lonerSz = 0;
         for (AUnit* u : hex->units) {
-            if (!u || !u->getAlive() || u->getBroken()) continue;
-            Squad* sq = u->getSquad();
-            if (!sq) continue;
-            bool seen = false;
-            for (Squad* s : squadsHere) if (s == sq) { seen = true; break; }
-            if (!seen) squadsHere.push_back(sq);
+            if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
+            int f = u->getFatigue();
+            if (f >= FATIGUE_MAX) continue;
+            lonerSz += static_cast<int>(u->getSize()) * fatigueWeight(f);
         }
-
-        // ── Pre-allocation: distribute sides proportionally between squads/loners ──
-        // Sets sideOwner upfront so all fatigue passes (1A-3B) respect the split.
-        // Each group gets at least 1 side (when sides ≥ groups); extras go to the
-        // largest groups first. When picking a second or third side a group prefers
-        // the direction adjacent to its first pick (fluffy, not a hard constraint).
-        {
-            struct Group {
-                Squad*             squad; // nullptr = loner pool
-                int                size;  // fatigue-weighted size: fresh×3, tired×2, vtired×1
-                std::vector<size_t> owned;
-            };
-            std::vector<Group> groups;
-
-            // Weight by fatigue: fresh=3, tired=2, very tired=1.
-            // Groups with mostly fresh troops earn proportionally more sides.
-            auto fatigueWeight = [](int f) -> int {
-                if (f < FATIGUE_TIRED)      return 3;
-                if (f < FATIGUE_VERY_TIRED) return 2;
-                return 1; // very tired but not exhausted
-            };
-
-            for (Squad* sq : squadsHere) {
-                int sz = 0;
-                for (AUnit* m : sq->getMembers()) {
-                    if (!m || !m->getAlive() || m->getBroken() || m->getHex() != hex) continue;
-                    int f = m->getFatigue();
-                    if (f >= FATIGUE_MAX) continue;
-                    sz += static_cast<int>(m->getSize()) * fatigueWeight(f);
-                }
-                if (sz > 0) groups.push_back({sq, sz, {}});
-            }
-            {
-                int lonerSz = 0;
-                for (AUnit* u : hex->units) {
-                    if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
-                    int f = u->getFatigue();
-                    if (f >= FATIGUE_MAX) continue;
-                    lonerSz += static_cast<int>(u->getSize()) * fatigueWeight(f);
-                }
-                if (lonerSz > 0) groups.push_back({nullptr, lonerSz, {}});
-            }
-
-            if (!groups.empty()) {
-                int G = static_cast<int>(groups.size());
-                int N = static_cast<int>(numSides);
-
-                // Sort largest first so the biggest group picks first.
-                std::sort(groups.begin(), groups.end(),
-                          [](const Group& a, const Group& b){ return a.size > b.size; });
-
-                // Share: min(1, proportional). If groups > sides, smallest lose theirs.
-                std::vector<int> share(G, 0);
-                if (G <= N) {
-                    for (int i = 0; i < G; ++i) share[i] = 1;
-                    for (int k = 0; k < N - G; ++k) share[k % G]++;
-                } else {
-                    for (int k = 0; k < N; ++k) share[k] = 1;
-                }
-
-                // Direction of a side as seen from this hex.
-                auto dirOf = [&](HexSide* s) -> int {
-                    int d = static_cast<int>(s->dirFromA);
-                    return (s->hexB == hex) ? (d + 3) % 6 : d;
-                };
-
-                std::vector<bool> claimed(numSides, false);
-
-                // Round 1: each group picks its first side (largest group goes first).
-                for (int gi = 0; gi < G; ++gi) {
-                    if (share[gi] == 0) continue;
-                    for (size_t si = 0; si < numSides; ++si) {
-                        if (!claimed[si]) {
-                            groups[gi].owned.push_back(si);
-                            claimed[si] = true;
-                            break;
-                        }
-                    }
-                }
-                // Round 2+: extra sides, adjacent-preferred.
-                bool progress = true;
-                while (progress) {
-                    progress = false;
-                    for (int gi = 0; gi < G; ++gi) {
-                        if (static_cast<int>(groups[gi].owned.size()) >= share[gi]) continue;
-                        size_t best = numSides; // sentinel = not found
-                        // Prefer a side adjacent (direction ±1 mod 6) to any owned side.
-                        for (size_t si = 0; si < numSides && best == numSides; ++si) {
-                            if (claimed[si]) continue;
-                            int dir = dirOf(sides[si]);
-                            for (size_t oi : groups[gi].owned) {
-                                int od = dirOf(sides[oi]);
-                                if ((dir - od + 6) % 6 == 1 || (od - dir + 6) % 6 == 1)
-                                    { best = si; break; }
-                            }
-                        }
-                        if (best == numSides) { // no adjacent — take first free
-                            for (size_t si = 0; si < numSides; ++si)
-                                if (!claimed[si]) { best = si; break; }
-                        }
-                        if (best == numSides) continue;
-                        groups[gi].owned.push_back(best);
-                        claimed[best] = true;
-                        progress = true;
-                    }
-                }
-
-                // Commit: squad sides get sideOwner set; loner sides stay nullptr.
-                for (const Group& g : groups)
-                    if (g.squad)
-                        for (size_t si : g.owned)
-                            sideOwner[si] = g.squad;
-            }
-        }
-
-        // ── Pass 1A: fresh squad members ──────────────────────────────────────
-        // sideOwner is now pre-allocated so each squad only fills its own sides.
-        // Assigned members receive a cohesion bonus tier from their squad.
-        for (Squad* sq : squadsHere) {
-            const int cohTier = cohesionTier(sq->cohesionLevel());
-            std::vector<AUnit*> freshMembers;
-            for (AUnit* m : sq->getMembers()) {
-                if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
-                        && m->getFatigue() < FATIGUE_TIRED)
-                    freshMembers.push_back(m);
-            }
-            std::sort(freshMembers.begin(), freshMembers.end(),
-                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
-            size_t mi = 0;
-            for (size_t si = 0; si < numSides && mi < freshMembers.size(); ++si) {
-                if (sideOwner[si] != sq) continue;
-                while (mi < freshMembers.size() && frontage[si] < effectiveFrontage(*sides[si])) {
-                    AUnit* u = freshMembers[mi++];
-                    u->setCanFight(true);
-                    u->setEngagedSide(sides[si]);
-                    u->setCohesionBonus(cohTier);
-                    frontage[si] += static_cast<int>(u->getSize());
-                }
-            }
-        }
-
-        // ── Pass 2A: fatigued squad members fill their squad's own sides ───────
-        // Runs before lone-unit passes so squad sides are maximally filled by
-        // squad members before unclaimed sides are touched by anyone else.
-        // Lone units must not take unclaimed sides while squad sides still have
-        // room that tired squad members could fill.
-        for (Squad* sq : squadsHere) {
-            const int cohTier = cohesionTier(sq->cohesionLevel());
-            std::vector<AUnit*> tiredMembers;
-            for (AUnit* m : sq->getMembers()) {
-                if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
-                        && m->getFatigue() >= FATIGUE_TIRED
-                        && m->getFatigue() < FATIGUE_VERY_TIRED)
-                    tiredMembers.push_back(m);
-            }
-            if (tiredMembers.empty()) continue;
-            std::sort(tiredMembers.begin(), tiredMembers.end(),
-                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
-            size_t mi = 0;
-            for (size_t si = 0; si < numSides && mi < tiredMembers.size(); ++si) {
-                if (sideOwner[si] != sq) continue;  // only the squad's own sides
-                while (mi < tiredMembers.size() && frontage[si] < effectiveFrontage(*sides[si])) {
-                    AUnit* u = tiredMembers[mi++];
-                    u->setCanFight(true);
-                    u->setEngagedSide(sides[si]);
-                    u->setCohesionBonus(cohTier);
-                    frontage[si] += static_cast<int>(u->getSize());
-                }
-            }
-        }
-
-        // ── Pass 1B: fresh lone units, round-robin across unclaimed sides ──────
-        // Runs after squad passes — squad sides are fully stocked before lone
-        // units claim any remaining unclaimed borders.
-        {
-            std::vector<AUnit*> freshLoners;
-            for (AUnit* u : hex->units) {
-                if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
-                if (u->getFatigue() < FATIGUE_TIRED) freshLoners.push_back(u);
-            }
-            std::sort(freshLoners.begin(), freshLoners.end(),
-                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
-            std::vector<size_t> freeSides;
-            for (size_t si = 0; si < numSides; ++si)
-                if (sideOwner[si] == nullptr) freeSides.push_back(si);
-            roundRobin(freshLoners, freeSides);
-        }
-
-        // ── Pass 2B: fatigued lone units, round-robin across unclaimed sides ───
-        {
-            std::vector<AUnit*> tiredLoners;
-            for (AUnit* u : hex->units) {
-                if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
-                if (u->getFatigue() >= FATIGUE_TIRED && u->getFatigue() < FATIGUE_VERY_TIRED)
-                    tiredLoners.push_back(u);
-            }
-            std::sort(tiredLoners.begin(), tiredLoners.end(),
-                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
-            std::vector<size_t> freeSides;
-            for (size_t si = 0; si < numSides; ++si)
-                if (sideOwner[si] == nullptr) freeSides.push_back(si);
-            roundRobin(tiredLoners, freeSides);
-        }
-
-        // ── Pass 3A: desperate — very tired squad members ─────────────────────
-        // Last resort. Only used when the earlier passes couldn't fill the side.
-        // Very tired units fight at severe penalty but holding a side is better
-        // than leaving it undefended.
-        for (Squad* sq : squadsHere) {
-            const int cohTier = cohesionTier(sq->cohesionLevel());
-            std::vector<AUnit*> veryTired;
-            for (AUnit* m : sq->getMembers()) {
-                if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
-                        && m->getFatigue() >= FATIGUE_VERY_TIRED
-                        && m->getFatigue() < FATIGUE_MAX)
-                    veryTired.push_back(m);
-            }
-            if (veryTired.empty()) continue;
-            std::sort(veryTired.begin(), veryTired.end(),
-                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
-            size_t mi = 0;
-            for (size_t si = 0; si < numSides && mi < veryTired.size(); ++si) {
-                if (sideOwner[si] != sq) continue;
-                while (mi < veryTired.size() && frontage[si] < effectiveFrontage(*sides[si])) {
-                    AUnit* u = veryTired[mi++];
-                    u->setCanFight(true);
-                    u->setEngagedSide(sides[si]);
-                    u->setCohesionBonus(cohTier);
-                    frontage[si] += static_cast<int>(u->getSize());
-                }
-            }
-        }
-
-        // ── Pass 3B: desperate — very tired lone units, unclaimed sides ────────
-        {
-            std::vector<AUnit*> veryTiredLoners;
-            for (AUnit* u : hex->units) {
-                if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
-                if (u->getFatigue() >= FATIGUE_VERY_TIRED && u->getFatigue() < FATIGUE_MAX)
-                    veryTiredLoners.push_back(u);
-            }
-            std::sort(veryTiredLoners.begin(), veryTiredLoners.end(),
-                      [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
-            std::vector<size_t> freeSides;
-            for (size_t si = 0; si < numSides; ++si)
-                if (sideOwner[si] == nullptr) freeSides.push_back(si);
-            roundRobin(veryTiredLoners, freeSides);
-        }
-
+        if (lonerSz > 0) groups.push_back({nullptr, lonerSz, {}});
     }
 
-#ifndef TESTING
-#endif
+    if (groups.empty()) return;
+
+    int G = static_cast<int>(groups.size());
+    int N = static_cast<int>(sides.size());
+
+    std::sort(groups.begin(), groups.end(),
+              [](const Group& a, const Group& b){ return a.size > b.size; });
+
+    std::vector<int> share(G, 0);
+    if (G <= N) {
+        for (int i = 0; i < G; ++i) share[i] = 1;
+        for (int k = 0; k < N - G; ++k) share[k % G]++;
+    } else {
+        for (int k = 0; k < N; ++k) share[k] = 1;
+    }
+
+    auto dirOf = [&](HexSide* s) -> int {
+        int d = static_cast<int>(s->dirFromA);
+        return (s->hexB == hex) ? (d + 3) % 6 : d;
+    };
+
+    std::vector<bool> claimed(sides.size(), false);
+
+    // Round 1: each group claims its first side (largest group goes first).
+    for (int gi = 0; gi < G; ++gi) {
+        if (share[gi] == 0) continue;
+        for (size_t si = 0; si < sides.size(); ++si) {
+            if (!claimed[si]) { groups[gi].owned.push_back(si); claimed[si] = true; break; }
+        }
+    }
+    // Round 2+: extra sides, adjacent-preferred.
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        for (int gi = 0; gi < G; ++gi) {
+            if (static_cast<int>(groups[gi].owned.size()) >= share[gi]) continue;
+            size_t best = sides.size();
+            for (size_t si = 0; si < sides.size() && best == sides.size(); ++si) {
+                if (claimed[si]) continue;
+                int dir = dirOf(sides[si]);
+                for (size_t oi : groups[gi].owned) {
+                    int od = dirOf(sides[oi]);
+                    if ((dir - od + 6) % 6 == 1 || (od - dir + 6) % 6 == 1)
+                        { best = si; break; }
+                }
+            }
+            if (best == sides.size())
+                for (size_t si = 0; si < sides.size(); ++si)
+                    if (!claimed[si]) { best = si; break; }
+            if (best == sides.size()) continue;
+            groups[gi].owned.push_back(best);
+            claimed[best] = true;
+            progress = true;
+        }
+    }
+
+    for (const Group& g : groups)
+        if (g.squad)
+            for (size_t si : g.owned)
+                sideOwner[si] = g.squad;
+}
+
+// Assign squad members with fatigue in [fatLow, fatHigh) to their squad's pre-allocated sides.
+static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& sides,
+                           const std::vector<Squad*>& sideOwner,
+                           std::vector<int>& frontage, int fatLow, int fatHigh)
+{
+    std::vector<AUnit*> members;
+    for (AUnit* m : sq->getMembers()) {
+        if (!m || !m->getAlive() || m->getBroken() || m->getHex() != hex) continue;
+        int f = m->getFatigue();
+        if (f < fatLow || f >= fatHigh) continue;
+        members.push_back(m);
+    }
+    if (members.empty()) return;
+    std::sort(members.begin(), members.end(), [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+
+    int cohTier = cohesionTierForHex(hex, sq->cohesionLevel());
+    size_t mi = 0;
+    for (size_t si = 0; si < sides.size() && mi < members.size(); ++si) {
+        if (sideOwner[si] != sq) continue;
+        while (mi < members.size() && frontage[si] < effectiveFrontage(*sides[si])) {
+            AUnit* u = members[mi++];
+            u->setCanFight(true);
+            u->setEngagedSide(sides[si]);
+            u->setCohesionBonus(cohTier);
+            frontage[si] += static_cast<int>(u->getSize());
+        }
+    }
+}
+
+// Assign lone units with fatigue in [fatLow, fatHigh) round-robin to unclaimed sides.
+static void fillLonerPass(Hex* hex, const std::vector<HexSide*>& sides,
+                           const std::vector<Squad*>& sideOwner,
+                           std::vector<int>& frontage, int fatLow, int fatHigh)
+{
+    std::vector<AUnit*> loners;
+    for (AUnit* u : hex->units) {
+        if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
+        int f = u->getFatigue();
+        if (f < fatLow || f >= fatHigh) continue;
+        loners.push_back(u);
+    }
+    if (loners.empty()) return;
+    std::sort(loners.begin(), loners.end(), [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+
+    std::vector<size_t> freeSides;
+    for (size_t si = 0; si < sides.size(); ++si)
+        if (sideOwner[si] == nullptr) freeSides.push_back(si);
+
+    size_t pi = 0;
+    while (pi < loners.size()) {
+        bool anyAssigned = false;
+        for (size_t fi = 0; fi < freeSides.size() && pi < loners.size(); ++fi) {
+            size_t si = freeSides[fi];
+            if (frontage[si] >= effectiveFrontage(*sides[si])) continue;
+            AUnit* u = loners[pi++];
+            u->setCanFight(true);
+            u->setEngagedSide(sides[si]);
+            frontage[si] += static_cast<int>(u->getSize());
+            anyAssigned = true;
+        }
+        if (!anyAssigned) break;
+    }
+}
+
+void Battlefield::resolveEngagements()
+{
+    _red.resetUnitFlags();
+    _blue.resetUnitFlags();
+
+    markEngagedSides(hexGrid);
+    auto hexSideMap = buildHexSideMap(hexGrid);
+
+    for (auto& [hex, sides] : hexSideMap) {
+        const auto squadsHere = collectSquadsInHex(hex);
+        std::vector<Squad*> sideOwner(sides.size(), nullptr);
+        std::vector<int>    frontage(sides.size(), 0);
+
+        allocateSidesToGroups(hex, sides, squadsHere, sideOwner);
+
+        // Fresh then tired squad members fill squad-owned sides before loners touch anything.
+        for (Squad* sq : squadsHere)
+            fillSquadPass(sq, hex, sides, sideOwner, frontage, 0,             FATIGUE_TIRED);
+        for (Squad* sq : squadsHere)
+            fillSquadPass(sq, hex, sides, sideOwner, frontage, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
+        fillLonerPass(hex, sides, sideOwner, frontage, 0,             FATIGUE_TIRED);
+        fillLonerPass(hex, sides, sideOwner, frontage, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
+        // Desperate pass: very tired units only when sides would otherwise be empty.
+        for (Squad* sq : squadsHere)
+            fillSquadPass(sq, hex, sides, sideOwner, frontage, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+        fillLonerPass(hex, sides, sideOwner, frontage, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+    }
 }
 
 bool Battlefield::tick()

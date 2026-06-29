@@ -41,13 +41,13 @@ public:
     AUnit(const int newTeam);
 
     void setHex(Hex* hex);
-    void attack(AUnit &target, const Weapon &attackWeapon, int bonus = 0);
+    void attack(AUnit &target, const Weapon &attackWeapon, int bonus = 0, ArmorPen pen = ArmorPen::Normal);
 
     Hex* getHex() const;
     void reset();
     int getTeam() const;
-    int takeDamage(int amount);
-    int defend(int AttackAttempt, int damage);
+    int takeDamage(int amount, ArmorPen pen = ArmorPen::Normal);
+    int defend(int AttackAttempt, int damage, ArmorPen pen = ArmorPen::Normal);
     void battle(Battlefield &myBattlefield);
     AUnit *find_target(Battlefield &myBattlefield);
     bool getAlive() const;
@@ -112,6 +112,11 @@ public:
 
     void     setCanFight(bool v)    { canFightThisTurn = v; }
     bool     getCanFight()   const  { return canFightThisTurn; }
+
+    // Set when the unit took a lateral (same-distance) move last tick.
+    // The next move MUST decrease distance (toward target or toward map edge for flee).
+    bool     getTookLateral()       const { return _tookLateralLastMove; }
+    void     setTookLateral(bool v)       { _tookLateralLastMove = v; }
     void     setEngagedSide(HexSide* s) { engagedSide = s; }
     HexSide* getEngagedSide() const { return engagedSide; }
 
@@ -185,6 +190,7 @@ protected:
 
     bool alive = true;
     bool broken = false;
+    bool _tookLateralLastMove = false;
     bool canFightThisTurn = false;
     HexSide* engagedSide = nullptr;
     bool spellcaster = false;

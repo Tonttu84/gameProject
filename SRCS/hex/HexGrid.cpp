@@ -96,6 +96,16 @@ void HexGrid::buildRect(int cols, int rows) {
         }
     }
     linkSides();
+
+    // Assign stable indices after all hexes exist (unordered_map may rehash during insertion).
+    int idx = 0;
+    _hexIndex.reserve(_hexes.size() * 2);
+    _indexedHexes.resize(_hexes.size());
+    for (auto& [coord, hex] : _hexes) {
+        _hexIndex[coord] = idx;
+        _indexedHexes[static_cast<size_t>(idx)] = &hex;
+        ++idx;
+    }
 }
 
 void HexGrid::clearUnits() {
@@ -133,4 +143,116 @@ std::array<HexCoord, 6> HexGrid::neighbors(HexCoord c) const {
     for (int i = 0; i < 6; ++i)
         result[static_cast<size_t>(i)] = neighborCoord(c, static_cast<HexDirection>(i));
     return result;
+}
+
+// Returns true if a hex is a hard wall for the given movement graph.
+// Mounted units cannot enter Forest or Marsh — those hexes are walls in their graph.
+static bool isWallForGraph(const Hex* hex, bool mounted) {
+    if (!hex || hex->impassable) return true;
+    if (mounted && (hex->terrain == TerrainType::Forest ||
+                    hex->terrain == TerrainType::Marsh))
+        return true;
+    return false;
+}
+
+// Returns true if the hexside between two hexes is crossable in the given graph.
+static bool sidePassableForGraph(const HexSide* side) {
+    if (!side) return false;
+    if (side->blocked) return false;
+    if (side->hexA && side->hexB &&
+        std::abs(side->hexA->elevation - side->hexB->elevation) >= 2)
+        return false;
+    return true;
+}
+
+std::vector<int> HexGrid::bfsFromSources(const std::vector<int>& sources,
+                                          bool mounted) const
+{
+    const int N = static_cast<int>(_indexedHexes.size());
+    std::vector<int> dist(static_cast<size_t>(N), UNREACHABLE);
+    std::queue<int>  q;
+
+    for (int s : sources) {
+        if (s < 0 || s >= N) continue;
+        if (isWallForGraph(_indexedHexes[static_cast<size_t>(s)], mounted)) continue;
+        dist[static_cast<size_t>(s)] = 0;
+        q.push(s);
+    }
+
+    while (!q.empty()) {
+        int cur = q.front(); q.pop();
+        const Hex* curHex = _indexedHexes[static_cast<size_t>(cur)];
+
+        for (int i = 0; i < 6; ++i) {
+            HexSide* side = curHex->sides[static_cast<size_t>(i)];
+            if (!sidePassableForGraph(side)) continue;
+
+            const Hex* nb = (side->hexA == curHex) ? side->hexB : side->hexA;
+            if (isWallForGraph(nb, mounted)) continue;
+
+            auto it = _hexIndex.find(nb->coord);
+            if (it == _hexIndex.end()) continue;
+            int ni = it->second;
+
+            if (dist[static_cast<size_t>(ni)] == UNREACHABLE) {
+                dist[static_cast<size_t>(ni)] = dist[static_cast<size_t>(cur)] + 1;
+                q.push(ni);
+            }
+        }
+    }
+    return dist;
+}
+
+void HexGrid::computeDistances(int redFleeRow, int blueFleeRow)
+{
+    const int N = static_cast<int>(_indexedHexes.size());
+    _distGround .assign(static_cast<size_t>(N), std::vector<int>(static_cast<size_t>(N), UNREACHABLE));
+    _distMounted.assign(static_cast<size_t>(N), std::vector<int>(static_cast<size_t>(N), UNREACHABLE));
+
+    // One BFS per source hex for unit-to-unit distances.
+    for (int src = 0; src < N; ++src) {
+        auto dg = bfsFromSources({src}, false);
+        auto dm = bfsFromSources({src}, true);
+        for (int dst = 0; dst < N; ++dst) {
+            _distGround [static_cast<size_t>(src)][static_cast<size_t>(dst)] = dg[static_cast<size_t>(dst)];
+            _distMounted[static_cast<size_t>(src)][static_cast<size_t>(dst)] = dm[static_cast<size_t>(dst)];
+        }
+    }
+
+    // Team-specific flee BFS: sources are all hexes on the team's home-edge row.
+    // Red flees toward redFleeRow (typically height-1); Blue toward blueFleeRow (0).
+    auto rowSources = [&](int row) {
+        std::vector<int> srcs;
+        for (auto& [coord, idx] : _hexIndex)
+            if (coord.r == row) srcs.push_back(idx);
+        return srcs;
+    };
+
+    _redFleeGround   = bfsFromSources(rowSources(redFleeRow),  false);
+    _redFleeMounted  = bfsFromSources(rowSources(redFleeRow),  true);
+    _blueFleeGround  = bfsFromSources(rowSources(blueFleeRow), false);
+    _blueFleeMounted = bfsFromSources(rowSources(blueFleeRow), true);
+}
+
+int HexGrid::bfsDistance(const Hex* from, const Hex* to, bool mounted) const
+{
+    if (!from || !to) return UNREACHABLE;
+    auto fi = _hexIndex.find(from->coord);
+    auto ti = _hexIndex.find(to->coord);
+    if (fi == _hexIndex.end() || ti == _hexIndex.end()) return UNREACHABLE;
+    const auto& table = mounted ? _distMounted : _distGround;
+    if (table.empty()) return UNREACHABLE;
+    return table[static_cast<size_t>(fi->second)][static_cast<size_t>(ti->second)];
+}
+
+int HexGrid::fleeDistance(const Hex* hex, bool mounted, bool redTeam) const
+{
+    if (!hex) return UNREACHABLE;
+    auto it = _hexIndex.find(hex->coord);
+    if (it == _hexIndex.end()) return UNREACHABLE;
+    const std::vector<int>& table = redTeam
+        ? (mounted ? _redFleeMounted  : _redFleeGround)
+        : (mounted ? _blueFleeMounted : _blueFleeGround);
+    if (table.empty()) return UNREACHABLE;
+    return table[static_cast<size_t>(it->second)];
 }

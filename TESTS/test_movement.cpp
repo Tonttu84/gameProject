@@ -288,6 +288,52 @@ TEST_CASE("flee: unit at r==0 boundary is removed (alive=false)") {
     field.extractResult();
 }
 
+// ── Mountain-range circumnavigation ──────────────────────────────────────────
+// Wall of impassable hexes blocks the direct east path. Unit must route around
+// via the gap above the wall. Verifies the BFS correctly finds the detour.
+
+TEST_CASE("moveToward: unit routes around impassable wall to reach the other side") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Impassable wall at q=3, r=8..12. Direct E path from {0,10} to {6,10} is blocked.
+    // BFS routes north: {0,10}→{1,9}→{2,8}→{3,7} (gap above wall)→{4,7}→{4,8}→…→{6,10}.
+    std::vector<Hex*> wall;
+    for (int r = 8; r <= 12; ++r) {
+        Hex* h = field.hexGrid.getHex({3, r});
+        REQUIRE(h != nullptr);
+        h->impassable = true;
+        wall.push_back(h);
+    }
+
+    auto redPtr  = std::make_unique<Soldier>(REDTEAM);
+    auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
+    redPtr->setHex(field.hexGrid.getHex({0, 10}));
+    bluePtr->setHex(field.hexGrid.getHex({6, 10}));
+
+    Army red, blue;
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(bluePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    Hex* targetHex = field.hexGrid.getHex({6, 10});
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+
+    // Run up to 25 moves. The lateral flag means at most every other move is a
+    // lateral — so 25 turns guarantees ≥12 forward (decreasing-distance) moves,
+    // more than enough for the 9-hop BFS path.
+    for (int turn = 0; turn < 25; ++turn) {
+        if (unit->getHex() && unit->getHex()->coord.q > 3) break;
+        field.moveToward(field.getTeam(REDTEAM)[0], targetHex);
+    }
+
+    REQUIRE(unit->getHex() != nullptr);
+    // Unit must have crossed to q>3, proving it routed around the wall (not through it).
+    REQUIRE(unit->getHex()->coord.q > 3);
+
+    for (Hex* h : wall) h->impassable = false;
+    field.extractResult();
+}
+
 // ── Debug: battle with terrain forcing a detour ───────────────────────────────
 // Run with: ./run_tests "[debug]"
 

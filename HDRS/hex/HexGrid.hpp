@@ -1,6 +1,8 @@
 #pragma once
 #include <array>
 #include <cstddef>
+#include <limits>
+#include <queue>
 #include <unordered_map>
 #include <vector>
 #include <SFML/System/Vector2.hpp>
@@ -101,6 +103,25 @@ public:
 
     const std::unordered_map<HexCoord, Hex, HexCoordHash>& getHexes() const;
 
+    // Precompute BFS hop distances across the passable hex graph.
+    // Call once at battle start and again whenever terrain/impassable flags change.
+    // Ground graph: walls = impassable hexes + blocked/cliff hexsides.
+    // Mounted graph: additionally treats Forest and Marsh hexes as walls.
+    // redFleeRow / blueFleeRow: the r-coordinate of each team's home edge
+    // (the row they flee toward). Typically height-1 for Red, 0 for Blue.
+    void computeDistances(int redFleeRow, int blueFleeRow);
+
+    // Hop distance between two hexes for the given movement graph.
+    // Returns UNREACHABLE if no path exists. Flyers should use the static distance() instead.
+    static constexpr int UNREACHABLE = 30000;
+    int bfsDistance(const Hex* from, const Hex* to, bool mounted) const;
+
+    // Hops from a hex to the team's home edge (the row they flee toward).
+    // Returns UNREACHABLE if the edge is not reachable via the passable graph.
+    int fleeDistance(const Hex* hex, bool mounted, bool redTeam) const;
+
+    int hexCount() const { return static_cast<int>(_hexIndex.size()); }
+
 private:
     sf::Vector2f _origin;
     float        _hexSize;
@@ -108,6 +129,25 @@ private:
     std::unordered_map<HexCoord, Hex, HexCoordHash> _hexes;
     std::vector<HexSide> _sides;
 
+    // Stable integer index assigned to each hex at build time.
+    std::unordered_map<HexCoord, int, HexCoordHash> _hexIndex;
+    std::vector<Hex*>                                _indexedHexes; // index → Hex*
+
+    // distGround[from][to] and distMounted[from][to]: hop counts.
+    std::vector<std::vector<int>> _distGround;
+    std::vector<std::vector<int>> _distMounted;
+
+    // flee distances toward each team's home edge (the r-row they flee toward).
+    std::vector<int> _redFleeGround;
+    std::vector<int> _redFleeMounted;
+    std::vector<int> _blueFleeGround;
+    std::vector<int> _blueFleeMounted;
+
     void         linkSides();
     HexDirection opposite(HexDirection d) const;
+
+    // Run multi-source BFS from `sources` on the given adjacency graph.
+    // Returns a per-hex distance array indexed by _hexIndex.
+    std::vector<int> bfsFromSources(const std::vector<int>& sources,
+                                     bool mounted) const;
 };
