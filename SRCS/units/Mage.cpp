@@ -46,39 +46,27 @@ void Mage::special()
     AUnit* aimUnit = findFireballTarget();
     if (!aimUnit || !aimUnit->getHex()) return;
 
-    int dist = Utility::calcDistance(getHex(), aimUnit->getHex());
-
-    // Elevation: higher ground extends range and increases spell power.
-    int elevTiers    = std::clamp(getHex()->elevation - aimUnit->getHex()->elevation,
-                                  -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
-    int elevDmgBonus = elevTiers * ELEV_RANGED_BONUS;
-    int shotAccuracy = std::clamp(accuracy + elevTiers * ELEV_RANGED_BONUS * 10, 0, 100);
-
-    Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q,
-                                      aimUnit->getHex()->coord.r, shotAccuracy);
     mana--;
-    if (!targetHex) return;
 
-    // Primary hit: aimed individual if accurate enough, otherwise random hex hit.
-    // Forest absorbs heat — trees stop fireballs just as they stop arrows.
-    // Force fields (extra shields) can also deflect the blast.
-    AUnit* primary = RangedCombat::resolveHit(aimUnit, targetHex, dist, shotAccuracy);
-    if (primary && primary->getAlive()) {
-        bool extraBlocked   = primary->tryBlockExtraShield();
-        bool terrainBlocked = !extraBlocked && primary->rollTerrainRangedBlock();
-        int  dmg = FIREBALL_CENTRE + elevDmgBonus;
-        if (extraBlocked || terrainBlocked) dmg -= SHIELDREDUCTION;
-        if (dmg > 0) primary->takeDamage(dmg);
-    }
-
+    RangedShot shot;
+    shot.baseDamage = FIREBALL_CENTRE;
+    shot.accuracy   = accuracy;
+    shot.pen        = ArmorPen::Normal;
     // Secondary blast hits: shrapnel from the detonation, same blocking rules.
-    for (int i = 0; i < FIREBALL_SECONDARY; ++i) {
-        AUnit* hit = RangedCombat::pickHexTarget(targetHex);
-        if (!hit || !hit->getAlive()) continue;
-        bool extraBlocked   = hit->tryBlockExtraShield();
-        bool terrainBlocked = !extraBlocked && hit->rollTerrainRangedBlock();
-        int  dmg = FIREBALL_BLAST + elevDmgBonus;
-        if (extraBlocked || terrainBlocked) dmg -= SHIELDREDUCTION;
-        if (dmg > 0) hit->takeDamage(dmg);
-    }
+    // Elevation recomputed from attacker position so it matches the primary hit.
+    shot.onHit = [](AUnit* attacker, AUnit* target, bool& /*blocked*/) {
+        int tiers     = std::clamp(attacker->getHex()->elevation - target->getHex()->elevation,
+                                   -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+        int elevBonus = tiers * ELEV_RANGED_BONUS;
+        for (int i = 0; i < FIREBALL_SECONDARY; ++i) {
+            AUnit* hit = RangedCombat::pickHexTarget(target->getHex());
+            if (!hit || !hit->getAlive()) continue;
+            bool xBlocked = hit->tryBlockExtraShield();
+            bool tBlocked = !xBlocked && hit->rollTerrainRangedBlock();
+            int  dmg      = FIREBALL_BLAST + elevBonus - ((xBlocked || tBlocked) ? SHIELDREDUCTION : 0);
+            if (dmg > 0) hit->takeDamage(dmg);
+        }
+    };
+
+    RangedCombat::fire(this, aimUnit, shot);
 }

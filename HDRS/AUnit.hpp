@@ -41,7 +41,6 @@ public:
     AUnit(const int newTeam);
 
     void setHex(Hex* hex);
-    void attack(AUnit &target, const Weapon &attackWeapon, int bonus = 0, ArmorPen pen = ArmorPen::Normal);
 
     Hex* getHex() const;
     void reset();
@@ -100,6 +99,14 @@ public:
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
     int getFatigueCost() const;
+    int getAttackPWR() const { return attackPWR; }
+
+    // Per-turn attack counter: incremented by MeleeCombat::engage() after each
+    // defend() call, reset at the start of Battlefield::makeBattle().
+    // defend() applies MULTI_ATTACK_DEFENCE_PENALTY per count — units get easier
+    // to hit the more times they've already been attacked this turn.
+    void resetAttacksReceived()     { _attacksReceivedThisTurn = 0; }
+    void incrementAttacksReceived() { ++_attacksReceivedThisTurn; }
     bool getEngaged(Battlefield &myBattlefield) const;
 
     void increaseFatigue();
@@ -200,6 +207,7 @@ protected:
     bool battleSummon = false;
     size_t spentMove = 0;
 
+    int _attacksReceivedThisTurn = 0;
     Squad* _squad = nullptr;  // non-owning; nullptr = lone unit
     int sortKey = 0; // random tiebreaker set at construction, used for render ordering
     int _cohesion      = 50; // base formation cohesion score; set by subclass or setup

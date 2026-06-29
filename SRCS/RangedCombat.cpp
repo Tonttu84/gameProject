@@ -1,6 +1,7 @@
 #include "../HDRS/RangedCombat.hpp"
 #include "../HDRS/AUnit.hpp"
 #include "../HDRS/Utility.hpp"
+#include <algorithm>
 
 std::unordered_map<const Hex*, RangedCombat::SlotCache> RangedCombat::cache;
 
@@ -35,6 +36,39 @@ AUnit* RangedCombat::pickHexTarget(const Hex* hex)
         if (roll <= cumulative) return u;
     }
     return nullptr; // projectile hit empty ground
+}
+
+void RangedCombat::fire(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot)
+{
+    if (!shooter->getHex() || !aimUnit || !aimUnit->getHex()) return;
+
+    int dist = Utility::calcDistance(shooter->getHex(), aimUnit->getHex());
+
+    int elevTiers    = std::clamp(shooter->getHex()->elevation - aimUnit->getHex()->elevation,
+                                  -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+    int elevDmgBonus = elevTiers * ELEV_RANGED_BONUS;
+    int shotAccuracy = std::clamp(shot.accuracy + elevTiers * ELEV_RANGED_BONUS * 10, 0, 100);
+
+    Hex* landedHex = Utility::Deviate(*shooter->getHex(),
+                                      aimUnit->getHex()->coord.q,
+                                      aimUnit->getHex()->coord.r,
+                                      shotAccuracy);
+    if (!landedHex) return;
+
+    AUnit* target = resolveHit(aimUnit, landedHex, dist, shotAccuracy);
+    if (!target || !target->getAlive()) return;
+
+    bool extraBlocked   = target->tryBlockExtraShield();
+    bool terrainBlocked = !extraBlocked && target->rollTerrainRangedBlock(shot.pen);
+    bool blocked        = extraBlocked || terrainBlocked;
+
+    if (shot.onHit) shot.onHit(shooter, target, blocked);
+
+    int damage = shot.baseDamage + elevDmgBonus - (blocked ? SHIELDREDUCTION : 0);
+    if (damage <= 0) return;
+
+    target->takeDamage(damage, shot.pen);
+    if (shot.onDamage) shot.onDamage(shooter, target, damage);
 }
 
 AUnit* RangedCombat::resolveHit(AUnit* intendedTarget, Hex* landedHex,

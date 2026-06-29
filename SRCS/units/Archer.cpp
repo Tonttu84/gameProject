@@ -92,52 +92,27 @@ int Archer::fireBow()
     if (!aimUnit || !aimUnit->getHex())
         return 0;
 
-    int dist = Utility::calcDistance(getHex(), aimUnit->getHex());
-
-    // Elevation: positive tiers = shooter higher (bonus), negative = shooter lower (penalty).
-    int elevTiers    = std::clamp(getHex()->elevation - aimUnit->getHex()->elevation,
-                                  -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
-    int elevDmgBonus = elevTiers * ELEV_RANGED_BONUS;
-
     // Forest cover reduces aimed-shot accuracy (arrows through tree cover).
-    bool aimInForest = aimUnit->getHex()->terrain == TerrainType::Forest;
-    int shotAccuracy = std::clamp(accuracy + elevTiers * ELEV_RANGED_BONUS * 10
-                                  - (aimInForest ? FOREST_RANGED_PENALTY * 10 : 0),
-                                  0, 100);
+    bool aimInForest  = aimUnit->getHex()->terrain == TerrainType::Forest;
+    int  baseAccuracy = accuracy - (aimInForest ? FOREST_RANGED_PENALTY * 10 : 0);
 
-    Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q,
-                                      aimUnit->getHex()->coord.r, shotAccuracy);
     ammunition--;
     if (ammunition == 0) preferredRange = 1; // out of arrows — advance to melee
 
-    if (!targetHex) return 3;
-
-    AUnit* targetUnit = RangedCombat::resolveHit(aimUnit, targetHex, dist, shotAccuracy);
-    if (!targetUnit || !targetUnit->getAlive()) return 3; // missed or hit a corpse
-
-    // Extra shields (force fields): skill-independent, block ranged and melee alike.
-    bool extraBlocked    = targetUnit->tryBlockExtraShield();
-    // Terrain (forest branch cover): hex-based, ranged-only, skill-independent.
-    bool terrainBlocked  = !extraBlocked && targetUnit->rollTerrainRangedBlock();
-    // Physical shield: skill-based (defence stat contributes).
-    bool shieldBlocked   = !extraBlocked && !terrainBlocked
-                           && targetUnit->getShield() > 0
-                           && Utility::throwDice() <= targetUnit->getShield();
-
-    if (extraBlocked || terrainBlocked || shieldBlocked)
-    {
-        int damage = BOWDAMAGE + elevDmgBonus - SHIELDREDUCTION
-                     + Utility::throwDice() - Utility::throwDice();
-        if (damage > 0)
+    RangedShot shot;
+    shot.baseDamage = BOWDAMAGE + Utility::throwDice() - Utility::throwDice();
+    shot.accuracy   = baseAccuracy;
+    shot.pen        = ArmorPen::Normal;
+    shot.onHit = [](AUnit* /*attacker*/, AUnit* target, bool& blocked) {
+        if (!blocked && target->getShield() > 0
+                && Utility::throwDice() <= target->getShield())
         {
-            if (shieldBlocked)
-                targetUnit->setShield(targetUnit->getShield() - 1);
-            targetUnit->takeDamage(damage);
+            target->setShield(target->getShield() - 1);
+            blocked = true;
         }
-    }
-    else
-        targetUnit->takeDamage(BOWDAMAGE + elevDmgBonus + Utility::throwDice() - Utility::throwDice());
+    };
 
+    RangedCombat::fire(this, aimUnit, shot);
     return 3;
 }
 

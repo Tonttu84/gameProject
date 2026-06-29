@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "../HDRS/AUnit.hpp"
+#include "../HDRS/MeleeCombat.hpp"
 #include "../HDRS/Squad.hpp"
 #include <algorithm>
 
@@ -152,7 +153,8 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen)
 		}
 	}
 
-	if (defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus() - crampedPenalty >= AttackAttempt)
+	if (defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus() - crampedPenalty
+	    - _attacksReceivedThisTurn * MULTI_ATTACK_DEFENCE_PENALTY >= AttackAttempt)
 		return 0;
 
 	int d1 = Utility::throwDice(), d2 = Utility::throwDice();
@@ -202,12 +204,6 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen)
 
 
 
-void AUnit::attack(AUnit &target, const Weapon &attackWeapon, int bonus, ArmorPen pen)
-{
-	int HitResult = attackPWR - fatiguelvl + attackWeapon.getAttack() + Utility::throwDice() + bonus;
-	target.defend(HitResult, attackWeapon.getDamage() + strength / attackWeapon.getStrDivider()
-	              + cohesionDmgBonus(), pen);
-}
 
 AUnit *AUnit::find_target(Battlefield &myBattlefield)
 {
@@ -280,7 +276,12 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				break;
 			while (it != _attacks.end() && target->getAlive())
 			{
-				attack(*target, *it, attackBonus);
+				MeleeAttack shot;
+				shot.hitBonus = attackBonus;
+				shot.damage   = it->getDamage() + strength / it->getStrDivider()
+				                + cohesionDmgBonus();
+				shot.pen      = ArmorPen::Normal;
+				MeleeCombat::engage(this, target, shot);
 				attacked = true;
 				++it;
 			}

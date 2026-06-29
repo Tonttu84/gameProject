@@ -129,6 +129,9 @@ class Battlefield
         void   setCorpses(size_t setCorpses);
 
     private:
+        void onTurnStart();
+        void onTurnEnd();
+
         Team   _red{REDTEAM};
         Team   _blue{BLUETEAM};
         size_t corpses = 0;

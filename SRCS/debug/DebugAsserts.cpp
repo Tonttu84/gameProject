@@ -86,5 +86,5 @@ void Battlefield::debugAsserts() const
         }
     }
 
-    s_debugAssertCount += count;
+    s_debugAssertCount = s_debugAssertCount + count;
 }

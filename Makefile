@@ -12,7 +12,7 @@
 
 # Compiler and flags
 CC      = g++
-CFLAGS  = -std=c++17 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
+CFLAGS  = -std=c++20 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
           -Wshadow -Wnull-dereference -Wformat=2 -fstack-protector-strong \
           -fsanitize=address -fsanitize=undefined -fsanitize=leak \
           -fsanitize=float-divide-by-zero
@@ -62,7 +62,7 @@ UNIT_DEPS     = $(UNIT_OBJS:.o=.d)
 CLANG         = clang++
 CLANG_OBJ_DIR = BUILD/clang
 CLANG_NAME    = game_clang
-CLANG_FLAGS   = -std=c++17 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
+CLANG_FLAGS   = -std=c++20 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/include \
                 -Wshadow -Wnull-dereference -fstack-protector-strong \
                 -fsanitize=address -fsanitize=undefined -fsanitize=leak
 CLANG_OBJS    = $(patsubst $(SRC_DIR)/%.cpp,$(CLANG_OBJ_DIR)/%.o,$(SRCS))

@@ -825,20 +825,32 @@ void Battlefield::resolveEngagements()
     }
 }
 
-bool Battlefield::tick()
+void Battlefield::onTurnStart()
 {
-    // Passive fatigue recovery — all alive units recover each tick regardless of action
     for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
     for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
 
-    // Full cross-reference consistency check — see DebugAsserts.cpp.
-    debugAsserts();
+    for (auto& u : _red.units)  if (u) u->resetAttacksReceived();
+    for (auto& u : _blue.units) if (u) u->resetAttacksReceived();
 
+    RangedCombat::resetCache();
+
+    debugAsserts();
+}
+
+void Battlefield::onTurnEnd()
+{
+    cleanup();
+}
+
+bool Battlefield::tick()
+{
+    onTurnStart();
     triggerSpecialPhase();
     moveUnits();
     resolveEngagements();
     makeBattle();
-    cleanup();
+    onTurnEnd();
     return countTeam(REDTEAM) > 0 && countTeam(BLUETEAM) > 0;
 }
 
@@ -864,10 +876,6 @@ BattleResult Battlefield::extractResult()
 
 void Battlefield::triggerSpecialPhase()
 {
-    // Reset the ranged-combat slot cache once per phase so every hex's unit
-    // list is rebuilt fresh from current occupants.
-    RangedCombat::resetCache();
-
     for (auto& unit : _red.units)
         if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
             unit->special();
