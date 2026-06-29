@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 
+
 Battlefield::Battlefield()
 {
     hexGrid.buildRect(width, height);
@@ -551,7 +552,7 @@ void Battlefield::resolveEngagements() {
                 bool anyAssigned = false;
                 for (size_t fi = 0; fi < sideIdxs.size() && pi < pool.size(); ++fi) {
                     size_t si = sideIdxs[fi];
-                    if (frontage[si] >= HexSide::FRONTAGE) continue;
+                    if (frontage[si] >= effectiveFrontage(*sides[si])) continue;
                     AUnit* u = pool[pi++];
                     u->setCanFight(true);
                     u->setEngagedSide(sides[si]);
@@ -703,7 +704,7 @@ void Battlefield::resolveEngagements() {
             size_t mi = 0;
             for (size_t si = 0; si < numSides && mi < freshMembers.size(); ++si) {
                 if (sideOwner[si] != sq) continue;
-                while (mi < freshMembers.size() && frontage[si] < HexSide::FRONTAGE) {
+                while (mi < freshMembers.size() && frontage[si] < effectiveFrontage(*sides[si])) {
                     AUnit* u = freshMembers[mi++];
                     u->setCanFight(true);
                     u->setEngagedSide(sides[si]);
@@ -733,7 +734,7 @@ void Battlefield::resolveEngagements() {
             size_t mi = 0;
             for (size_t si = 0; si < numSides && mi < tiredMembers.size(); ++si) {
                 if (sideOwner[si] != sq) continue;  // only the squad's own sides
-                while (mi < tiredMembers.size() && frontage[si] < HexSide::FRONTAGE) {
+                while (mi < tiredMembers.size() && frontage[si] < effectiveFrontage(*sides[si])) {
                     AUnit* u = tiredMembers[mi++];
                     u->setCanFight(true);
                     u->setEngagedSide(sides[si]);
@@ -795,7 +796,7 @@ void Battlefield::resolveEngagements() {
             size_t mi = 0;
             for (size_t si = 0; si < numSides && mi < veryTired.size(); ++si) {
                 if (sideOwner[si] != sq) continue;
-                while (mi < veryTired.size() && frontage[si] < HexSide::FRONTAGE) {
+                while (mi < veryTired.size() && frontage[si] < effectiveFrontage(*sides[si])) {
                     AUnit* u = veryTired[mi++];
                     u->setCanFight(true);
                     u->setEngagedSide(sides[si]);

@@ -1,4 +1,4 @@
-#include "../HDRS/HexGrid.hpp"
+#include "hex/HexGrid.hpp"
 #include <algorithm>
 #include <cmath>
 

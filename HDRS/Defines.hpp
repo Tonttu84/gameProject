@@ -64,6 +64,9 @@ constexpr int ELEV_RANGED_CAP         = 2;  // max tiers counted for ranged modi
 constexpr int FORTIFIED_ATK_PENALTY   = 1;  // attacker crossing a fortified side
 constexpr int FORTIFIED_DEF_BONUS     = 1;  // defender behind a fortified side
 constexpr int RUBBLE_DEF_BONUS        = 1;  // melee defender in Rubble hex
+constexpr int FOREST_RANGED_PENALTY   = 1;  // accuracy penalty (×10%) per forest hex in path
+constexpr int FOREST_COVER_DEF_BONUS  = 1;  // free shield roll value for defender in forest
+constexpr int CRAMPED_COMBAT_PENALTY  = 1;  // atk and def penalty when unit size > half effective frontage
 
 // Projectile deviation
 constexpr int MAX_DEVIATION = 40; // maximum hexes a projectile can drift off-target

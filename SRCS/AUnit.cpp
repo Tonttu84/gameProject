@@ -100,10 +100,22 @@ bool AUnit::getEngaged(Battlefield &myBattlefield) const
 
 int AUnit::defend(int AttackAttempt, int damage)
 {
-
 	int defenceroll = Utility::throwDice();
 
-	if (defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus() >= AttackAttempt)
+	int crampedPenalty = 0;
+	if (engagedSide) {
+		int eff = effectiveFrontage(*engagedSide);
+		if (eff < HexSide::FRONTAGE) {
+			int threshold = eff * 2 / 3;
+			int remaining = static_cast<int>(size);
+			while (remaining > threshold) {
+				crampedPenalty += CRAMPED_COMBAT_PENALTY;
+				remaining      -= threshold;
+			}
+		}
+	}
+
+	if (defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus() - crampedPenalty >= AttackAttempt)
 		return 0;
 	
 	
@@ -184,6 +196,20 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				// Fortified side: penalty for the unit crossing into the defender's work
 				if (engagedSide->fortified && engagedSide->fortifiedDefender == enemyHex)
 					attackBonus -= FORTIFIED_ATK_PENALTY;
+
+				// Cramped: unit too large to maneuver in reduced frontage (forest/rubble).
+				// Each tier of overhang past 2/3 of the effective frontage adds one penalty.
+				{
+					int eff = effectiveFrontage(*engagedSide);
+					if (eff < HexSide::FRONTAGE) {
+						int threshold = eff * 2 / 3;
+						int remaining = static_cast<int>(size);
+						while (remaining > threshold) {
+							attackBonus -= CRAMPED_COMBAT_PENALTY;
+							remaining   -= threshold;
+						}
+					}
+				}
 			}
 		}
 

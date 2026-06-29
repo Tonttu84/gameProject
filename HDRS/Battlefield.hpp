@@ -1,6 +1,6 @@
 #pragma once
 #include "Defines.hpp"
-#include "HexGrid.hpp"
+#include "hex/HexGrid.hpp"
 #include "AUnit.hpp"
 #include "Squad.hpp"
 #include "Wing.hpp"

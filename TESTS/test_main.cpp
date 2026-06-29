@@ -5,7 +5,7 @@
 #include "../HDRS/units/Zombie.hpp"
 #include "../HDRS/units/Archer.hpp"
 #include "../HDRS/units/Mage.hpp"
-#include "../HDRS/HexGrid.hpp"
+#include "../HDRS/hex/HexGrid.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/BattleSetup.hpp"
 

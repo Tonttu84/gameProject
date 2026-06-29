@@ -1,7 +1,7 @@
 #pragma once
 #include <SFML/Graphics.hpp>
 #include <unordered_map>
-#include "HexGrid.hpp"
+#include "hex/HexGrid.hpp"
 
 // Owns all SFML rendering: hex shapes, coord labels, camera, unit symbols.
 // The hex grid and battlefield are pure data — this class reads them and draws.

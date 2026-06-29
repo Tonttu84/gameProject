@@ -1,4 +1,5 @@
 #include "units/Mage.hpp"
+#include <algorithm>
 
 Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
@@ -19,12 +20,17 @@ AUnit* Mage::findFireballTarget()
     int myTeam = getTeam();
     auto inRange = [this](const AUnit& target, int t) -> bool {
         if (!target.getAlive() || target.getTeam() == t || !target.getHex()) return false;
-        return Utility::calcDistance(target.getHex(), getHex()) <= SPELLRANGE;
+        int dist   = Utility::calcDistance(target.getHex(), getHex());
+        int tiers  = std::clamp(getHex()->elevation - target.getHex()->elevation,
+                                -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+        return dist - tiers <= SPELLRANGE;
     };
     auto scoreTarget = [this](const AUnit& target, int t) -> int {
         if (!target.getAlive() || target.getTeam() == t || !target.getHex()) return -1;
-        int dist = Utility::calcDistance(target.getHex(), getHex());
-        if (dist > SPELLRANGE) return -1;
+        int dist  = Utility::calcDistance(target.getHex(), getHex());
+        int tiers = std::clamp(getHex()->elevation - target.getHex()->elevation,
+                               -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+        if (dist - tiers > SPELLRANGE) return -1;
         // Prefer densely packed hexes at closer range.
         return target.getHex()->sizeUsed * 10 / (dist + 1);
     };
@@ -41,21 +47,27 @@ void Mage::special()
     if (!aimUnit || !aimUnit->getHex()) return;
 
     int dist = Utility::calcDistance(getHex(), aimUnit->getHex());
+
+    // Elevation: higher ground extends range and increases spell power.
+    int elevTiers    = std::clamp(getHex()->elevation - aimUnit->getHex()->elevation,
+                                  -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+    int elevDmgBonus = elevTiers * ELEV_RANGED_BONUS;
+    int shotAccuracy = std::clamp(accuracy + elevTiers * ELEV_RANGED_BONUS * 10, 0, 100);
+
     Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q,
-                                      aimUnit->getHex()->coord.r, accuracy);
+                                      aimUnit->getHex()->coord.r, shotAccuracy);
     mana--;
     if (!targetHex) return;
 
     // Primary hit: aimed individual if accurate enough, otherwise random hex hit.
-    AUnit* primary = RangedCombat::resolveHit(aimUnit, targetHex, dist, accuracy);
+    AUnit* primary = RangedCombat::resolveHit(aimUnit, targetHex, dist, shotAccuracy);
     if (primary && primary->getAlive())
-        primary->takeDamage(FIREBALL_CENTRE);
+        primary->takeDamage(FIREBALL_CENTRE + elevDmgBonus);
 
     // Secondary blast hits: always random weighted picks from the same hex.
-    // The explosion doesn't care who it catches — it just burns whoever is there.
     for (int i = 0; i < FIREBALL_SECONDARY; ++i) {
         AUnit* hit = RangedCombat::pickHexTarget(targetHex);
         if (hit && hit->getAlive())
-            hit->takeDamage(FIREBALL_BLAST);
+            hit->takeDamage(FIREBALL_BLAST + elevDmgBonus);
     }
 }

@@ -1,4 +1,5 @@
 #include "units/Archer.hpp"
+#include <algorithm>
 
 
 Archer::Archer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Shortsword)
@@ -39,7 +40,9 @@ int Archer::calcShot(const AUnit& target, int myTeam)
     assert(target.getHex() && "Input with a target that doesn't have a location");
     int distance = Utility::calcDistance(target.getHex(), getHex());
 
-    if (distance > BOWMAXRANGE || !target.getAlive())
+    int elevTiers = std::clamp(getHex()->elevation - target.getHex()->elevation,
+                               -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+    if (distance - elevTiers > BOWMAXRANGE || !target.getAlive())
         return -1;
 
     Battlefield& myBattle = Utility::getBattlefield();
@@ -90,28 +93,50 @@ int Archer::fireBow()
         return 0;
 
     int dist = Utility::calcDistance(getHex(), aimUnit->getHex());
+
+    // Elevation: positive tiers = shooter higher (bonus), negative = shooter lower (penalty).
+    int elevTiers    = std::clamp(getHex()->elevation - aimUnit->getHex()->elevation,
+                                  -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+    int elevDmgBonus = elevTiers * ELEV_RANGED_BONUS;
+
+    // Forest cover reduces aimed-shot accuracy (arrows through tree cover).
+    bool aimInForest = aimUnit->getHex()->terrain == TerrainType::Forest;
+    int shotAccuracy = std::clamp(accuracy + elevTiers * ELEV_RANGED_BONUS * 10
+                                  - (aimInForest ? FOREST_RANGED_PENALTY * 10 : 0),
+                                  0, 100);
+
     Hex* targetHex = Utility::Deviate(*getHex(), aimUnit->getHex()->coord.q,
-                                      aimUnit->getHex()->coord.r, accuracy);
+                                      aimUnit->getHex()->coord.r, shotAccuracy);
     ammunition--;
     if (ammunition == 0) preferredRange = 1; // out of arrows — advance to melee
 
     if (!targetHex) return 3;
 
-    AUnit* targetUnit = RangedCombat::resolveHit(aimUnit, targetHex, dist, accuracy);
-
+    AUnit* targetUnit = RangedCombat::resolveHit(aimUnit, targetHex, dist, shotAccuracy);
     if (!targetUnit || !targetUnit->getAlive()) return 3; // missed or hit a corpse
 
-    if (targetUnit->getShield() > 0 && Utility::throwDice() <= targetUnit->getShield())
+    // Forest cover checked first — a branch deflects the arrow before the shield is needed.
+    bool forestCover = targetUnit->getHex() &&
+                       targetUnit->getHex()->terrain == TerrainType::Forest;
+
+    bool branchDeflect = forestCover && Utility::throwDice() <= FOREST_COVER_DEF_BONUS;
+    bool shieldBlocked = !branchDeflect
+                         && targetUnit->getShield() > 0
+                         && Utility::throwDice() <= targetUnit->getShield();
+
+    if (branchDeflect || shieldBlocked)
     {
-        int damage = BOWDAMAGE - SHIELDREDUCTION + Utility::throwDice() - Utility::throwDice();
+        int damage = BOWDAMAGE + elevDmgBonus - SHIELDREDUCTION
+                     + Utility::throwDice() - Utility::throwDice();
         if (damage > 0)
         {
-            targetUnit->setShield(targetUnit->getShield() - 1);
+            if (shieldBlocked)
+                targetUnit->setShield(targetUnit->getShield() - 1);
             targetUnit->takeDamage(damage);
         }
     }
     else
-        targetUnit->takeDamage(BOWDAMAGE + Utility::throwDice() - Utility::throwDice());
+        targetUnit->takeDamage(BOWDAMAGE + elevDmgBonus + Utility::throwDice() - Utility::throwDice());
 
     return 3;
 }

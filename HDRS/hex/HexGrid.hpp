@@ -64,6 +64,20 @@ struct Hex {
     std::vector<AUnit*>     units {};
 };
 
+// How many size-points can fight on this side given its terrain.
+// Forest halves the space; Rubble reduces it by a quarter; Open is full FRONTAGE.
+// Minimum 10 so even giant creatures can always place at least one fighter.
+inline int effectiveFrontage(const HexSide& side) {
+    int f = HexSide::FRONTAGE;
+    if ((side.hexA && side.hexA->terrain == TerrainType::Forest) ||
+        (side.hexB && side.hexB->terrain == TerrainType::Forest))
+        f /= 2;
+    else if ((side.hexA && side.hexA->terrain == TerrainType::Rubble) ||
+             (side.hexB && side.hexB->terrain == TerrainType::Rubble))
+        f = f * 3 / 4;
+    return std::max(f, 10);
+}
+
 class HexGrid {
 public:
     HexGrid();
