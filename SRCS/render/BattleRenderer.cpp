@@ -12,11 +12,63 @@ static constexpr float PI = 3.14159265358979323846f;
 static constexpr unsigned int HEX_LABEL_FONT_SIZE = 10u;
 static constexpr float        PAN_SPEED_FRACTION  = 0.008f;
 
-static const sf::Color HEX_FILL_EMPTY   (30,  30,  40,  200);
+static const sf::Color HEX_FILL_EMPTY   ( 30,  30,  40, 200);
 static const sf::Color HEX_OUTLINE_COLOR(160, 160, 200);
-static const sf::Color HEX_FILL_RED     (60,  15,  15,  220);
-static const sf::Color HEX_FILL_BLUE    (15,  15,  60,  220);
+static const sf::Color HEX_FILL_RED     ( 60,  15,  15, 220);  // dark; used for coord labels area
+static const sf::Color HEX_FILL_BLUE    ( 15,  15,  60, 220);
 static const sf::Color HEX_COORD_COLOR  (100, 100, 130);
+
+// Brighter team tints used when blending with terrain colour.
+// Distinct enough to read team identity even after the blend.
+static const sf::Color TEAM_TINT_RED    (150,  30,  30, 220);
+static const sf::Color TEAM_TINT_BLUE   ( 30,  30, 150, 220);
+
+// Terrain base colours — bright enough to show through the team tint blend.
+static const sf::Color TERRAIN_FOREST ( 55, 130,  40, 220);
+static const sf::Color TERRAIN_MARSH  ( 40, 110, 115, 220);
+static const sf::Color TERRAIN_RUBBLE (120, 100,  70, 220);
+
+// Linear interpolation between two colours. t=0 → a, t=1 → b.
+static sf::Color blendColors(sf::Color a, sf::Color b, float t) {
+    auto lerp = [](sf::Uint8 x, sf::Uint8 y, float f) -> sf::Uint8 {
+        return static_cast<sf::Uint8>(static_cast<float>(x) * (1.f - f)
+                                    + static_cast<float>(y) * f);
+    };
+    return sf::Color(lerp(a.r, b.r, t), lerp(a.g, b.g, t),
+                     lerp(a.b, b.b, t), lerp(a.a, b.a, t));
+}
+
+// Hexside markers
+static const sf::Color SIDE_BLOCKED   (220,  40,  40, 255);  // red for cliffs/walls
+static const sf::Color SIDE_FORTIFIED (220, 180,  40, 255);  // gold for ramparts
+
+// Returns the pixel position of corner i of a pointy-top hex at center.
+// Corner i is at angle (60*i - 90) degrees; matches buildHexShape() order.
+static sf::Vector2f hexCorner(sf::Vector2f center, float size, int i) {
+    float angle = (60.f * static_cast<float>(i) - 90.f) * PI / 180.f;
+    return { center.x + size * std::cos(angle),
+             center.y + size * std::sin(angle) };
+}
+
+// Hex fill colour from terrain type + elevation (darker = higher ground).
+static sf::Color terrainColor(const Hex* hex) {
+    if (!hex) return HEX_FILL_EMPTY;
+    sf::Color base;
+    switch (hex->terrain) {
+        case TerrainType::Forest: base = TERRAIN_FOREST; break;
+        case TerrainType::Marsh:  base = TERRAIN_MARSH;  break;
+        case TerrainType::Rubble: base = TERRAIN_RUBBLE; break;
+        default:                  base = HEX_FILL_EMPTY; break;
+    }
+    float f = 1.f - static_cast<float>(hex->elevation) * 0.15f;
+    if (f < 0.4f) f = 0.4f;
+    return sf::Color(
+        static_cast<sf::Uint8>(static_cast<float>(base.r) * f),
+        static_cast<sf::Uint8>(static_cast<float>(base.g) * f),
+        static_cast<sf::Uint8>(static_cast<float>(base.b) * f),
+        base.a
+    );
+}
 
 // Debug palette: one distinct colour per squad. Indexed by hashing the squad pointer.
 static const sf::Color SQUAD_PALETTE[] = {
@@ -305,6 +357,7 @@ void BattleRenderer::render(const HexGrid& grid) {
     _window.clear();
     _window.setView(_view);
 
+    // Pass 1: hex fills — terrain colour blended 50/50 with team tint when occupied.
     for (auto& [coord, shape] : _shapes) {
         const Hex* hex = grid.getHex(coord);
         AUnit* first = nullptr;
@@ -313,9 +366,12 @@ void BattleRenderer::render(const HexGrid& grid) {
                 if (u && u->getAlive()) { first = u; break; }
         }
 
-        shape.setFillColor(first
-            ? (first->getTeam() == 1 ? HEX_FILL_RED : HEX_FILL_BLUE)
-            : HEX_FILL_EMPTY);
+        sf::Color fill = terrainColor(hex);
+        if (first) {
+            sf::Color tint = first->getTeam() == 1 ? TEAM_TINT_RED : TEAM_TINT_BLUE;
+            fill = blendColors(fill, tint, 0.25f);
+        }
+        shape.setFillColor(fill);
         _window.draw(shape);
 
         if (first) {
@@ -325,6 +381,27 @@ void BattleRenderer::render(const HexGrid& grid) {
             if (it != _labels.end())
                 _window.draw(it->second);
         }
+    }
+
+    // Pass 2: hexside markers — blocked (red) and fortified (gold) edges.
+    for (const HexSide& side : grid.getSides()) {
+        if (!side.hexA || !side.hexB) continue;
+        bool isCliff    = std::abs(side.hexA->elevation - side.hexB->elevation) >= 2;
+        bool isBlocked  = side.blocked || isCliff;
+        bool isFortified = side.fortified;
+        if (!isBlocked && !isFortified) continue;
+
+        sf::Color lineColor = isBlocked ? SIDE_BLOCKED : SIDE_FORTIFIED;
+        sf::Vector2f center = grid.hexToPixel(side.hexA->coord);
+        int d = static_cast<int>(side.dirFromA);
+        sf::Vector2f p1 = hexCorner(center, _hexSize, d);
+        sf::Vector2f p2 = hexCorner(center, _hexSize, (d + 1) % 6);
+
+        sf::Vertex line[2] = {
+            sf::Vertex(p1, lineColor),
+            sf::Vertex(p2, lineColor)
+        };
+        _window.draw(line, 2, sf::Lines);
     }
 
     _window.setView(_window.getDefaultView());

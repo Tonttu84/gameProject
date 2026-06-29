@@ -175,6 +175,15 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 					if (u && u->getAlive() && u->getEngagedSide() == engagedSide)
 						{ defended = true; break; }
 				if (!defended) attackBonus += UNDEFENDED_SIDE_BONUS;
+
+				// Elevation: higher ground → +1 atk; lower ground → -1 atk (cap ±1)
+				int elevDiff = std::min(1, std::max(-1,
+				    currentHex->elevation - enemyHex->elevation));
+				attackBonus += elevDiff * ELEV_MELEE_BONUS;
+
+				// Fortified side: penalty for the unit crossing into the defender's work
+				if (engagedSide->fortified && engagedSide->fortifiedDefender == enemyHex)
+					attackBonus -= FORTIFIED_ATK_PENALTY;
 			}
 		}
 

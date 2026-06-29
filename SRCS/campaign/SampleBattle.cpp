@@ -73,6 +73,37 @@ void setupSampleBattle(Battlefield& field)
 
     field.loadArmies(std::move(red), std::move(blue));
 
+    // ── Terrain setup ────────────────────────────────────────────────────────
+    // Visual col c at row r → axial q = c - r/2  (even-r offset used by buildRect)
+    auto setTerrain = [&](int visualCol, int row, TerrainType t) {
+        Hex* h = field.hexGrid.getHex({visualCol - row / 2, row});
+        if (h) h->terrain = t;
+    };
+    auto setElev = [&](int visualCol, int row, int elev) {
+        Hex* h = field.hexGrid.getHex({visualCol - row / 2, row});
+        if (h) h->elevation = elev;
+    };
+
+    // Forest: left flank, cols 0-4, rows 13-17
+    for (int r = 13; r <= 17; ++r)
+        for (int c = 0; c <= 4; ++c)
+            setTerrain(c, r, TerrainType::Forest);
+
+    // Rubble: right flank, cols 11-15, rows 13-17
+    for (int r = 13; r <= 17; ++r)
+        for (int c = 11; c <= 15; ++c)
+            setTerrain(c, r, TerrainType::Rubble);
+
+    // Marsh: in front of the ridge, cols 6-9, rows 11-12
+    for (int r = 11; r <= 12; ++r)
+        for (int c = 6; c <= 9; ++c)
+            setTerrain(c, r, TerrainType::Marsh);
+
+    // Elevation ridge: centre, cols 5-10, rows 14-15 (tier 1)
+    for (int r = 14; r <= 15; ++r)
+        for (int c = 5; c <= 10; ++c)
+            setElev(c, r, 1);
+
     field.getTeamData(REDTEAM).squads.push_back(std::move(redSq1));
     field.getTeamData(REDTEAM).squads.push_back(std::move(redSq2));
     field.getTeamData(BLUETEAM).squads.push_back(std::move(blueSq1));

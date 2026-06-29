@@ -23,8 +23,16 @@
 
 class Squad; // forward declare — Squad.hpp includes AUnit.hpp so we can't include it here
 
-
-
+// Movement and terrain-restriction category for a unit.
+// All existing human units are Foot. New unit classes set their category;
+// terrain rules in Battlefield use this automatically.
+enum class UnitCategory {
+    Foot,       // standard infantry; affected by all terrain
+    Mounted,    // cavalry; cannot enter Forest or Marsh; no charge through Rubble
+    Flyer,      // ignores ground terrain; can cross blocked hexsides (cliffs, walls)
+    Beast,      // large creature; no formation bonus; Forest/Rubble +1; Marsh +2
+    Skirmisher  // light troops; Forest normal cost; Marsh +1; Rubble normal cost
+};
 
 class AUnit : public std::enable_shared_from_this<AUnit> {
 public:
@@ -129,6 +137,9 @@ public:
     bool biggerThan(const AUnit* other) const;   // size descending; sortKey tiebreaker baked in
     bool sortsBefore(const AUnit* other) const;  // sortKey tiebreaker only — use when size is irrelevant
 
+    UnitCategory getCategory()           const { return _category; }
+    void         setCategory(UnitCategory c)   { _category = c; }
+
 
 protected:
     int team = 0;
@@ -171,6 +182,7 @@ protected:
     int sortKey = 0; // random tiebreaker set at construction, used for render ordering
     int _cohesion      = 50; // base formation cohesion score; set by subclass or setup
     int _cohesionBonus = 0;  // per-tick tier (0-3), set by resolveEngagements, reset each tick
+    UnitCategory _category = UnitCategory::Foot;
     std::vector<Weapon> _attacks;
 
 };

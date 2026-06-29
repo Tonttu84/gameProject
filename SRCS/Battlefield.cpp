@@ -67,11 +67,51 @@ Hex* Battlefield::findTarget(const AUnit& searcher) const
 }
 
 static bool hexAcceptsUnit(const Hex* hex, const AUnit& unit) {
-    if (!hex) return false;
+    if (!hex || hex->impassable) return false;
     if (hex->sizeUsed + static_cast<int>(unit.getSize()) > Hex::CAPACITY) return false;
     for (AUnit* u : hex->units)
         if (u && u->getAlive() && u->getTeam() != unit.getTeam()) return false;
+    // Mounted cannot enter Forest or Marsh
+    UnitCategory cat = unit.getCategory();
+    if (cat == UnitCategory::Mounted) {
+        if (hex->terrain == TerrainType::Forest || hex->terrain == TerrainType::Marsh)
+            return false;
+    }
     return true;
+}
+
+// True if the unit can cross this hexside (considers blocked flag and elevation cliffs).
+static bool sidePassable(const HexSide* side, UnitCategory cat) {
+    if (!side || cat == UnitCategory::Flyer) return true;
+    if (side->blocked) return false;
+    // Auto-cliff: elevation difference >= 2 between adjacent hexes
+    if (side->hexA && side->hexB &&
+        std::abs(side->hexA->elevation - side->hexB->elevation) >= 2)
+        return false;
+    return true;
+}
+
+// Ticks required to fully enter dest (1 = one tick = no debt).
+// Caller must verify the side is passable before calling.
+static int terrainMoveCost(const Hex* dest, const HexSide* side, UnitCategory cat) {
+    if (!dest) return 1;
+    int cost;
+    switch (dest->terrain) {
+        case TerrainType::Forest: cost = TERRAIN_COST_FOREST; break;
+        case TerrainType::Marsh:
+            cost = (cat == UnitCategory::Beast || cat == UnitCategory::Skirmisher)
+                   ? 2 : TERRAIN_COST_MARSH;
+            break;
+        case TerrainType::Rubble: cost = TERRAIN_COST_RUBBLE; break;
+        default:                  cost = TERRAIN_COST_OPEN;   break;
+    }
+    // Climbing a slope adds one extra tick
+    if (side && side->hexA && side->hexB) {
+        const Hex* from = (side->hexA == dest) ? side->hexB : side->hexA;
+        if (dest->elevation > from->elevation)
+            cost += TERRAIN_COST_SLOPE;
+    }
+    return cost;
 }
 
 // Returns true if moving to nc would keep the unit adjacent to at least one live enemy.
@@ -116,7 +156,9 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     int bestDist = curDist;
     int bestDir  = -1;
     for (int i = 0; i < 6; ++i) {
-        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        auto dir = static_cast<HexDirection>(i);
+        if (!sidePassable(hexGrid.getSide(from, dir), unit.getCategory())) continue;
+        HexCoord nc = hexGrid.neighborCoord(from, dir);
         Hex* nh = hexGrid.getHex(nc);
         if (!hexAcceptsUnit(nh, unit)) continue;
         int d = HexGrid::distance(nc, to);
@@ -126,7 +168,12 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
         }
     }
     if (bestDir >= 0) {
-        moveAUnit(unit, hexGrid.neighborCoord(from, static_cast<HexDirection>(bestDir)));
+        auto      dir      = static_cast<HexDirection>(bestDir);
+        HexCoord  destCoord = hexGrid.neighborCoord(from, dir);
+        moveAUnit(unit, destCoord);
+        int cost = terrainMoveCost(hexGrid.getHex(destCoord), hexGrid.getSide(from, dir),
+                                   unit.getCategory());
+        if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
         return;
     }
 
@@ -139,13 +186,18 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     bool crowded = unit.getHex()->sizeUsed >= CROWDED_THRESHOLD;
 
     for (int i = 0; i < 6; ++i) {
-        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        auto dir = static_cast<HexDirection>(i);
+        if (!sidePassable(hexGrid.getSide(from, dir), unit.getCategory())) continue;
+        HexCoord nc = hexGrid.neighborCoord(from, dir);
         Hex* nh = hexGrid.getHex(nc);
         if (!hexAcceptsUnit(nh, unit)) continue;
         if (HexGrid::distance(nc, to) != curDist) continue;
 
         if (!engaged || (crowded && wouldRemainEngaged(unit, nc, hexGrid))) {
             moveAUnit(unit, nc);
+            int cost = terrainMoveCost(hexGrid.getHex(nc), hexGrid.getSide(from, dir),
+                                       unit.getCategory());
+            if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
             return;
         }
     }
@@ -182,10 +234,14 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
     bool swap = Utility::getRandom(0, 1) == 0;
     for (int i = 0; i < 6; ++i) {
         int idx = (i < 2 && swap) ? (1 - i) : i;
-        HexCoord nc = hexGrid.neighborCoord(c, dirs[idx]);
+        auto     dir  = dirs[idx];
+        HexCoord nc   = hexGrid.neighborCoord(c, dir);
         Hex* next = hexGrid.getHex(nc);
+        if (!sidePassable(hexGrid.getSide(c, dir), unit->getCategory())) continue;
         if (hexAcceptsUnit(next, *unit)) {
             moveAUnit(*unit, nc);
+            int cost = terrainMoveCost(next, hexGrid.getSide(c, dir), unit->getCategory());
+            if (cost > 1) unit->setSpentMove(static_cast<size_t>(cost - 1));
             return;
         }
     }
@@ -218,14 +274,22 @@ void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
     int bestDist = curDist;
     int bestDir  = -1;
     for (int i = 0; i < 6; ++i) {
-        HexCoord nc = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        auto dir = static_cast<HexDirection>(i);
+        if (!sidePassable(hexGrid.getSide(from, dir), unit.getCategory())) continue;
+        HexCoord nc = hexGrid.neighborCoord(from, dir);
         Hex* nh = hexGrid.getHex(nc);
         if (!hexAcceptsUnit(nh, unit)) continue;
         int d = HexGrid::distance(nc, to);
         if (d > bestDist) { bestDist = d; bestDir = i; }
     }
-    if (bestDir >= 0)
-        moveAUnit(unit, hexGrid.neighborCoord(from, static_cast<HexDirection>(bestDir)));
+    if (bestDir >= 0) {
+        auto     dir      = static_cast<HexDirection>(bestDir);
+        HexCoord destCoord = hexGrid.neighborCoord(from, dir);
+        moveAUnit(unit, destCoord);
+        int cost = terrainMoveCost(hexGrid.getHex(destCoord), hexGrid.getSide(from, dir),
+                                   unit.getCategory());
+        if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
+    }
     // If no retreat hex is available the unit holds its position.
 }
 
@@ -251,9 +315,14 @@ void Battlefield::moveSquad(Squad& squad)
     int bestDist = curDist;
     int bestDir  = -1;
     for (int i = 0; i < 6; ++i) {
-        HexCoord nc  = hexGrid.neighborCoord(from, static_cast<HexDirection>(i));
+        auto dir = static_cast<HexDirection>(i);
+        if (!sidePassable(hexGrid.getSide(from, dir), ref->getCategory())) continue;
+        HexCoord nc  = hexGrid.neighborCoord(from, dir);
         Hex*     nh  = hexGrid.getHex(nc);
-        if (!nh) continue;
+        if (!nh || nh->impassable) continue;
+        // Mounted squad cannot enter Forest or Marsh
+        if (ref->getCategory() == UnitCategory::Mounted &&
+            (nh->terrain == TerrainType::Forest || nh->terrain == TerrainType::Marsh)) continue;
         // No enemies may already occupy the destination.
         bool hasEnemy = false;
         for (AUnit* u : nh->units)
@@ -315,11 +384,15 @@ void Battlefield::moveSquad(Squad& squad)
 
     // Move all alive non-broken members to nextHex. Each member's old hex is vacated
     // via setHex (which calls removeFromHex internally). Fatigue cost mirrors moveAUnit.
+    HexSide* moveSide = hexGrid.getSide(from, static_cast<HexDirection>(bestDir));
+    int      moveCost = terrainMoveCost(nextHex, moveSide, ref->getCategory());
+    size_t   debt     = (moveCost > 1) ? static_cast<size_t>(moveCost - 1) : 0;
     for (AUnit* m : squad.getMembers()) {
         if (!m || !m->getAlive() || m->getBroken()) continue;
         if (m->getHex() == nextHex) continue; // already there
         m->addFatigue(m->getFatigueCost() / 2);
         m->setHex(nextHex);
+        if (debt > 0) m->setSpentMove(debt);
     }
 }
 
@@ -441,6 +514,9 @@ void Battlefield::resolveEngagements() {
     // Mark sides where both hexes hold opposing living units.
     for (HexSide& side : hexGrid.getSides()) {
         if (!side.hexA || !side.hexB) continue;
+        // Blocked sides and cliff faces cannot be engaged across
+        if (side.blocked) continue;
+        if (std::abs(side.hexA->elevation - side.hexB->elevation) >= 2) continue;
         int teamA = 0, teamB = 0;
         for (AUnit* u : side.hexA->units) if (u && u->getAlive()) { teamA = u->getTeam(); break; }
         for (AUnit* u : side.hexB->units) if (u && u->getAlive()) { teamB = u->getTeam(); break; }
@@ -460,6 +536,13 @@ void Battlefield::resolveEngagements() {
         const size_t numSides = sides.size();
         std::vector<int>    frontage(numSides, 0);
         std::vector<Squad*> sideOwner(numSides, nullptr);  // nullptr = unclaimed by any squad
+
+        // Forest and Rubble break formation dressing — squad cohesion bonus halved.
+        auto cohesionTier = [hex](int tier) -> int {
+            if (hex->terrain == TerrainType::Forest || hex->terrain == TerrainType::Rubble)
+                return tier / 2;
+            return tier;
+        };
 
         // Helper: round-robin assignment from a unit pool across a set of side indices.
         auto roundRobin = [&](std::vector<AUnit*>& pool, const std::vector<size_t>& sideIdxs) {
@@ -608,7 +691,7 @@ void Battlefield::resolveEngagements() {
         // sideOwner is now pre-allocated so each squad only fills its own sides.
         // Assigned members receive a cohesion bonus tier from their squad.
         for (Squad* sq : squadsHere) {
-            const int cohTier = sq->cohesionLevel();
+            const int cohTier = cohesionTier(sq->cohesionLevel());
             std::vector<AUnit*> freshMembers;
             for (AUnit* m : sq->getMembers()) {
                 if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
@@ -636,7 +719,7 @@ void Battlefield::resolveEngagements() {
         // Lone units must not take unclaimed sides while squad sides still have
         // room that tired squad members could fill.
         for (Squad* sq : squadsHere) {
-            const int cohTier = sq->cohesionLevel();
+            const int cohTier = cohesionTier(sq->cohesionLevel());
             std::vector<AUnit*> tiredMembers;
             for (AUnit* m : sq->getMembers()) {
                 if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
@@ -698,7 +781,7 @@ void Battlefield::resolveEngagements() {
         // Very tired units fight at severe penalty but holding a side is better
         // than leaving it undefended.
         for (Squad* sq : squadsHere) {
-            const int cohTier = sq->cohesionLevel();
+            const int cohTier = cohesionTier(sq->cohesionLevel());
             std::vector<AUnit*> veryTired;
             for (AUnit* m : sq->getMembers()) {
                 if (m && m->getAlive() && !m->getBroken() && m->getHex() == hex
