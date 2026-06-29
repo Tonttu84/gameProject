@@ -349,37 +349,56 @@ void Battlefield::moveSquad(Squad& squad)
     }
     if (!ref || !ref->getHex()) return;
 
-    // Find enemy target and the best forward hex (Pass 1 of moveToward logic).
+    // Find enemy target and the best forward hex using BFS — same logic as moveToward.
     Hex* enemyTarget = findTarget(*ref);
     if (!enemyTarget) return;
 
-    HexCoord from = ref->getHex()->coord;
-    HexCoord to   = enemyTarget->coord;
-    int curDist   = HexGrid::distance(from, to);
-    if (curDist == 0) return;
+    HexCoord from    = ref->getHex()->coord;
+    bool     mounted = (ref->getCategory() == UnitCategory::Mounted);
 
-    int bestDist = curDist;
-    int bestDir  = -1;
+    int curDist = hexGrid.bfsDistance(ref->getHex(), enemyTarget, mounted);
+    if (curDist <= 0 || curDist == HexGrid::UNREACHABLE) return;
+
+    bool mustDecrease  = ref->getTookLateral();
+    int  bestDecrDist  = curDist, bestDecrCost = INT_MAX, bestDecrDir = -1;
+    int  bestLatCost   = INT_MAX, bestLatDir   = -1;
+
     for (int i = 0; i < 6; ++i) {
         auto dir = static_cast<HexDirection>(i);
         if (!sidePassable(hexGrid.getSide(from, dir), ref->getCategory())) continue;
-        HexCoord nc  = hexGrid.neighborCoord(from, dir);
-        Hex*     nh  = hexGrid.getHex(nc);
+        HexCoord nc = hexGrid.neighborCoord(from, dir);
+        Hex*     nh = hexGrid.getHex(nc);
         if (!nh || nh->impassable) continue;
-        // Mounted squad cannot enter Forest or Marsh
-        if (ref->getCategory() == UnitCategory::Mounted &&
-            (nh->terrain == TerrainType::Forest || nh->terrain == TerrainType::Marsh)) continue;
-        // No enemies may already occupy the destination.
+        if (mounted && (nh->terrain == TerrainType::Forest || nh->terrain == TerrainType::Marsh)) continue;
         bool hasEnemy = false;
         for (AUnit* u : nh->units)
             if (u && u->getAlive() && u->getTeam() != ref->getTeam()) { hasEnemy = true; break; }
         if (hasEnemy) continue;
-        int d = HexGrid::distance(nc, to);
-        if (d < bestDist) { bestDist = d; bestDir = i; }
-    }
-    if (bestDir < 0) return; // no forward hex available
 
-    HexCoord nextCoord = hexGrid.neighborCoord(from, static_cast<HexDirection>(bestDir));
+        int d    = hexGrid.bfsDistance(nh, enemyTarget, mounted);
+        if (d == HexGrid::UNREACHABLE) continue;
+        int cost = terrainMoveCost(nh, hexGrid.getSide(from, dir), ref->getCategory());
+
+        if (d < curDist) {
+            if (d < bestDecrDist || (d == bestDecrDist && cost < bestDecrCost)) {
+                bestDecrDist = d; bestDecrCost = cost; bestDecrDir = i;
+            }
+        } else if (d == curDist && cost < bestLatCost) {
+            bestLatCost = cost; bestLatDir = i;
+        }
+    }
+
+    int  chosenDir   = -1;
+    bool tookLateral = false;
+    if (bestDecrDir >= 0) {
+        chosenDir = bestDecrDir;
+    } else if (!mustDecrease && bestLatDir >= 0) {
+        chosenDir    = bestLatDir;
+        tookLateral  = true;
+    }
+    if (chosenDir < 0) return;
+
+    HexCoord nextCoord = hexGrid.neighborCoord(from, static_cast<HexDirection>(chosenDir));
     Hex*     nextHex   = hexGrid.getHex(nextCoord);
     if (!nextHex) return;
 
@@ -430,7 +449,7 @@ void Battlefield::moveSquad(Squad& squad)
 
     // Move all alive non-broken members to nextHex. Each member's old hex is vacated
     // via setHex (which calls removeFromHex internally). Fatigue cost mirrors moveAUnit.
-    HexSide* moveSide = hexGrid.getSide(from, static_cast<HexDirection>(bestDir));
+    HexSide* moveSide = hexGrid.getSide(from, static_cast<HexDirection>(chosenDir));
     int      moveCost = terrainMoveCost(nextHex, moveSide, ref->getCategory());
     size_t   debt     = (moveCost > 1) ? static_cast<size_t>(moveCost - 1) : 0;
     for (AUnit* m : squad.getMembers()) {
@@ -440,6 +459,7 @@ void Battlefield::moveSquad(Squad& squad)
         m->setHex(nextHex);
         if (debt > 0) m->setSpentMove(debt);
     }
+    ref->setTookLateral(tookLateral);
 }
 
 void Battlefield::moveTeam(Team& team)

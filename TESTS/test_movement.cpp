@@ -7,6 +7,7 @@
 #include "../HDRS/hex/HexGrid.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/BattleSetup.hpp"
+#include "../HDRS/Squad.hpp"
 
 // ── Basic approach ────────────────────────────────────────────────────────────
 // Grid: buildRect(16,30). Axial: q = col - r/2.
@@ -329,6 +330,70 @@ TEST_CASE("moveToward: unit routes around impassable wall to reach the other sid
     REQUIRE(unit->getHex() != nullptr);
     // Unit must have crossed to q>3, proving it routed around the wall (not through it).
     REQUIRE(unit->getHex()->coord.q > 3);
+
+    for (Hex* h : wall) h->impassable = false;
+    field.extractResult();
+}
+
+// ── Squad circumnavigation ────────────────────────────────────────────────────
+// Same wall geometry as the individual-unit test. Verifies that moveSquad()
+// uses BFS distances rather than straight-line distance, so the squad routes
+// around the wall instead of getting stuck pressing into it.
+
+TEST_CASE("moveSquad: squad routes around impassable wall to reach the other side") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Impassable wall at q=3, r=8..12. Direct E path from {0,10} to {6,10} is blocked.
+    // Must be set before loadArmies so computeDistances sees the wall.
+    std::vector<Hex*> wall;
+    for (int r = 8; r <= 12; ++r) {
+        Hex* h = field.hexGrid.getHex({3, r});
+        REQUIRE(h != nullptr);
+        h->impassable = true;
+        wall.push_back(h);
+    }
+
+    // Squad must be declared before the unit objects so it outlives them
+    // (member destructors call leaveSquad(), which touches the Squad object).
+    auto sqOwned = std::make_unique<Squad>("TestSquad", false);
+    Squad* sq = sqOwned.get();
+
+    Army red, blue;
+    Hex* startHex = field.hexGrid.getHex({0, 10});
+    for (int i = 0; i < 4; ++i) {
+        auto u = std::make_unique<Soldier>(REDTEAM);
+        u->setHex(startHex);
+        sq->addMember(u.get());
+        red.push_back(std::move(u));
+    }
+
+    // Blue dummies — static targets across the wall.
+    for (int i = 0; i < 2; ++i) {
+        auto u = std::make_unique<Soldier>(BLUETEAM);
+        u->setHex(field.hexGrid.getHex({6, 10}));
+        blue.push_back(std::move(u));
+    }
+
+    field.loadArmies(std::move(red), std::move(blue));
+    field.getTeamData(REDTEAM).squads.push_back(std::move(sqOwned));
+
+    // Call moveSquad directly so only the red squad moves — blue dummies stay put.
+    // 30 turns: the BFS path around the 5-hex wall is ~11 hops; lateral-flag overhead
+    // means at most every other move is a lateral, so 30 turns is well sufficient.
+    for (int turn = 0; turn < 30; ++turn) {
+        bool crossed = false;
+        for (AUnit* m : sq->getMembers())
+            if (m && m->getAlive() && m->getHex() && m->getHex()->coord.q > 3)
+                { crossed = true; break; }
+        if (crossed) break;
+        field.moveSquad(*sq);
+    }
+
+    bool anyCrossed = false;
+    for (AUnit* m : sq->getMembers())
+        if (m && m->getAlive() && m->getHex() && m->getHex()->coord.q > 3)
+            { anyCrossed = true; break; }
+    REQUIRE(anyCrossed);
 
     for (Hex* h : wall) h->impassable = false;
     field.extractResult();
