@@ -24,9 +24,10 @@ static const sf::Color TEAM_TINT_RED    (150,  30,  30, 220);
 static const sf::Color TEAM_TINT_BLUE   ( 30,  30, 150, 220);
 
 // Terrain base colours — bright enough to show through the team tint blend.
-static const sf::Color TERRAIN_FOREST ( 55, 130,  40, 220);
-static const sf::Color TERRAIN_MARSH  ( 40, 110, 115, 220);
-static const sf::Color TERRAIN_RUBBLE (120, 100,  70, 220);
+static const sf::Color TERRAIN_IMPASSABLE( 85,  75,  95, 255); // dark rock/cliff
+static const sf::Color TERRAIN_FOREST    ( 55, 130,  40, 220);
+static const sf::Color TERRAIN_MARSH     ( 40, 110, 115, 220);
+static const sf::Color TERRAIN_RUBBLE    (120, 100,  70, 220);
 
 // Linear interpolation between two colours. t=0 → a, t=1 → b.
 static sf::Color blendColors(sf::Color a, sf::Color b, float t) {
@@ -53,6 +54,7 @@ static sf::Vector2f hexCorner(sf::Vector2f center, float size, int i) {
 // Hex fill colour from terrain type + elevation (darker = higher ground).
 static sf::Color terrainColor(const Hex* hex) {
     if (!hex) return HEX_FILL_EMPTY;
+    if (hex->impassable) return TERRAIN_IMPASSABLE;
     sf::Color base;
     switch (hex->terrain) {
         case TerrainType::Forest: base = TERRAIN_FOREST; break;
