@@ -87,6 +87,11 @@ public:
     bool tryBlockExtraShield();  // rolls against each temporary shield back-to-front;
                                  // returns true and consumes the blocking one if any hit
 
+    // Returns true if the unit's current hex terrain deflects this ranged attack.
+    // Call this (before shield checks) for any physical projectile that terrain can block.
+    // Fire-based attacks (fireball) should skip this — fire ignores forest concealment.
+    bool rollTerrainRangedBlock() const;
+
 
      int getValue() const;
      size_t getSize() const;

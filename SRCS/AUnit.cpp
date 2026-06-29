@@ -105,6 +105,17 @@ bool AUnit::tryBlockExtraShield()
 	return false;
 }
 
+bool AUnit::rollTerrainRangedBlock() const
+{
+	if (!currentHex) return false;
+	switch (currentHex->terrain) {
+		case TerrainType::Forest:
+			return Utility::throwDice() <= FOREST_COVER_DEF_BONUS;
+		default:
+			return false;
+	}
+}
+
 bool AUnit::getEngaged(Battlefield &myBattlefield) const
 {
 	if (!currentHex) return false;

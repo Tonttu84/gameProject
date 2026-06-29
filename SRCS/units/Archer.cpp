@@ -116,17 +116,15 @@ int Archer::fireBow()
     if (!targetUnit || !targetUnit->getAlive()) return 3; // missed or hit a corpse
 
     // Extra shields (force fields): skill-independent, block ranged and melee alike.
-    bool extraBlocked  = targetUnit->tryBlockExtraShield();
-    // Forest cover: ranged-only, skill-independent. Only checked if no extra shield blocked.
-    bool forestCover   = !extraBlocked && targetUnit->getHex() &&
-                         targetUnit->getHex()->terrain == TerrainType::Forest;
-    bool branchDeflect = forestCover && Utility::throwDice() <= FOREST_COVER_DEF_BONUS;
+    bool extraBlocked    = targetUnit->tryBlockExtraShield();
+    // Terrain (forest branch cover): hex-based, ranged-only, skill-independent.
+    bool terrainBlocked  = !extraBlocked && targetUnit->rollTerrainRangedBlock();
     // Physical shield: skill-based (defence stat contributes).
-    bool shieldBlocked = !extraBlocked && !branchDeflect
-                         && targetUnit->getShield() > 0
-                         && Utility::throwDice() <= targetUnit->getShield();
+    bool shieldBlocked   = !extraBlocked && !terrainBlocked
+                           && targetUnit->getShield() > 0
+                           && Utility::throwDice() <= targetUnit->getShield();
 
-    if (extraBlocked || branchDeflect || shieldBlocked)
+    if (extraBlocked || terrainBlocked || shieldBlocked)
     {
         int damage = BOWDAMAGE + elevDmgBonus - SHIELDREDUCTION
                      + Utility::throwDice() - Utility::throwDice();
