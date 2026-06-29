@@ -17,6 +17,8 @@ CFLAGS  = -std=c++17 -Wall -Wextra -Werror -g2 -fPIE -I$(INC_DIR) -I$(SFML_DIR)/
           -fsanitize=address -fsanitize=undefined -fsanitize=leak \
           -fsanitize=float-divide-by-zero
 
+MAKEFLAGS += --jobs=5
+
 .DEFAULT_GOAL := all
 
 # Directories
@@ -133,7 +135,9 @@ clean:
 fclean: clean
 	rm -f $(NAME) $(TEST_NAME) $(CLANG_NAME)
 
-re: fclean all
+re:
+	$(MAKE) fclean
+	$(MAKE) all
 
 run: $(NAME)
 	LD_LIBRARY_PATH=$(SFML_DIR)/lib ./$(NAME)

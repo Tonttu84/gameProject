@@ -88,9 +88,10 @@ public:
                                  // returns true and consumes the blocking one if any hit
 
     // Returns true if the unit's current hex terrain deflects this ranged attack.
-    // Call this (before shield checks) for any physical projectile that terrain can block.
-    // Fire-based attacks (fireball) should skip this — fire ignores forest concealment.
-    bool rollTerrainRangedBlock() const;
+    // Call this (before shield checks) for any projectile or spell that terrain can absorb.
+    // Trees stop heat as well as arrows — use for physical AND fire attacks.
+    // Bypass attacks are never stopped by terrain; Piercing halves the cover bonus.
+    bool rollTerrainRangedBlock(ArmorPen pen = ArmorPen::Normal) const;
 
 
      int getValue() const;

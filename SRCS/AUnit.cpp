@@ -105,12 +105,17 @@ bool AUnit::tryBlockExtraShield()
 	return false;
 }
 
-bool AUnit::rollTerrainRangedBlock() const
+bool AUnit::rollTerrainRangedBlock(ArmorPen pen) const
 {
-	if (!currentHex) return false;
+	if (!currentHex || pen == ArmorPen::Bypass) return false;
 	switch (currentHex->terrain) {
-		case TerrainType::Forest:
-			return Utility::throwDice() <= FOREST_COVER_DEF_BONUS;
+		case TerrainType::Forest: {
+			int bonus = (pen == ArmorPen::Piercing)
+			            ? FOREST_COVER_DEF_BONUS / 2
+			            : FOREST_COVER_DEF_BONUS;
+			if (bonus <= 0) return false;
+			return Utility::throwDice() <= bonus;
+		}
 		default:
 			return false;
 	}
