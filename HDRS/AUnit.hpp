@@ -75,8 +75,17 @@ public:
     bool getBattleSummon() const;
      int getArmour() const;
      
-    int getShield() const;
+    int  getShield() const;
     void setShield(int newVal);
+
+    // Stack a temporary shield layer (force fields, spell barriers, etc.).
+    // Temporary shields block independently of skill — flat throwDice() <= value roll.
+    // They are checked before the physical shield and do not depend on the defender's
+    // defence stat. Forest cover is handled separately (ranged-only path in Archer).
+    void addShield(int v);
+    void popShield();            // remove the most recently added temporary shield
+    bool tryBlockExtraShield();  // rolls against each temporary shield back-to-front;
+                                 // returns true and consumes the blocking one if any hit
 
 
      int getValue() const;
@@ -154,7 +163,8 @@ protected:
     int armour = 0;
     int accuracy = 10;
     int ammunition = 0;
-    int shield = 0;
+    int shield = 0;               // physical shield from weapons; degrades under hits
+    std::vector<int> _extraShields; // stacked temporary shields (force fields etc.)
 
     int fatigue = 0;
     int fatiguelvl = 0;

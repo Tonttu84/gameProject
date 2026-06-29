@@ -84,6 +84,27 @@ int AUnit::getShield() const
 	return shield;
 }
 
+void AUnit::addShield(int v)
+{
+	if (v > 0) _extraShields.push_back(v);
+}
+
+void AUnit::popShield()
+{
+	if (!_extraShields.empty()) _extraShields.pop_back();
+}
+
+bool AUnit::tryBlockExtraShield()
+{
+	for (int i = static_cast<int>(_extraShields.size()) - 1; i >= 0; --i) {
+		if (Utility::throwDice() <= _extraShields[i]) {
+			_extraShields.erase(_extraShields.begin() + i);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool AUnit::getEngaged(Battlefield &myBattlefield) const
 {
 	if (!currentHex) return false;
@@ -122,14 +143,19 @@ int AUnit::defend(int AttackAttempt, int damage)
 	int d1 = Utility::throwDice(), d2 = Utility::throwDice();
 	int resultDMG = damage + d1 - d2;
 
-	if (resultDMG >0 && shield > 0 && (defence + shield - fatiguelvl * 2 + defenceroll >= AttackAttempt)) //Result is not completely dodged and hits the shield
+	// Extra shields (force fields etc.): flat skill-independent roll, consumed on block.
+	if (resultDMG > 0 && tryBlockExtraShield()) {
+		resultDMG -= SHIELDREDUCTION;
+	}
+	// Physical shield: skill-based block (defence stat contributes).
+	else if (resultDMG > 0 && shield > 0 && (defence + shield - fatiguelvl * 2 + defenceroll >= AttackAttempt))
 	{
-		resultDMG = resultDMG - SHIELDREDUCTION - shield * 2; //Shields have a basic reduction but bigger shields block more
+		resultDMG = resultDMG - SHIELDREDUCTION - shield * 2;
 		if (resultDMG > 0)
 		{
-			shield--; //If shield fails to stop the blow, its quality suffers
+			shield--;
 			std::cout << "Shield damaged by a strong blow" << std::endl;
-		}	
+		}
 	}
 	if (resultDMG > 0)
 	{
