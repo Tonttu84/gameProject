@@ -163,8 +163,9 @@ TEST_CASE("takeDamage: Bypass — armour is completely ignored") {
 //
 // FOREST_COVER_DEF_BONUS = 1: blocks on dice roll ≤ 1.
 // Normal:   blocks when roll ≤ 1 (standard chance).
-// Piercing: FOREST_COVER_DEF_BONUS/2 = 0 → early-return false, no dice consumed.
-// Bypass:   always false immediately, no dice consumed.
+// Piercing: same trigger chance as Normal — the protection magnitude is
+//           halved afterward in RangedCombat::applyHit, not the chance here.
+// Bypass:   ignores forest cover entirely, no dice consumed.
 
 TEST_CASE("rollTerrainRangedBlock: Normal — blocks on roll at or below cover bonus") {
     HexGrid grid;
@@ -186,7 +187,7 @@ TEST_CASE("rollTerrainRangedBlock: Normal — blocks on roll at or below cover b
     Utility::clearDiceRolls();
 }
 
-TEST_CASE("rollTerrainRangedBlock: Piercing — cover bonus halved to zero, no block") {
+TEST_CASE("rollTerrainRangedBlock: Piercing — same trigger chance as Normal") {
     HexGrid grid;
     grid.buildRect(16, 30);
     Hex* h = grid.getHex({0, 14});
@@ -195,13 +196,18 @@ TEST_CASE("rollTerrainRangedBlock: Piercing — cover bonus halved to zero, no b
     Zombie z(REDTEAM);
     z.setHex(h);
 
-    // No dice should be consumed — Piercing halves FOREST_COVER_DEF_BONUS to 0.
     Utility::clearDiceRolls();
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // roll=1 ≤ FOREST_COVER_DEF_BONUS(1)
+    REQUIRE(z.rollTerrainRangedBlock(ArmorPen::Piercing) == true);
+
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(2); Utility::pushDiceRoll(1); // roll=2 > 1 → no block
     REQUIRE(z.rollTerrainRangedBlock(ArmorPen::Piercing) == false);
+
     Utility::clearDiceRolls();
 }
 
-TEST_CASE("rollTerrainRangedBlock: Bypass — always blocked, no dice consumed") {
+TEST_CASE("rollTerrainRangedBlock: Bypass — ignores forest cover entirely, no dice consumed") {
     HexGrid grid;
     grid.buildRect(16, 30);
     Hex* h = grid.getHex({0, 14});

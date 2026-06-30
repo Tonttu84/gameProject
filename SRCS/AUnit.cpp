@@ -108,15 +108,14 @@ bool AUnit::tryBlockExtraShield()
 
 bool AUnit::rollTerrainRangedBlock(ArmorPen pen) const
 {
+	// Bypass ignores forest cover entirely (armor-negating attacks aren't
+	// stopped by foliage). Piercing rolls at the same chance as Normal —
+	// it halves the *protection* once blocked (see RangedCombat::applyHit),
+	// not the chance of being blocked.
 	if (!currentHex || pen == ArmorPen::Bypass) return false;
 	switch (currentHex->terrain) {
-		case TerrainType::Forest: {
-			int bonus = (pen == ArmorPen::Piercing)
-			            ? FOREST_COVER_DEF_BONUS / 2
-			            : FOREST_COVER_DEF_BONUS;
-			if (bonus <= 0) return false;
-			return Utility::throwDice() <= bonus;
-		}
+		case TerrainType::Forest:
+			return Utility::throwDice() <= FOREST_COVER_DEF_BONUS;
 		default:
 			return false;
 	}

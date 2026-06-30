@@ -38,9 +38,36 @@ AUnit* RangedCombat::pickHexTarget(const Hex* hex)
     return nullptr; // projectile hit empty ground
 }
 
+void RangedCombat::applyHit(AUnit* shooter, AUnit* target, const RangedShot& shot,
+                            int baseDamage, int elevDmgBonus)
+{
+    bool extraBlocked   = target->tryBlockExtraShield();
+    bool terrainBlocked = !extraBlocked && target->rollTerrainRangedBlock(shot.pen);
+    bool blocked        = extraBlocked || terrainBlocked;
+
+    if (shot.onHit) shot.onHit(shooter, target, blocked);
+
+    // Forest cover (terrain block) is physical concealment: Piercing halves its
+    // protection rather than negating it, matching defend()'s shield halving.
+    // Extra-shield (force field) blocks aren't physical, so they keep the flat
+    // reduction regardless of pen.
+    int reduction = 0;
+    if (blocked) {
+        reduction = (terrainBlocked && shot.pen == ArmorPen::Piercing)
+                    ? SHIELDREDUCTION / 2
+                    : SHIELDREDUCTION;
+    }
+
+    int damage = baseDamage + elevDmgBonus - reduction;
+    if (damage <= 0) return;
+
+    target->takeDamage(damage, shot.pen);
+    if (shot.onDamage) shot.onDamage(shooter, target, damage);
+}
+
 void RangedCombat::fire(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot)
 {
-    if (!shooter->getHex() || !aimUnit || !aimUnit->getHex()) return;
+    if (!shooter || !shooter->getHex() || !aimUnit || !aimUnit->getHex()) return;
 
     int dist = Utility::calcDistance(shooter->getHex(), aimUnit->getHex());
 
@@ -56,19 +83,17 @@ void RangedCombat::fire(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot)
     if (!landedHex) return;
 
     AUnit* target = resolveHit(aimUnit, landedHex, dist, shotAccuracy);
-    if (!target || !target->getAlive()) return;
+    if (target && target->getAlive())
+        applyHit(shooter, target, shot, shot.baseDamage, elevDmgBonus);
 
-    bool extraBlocked   = target->tryBlockExtraShield();
-    bool terrainBlocked = !extraBlocked && target->rollTerrainRangedBlock(shot.pen);
-    bool blocked        = extraBlocked || terrainBlocked;
-
-    if (shot.onHit) shot.onHit(shooter, target, blocked);
-
-    int damage = shot.baseDamage + elevDmgBonus - (blocked ? SHIELDREDUCTION : 0);
-    if (damage <= 0) return;
-
-    target->takeDamage(damage, shot.pen);
-    if (shot.onDamage) shot.onDamage(shooter, target, damage);
+    // Splash always lands on the hex regardless of whether the primary shot
+    // found someone — same as an inaccurate single shot falling back to
+    // pickHexTarget() on the landed hex.
+    for (int i = 0; i < shot.secondaryHits; ++i) {
+        AUnit* hit = pickHexTarget(landedHex);
+        if (hit && hit->getAlive())
+            applyHit(shooter, hit, shot, shot.secondaryDamage, elevDmgBonus);
+    }
 }
 
 AUnit* RangedCombat::resolveHit(AUnit* intendedTarget, Hex* landedHex,

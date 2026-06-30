@@ -2,6 +2,7 @@
 #include "../HDRS/RangedCombat.hpp"
 #include <algorithm>
 #include <climits>
+#include <cstdlib>
 #include <unordered_map>
 
 
@@ -69,12 +70,13 @@ Hex* Battlefield::findTarget(const AUnit& searcher) const
 }
 
 static bool hexAcceptsUnit(const Hex* hex, const AUnit& unit) {
-    if (!hex || hex->impassable) return false;
+    if (!hex) return false;
+    UnitCategory cat = unit.getCategory();
+    if (hex->impassable && cat != UnitCategory::Flyer) return false;
     if (hex->sizeUsed + static_cast<int>(unit.getSize()) > Hex::CAPACITY) return false;
     for (AUnit* u : hex->units)
         if (u && u->getAlive() && u->getTeam() != unit.getTeam()) return false;
     // Mounted cannot enter Forest or Marsh
-    UnitCategory cat = unit.getCategory();
     if (cat == UnitCategory::Mounted) {
         if (hex->terrain == TerrainType::Forest || hex->terrain == TerrainType::Marsh)
             return false;
@@ -128,6 +130,58 @@ static bool wouldRemainEngaged(const AUnit& unit, HexCoord nc, HexGrid& hexGrid)
     return false;
 }
 
+// Result of scanning the 6 neighbors of a hex for the best move toward (or
+// away from, for flee) a distance target. decrHex/latHex are cached from the
+// scan so callers don't need to re-resolve the hex or its move cost.
+struct DirChoice {
+    int      decrDir   = -1;
+    HexCoord decrCoord {};
+    Hex*     decrHex   = nullptr;
+    int      decrCost  = 0;
+    int      latDir    = -1;
+    HexCoord latCoord  {};
+    Hex*     latHex    = nullptr;
+    int      latCost   = 0;
+};
+
+// Shared by moveToward/flee/moveSquad: scans the 6 neighbors of `from`,
+// tracking the best strictly-decreasing-distance candidate and the best
+// equal-distance (lateral) candidate, preferring cheaper terrain on ties.
+// distFn(nh, nc) returns the candidate's distance to the goal (UNREACHABLE
+// to exclude it); acceptFn(nh, nc) filters candidates the caller can't enter
+// (capacity, enemies, mounted-on-forest, impassable-unless-flyer, etc.).
+template <typename DistFn, typename AcceptFn>
+static DirChoice pickBestDirection(HexGrid& hexGrid, HexCoord from, int curDist,
+                                    UnitCategory cat, DistFn distFn, AcceptFn acceptFn)
+{
+    DirChoice result;
+    int bestDecrDist = curDist, bestDecrCost = INT_MAX;
+    int bestLatCost  = INT_MAX;
+
+    for (int i = 0; i < 6; ++i) {
+        auto dir = static_cast<HexDirection>(i);
+        if (!sidePassable(hexGrid.getSide(from, dir), cat)) continue;
+        HexCoord nc = hexGrid.neighborCoord(from, dir);
+        Hex* nh = hexGrid.getHex(nc);
+        if (!acceptFn(nh, nc)) continue;
+
+        int d = distFn(nh, nc);
+        if (d == HexGrid::UNREACHABLE) continue;
+        int cost = terrainMoveCost(nh, hexGrid.getSide(from, dir), cat);
+
+        if (d < curDist) {
+            if (d < bestDecrDist || (d == bestDecrDist && cost < bestDecrCost)) {
+                bestDecrDist = d; bestDecrCost = cost;
+                result.decrDir = i; result.decrCoord = nc; result.decrHex = nh; result.decrCost = cost;
+            }
+        } else if (d == curDist && cost < bestLatCost) {
+            bestLatCost = cost;
+            result.latDir = i; result.latCoord = nc; result.latHex = nh; result.latCost = cost;
+        }
+    }
+    return result;
+}
+
 int Battlefield::moveAUnit(AUnit& unit, HexCoord target)
 {
     Hex* tgt = hexGrid.getHex(target);
@@ -153,67 +207,37 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
 
     bool mounted = (unit.getCategory() == UnitCategory::Mounted);
     bool flyer   = (unit.getCategory() == UnitCategory::Flyer);
+    HexCoord from = fromHex->coord;
 
-    int curDist = flyer ? HexGrid::distance(fromHex->coord, target->coord)
+    int curDist = flyer ? HexGrid::distance(from, target->coord)
                         : hexGrid.bfsDistance(fromHex, target, mounted);
     if (curDist <= 0 || curDist == HexGrid::UNREACHABLE) return;
 
     // If the unit took a lateral last turn it must decrease distance this turn.
     bool mustDecrease = unit.getTookLateral();
 
-    HexCoord from = fromHex->coord;
-
-    // Track the best strictly-decreasing candidate and the best lateral candidate
-    // separately. Among equal-distance candidates, prefer the cheapest terrain.
-    int bestDecrDist = curDist, bestDecrCost = INT_MAX, bestDecrDir = -1;
-    int bestLatCost  = INT_MAX, bestLatDir   = -1;
-
-    for (int i = 0; i < 6; ++i) {
-        auto dir = static_cast<HexDirection>(i);
-        if (!sidePassable(hexGrid.getSide(from, dir), unit.getCategory())) continue;
-        HexCoord nc = hexGrid.neighborCoord(from, dir);
-        Hex* nh = hexGrid.getHex(nc);
-        if (!hexAcceptsUnit(nh, unit)) continue;
-
-        int d = flyer ? HexGrid::distance(nc, target->coord)
-                      : hexGrid.bfsDistance(nh, target, mounted);
-        if (d == HexGrid::UNREACHABLE) continue;
-
-        int cost = terrainMoveCost(nh, hexGrid.getSide(from, dir), unit.getCategory());
-
-        if (d < curDist) {
-            if (d < bestDecrDist || (d == bestDecrDist && cost < bestDecrCost)) {
-                bestDecrDist = d; bestDecrCost = cost; bestDecrDir = i;
-            }
-        } else if (d == curDist && cost < bestLatCost) {
-            bestLatCost = cost; bestLatDir = i;
-        }
-    }
+    DirChoice choice = pickBestDirection(hexGrid, from, curDist, unit.getCategory(),
+        [&](Hex* nh, HexCoord nc) {
+            return flyer ? HexGrid::distance(nc, target->coord)
+                         : hexGrid.bfsDistance(nh, target, mounted);
+        },
+        [&](Hex* nh, HexCoord) { return hexAcceptsUnit(nh, unit); });
 
     // Prefer a decreasing move — clears the lateral flag.
-    if (bestDecrDir >= 0) {
-        auto dir = static_cast<HexDirection>(bestDecrDir);
-        HexCoord dest = hexGrid.neighborCoord(from, dir);
-        moveAUnit(unit, dest);
-        int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(from, dir),
-                                   unit.getCategory());
-        if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
+    if (choice.decrDir >= 0) {
+        moveAUnit(unit, choice.decrCoord);
+        if (choice.decrCost > 1) unit.setSpentMove(static_cast<size_t>(choice.decrCost - 1));
         unit.setTookLateral(false);
         return;
     }
 
     // Lateral: only if not mustDecrease, and respecting engaged/crowded constraints.
-    if (!mustDecrease && bestLatDir >= 0) {
+    if (!mustDecrease && choice.latDir >= 0) {
         bool engaged = unit.getEngaged(*this);
         bool crowded = unit.getHex()->sizeUsed >= CROWDED_THRESHOLD;
-        HexCoord latDest = hexGrid.neighborCoord(from, static_cast<HexDirection>(bestLatDir));
-        if (!engaged || (crowded && wouldRemainEngaged(unit, latDest, hexGrid))) {
-            auto dir = static_cast<HexDirection>(bestLatDir);
-            HexCoord dest = hexGrid.neighborCoord(from, dir);
-            moveAUnit(unit, dest);
-            int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(from, dir),
-                                       unit.getCategory());
-            if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
+        if (!engaged || (crowded && wouldRemainEngaged(unit, choice.latCoord, hexGrid))) {
+            moveAUnit(unit, choice.latCoord);
+            if (choice.latCost > 1) unit.setSpentMove(static_cast<size_t>(choice.latCost - 1));
             unit.setTookLateral(true);
             return;
         }
@@ -239,54 +263,35 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
     }
 
     bool mounted = (unit->getCategory() == UnitCategory::Mounted);
+    bool flyer   = (unit->getCategory() == UnitCategory::Flyer);
     bool isRed   = (unit->getTeam() == REDTEAM);
-    // Flyers use the ground flee table — direction-finding is the same since
-    // impassable hexes are walls in both graphs and flyers can cross any hexside.
-    int curFleeDist = hexGrid.fleeDistance(myHex, mounted, isRed);
+    // Flyers ignore impassable terrain entirely, so the precomputed flee BFS
+    // table (built as a ground/mounted wall graph) doesn't apply to them —
+    // same reasoning as moveToward(). The flee row is a single row, so the
+    // closest distance to it is just the row difference (straight flight).
+    int fleeRow      = isRed ? (height - 1) : 0;
+    int curFleeDist  = flyer ? std::abs(c.r - fleeRow)
+                             : hexGrid.fleeDistance(myHex, mounted, isRed);
 
     bool mustDecrease = unit->getTookLateral();
 
-    int bestDecrFlee = curFleeDist, bestDecrCost = INT_MAX, bestDecrDir = -1;
-    int bestLatCost  = INT_MAX,     bestLatDir   = -1;
+    DirChoice choice = pickBestDirection(hexGrid, c, curFleeDist, unit->getCategory(),
+        [&](Hex* nh, HexCoord nc) {
+            return flyer ? std::abs(nc.r - fleeRow)
+                         : hexGrid.fleeDistance(nh, mounted, isRed);
+        },
+        [&](Hex* nh, HexCoord) { return hexAcceptsUnit(nh, *unit); });
 
-    for (int i = 0; i < 6; ++i) {
-        auto dir = static_cast<HexDirection>(i);
-        if (!sidePassable(hexGrid.getSide(c, dir), unit->getCategory())) continue;
-        HexCoord nc = hexGrid.neighborCoord(c, dir);
-        Hex* nh = hexGrid.getHex(nc);
-        if (!hexAcceptsUnit(nh, *unit)) continue;
-
-        int d    = hexGrid.fleeDistance(nh, mounted, isRed);
-        if (d == HexGrid::UNREACHABLE) continue;
-        int cost = terrainMoveCost(nh, hexGrid.getSide(c, dir), unit->getCategory());
-
-        if (d < curFleeDist) {
-            if (d < bestDecrFlee || (d == bestDecrFlee && cost < bestDecrCost)) {
-                bestDecrFlee = d; bestDecrCost = cost; bestDecrDir = i;
-            }
-        } else if (d == curFleeDist && cost < bestLatCost) {
-            bestLatCost = cost; bestLatDir = i;
-        }
-    }
-
-    if (bestDecrDir >= 0) {
-        auto dir = static_cast<HexDirection>(bestDecrDir);
-        HexCoord dest = hexGrid.neighborCoord(c, dir);
-        moveAUnit(*unit, dest);
-        int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(c, dir),
-                                   unit->getCategory());
-        if (cost > 1) unit->setSpentMove(static_cast<size_t>(cost - 1));
+    if (choice.decrDir >= 0) {
+        moveAUnit(*unit, choice.decrCoord);
+        if (choice.decrCost > 1) unit->setSpentMove(static_cast<size_t>(choice.decrCost - 1));
         unit->setTookLateral(false);
         return;
     }
 
-    if (!mustDecrease && bestLatDir >= 0) {
-        auto dir = static_cast<HexDirection>(bestLatDir);
-        HexCoord dest = hexGrid.neighborCoord(c, dir);
-        moveAUnit(*unit, dest);
-        int cost = terrainMoveCost(hexGrid.getHex(dest), hexGrid.getSide(c, dir),
-                                   unit->getCategory());
-        if (cost > 1) unit->setSpentMove(static_cast<size_t>(cost - 1));
+    if (!mustDecrease && choice.latDir >= 0) {
+        moveAUnit(*unit, choice.latCoord);
+        if (choice.latCost > 1) unit->setSpentMove(static_cast<size_t>(choice.latCost - 1));
         unit->setTookLateral(true);
         return;
     }
@@ -341,12 +346,14 @@ void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
 
 void Battlefield::moveSquad(Squad& squad)
 {
-    // Find reference unit for navigation (leader preferred, else first alive member with hex).
-    AUnit* ref = squad.hasLeader() ? squad.getLeader() : nullptr;
-    if (!ref) {
-        for (AUnit* m : squad.getMembers())
-            if (m && m->getAlive() && !m->getBroken() && m->getHex()) { ref = m; break; }
-    }
+    // Navigate and track the per-tick lateral-move flag via the flag bearer
+    // rather than the leader: the bearer auto-transfers to the next eligible
+    // member on death (Squad::onFlagBearerDeath), so it stays a single stable
+    // identity across the squad's lifetime instead of resetting whenever the
+    // leader dies — which is what the lateral-move bookkeeping needs.
+    AUnit* ref = squad.getFlagBearer();
+    if (!ref || !ref->getAlive() || ref->getBroken())
+        ref = squad.onFlagBearerDeath();
     if (!ref || !ref->getHex()) return;
 
     // Find enemy target and the best forward hex using BFS — same logic as moveToward.
@@ -355,51 +362,35 @@ void Battlefield::moveSquad(Squad& squad)
 
     HexCoord from    = ref->getHex()->coord;
     bool     mounted = (ref->getCategory() == UnitCategory::Mounted);
+    bool     flyer   = (ref->getCategory() == UnitCategory::Flyer);
 
-    int curDist = hexGrid.bfsDistance(ref->getHex(), enemyTarget, mounted);
+    int curDist = flyer ? HexGrid::distance(from, enemyTarget->coord)
+                        : hexGrid.bfsDistance(ref->getHex(), enemyTarget, mounted);
     if (curDist <= 0 || curDist == HexGrid::UNREACHABLE) return;
 
-    bool mustDecrease  = ref->getTookLateral();
-    int  bestDecrDist  = curDist, bestDecrCost = INT_MAX, bestDecrDir = -1;
-    int  bestLatCost   = INT_MAX, bestLatDir   = -1;
+    bool mustDecrease = ref->getTookLateral();
 
-    for (int i = 0; i < 6; ++i) {
-        auto dir = static_cast<HexDirection>(i);
-        if (!sidePassable(hexGrid.getSide(from, dir), ref->getCategory())) continue;
-        HexCoord nc = hexGrid.neighborCoord(from, dir);
-        Hex*     nh = hexGrid.getHex(nc);
-        if (!nh || nh->impassable) continue;
-        if (mounted && (nh->terrain == TerrainType::Forest || nh->terrain == TerrainType::Marsh)) continue;
-        bool hasEnemy = false;
-        for (AUnit* u : nh->units)
-            if (u && u->getAlive() && u->getTeam() != ref->getTeam()) { hasEnemy = true; break; }
-        if (hasEnemy) continue;
+    DirChoice choice = pickBestDirection(hexGrid, from, curDist, ref->getCategory(),
+        [&](Hex* nh, HexCoord nc) {
+            return flyer ? HexGrid::distance(nc, enemyTarget->coord)
+                         : hexGrid.bfsDistance(nh, enemyTarget, mounted);
+        },
+        [&](Hex* nh, HexCoord) {
+            if (!nh || (nh->impassable && !flyer)) return false;
+            if (mounted && (nh->terrain == TerrainType::Forest || nh->terrain == TerrainType::Marsh)) return false;
+            for (AUnit* u : nh->units)
+                if (u && u->getAlive() && u->getTeam() != ref->getTeam()) return false;
+            return true;
+        });
 
-        int d    = hexGrid.bfsDistance(nh, enemyTarget, mounted);
-        if (d == HexGrid::UNREACHABLE) continue;
-        int cost = terrainMoveCost(nh, hexGrid.getSide(from, dir), ref->getCategory());
-
-        if (d < curDist) {
-            if (d < bestDecrDist || (d == bestDecrDist && cost < bestDecrCost)) {
-                bestDecrDist = d; bestDecrCost = cost; bestDecrDir = i;
-            }
-        } else if (d == curDist && cost < bestLatCost) {
-            bestLatCost = cost; bestLatDir = i;
-        }
+    bool     tookLateral = false;
+    Hex*     nextHex     = nullptr;
+    int      moveCost    = 1;
+    if (choice.decrDir >= 0) {
+        nextHex = choice.decrHex; moveCost = choice.decrCost;
+    } else if (!mustDecrease && choice.latDir >= 0) {
+        nextHex = choice.latHex; moveCost = choice.latCost; tookLateral = true;
     }
-
-    int  chosenDir   = -1;
-    bool tookLateral = false;
-    if (bestDecrDir >= 0) {
-        chosenDir = bestDecrDir;
-    } else if (!mustDecrease && bestLatDir >= 0) {
-        chosenDir    = bestLatDir;
-        tookLateral  = true;
-    }
-    if (chosenDir < 0) return;
-
-    HexCoord nextCoord = hexGrid.neighborCoord(from, static_cast<HexDirection>(chosenDir));
-    Hex*     nextHex   = hexGrid.getHex(nextCoord);
     if (!nextHex) return;
 
     // Calculate squad's total size for alive non-broken members.
@@ -449,9 +440,7 @@ void Battlefield::moveSquad(Squad& squad)
 
     // Move all alive non-broken members to nextHex. Each member's old hex is vacated
     // via setHex (which calls removeFromHex internally). Fatigue cost mirrors moveAUnit.
-    HexSide* moveSide = hexGrid.getSide(from, static_cast<HexDirection>(chosenDir));
-    int      moveCost = terrainMoveCost(nextHex, moveSide, ref->getCategory());
-    size_t   debt     = (moveCost > 1) ? static_cast<size_t>(moveCost - 1) : 0;
+    size_t debt = (moveCost > 1) ? static_cast<size_t>(moveCost - 1) : 0;
     for (AUnit* m : squad.getMembers()) {
         if (!m || !m->getAlive() || m->getBroken()) continue;
         if (m->getHex() == nextHex) continue; // already there

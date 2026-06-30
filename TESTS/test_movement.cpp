@@ -289,6 +289,51 @@ TEST_CASE("flee: unit at r==0 boundary is removed (alive=false)") {
     field.extractResult();
 }
 
+// ── Flee: flyer ignores impassable terrain ───────────────────────────────────
+// A full-row wall of impassable hexes (no gaps) lies between a broken flyer
+// and its flee row. For a ground/mounted unit this would make every hex past
+// the wall UNREACHABLE in the flee BFS table, so it would rally in place
+// forever. Flyers ignore impassable hexes and hexsides entirely and use raw
+// row-distance instead of the BFS table, so they should fly straight through.
+
+TEST_CASE("flee: flying unit crosses a complete impassable wall blocking its only ground exit") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Full row wall at r=20, every valid q for that row (q = col - r/2, col 0..15).
+    std::vector<Hex*> wall;
+    for (int q = -10; q <= 5; ++q) {
+        Hex* h = field.hexGrid.getHex({q, 20});
+        REQUIRE(h != nullptr);
+        h->impassable = true;
+        wall.push_back(h);
+    }
+
+    auto redPtr = std::make_unique<Soldier>(REDTEAM);
+    redPtr->setCategory(UnitCategory::Flyer);
+    redPtr->setBroken(true);
+    redPtr->setHex(field.hexGrid.getHex({3, 14})); // interior, north of the wall
+
+    Army red;
+    red.push_back(std::move(redPtr));
+    field.loadArmies(std::move(red), {});
+
+    // Flee repeatedly. A ground unit would be stuck rallying at the wall;
+    // the flyer should make steady southward progress and either cross the
+    // wall (r > 20) or flee off the southern edge entirely (alive == false).
+    for (int turn = 0; turn < 25; ++turn) {
+        AUnit* unit = field.getTeam(REDTEAM)[0].get();
+        if (!unit->getAlive()) break;
+        field.flee(field.getTeam(REDTEAM)[0]);
+    }
+
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+    bool crossedOrFled = !unit->getAlive() || unit->getHex()->coord.r > 20;
+    REQUIRE(crossedOrFled);
+
+    for (Hex* h : wall) h->impassable = false;
+    field.extractResult();
+}
+
 // ── Mountain-range circumnavigation ──────────────────────────────────────────
 // Wall of impassable hexes blocks the direct east path. Unit must route around
 // via the gap above the wall. Verifies the BFS correctly finds the detour.

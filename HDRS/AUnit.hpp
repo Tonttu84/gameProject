@@ -30,6 +30,7 @@ enum class UnitCategory {
     Foot,       // standard infantry; affected by all terrain
     Mounted,    // cavalry; cannot enter Forest or Marsh; no charge through Rubble
     Flyer,      // ignores ground terrain; can cross blocked hexsides (cliffs, walls)
+                // and enter impassable hexes (deep water, sheer rock)
     Beast,      // large creature; no formation bonus; Forest/Rubble +1; Marsh +2
     Skirmisher  // light troops; Forest normal cost; Marsh +1; Rubble normal cost
 };

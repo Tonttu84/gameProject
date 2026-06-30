@@ -20,10 +20,17 @@ struct RangedShot {
     int      accuracy    = 0;               // 0–100 base; fire() adjusts for elevation
     ArmorPen pen         = ArmorPen::Normal;
 
-    // Called after the universal block checks (extraShield, terrain).
-    // `blocked` is by reference so the callback can apply additional block
-    // logic (physical shield, magic resist) and fire() will apply
-    // SHIELDREDUCTION on the final value.
+    // AoE splash: after the primary shot resolves (hit or miss), fire() picks
+    // `secondaryHits` additional weighted-random units from the landed hex
+    // (same pickHexTarget pool, same block/damage pipeline) and damages each
+    // for `secondaryDamage` + elevation bonus. 0 means no splash (the default).
+    int secondaryHits   = 0;
+    int secondaryDamage = 0;
+
+    // Called after the universal block checks (extraShield, terrain) for the
+    // primary hit only. `blocked` is by reference so the callback can apply
+    // additional block logic (physical shield, magic resist) and fire() will
+    // apply SHIELDREDUCTION on the final value.
     // Both attacker and target are provided for stat-dependent effects
     // (magic penetration, life drain, etc.).
     std::function<void(AUnit* attacker, AUnit* target, bool& blocked)> onHit;
@@ -61,7 +68,11 @@ public:
 
     // Full ranged attack pipeline: elevation, accuracy clamp, deviation,
     // hit resolution, universal block checks (extraShield + terrain),
-    // onHit callback, damage, takeDamage, onDamage callback.
+    // onHit callback, damage, takeDamage, onDamage callback. If
+    // shot.secondaryHits > 0, also splashes that many weighted-random hits
+    // onto the landed hex (same pipeline, shot.secondaryDamage), regardless
+    // of whether the primary shot found a target — a miss still lands
+    // somewhere and the blast goes off there.
     //
     // Resource consumption (ammo, mana) and caller-specific accuracy
     // adjustments (e.g. forest aim penalty) are the caller's responsibility.
@@ -74,6 +85,12 @@ private:
     static std::unordered_map<const Hex*, SlotCache> cache;
 
     static const SlotCache& getSlotCache(const Hex* hex);
+
+    // Block checks, onHit callback, damage, takeDamage, onDamage callback
+    // for a single resolved target. Shared by the primary hit and every
+    // secondary splash hit so they go through identical rules.
+    static void applyHit(AUnit* shooter, AUnit* target, const RangedShot& shot,
+                          int baseDamage, int elevDmgBonus);
 
     RangedCombat() = delete;
 };

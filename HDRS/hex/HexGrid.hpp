@@ -61,7 +61,8 @@ struct Hex {
     FormationType formation = FormationType::NORMAL;
     TerrainType   terrain   = TerrainType::Open;
     int           elevation = 0;    // 0 = sea level; valid range 0–3
-    bool          impassable = false; // no unit may enter (cliff face, deep water)
+    bool          impassable = false; // no ground/mounted unit may enter (cliff face, deep
+                                       // water); Flyer units are exempt everywhere this is checked
     std::array<HexSide*, 6> sides {};
     std::vector<AUnit*>     units {};
 };

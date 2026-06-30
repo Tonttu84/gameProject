@@ -49,24 +49,13 @@ void Mage::special()
     mana--;
 
     RangedShot shot;
-    shot.baseDamage = FIREBALL_CENTRE;
-    shot.accuracy   = accuracy;
-    shot.pen        = ArmorPen::Normal;
-    // Secondary blast hits: shrapnel from the detonation, same blocking rules.
-    // Elevation recomputed from attacker position so it matches the primary hit.
-    shot.onHit = [](AUnit* attacker, AUnit* target, bool& /*blocked*/) {
-        int tiers     = std::clamp(attacker->getHex()->elevation - target->getHex()->elevation,
-                                   -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
-        int elevBonus = tiers * ELEV_RANGED_BONUS;
-        for (int i = 0; i < FIREBALL_SECONDARY; ++i) {
-            AUnit* hit = RangedCombat::pickHexTarget(target->getHex());
-            if (!hit || !hit->getAlive()) continue;
-            bool xBlocked = hit->tryBlockExtraShield();
-            bool tBlocked = !xBlocked && hit->rollTerrainRangedBlock();
-            int  dmg      = FIREBALL_BLAST + elevBonus - ((xBlocked || tBlocked) ? SHIELDREDUCTION : 0);
-            if (dmg > 0) hit->takeDamage(dmg);
-        }
-    };
+    shot.baseDamage      = FIREBALL_CENTRE;
+    shot.accuracy        = accuracy;
+    shot.pen             = ArmorPen::Normal;
+    // Secondary blast hits: shrapnel from the detonation, landing on the same
+    // hex as the primary shot regardless of whether the primary found a target.
+    shot.secondaryHits   = FIREBALL_SECONDARY;
+    shot.secondaryDamage = FIREBALL_BLAST;
 
     RangedCombat::fire(this, aimUnit, shot);
 }
