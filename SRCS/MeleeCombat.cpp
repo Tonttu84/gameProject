@@ -10,8 +10,10 @@ void MeleeCombat::engage(AUnit* attacker, AUnit* target, const MeleeAttack& shot
                     + shot.hitBonus + Utility::throwDice();
 
     bool blocked = false;
-    if (shot.onHit) shot.onHit(attacker, target, blocked);
-    if (blocked) return;
+    if (shot.onAttack) shot.onAttack(attacker, target, blocked);
+    // onAttack (repel) can kill the attacker via a counter-hit before their own
+    // blow lands — a dead attacker can't deal damage.
+    if (blocked || !attacker->getAlive()) return;
 
     int damage = target->defend(hitResult, shot.damage, shot.pen, shot.reach);
     target->incrementAttacksReceived();

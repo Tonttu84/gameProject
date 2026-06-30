@@ -13,6 +13,7 @@
 #include "../HDRS/AUnit.hpp"
 #include "../HDRS/MeleeCombat.hpp"
 #include "../HDRS/Squad.hpp"
+#include "../HDRS/WeaponEffects.hpp"
 #include <algorithm>
 
 
@@ -135,7 +136,7 @@ bool AUnit::getEngaged(Battlefield &myBattlefield) const
 	return false;
 }
 
-int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerReach*/)
+int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerReach*/, bool repelCounter)
 {
 	int defenceroll = Utility::throwDice();
 
@@ -192,7 +193,12 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 
 	if (resultDMG > 0)
 	{
-		testMorale(resultDMG);
+		// A repel counter-hit is capped at 1 raw point and never triggers a
+		// morale check — the attacker already passed one to even take this hit.
+		if (repelCounter)
+			resultDMG = 1;
+		else
+			testMorale(resultDMG);
 		hitpoints -= resultDMG;
 		if (hitpoints < 1)
 			setAlive(false);
@@ -211,7 +217,19 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	Hex* enemyHex = (engagedSide->hexA == currentHex)
 	              ? engagedSide->hexB : engagedSide->hexA;
 	if (!enemyHex) return nullptr;
+
+	// Fight the hexside, not the hex: prefer enemies actually seated on the
+	// same contested boundary, so attackers spread across the defenders
+	// holding each side instead of every attacker dogpiling whichever unit
+	// in the whole hex happens to have the lowest sortKey.
 	AUnit* best = nullptr;
+	for (AUnit* u : enemyHex->units)
+		if (u && u->getTeam() != team && u->getAlive() && u->getEngagedSide() == engagedSide)
+			if (!best || u->sortsBefore(best))
+				best = u;
+	if (best) return best;
+
+	// Nobody's holding this boundary — the attack lands on the hex directly.
 	for (AUnit* u : enemyHex->units)
 		if (u && u->getTeam() != team && u->getAlive())
 			if (!best || u->sortsBefore(best))
@@ -260,17 +278,117 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return attackBonus;
 	}
 
+	// Repel: a defender with a strictly longer weapon than this attack's reach
+	// gets an opposed roll to interrupt it before damage lands. The original
+	// target always gets first try (regardless of its own repelMalus); if it
+	// doesn't win, any other alive, non-broken enemy sharing the same engaged
+	// hexside (or, if the target itself was undefended, anyone else in its
+	// hex) with repelMalus==0 and a longer weapon gets pulled in next, in
+	// sortKey order. The first defender to win the opposed roll decides the
+	// outcome for this attack; everyone who attempted (win or lose) pays a
+	// stacking -1 malus to their own future repels this turn.
+	//
+	// MountedUnit composites contribute up to two independent candidates
+	// (rider, then mount) via repelParts() — each gets its own single
+	// attempt, same as any other defender, so a long-reached mount (e.g. a
+	// Scorpion's stinger) can repel even when its rider couldn't. This
+	// resolves entirely before MountedUnit::defend() ever decides whether the
+	// *original* hit lands on the rider or the mount — repel doesn't need to
+	// know or care which sub-unit eventually takes that hit.
+	void AUnit::resolveRepel(AUnit* originalTarget, bool& blocked, int attackerHitBonus, int attackerReach)
+	{
+		if (!originalTarget || !originalTarget->getHex()) return;
+
+		Hex*     hex  = originalTarget->getHex();
+		HexSide* side = originalTarget->getEngagedSide();
+
+		// A broken primary target doesn't fight back, but the cascade to other
+		// eligible defenders sharing its side (or hex, if undefended) is still
+		// open — see the "others" loop below, which already excludes broken
+		// candidates the same way. getBroken() is read at the composite level
+		// so a MountedUnit reports correctly: it defers to the rider while
+		// mounted, so a panicking mount under a calm rider's control is NOT
+		// considered broken here, and a calm mount under a broken rider IS —
+		// see MountedUnit::getBroken()/effectTarget().
+		std::vector<AUnit*> candidates;
+		if (!originalTarget->getBroken())
+			candidates = originalTarget->repelParts();
+
+		std::vector<AUnit*> others;
+		for (AUnit* u : hex->units) {
+			if (!u || u == originalTarget || !u->getAlive() || u->getBroken()) continue;
+			if (u->getTeam() == team) continue;
+			if (side && u->getEngagedSide() != side) continue;
+			for (AUnit* part : u->repelParts())
+				if (part->getRepelMalus() == 0) others.push_back(part);
+		}
+		std::sort(others.begin(), others.end(),
+		          [](AUnit* a, AUnit* b) { return a->sortsBefore(b); });
+		candidates.insert(candidates.end(), others.begin(), others.end());
+
+		for (AUnit* def : candidates) {
+			if (def->_attacks.empty()) continue;
+			// A defender with several weapons of differing reach repels with
+			// whichever one reaches furthest, not just its first weapon — but
+			// still only one attempt total, same as a single-weapon defender.
+			const Weapon* defWeaponPtr = &def->_attacks.front();
+			for (const Weapon& w : def->_attacks)
+				if (w.getReach() > defWeaponPtr->getReach()) defWeaponPtr = &w;
+			const Weapon& defWeapon = *defWeaponPtr;
+			if (defWeapon.getReach() <= attackerReach) continue;
+
+			int attackerRoll = attackPWR - fatigue + attackerHitBonus + attackerReach + Utility::throwDice();
+			int defenderRoll = def->attackPWR - def->fatigue + def->computeMeleeAttackBonus()
+			                  + defWeapon.getReach() + Utility::throwDice() - def->repelMalus;
+			++def->repelMalus;
+
+			if (defenderRoll <= attackerRoll) continue; // attacker wins this round; try the next defender
+
+			int wonBy = defenderRoll - attackerRoll;
+			if (!testMorale(wonBy)) {
+				blocked = true; // nerve breaks — the attack is aborted
+				return;
+			}
+
+			// Morale held: the defender's counter lands, capped at 1, no further morale check.
+			// Deliberately calls defend() directly rather than building a MeleeAttack and
+			// going through MeleeCombat::engage() — engage() is the only place that fires
+			// onAttack/onDamage and increments _attacksReceivedThisTurn, and a 1-hp capped
+			// counter-jab should never trigger a weapon's special effects (fireball,
+			// lifedrain, ...) any more than it should add a defence malus. If a future
+			// weapon-effects system attaches such hooks elsewhere (e.g. to defend() itself),
+			// repelCounter is the flag to gate them off too.
+			int counterDamage = defWeapon.getDamage() + def->strength / defWeapon.getStrDivider()
+			                   + def->cohesionDmgBonus();
+			// The counter's ArmorPen is the defending weapon's own, not the attacker's —
+			// e.g. a Bypass ("magical") weapon still gets its 1 capped point through even
+			// against an attacker only vulnerable to Bypass damage.
+			defend(defenderRoll, counterDamage, defWeapon.getPen(), defWeapon.getReach(), true);
+			if (!alive) blocked = true; // died to the counter — can't land the original hit either
+			return; // once a defender has won, there are no further repels for this attack
+		}
+	}
+
 	void AUnit::attackWithWeapons(AUnit* target, int attackBonus)
 	{
 		if (!target) return;
-		for (auto it = _attacks.begin(); it != _attacks.end() && target->getAlive(); ++it)
+		for (auto it = _attacks.begin(); it != _attacks.end() && target->getAlive() && alive; ++it)
 		{
 			MeleeAttack shot;
 			shot.hitBonus = attackBonus;
 			shot.damage   = it->getDamage() + strength / it->getStrDivider()
 			                + cohesionDmgBonus();
-			shot.pen      = ArmorPen::Normal;
+			shot.pen      = it->getPen();
 			shot.reach    = it->getReach();
+			shot.onAttack = [this, hb = shot.hitBonus, rch = shot.reach, fx = it->getEffect()]
+			                (AUnit* atk, AUnit* tgt, bool& blocked) {
+				resolveRepel(tgt, blocked, hb, rch);
+				if (!blocked && atk->getAlive())
+					applyWeaponAttackEffect(fx, atk, tgt);
+			};
+			shot.onDamage = [fx = it->getEffect()](AUnit* atk, AUnit*, int damage) {
+				applyWeaponDamageEffect(fx, atk, damage);
+			};
 			MeleeCombat::engage(this, target, shot);
 		}
 	}
@@ -289,19 +407,28 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 
 		bool attacked = false;
 		auto it = _attacks.begin();
-		while (it != _attacks.end())
+		while (it != _attacks.end() && alive)
 		{
 			AUnit *target = find_target(myBattlefield);
 			if (!target)
 				break;
-			while (it != _attacks.end() && target->getAlive())
+			while (it != _attacks.end() && target->getAlive() && alive)
 			{
 				MeleeAttack shot;
 				shot.hitBonus = attackBonus;
 				shot.damage   = it->getDamage() + strength / it->getStrDivider()
 				                + cohesionDmgBonus();
-				shot.pen      = ArmorPen::Normal;
+				shot.pen      = it->getPen();
 				shot.reach    = it->getReach();
+				shot.onAttack = [this, hb = shot.hitBonus, rch = shot.reach, fx = it->getEffect()]
+				                (AUnit* atk, AUnit* tgt, bool& blocked) {
+					resolveRepel(tgt, blocked, hb, rch);
+					if (!blocked && atk->getAlive())
+						applyWeaponAttackEffect(fx, atk, tgt);
+				};
+				shot.onDamage = [fx = it->getEffect()](AUnit* atk, AUnit*, int damage) {
+					applyWeaponDamageEffect(fx, atk, damage);
+				};
 				MeleeCombat::engage(this, target, shot);
 				attacked = true;
 				++it;

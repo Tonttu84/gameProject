@@ -50,8 +50,12 @@ public:
     // attackerReach: melee weapon reach of the attacker. Ignored by the base
     // implementation — only MountedUnit targets use it, to shift the
     // mount/rider hit-roll boundary toward the rider for longer weapons.
+    // repelCounter: true for a repel's capped counter-hit — goes through the
+    // normal shield/armour reduction but the final damage is capped at 1 and
+    // never triggers testMorale() (a morale check already happened for the
+    // attack this is countering). See [[design_repel]].
     virtual int defend(int AttackAttempt, int damage, ArmorPen pen = ArmorPen::Normal,
-                        int attackerReach = 0);
+                        int attackerReach = 0, bool repelCounter = false);
     virtual void battle(Battlefield &myBattlefield);
     AUnit *find_target(Battlefield &myBattlefield);
 
@@ -68,6 +72,14 @@ public:
     void attackWithWeapons(AUnit* target, int attackBonus);
     bool hasAttacks() const { return !_attacks.empty(); }
 
+    // Repel: if `originalTarget` (or, failing that, another eligible enemy
+    // sharing its engaged hexside) has a strictly longer weapon than this
+    // attack's reach, it gets an opposed roll to interrupt the attack before
+    // damage lands. See [[design_repel]] for the full algorithm; this is
+    // called from the MeleeAttack::onAttack hook set up in attackWithWeapons()
+    // and battle(), so it never needs calling directly.
+    void resolveRepel(AUnit* originalTarget, bool& blocked, int attackerHitBonus, int attackerReach);
+
     // The unit that single-target, non-combat effects (heal, buffs, curses,
     // ...) should actually apply to. Default: self. Composite units like
     // MountedUnit override this to redirect to whichever sub-unit such
@@ -78,6 +90,13 @@ public:
     // virtual and already route through it.
     virtual AUnit* effectTarget() { return this; }
     virtual const AUnit* effectTarget() const { return this; }
+
+    // The independent sub-units that may each attempt a repel when this unit
+    // is targeted for melee. Default: just itself. MountedUnit overrides this
+    // to return both rider and mount — either may have the longer weapon
+    // (e.g. a Scorpion mount's Stinger), and each gets its own single repel
+    // attempt, not the composite as a whole. See [[design_repel]].
+    virtual std::vector<AUnit*> repelParts() { return {this}; }
 
     bool getAlive() const;
     virtual bool getBroken() const;
@@ -138,7 +157,14 @@ public:
     // to hit the more times they've already been attacked this turn.
     virtual void resetAttacksReceived() { _attacksReceivedThisTurn = 0; }
     void incrementAttacksReceived() { ++_attacksReceivedThisTurn; }
+    int  getAttacksReceivedThisTurn() const { return _attacksReceivedThisTurn; }
     bool getEngaged(Battlefield &myBattlefield) const;
+
+    // Repel malus: -1 to a unit's repel roll for every repel it has already
+    // attempted this turn (win or lose) — stacks across multiple attempts,
+    // reset at the start of the next turn. See resolveRepel()/[[design_repel]].
+    int  getRepelMalus() const { return repelMalus; }
+    virtual void resetRepelMalus() { repelMalus = 0; }
 
     void increaseFatigue();
 
@@ -158,6 +184,12 @@ public:
     void     setTookLateral(bool v)       { _tookLateralLastMove = v; }
     void     setEngagedSide(HexSide* s) { engagedSide = s; }
     HexSide* getEngagedSide() const { return engagedSide; }
+
+    // Sets currentHex directly, without touching hex->units (unlike setHex()).
+    // For syncing tactical context onto a sub-unit that is never independently
+    // placed in the grid — e.g. MountedUnit's rider/mount, the same way
+    // syncTacticalState() already copies engagedSide/cohesionBonus onto them.
+    void     syncCurrentHex(Hex* h) { currentHex = h; }
 
     // Squad back-pointer — non-owning. Set/cleared by Squad::addMember/removeMember.
     // nullptr means this unit is a lone individual (mob, summon, overflow).
@@ -197,6 +229,20 @@ public:
 
     UnitCategory getCategory()           const { return _category; }
     void         setCategory(UnitCategory c)   { _category = c; }
+
+    // The category a creature reports once it's on its own — e.g. a mount
+    // that's just lost its rider — as opposed to whatever category it
+    // imposes on the composite while harnessed (always Mounted; see
+    // MountedUnit's constructor). Distinct from getCategory()/_category so a
+    // mount's "while ridden" and "once loose" identities can differ without
+    // overloading the same field: a controlled cavalry charge can't push a
+    // horse through dense forest, but a riderless horse bolting from battle
+    // might wade into a swamp anyway. Default Beast — penalized but not
+    // flatly forbidden on rough terrain, no formation bonus — fits most
+    // loose mounts; override per unit type for ones that should behave
+    // differently once free (e.g. a combat-trained mount that keeps fighting
+    // rather than fleeing might want to keep stricter terrain rules instead).
+    virtual UnitCategory looseCategory() const { return UnitCategory::Beast; }
 
 
 protected:
@@ -239,6 +285,7 @@ protected:
     size_t spentMove = 0;
 
     int _attacksReceivedThisTurn = 0;
+    int repelMalus = 0;
     Squad* _squad = nullptr;  // non-owning; nullptr = lone unit
     int sortKey = 0; // random tiebreaker set at construction, used for render ordering
     int _cohesion      = 50; // base formation cohesion score; set by subclass or setup

@@ -38,4 +38,12 @@
     {
         return reach;
     }
+    ArmorPen Weapon::getPen() const
+    {
+        return pen;
+    }
+    WeaponEffect Weapon::getEffect() const
+    {
+        return effect;
+    }
 

@@ -23,6 +23,26 @@ constexpr int BLUETEAM = 2;
 //             (force fields) can deflect, and they do so completely.
 enum class ArmorPen { Normal, Piercing, Bypass };
 
+// A weapon's special effect(s), dispatched by WeaponEffects.hpp/.cpp. Kept as
+// a plain flags tag on Weapon (not a std::function) so weapon definitions
+// stay constexpr; the actual effect logic lives in one shared, recyclable
+// place rather than being duplicated per weapon. A weapon can combine more
+// than one via operator| (e.g. Lifedrain | MagicalChip on the same blade) —
+// check membership with hasWeaponEffect(), not ==.
+//   None        – no special effect.
+//   Lifedrain   – attacker heals for the damage their attack dealt.
+//   MagicalChip – every attack attempt also lands a guaranteed 1 point of
+//                 Bypass (armour-negating) damage, independent of whether the
+//                 weapon's own swing connects.
+enum class WeaponEffect : unsigned { None = 0, Lifedrain = 1u << 0, MagicalChip = 1u << 1 };
+
+constexpr WeaponEffect operator|(WeaponEffect a, WeaponEffect b) {
+    return static_cast<WeaponEffect>(static_cast<unsigned>(a) | static_cast<unsigned>(b));
+}
+constexpr bool hasWeaponEffect(WeaponEffect set, WeaponEffect flag) {
+    return (static_cast<unsigned>(set) & static_cast<unsigned>(flag)) != 0;
+}
+
 // Armour values
 constexpr int LIGHTARMOUR = 2;
 constexpr int HEAVYARMOUR = 5;

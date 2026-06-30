@@ -51,19 +51,20 @@ void MountedUnit::syncTacticalState(AUnit& sub)
 {
     sub.setEngagedSide(engagedSide);
     sub.setCohesionBonus(_cohesionBonus);
+    sub.syncCurrentHex(currentHex);
 }
 
-int MountedUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int attackerReach)
+int MountedUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int attackerReach, bool repelCounter)
 {
     if (hasMount() && hasRider() && pickMountTarget(attackerReach)) {
         syncTacticalState(*_mount);
-        int dealt = _mount->defend(AttackAttempt, damage, pen);
+        int dealt = _mount->defend(AttackAttempt, damage, pen, 0, repelCounter);
         if (!_mount->getAlive()) onMountDeath();
         return dealt;
     }
     if (hasRider()) {
         syncTacticalState(*_rider);
-        int dealt = _rider->defend(AttackAttempt, damage, pen, attackerReach);
+        int dealt = _rider->defend(AttackAttempt, damage, pen, attackerReach, repelCounter);
         if (!_rider->getAlive()) {
             if (hasMount()) onRiderDeath();
             else            setAlive(false); // no mount left either — composite is fully dead
@@ -72,11 +73,19 @@ int MountedUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int attacke
     }
     if (hasMount()) {
         syncTacticalState(*_mount);
-        int dealt = _mount->defend(AttackAttempt, damage, pen);
+        int dealt = _mount->defend(AttackAttempt, damage, pen, 0, repelCounter);
         if (!_mount->getAlive()) setAlive(false); // rider already gone — composite is fully dead
         return dealt;
     }
     return 0;
+}
+
+std::vector<AUnit*> MountedUnit::repelParts()
+{
+    std::vector<AUnit*> parts;
+    if (hasRider()) { syncTacticalState(*_rider); parts.push_back(_rider.get()); }
+    if (hasMount()) { syncTacticalState(*_mount); parts.push_back(_mount.get()); }
+    return parts;
 }
 
 int MountedUnit::takeDamage(int amount, ArmorPen pen)
@@ -129,4 +138,11 @@ void MountedUnit::resetAttacksReceived()
     AUnit::resetAttacksReceived();
     if (_rider) _rider->resetAttacksReceived();
     if (_mount) _mount->resetAttacksReceived();
+}
+
+void MountedUnit::resetRepelMalus()
+{
+    AUnit::resetRepelMalus();
+    if (_rider) _rider->resetRepelMalus();
+    if (_mount) _mount->resetRepelMalus();
 }

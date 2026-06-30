@@ -4,6 +4,7 @@
 
 #include "catch.hpp"
 #include "../HDRS/units/Soldier.hpp"
+#include "../HDRS/units/Cavalry.hpp"
 #include "../HDRS/hex/HexGrid.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/BattleSetup.hpp"
@@ -92,6 +93,53 @@ TEST_CASE("findTarget: Mounted searcher still targets a forest enemy when it's t
     REQUIRE(target->coord.q == 1); // only option — still goes for it
 
     field.hexGrid.getHex({1, 10})->terrain = TerrainType::Open;
+    field.extractResult();
+}
+
+// ── Riderless mount: reverts from Mounted to Beast, unlocking terrain ───────
+// hexAcceptsUnit() flatly bans Mounted from Forest/Marsh; Beast has no such
+// ban (just a cost penalty — see terrainMoveCost()). A Cavalry that loses its
+// rider should go from being routed around a marsh to walking straight
+// through it, with no category-specific casing beyond looseCategory().
+
+TEST_CASE("moveToward: a Mounted unit routes around Marsh, but the same unit goes straight "
+          "through it once it reverts to Beast after losing its rider") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Hex* marsh = field.hexGrid.getHex({1, 5});
+    marsh->terrain = TerrainType::Marsh;
+
+    auto cavPtr = std::make_unique<Cavalry>(REDTEAM); // default Soldier rider + Horse mount
+    Cavalry* cav = cavPtr.get();
+    cav->setHex(field.hexGrid.getHex({0, 5}));
+
+    auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
+    bluePtr->setHex(field.hexGrid.getHex({2, 5}));
+
+    Army red, blue;
+    red.push_back(std::move(cavPtr));
+    blue.push_back(std::move(bluePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    REQUIRE(cav->getCategory() == UnitCategory::Mounted);
+    field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({2, 5}));
+    REQUIRE_FALSE(cav->getHex()->coord == HexCoord{1, 5}); // Mounted — routed around the marsh
+    REQUIRE_FALSE(cav->getHex()->coord == HexCoord{0, 5}); // but it did move (laterally)
+
+    // Reset to the start hex, then kill the rider in place (boundary=clamp(20-0,1,29)=20
+    // for the default Horse(20)/Soldier(10) pairing — a roll of 25 routes to the rider,
+    // same as the death-transition tests in test_combat.cpp).
+    cav->setHex(field.hexGrid.getHex({0, 5}));
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(25);
+    cav->defend(9999, 9999, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+    REQUIRE(cav->getCategory() == UnitCategory::Beast);
+
+    field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({2, 5}));
+    CHECK(cav->getHex()->coord == HexCoord{1, 5}); // Beast — goes straight through the marsh
+
+    marsh->terrain = TerrainType::Open;
     field.extractResult();
 }
 

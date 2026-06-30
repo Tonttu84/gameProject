@@ -15,13 +15,16 @@ struct MeleeAttack {
     int      reach    = 0;    // attacker's weapon reach — only consulted by MountedUnit
                                // targets, to shift the mount/rider hit-roll toward the rider
 
-    // Fires before the defender's shield/damage phase.
+    // Fires once the attacker's own attack roll (hitResult) is computed, but
+    // BEFORE target->defend() is called — so before defend()'s own to-hit
+    // check (does the attack beat the defender's defence roll at all), and
+    // well before shield/armour/damage. Despite the name "onAttack" rather
+    // than "onHit": this is the attack *attempt*, not a confirmed landed hit
+    // — repel (see AUnit::resolveRepel()) deliberately uses this to interrupt
+    // even attacks that would have missed anyway, matching its own
+    // self-contained opposed roll rather than gating on the normal to-hit check.
     // Set blocked=true to fully intercept the attack — defend() is skipped.
-    //
-    // TODO: repel — a high-morale defender may counter-strike here before
-    // the attacker's damage lands. Repel design is deferred; it may operate on
-    // the full hexside (all attackers vs all defenders) rather than a single pair.
-    std::function<void(AUnit* attacker, AUnit* target, bool& blocked)> onHit;
+    std::function<void(AUnit* attacker, AUnit* target, bool& blocked)> onAttack;
 
     // Fires only when finalDamage > 0, after defend() returns.
     std::function<void(AUnit* attacker, AUnit* target, int damage)> onDamage;
@@ -30,7 +33,7 @@ struct MeleeAttack {
 class MeleeCombat
 {
 public:
-    // Full melee attack pipeline: attack roll, onHit callback, defend() damage
+    // Full melee attack pipeline: attack roll, onAttack callback, defend() damage
     // phase (which applies the MULTI_ATTACK_DEFENCE_PENALTY per prior attack),
     // attacks-received counter increment, onDamage callback.
     //

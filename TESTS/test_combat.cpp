@@ -264,7 +264,8 @@ TEST_CASE("Cavalry defend(): high roll routes the hit to the rider, killing it l
     REQUIRE(dealt > 0);
     REQUIRE(c.getAlive() == true);   // resurrected as the loose mount, not actually dead
     REQUIRE(c.getBroken() == true);
-    REQUIRE(c.getCategory() == UnitCategory::Mounted);
+    REQUIRE(c.getCategory() == UnitCategory::Beast); // reverted from Mounted — no rider to enforce it
+    REQUIRE(c.getPrintSymbol() == 'H'); // stand-in for a riderless-horse sprite
 }
 
 TEST_CASE("Cavalry defend(): weapon reach shifts the boundary toward the rider") {
@@ -278,8 +279,9 @@ TEST_CASE("Cavalry defend(): weapon reach shifts the boundary toward the rider")
     Utility::clearDiceRolls();
 
     REQUIRE(dealt > 0);
-    REQUIRE(c.getCategory() == UnitCategory::Mounted); // rider died -> object becomes the mount
+    REQUIRE(c.getCategory() == UnitCategory::Beast); // rider died -> reverts to the loose mount's category
     REQUIRE(c.getBroken() == true);
+    REQUIRE(c.getPrintSymbol() == 'H');
 }
 
 TEST_CASE("Cavalry takeDamage(): ranged hits use a flat rider bias instead of reach") {
@@ -292,7 +294,8 @@ TEST_CASE("Cavalry takeDamage(): ranged hits use a flat rider bias instead of re
     Utility::clearDiceRolls();
 
     REQUIRE(dealt > 0);
-    REQUIRE(c.getCategory() == UnitCategory::Mounted); // rider died -> object becomes the mount
+    REQUIRE(c.getCategory() == UnitCategory::Beast); // rider died -> reverts to the loose mount's category
+    REQUIRE(c.getPrintSymbol() == 'H');
 }
 
 TEST_CASE("Cavalry: dismounted rider leaves a Cavalry-typed squad automatically") {
@@ -334,8 +337,8 @@ TEST_CASE("MountedUnit::getHp()/getmaxHP() delegate to the rider while mounted, 
     c.defend(9999, 9999, ArmorPen::Normal, 0); // kills the rider; mount survives
     Utility::clearDiceRolls();
 
-    REQUIRE(c.getCategory() == UnitCategory::Mounted); // confirms the mount took over
-    REQUIRE(c.getHp() == c.getmaxHP());                // fresh Horse stats, not stale rider numbers
+    REQUIRE(c.getCategory() == UnitCategory::Beast); // confirms the mount took over (and reverted)
+    REQUIRE(c.getHp() == c.getmaxHP());              // fresh Horse stats, not stale rider numbers
 }
 
 TEST_CASE("MountedUnit::heal() restores the rider while mounted, even if the mount is also hurt") {

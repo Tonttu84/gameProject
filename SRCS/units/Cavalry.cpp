@@ -26,9 +26,15 @@ void Cavalry::onMountDeath()
 
 void Cavalry::onRiderDeath()
 {
-    // Mount survives — object becomes the loose horse in place.
-    setCategory(_mount->getCategory());
+    // Mount survives — object becomes the loose horse in place. printSymbol
+    // stands in for real graphics for now — 'H' (vs. mounted 'C') is the only
+    // visible sign this transition happened until actual sprites exist.
+    // looseCategory(), not getCategory() — the mount reverts to whatever it
+    // is on its own (Beast by default) rather than keeping the strict
+    // Mounted terrain ban that only applied while it carried a rider.
+    setCategory(_mount->looseCategory());
     size = _mount->getSize();
+    printSymbol = 'H';
     _rider.reset();
     setBroken(true); // panics; existing flee()/BFS path carries it off next tick
 }

@@ -868,8 +868,8 @@ void Battlefield::onTurnStart()
     for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
     for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
 
-    for (auto& u : _red.units)  if (u) u->resetAttacksReceived();
-    for (auto& u : _blue.units) if (u) u->resetAttacksReceived();
+    for (auto& u : _red.units)  if (u) { u->resetAttacksReceived(); u->resetRepelMalus(); }
+    for (auto& u : _blue.units) if (u) { u->resetAttacksReceived(); u->resetRepelMalus(); }
 
     RangedCombat::resetCache();
 

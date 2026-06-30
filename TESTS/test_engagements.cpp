@@ -3,6 +3,7 @@
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/units/Soldier.hpp"
 #include "../HDRS/units/Cavalry.hpp"
+#include "../HDRS/units/Zombie.hpp"
 
 // Coordinate inside the 16×30 grid (buildRect(16,30)) with all 6 neighbours valid.
 // col=8, r=14 → q = 8 - 14/2 = 1
@@ -166,6 +167,99 @@ TEST_CASE("resolveEngagements: a bigger tired loner evicts a smaller fresh one t
     int soldiersStillOnSide = (s1.getEngagedSide() == side ? 1 : 0)
                              + (s2.getEngagedSide() == side ? 1 : 0);
     REQUIRE(soldiersStillOnSide == 1);
+}
+
+// ── find_target: fighting happens across a hexside, not across a whole hex ──
+
+TEST_CASE("find_target: attacker on a defended hexside only targets the unit holding that boundary") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+    enHex->terrain = TerrainType::Forest; // effectiveFrontage = 20 — room for exactly one Cavalry
+
+    Soldier attacker(REDTEAM);
+    attacker.setHex(redHex);
+
+    Cavalry defender(BLUETEAM); // size 20 — claims the whole capped side alone
+    defender.setHex(enHex);
+    Soldier decoy(BLUETEAM); // size 10 — too big to also fit alongside the cavalry, stays unseated
+    decoy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    REQUIRE(attacker.getEngagedSide() != nullptr);
+    REQUIRE(defender.getEngagedSide() == attacker.getEngagedSide());
+    REQUIRE(decoy.getEngagedSide() == nullptr); // present in the hex, but not holding the boundary
+
+    AUnit* target = attacker.find_target(bf);
+    CHECK(target == &defender);
+    CHECK(target != &decoy);
+}
+
+TEST_CASE("find_target: an undefended hexside falls back to attacking the hex directly") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Soldier attacker(REDTEAM);
+    attacker.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.addFatigue(FATIGUE_MAX); // too exhausted to be seated on any side this tick
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    // The boundary still counts as engaged (an enemy is present), so the
+    // attacker gets seated normally — it's the defender who couldn't hold it.
+    REQUIRE(attacker.getEngagedSide() != nullptr);
+    REQUIRE(enemy.getEngagedSide() == nullptr);
+
+    AUnit* target = attacker.find_target(bf);
+    CHECK(target == &enemy);
+}
+
+// find_target() proves the *selection*; this proves the full battle() pipeline
+// (computeMeleeAttackBonus + MeleeCombat::engage) actually lands a hit through
+// that fallback target — i.e. units can engage through an undefended hexside,
+// not just be eligible to in theory.
+TEST_CASE("battle(): attacker actually deals damage through an undefended hexside") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Soldier attacker(REDTEAM);
+    attacker.setHex(redHex);
+
+    Zombie target(BLUETEAM);
+    target.addFatigue(FATIGUE_MAX); // too exhausted to be seated on any side this tick
+    target.setHex(enHex);
+
+    bf.resolveEngagements();
+    REQUIRE(attacker.getEngagedSide() != nullptr);
+    REQUIRE(target.getEngagedSide() == nullptr); // confirms the side is undefended
+
+    Utility::clearDiceRolls();
+    // attacker-hit-roll(6,1) defenceroll(1,1) d1(6,1) d2(1,1) — same shape as
+    // the Cavalry battle() test above: guarantees the hit lands, resolving to
+    // damage = getDamage()(5) + strength(10)/strDivider(3) + d1(6) - d2(1) = 13
+    // against the Zombie's 0 armour / 0 shield.
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+
+    int hpBefore = target.getHp();
+    attacker.battle(bf);
+    Utility::clearDiceRolls();
+
+    CHECK(target.getHp() == hpBefore - 13);
 }
 
 TEST_CASE("resolveEngagements: a smaller tired loner cannot evict a bigger one already seated") {

@@ -34,6 +34,7 @@ namespace MeleeWeapons
     constexpr Weapon Trample{        "Trample",           2,  6,  0,  3, 0, 0};
     constexpr Weapon PythonSqueeze{  "Python squeeze",    2,  4,  0,  2, 0, 0};
     constexpr Weapon Hoof{           "Hoof",              1,  4,  1,  3, 0, 0};
+    constexpr Weapon Stinger{        "Stinger",           1,  5,  1,  3, 0, 3}; // scorpion tail — long reach
 
     // Dragons — natural weapons, giant-scaled (0 + giant modifier 1)
     constexpr Weapon DragonClaw{     "Dragon claw",       2,  7,  1,  3, 0, 1};
@@ -52,4 +53,11 @@ namespace MeleeWeapons
     // Special / Magical — reach 5 cap example: a hovering construct that
     // crashes into foes from beyond normal melee range.
     constexpr Weapon MagicalStoneBird{ "Magical stone bird", 1,  6,  1,  2, 0, 5};
+
+    // Effect weapons — see Defines.hpp (WeaponEffect) and WeaponEffects.hpp/.cpp
+    // for what these actually do; the weapon definition only carries the tag.
+    constexpr Weapon Lifedrinker{   "Lifedrinker",       1,  4,  1,  3, 0, 1,
+                                     ArmorPen::Normal, WeaponEffect::Lifedrain};
+    constexpr Weapon SpectralBlade{ "Spectral Blade",    0,  2,  1,  3, 0, 1,
+                                     ArmorPen::Normal, WeaponEffect::MagicalChip};
 }

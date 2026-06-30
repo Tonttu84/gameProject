@@ -52,8 +52,15 @@ public:
     void setBroken(bool value) override;
 
     int defend(int AttackAttempt, int damage, ArmorPen pen = ArmorPen::Normal,
-               int attackerReach = 0) override;
+               int attackerReach = 0, bool repelCounter = false) override;
     int takeDamage(int amount, ArmorPen pen = ArmorPen::Normal) override;
+
+    // Repel candidates: rider and mount each get their own independent
+    // attempt (e.g. a Scorpion mount's long-reach stinger can repel even
+    // when its rider's weapon is too short) — resolved well before defend()
+    // ever decides which sub-unit actually takes the original hit. Syncs
+    // each part's tactical state first, same as defend()/takeDamage() do.
+    std::vector<AUnit*> repelParts() override;
 
     // Rider attacks normally, then — if the mount carries its own weapon
     // (e.g. a Warhorse's hoof, unlike a plain unarmed Horse) — the mount
@@ -66,6 +73,10 @@ public:
     // invisible to that loop, so their MULTI_ATTACK_DEFENCE_PENALTY counters
     // must be forwarded here or they'd never reset.
     void resetAttacksReceived() override;
+
+    // Same forwarding reason as resetAttacksReceived() — _rider/_mount's own
+    // repelMalus must be reset here or it would never clear between turns.
+    void resetRepelMalus() override;
 
 protected:
     // Mount died, rider survives. Subclass decides what a riderless rider
