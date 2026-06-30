@@ -298,6 +298,53 @@ TEST_CASE("Cavalry takeDamage(): ranged hits use a flat rider bias instead of re
     REQUIRE(c.getPrintSymbol() == 'H');
 }
 
+// Regression test for a real production crash: ASan stack-overflow in
+// MountedUnit::getBroken(), recursing through itself forever. Root cause:
+// effectTarget() falls back to `this` once both rider and mount are gone,
+// and every effectTarget()-delegating method (getHp/getmaxHP/getArmour/
+// getDefence/getAttackPWR/heal/getBroken/setBroken) called
+// effectTarget()->sameMethod() unconditionally — calling that same overridden
+// virtual method on `this` again instead of ever reaching AUnit's own plain
+// storage. See [[design_mounted_units]].
+TEST_CASE("MountedUnit: once both rider and mount are dead, stat delegates resolve via "
+          "AUnit's own storage instead of recursing through effectTarget()") {
+    Cavalry c(REDTEAM); // Soldier rider + Horse mount
+
+    Utility::clearDiceRolls();
+    // Kill the mount first (boundary=20 for Horse(20)+Soldier(10); roll<=20 hits mount).
+    Utility::pushDiceRoll(1);
+    for (int i = 0; i < 6; ++i) { Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); }
+    c.defend(999, 999, ArmorPen::Bypass, /*attackerReach*/0);
+    Utility::clearDiceRolls();
+    REQUIRE(c.hasMount() == false);
+    REQUIRE(c.hasRider() == true);
+
+    // Kill the rider too. hasMount() is already false, so MountedUnit::defend()'s
+    // first branch short-circuits without ever rolling pickMountTarget() — only
+    // _rider->defend()'s own dice are needed.
+    for (int i = 0; i < 6; ++i) { Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); }
+    c.defend(999, 999, ArmorPen::Bypass, /*attackerReach*/0);
+    Utility::clearDiceRolls();
+    REQUIRE(c.hasRider() == false);
+    REQUIRE(c.hasMount() == false);
+    REQUIRE(c.getAlive() == false); // composite fully dead — both parts gone
+
+    // The actual crash this guards against: none of these should hang/abort,
+    // and should resolve to AUnit's own untouched defaults (the composite's
+    // own hitpoints/maxHP/armour/defence/attackPWR were never written to by
+    // anything — only the rider's/mount's sub-objects ever took damage).
+    CHECK(c.getBroken() == false); // AUnit's own default
+    c.setBroken(true);
+    CHECK(c.getBroken() == true);  // round-trips through AUnit's own bool, not a dead sub-unit
+    CHECK(c.getHp() == 10);
+    CHECK(c.getmaxHP() == 10);
+    CHECK(c.getArmour() == 0);
+    CHECK(c.getDefence() == 10);
+    CHECK(c.getAttackPWR() == 10);
+    c.heal(5);
+    CHECK(c.getHp() == 10); // clamped to maxHP, same as any other unit's heal()
+}
+
 TEST_CASE("Cavalry: dismounted rider leaves a Cavalry-typed squad automatically") {
     Squad sq("Lancers", false);
     sq.setType(SquadType::Cavalry);

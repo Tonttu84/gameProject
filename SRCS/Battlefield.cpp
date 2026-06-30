@@ -123,16 +123,62 @@ static int terrainMoveCost(const Hex* dest, const HexSide* side, UnitCategory ca
     return cost;
 }
 
-// Returns true if moving to nc would keep the unit adjacent to at least one live enemy.
-static bool wouldRemainEngaged(const AUnit& unit, HexCoord nc, HexGrid& hexGrid) {
-    for (const HexCoord& nc2 : hexGrid.neighbors(nc)) {
-        Hex* nh = hexGrid.getHex(nc2);
-        if (!nh) continue;
-        for (AUnit* u2 : nh->units)
-            if (u2 && u2->getAlive() && u2->getTeam() != unit.getTeam())
-                return true;
-    }
-    return false;
+// True if this specific hexside currently has live, opposing-team units in
+// the hexes on either side of it, and isn't blocked/a cliff. Computed live
+// (from current Hex::units) rather than read off HexSide::engaged, since
+// moveUnits() runs before resolveEngagements() each tick — that flag is
+// still last tick's snapshot when movement decisions are made. Also the
+// predicate markEngagedSides() uses to set the flag itself, below.
+static bool sideIsEngagedNow(const HexSide& side) {
+    if (!side.hexA || !side.hexB) return false;
+    if (side.blocked) return false;
+    if (std::abs(side.hexA->elevation - side.hexB->elevation) >= 2) return false;
+    int teamA = 0, teamB = 0;
+    for (AUnit* u : side.hexA->units) if (u && u->getAlive()) { teamA = u->getTeam(); break; }
+    for (AUnit* u : side.hexB->units) if (u && u->getAlive()) { teamB = u->getTeam(); break; }
+    return teamA != 0 && teamB != 0 && teamA != teamB;
+}
+
+// Size-points of fresh (alive, not broken, not yet tired) units in a hex —
+// what the spreading rule below actually cares about. A hex stacked with
+// exhausted stragglers shouldn't read as "well held" just because sizeUsed
+// (which counts everyone, tired or not) is high.
+static int hexFreshSize(const Hex* hex) {
+    if (!hex) return 0;
+    int total = 0;
+    for (AUnit* u : hex->units)
+        if (u && u->getAlive() && !u->getBroken() && u->getFatigue() < FATIGUE_TIRED)
+            total += static_cast<int>(u->getSize());
+    return total;
+}
+
+// How many fresh size-points a hex should hold onto before its excess is
+// willing to spread to a less-crowded engaged neighbor: each currently
+// engaged side retains effectiveFrontage(side)*ENGAGED_SIDE_RETENTION_MULTIPLIER.
+// An unengaged hex (or one whose sides have all gone quiet) retains nothing.
+static int hexRetentionThreshold(const Hex* hex) {
+    if (!hex) return 0;
+    int total = 0;
+    for (HexSide* side : hex->sides)
+        if (side && sideIsEngagedNow(*side))
+            total += effectiveFrontage(*side) * ENGAGED_SIDE_RETENTION_MULTIPLIER;
+    return total;
+}
+
+// Should a unit/squad sitting in fromHex take a lateral move to toHex to
+// redistribute along the line, rather than hold engaged in place? Only once
+// fromHex holds at least its own retention threshold (so a thin line never
+// bleeds itself dry over a single move), and only toward a hex that's itself
+// currently engaged and holds fewer fresh troops right now (so units actually
+// flow toward where they're needed, not just sideways at random).
+static bool shouldSpreadToward(const Hex* fromHex, const Hex* toHex) {
+    if (!fromHex || !toHex) return false;
+    if (hexFreshSize(fromHex) < hexRetentionThreshold(fromHex)) return false;
+    bool toEngaged = false;
+    for (HexSide* side : toHex->sides)
+        if (side && sideIsEngagedNow(*side)) { toEngaged = true; break; }
+    if (!toEngaged) return false;
+    return hexFreshSize(toHex) < hexFreshSize(fromHex);
 }
 
 // Result of scanning the 6 neighbors of a hex for the best move toward (or
@@ -236,11 +282,13 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
         return;
     }
 
-    // Lateral: only if not mustDecrease, and respecting engaged/crowded constraints.
+    // Lateral: only if not mustDecrease, and respecting engaged/spreading constraints.
+    // Free to slide while not engaged (pre-contact maneuvering); once engaged, only
+    // toward a less-crowded engaged neighbor once this hex is past its own retention
+    // threshold — see shouldSpreadToward().
     if (!mustDecrease && choice.latDir >= 0) {
         bool engaged = unit.getEngaged(*this);
-        bool crowded = unit.getHex()->sizeUsed >= CROWDED_THRESHOLD;
-        if (!engaged || (crowded && wouldRemainEngaged(unit, choice.latCoord, hexGrid))) {
+        if (!engaged || shouldSpreadToward(unit.getHex(), choice.latHex)) {
             moveAUnit(unit, choice.latCoord);
             if (choice.latCost > 1) unit.setSpentMove(static_cast<size_t>(choice.latCost - 1));
             unit.setTookLateral(true);
@@ -388,21 +436,34 @@ void Battlefield::moveSquad(Squad& squad)
             return true;
         });
 
+    // Squad size for alive non-broken members (capacity below) and the
+    // fresh-only (not yet tired) subset, which gates whether the squad may
+    // leave its current hex to redistribute along the line at all: a squad
+    // always moves as one atomic block, so unlike a single lone unit
+    // trickling out gradually (AUnit::moveToward()'s own spreading check), it
+    // must not strip its own hex below retention threshold in one swap.
+    int squadSize = 0, squadFreshSize = 0;
+    for (AUnit* m : squad.getMembers())
+        if (m && m->getAlive() && !m->getBroken()) {
+            squadSize += static_cast<int>(m->getSize());
+            if (m->getFatigue() < FATIGUE_TIRED) squadFreshSize += static_cast<int>(m->getSize());
+        }
+
     bool     tookLateral = false;
     Hex*     nextHex     = nullptr;
     int      moveCost    = 1;
     if (choice.decrDir >= 0) {
         nextHex = choice.decrHex; moveCost = choice.decrCost;
     } else if (!mustDecrease && choice.latDir >= 0) {
-        nextHex = choice.latHex; moveCost = choice.latCost; tookLateral = true;
+        Hex* fromHex   = ref->getHex();
+        bool engaged   = ref->getEngaged(*this);
+        bool canSpread = shouldSpreadToward(fromHex, choice.latHex)
+                       && hexFreshSize(fromHex) - squadFreshSize >= hexRetentionThreshold(fromHex);
+        if (!engaged || canSpread) {
+            nextHex = choice.latHex; moveCost = choice.latCost; tookLateral = true;
+        }
     }
     if (!nextHex) return;
-
-    // Calculate squad's total size for alive non-broken members.
-    int squadSize = 0;
-    for (AUnit* m : squad.getMembers())
-        if (m && m->getAlive() && !m->getBroken())
-            squadSize += static_cast<int>(m->getSize());
 
     // Space already occupied in nextHex by squad members that happen to be there already
     // (they will "leave and re-enter" so we add them back to available space).
@@ -578,16 +639,8 @@ void Battlefield::recomputeDistances()
 static void markEngagedSides(HexGrid& grid)
 {
     for (HexSide& side : grid.getSides()) { side.engaged = false; side.combatScore = 0; }
-    for (HexSide& side : grid.getSides()) {
-        if (!side.hexA || !side.hexB) continue;
-        if (side.blocked) continue;
-        if (std::abs(side.hexA->elevation - side.hexB->elevation) >= 2) continue;
-        int teamA = 0, teamB = 0;
-        for (AUnit* u : side.hexA->units) if (u && u->getAlive()) { teamA = u->getTeam(); break; }
-        for (AUnit* u : side.hexB->units) if (u && u->getAlive()) { teamB = u->getTeam(); break; }
-        if (teamA == 0 || teamB == 0 || teamA == teamB) continue;
-        side.engaged = true;
-    }
+    for (HexSide& side : grid.getSides())
+        if (sideIsEngagedNow(side)) side.engaged = true;
 }
 
 static std::unordered_map<Hex*, std::vector<HexSide*>> buildHexSideMap(HexGrid& grid)

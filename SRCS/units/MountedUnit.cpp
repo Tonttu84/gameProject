@@ -29,14 +29,48 @@ const AUnit* MountedUnit::effectTarget() const
     return this;
 }
 
-int  MountedUnit::getHp() const        { return effectTarget()->getHp(); }
-int  MountedUnit::getmaxHP() const     { return effectTarget()->getmaxHP(); }
-int  MountedUnit::getArmour() const    { return effectTarget()->getArmour(); }
-int  MountedUnit::getDefence() const   { return effectTarget()->getDefence(); }
-int  MountedUnit::getAttackPWR() const { return effectTarget()->getAttackPWR(); }
-void MountedUnit::heal(int value)      { effectTarget()->heal(value); }
-bool MountedUnit::getBroken() const    { return effectTarget()->getBroken(); }
-void MountedUnit::setBroken(bool value){ effectTarget()->setBroken(value); }
+// effectTarget() falls back to `this` once both rider and mount are gone (a
+// headless composite — getAlive() should already be false by then, but
+// nothing here may assume a caller checked that first). Every delegate below
+// must treat that fallback as "use AUnit's own plain storage", never as
+// "call this same virtual method again" — effectTarget()->getHp() etc. would
+// otherwise recurse into MountedUnit::getHp() forever instead of reaching
+// AUnit::getHp(), since effectTarget() returning `this` doesn't change which
+// override gets picked. Caused a real stack-overflow crash in production.
+int  MountedUnit::getHp() const {
+    const AUnit* t = effectTarget();
+    return (t == this) ? AUnit::getHp() : t->getHp();
+}
+int  MountedUnit::getmaxHP() const {
+    const AUnit* t = effectTarget();
+    return (t == this) ? AUnit::getmaxHP() : t->getmaxHP();
+}
+int  MountedUnit::getArmour() const {
+    const AUnit* t = effectTarget();
+    return (t == this) ? AUnit::getArmour() : t->getArmour();
+}
+int  MountedUnit::getDefence() const {
+    const AUnit* t = effectTarget();
+    return (t == this) ? AUnit::getDefence() : t->getDefence();
+}
+int  MountedUnit::getAttackPWR() const {
+    const AUnit* t = effectTarget();
+    return (t == this) ? AUnit::getAttackPWR() : t->getAttackPWR();
+}
+void MountedUnit::heal(int value) {
+    AUnit* t = effectTarget();
+    if (t == this) AUnit::heal(value);
+    else           t->heal(value);
+}
+bool MountedUnit::getBroken() const {
+    const AUnit* t = effectTarget();
+    return (t == this) ? AUnit::getBroken() : t->getBroken();
+}
+void MountedUnit::setBroken(bool value) {
+    AUnit* t = effectTarget();
+    if (t == this) AUnit::setBroken(value);
+    else           t->setBroken(value);
+}
 
 bool MountedUnit::pickMountTarget(int shift) const
 {
