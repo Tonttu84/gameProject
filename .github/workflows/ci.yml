@@ -32,5 +32,8 @@ jobs:
             libx11-6 libxrandr2 libxcursor1 libudev1 \
             libgl1 libfreetype6 libogg0 libvorbis0a
 
+      # Uses the serial runner (not the default `make test`, which shards
+      # across processes) so CI stays a trustworthy cross-check independent
+      # of the parallel sharding script.
       - name: Build and run tests
-        run: make test
+        run: make test-serial

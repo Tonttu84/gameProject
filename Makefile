@@ -79,7 +79,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
 
-.PHONY: all clean fclean re test run clang
+.PHONY: all clean fclean re test test-serial run clang
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -124,7 +124,14 @@ $(TEST_NAME): $(TEST_OBJS) $(UNIT_OBJS)
 
 -include $(TEST_DEPS) $(UNIT_DEPS)
 
+# Default: shards test cases across several processes (see TESTS/run_parallel.sh
+# for why processes rather than threads). JOBS defaults to nproc; override with
+# JOBS=N. CI uses test-serial instead, so a sharding-specific bug in this script
+# can't mask a real failure.
 test: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
+	$(TEST_DIR)/run_parallel.sh ./$(TEST_NAME)
+
+test-serial: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST_NAME)
 	./$(TEST_NAME)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
