@@ -2,6 +2,7 @@
 #include <set>
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/units/Soldier.hpp"
+#include "../HDRS/units/Cavalry.hpp"
 
 // Coordinate inside the 16×30 grid (buildRect(16,30)) with all 6 neighbours valid.
 // col=8, r=14 → q = 8 - 14/2 = 1
@@ -125,4 +126,99 @@ TEST_CASE("resolveEngagements: tired loners do not poach from partially-filled s
         if (u->getEngagedSide())
             CHECK(u->getEngagedSide() != sm.getEngagedSide());
     }
+}
+
+// ── fillLonerPass / fillSquadPass: eviction-based displacement ──────────────
+// Soldier size=10, Cavalry size=20 (mount-only footprint). Rubble reduces
+// FRONTAGE(40) by a quarter -> 30 (room for exactly 3 soldiers, or 1 soldier
+// + 1 cavalry). Forest halves it -> 20 (exactly 1 cavalry, or 2 soldiers).
+//
+// Only ONE enemy unit is placed (on a single neighbor hex) so the red hex
+// has exactly one engaged side — isolates the capacity math to one side.
+
+TEST_CASE("resolveEngagements: a bigger tired loner evicts a smaller fresh one to fit a capped side") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    redHex->terrain = TerrainType::Rubble; // effectiveFrontage = 30
+
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Soldier s1(REDTEAM), s2(REDTEAM);
+    Cavalry cav(REDTEAM);
+    s1.setHex(redHex); s2.setHex(redHex);
+    cav.addFatigue(FATIGUE_TIRED); // processed in the second (tired) loner pass
+    cav.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    // Pass 1 (fresh): both soldiers fit (10+10=20 <= 30). Pass 2 (tired):
+    // cavalry doesn't fit alongside both (20+20=40 > 30); evicts the
+    // smallest seated unit (one soldier, size 10) — frontage drops to 10,
+    // then 10+20=30 fits exactly. Only one soldier should be evicted, not
+    // both (eviction stops as soon as it fits).
+    REQUIRE(cav.getEngagedSide() != nullptr);
+    HexSide* side = cav.getEngagedSide();
+    int soldiersStillOnSide = (s1.getEngagedSide() == side ? 1 : 0)
+                             + (s2.getEngagedSide() == side ? 1 : 0);
+    REQUIRE(soldiersStillOnSide == 1);
+}
+
+TEST_CASE("resolveEngagements: a smaller tired loner cannot evict a bigger one already seated") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    redHex->terrain = TerrainType::Forest; // effectiveFrontage = 20
+
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Cavalry cav(REDTEAM); // size 20 — fills the Forest-capped side alone
+    cav.setHex(redHex);
+    Soldier soldier(REDTEAM);
+    soldier.addFatigue(FATIGUE_TIRED); // processed after the cavalry is already seated
+    soldier.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    REQUIRE(cav.getEngagedSide() != nullptr);
+    REQUIRE(soldier.getEngagedSide() == nullptr); // not big enough to evict the cavalry
+}
+
+TEST_CASE("resolveEngagements: eviction also works for squad members across fatigue tiers") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    redHex->terrain = TerrainType::Rubble; // effectiveFrontage = 30
+
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    // Squad must outlive its members (their destructors call leaveSquad()).
+    Squad sq("Vanguard", false);
+    Soldier s1(REDTEAM), s2(REDTEAM);
+    Cavalry cav(REDTEAM);
+    sq.addMember(&s1); s1.setHex(redHex);
+    sq.addMember(&s2); s2.setHex(redHex);
+    sq.addMember(&cav);
+    cav.addFatigue(FATIGUE_TIRED);
+    cav.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    REQUIRE(cav.getEngagedSide() != nullptr);
+    HexSide* side = cav.getEngagedSide();
+    int soldiersStillOnSide = (s1.getEngagedSide() == side ? 1 : 0)
+                             + (s2.getEngagedSide() == side ? 1 : 0);
+    REQUIRE(soldiersStillOnSide == 1);
 }

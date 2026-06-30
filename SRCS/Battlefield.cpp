@@ -726,10 +726,45 @@ static void allocateSidesToGroups(Hex* hex, const std::vector<HexSide*>& sides,
                 sideOwner[si] = g.squad;
 }
 
+// Tries to seat `u` on side si, evicting smaller already-seated units one at
+// a time if `u` doesn't fit otherwise. An empty side always accepts the
+// first unit regardless of size (a giant is never excluded just for being
+// big), and once nothing seated is smaller than `u`, it's seated anyway —
+// taking whatever overflow results, same as the empty-side case. A unit
+// can never displace something its own size or bigger, so small units
+// cannot evict a big one already seated, but a big unit can displace
+// several smaller ones to make room for itself. Evicted units are
+// unassigned (no engagedSide, can't fight) and simply sit out this tick —
+// they are not retried on another side.
+static bool tryAssignToSide(AUnit* u, size_t si, const std::vector<HexSide*>& sides,
+                             std::vector<int>& frontage,
+                             std::vector<std::vector<AUnit*>>& seated)
+{
+    int cap = effectiveFrontage(*sides[si]);
+    while (frontage[si] + static_cast<int>(u->getSize()) > cap && !seated[si].empty()) {
+        size_t smallestIdx = 0;
+        for (size_t i = 1; i < seated[si].size(); ++i)
+            if (seated[si][i]->getSize() < seated[si][smallestIdx]->getSize())
+                smallestIdx = i;
+        AUnit* smallest = seated[si][smallestIdx];
+        if (smallest->getSize() >= u->getSize())
+            return false; // nothing evictable is smaller than u — it doesn't get this side
+
+        smallest->setCanFight(false);
+        smallest->setEngagedSide(nullptr);
+        smallest->setCohesionBonus(0);
+        frontage[si] -= static_cast<int>(smallest->getSize());
+        seated[si].erase(seated[si].begin() + static_cast<long>(smallestIdx));
+    }
+    return true;
+}
+
 // Assign squad members with fatigue in [fatLow, fatHigh) to their squad's pre-allocated sides.
 static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& sides,
                            const std::vector<Squad*>& sideOwner,
-                           std::vector<int>& frontage, int fatLow, int fatHigh)
+                           std::vector<int>& frontage,
+                           std::vector<std::vector<AUnit*>>& seated,
+                           int fatLow, int fatHigh)
 {
     std::vector<AUnit*> members;
     for (AUnit* m : sq->getMembers()) {
@@ -742,15 +777,16 @@ static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& side
     std::sort(members.begin(), members.end(), [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
 
     int cohTier = cohesionTierForHex(hex, sq->cohesionLevel());
-    size_t mi = 0;
-    for (size_t si = 0; si < sides.size() && mi < members.size(); ++si) {
-        if (sideOwner[si] != sq) continue;
-        while (mi < members.size() && frontage[si] < effectiveFrontage(*sides[si])) {
-            AUnit* u = members[mi++];
+    for (AUnit* u : members) {
+        for (size_t si = 0; si < sides.size(); ++si) {
+            if (sideOwner[si] != sq) continue;
+            if (!tryAssignToSide(u, si, sides, frontage, seated)) continue;
             u->setCanFight(true);
             u->setEngagedSide(sides[si]);
             u->setCohesionBonus(cohTier);
             frontage[si] += static_cast<int>(u->getSize());
+            seated[si].push_back(u);
+            break;
         }
     }
 }
@@ -758,7 +794,9 @@ static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& side
 // Assign lone units with fatigue in [fatLow, fatHigh) round-robin to unclaimed sides.
 static void fillLonerPass(Hex* hex, const std::vector<HexSide*>& sides,
                            const std::vector<Squad*>& sideOwner,
-                           std::vector<int>& frontage, int fatLow, int fatHigh)
+                           std::vector<int>& frontage,
+                           std::vector<std::vector<AUnit*>>& seated,
+                           int fatLow, int fatHigh)
 {
     std::vector<AUnit*> loners;
     for (AUnit* u : hex->units) {
@@ -779,11 +817,13 @@ static void fillLonerPass(Hex* hex, const std::vector<HexSide*>& sides,
         bool anyAssigned = false;
         for (size_t fi = 0; fi < freeSides.size() && pi < loners.size(); ++fi) {
             size_t si = freeSides[fi];
-            if (frontage[si] >= effectiveFrontage(*sides[si])) continue;
-            AUnit* u = loners[pi++];
+            AUnit* u = loners[pi];
+            if (!tryAssignToSide(u, si, sides, frontage, seated)) continue;
+            ++pi;
             u->setCanFight(true);
             u->setEngagedSide(sides[si]);
             frontage[si] += static_cast<int>(u->getSize());
+            seated[si].push_back(u);
             anyAssigned = true;
         }
         if (!anyAssigned) break;
@@ -802,20 +842,24 @@ void Battlefield::resolveEngagements()
         const auto squadsHere = collectSquadsInHex(hex);
         std::vector<Squad*> sideOwner(sides.size(), nullptr);
         std::vector<int>    frontage(sides.size(), 0);
+        // Tracks who's actually seated on each side, alongside frontage, so a
+        // bigger unit in a later pass can evict a smaller one seated by an
+        // earlier pass (see tryAssignToSide).
+        std::vector<std::vector<AUnit*>> seated(sides.size());
 
         allocateSidesToGroups(hex, sides, squadsHere, sideOwner);
 
         // Fresh then tired squad members fill squad-owned sides before loners touch anything.
         for (Squad* sq : squadsHere)
-            fillSquadPass(sq, hex, sides, sideOwner, frontage, 0,             FATIGUE_TIRED);
+            fillSquadPass(sq, hex, sides, sideOwner, frontage, seated, 0,             FATIGUE_TIRED);
         for (Squad* sq : squadsHere)
-            fillSquadPass(sq, hex, sides, sideOwner, frontage, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
-        fillLonerPass(hex, sides, sideOwner, frontage, 0,             FATIGUE_TIRED);
-        fillLonerPass(hex, sides, sideOwner, frontage, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
+            fillSquadPass(sq, hex, sides, sideOwner, frontage, seated, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
+        fillLonerPass(hex, sides, sideOwner, frontage, seated, 0,             FATIGUE_TIRED);
+        fillLonerPass(hex, sides, sideOwner, frontage, seated, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
         // Desperate pass: very tired units only when sides would otherwise be empty.
         for (Squad* sq : squadsHere)
-            fillSquadPass(sq, hex, sides, sideOwner, frontage, FATIGUE_VERY_TIRED, FATIGUE_MAX);
-        fillLonerPass(hex, sides, sideOwner, frontage, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+            fillSquadPass(sq, hex, sides, sideOwner, frontage, seated, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+        fillLonerPass(hex, sides, sideOwner, frontage, seated, FATIGUE_VERY_TIRED, FATIGUE_MAX);
     }
 }
 
