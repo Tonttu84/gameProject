@@ -42,6 +42,15 @@ public:
     int  getAttackPWR() const override;
     void heal(int value) override;
 
+    // Whether the *composite* is broken (and so should flee) is the rider's
+    // call by default — a scared rider turns the mount around regardless of
+    // the mount's own temperament. Once the rider is gone, this naturally
+    // falls through to the mount instead (effectTarget()). What happens when
+    // only the *mount* panics while the rider is still in control is a
+    // separate, not-yet-decided question — see [[design_mounted_units]].
+    bool getBroken() const override;
+    void setBroken(bool value) override;
+
     int defend(int AttackAttempt, int damage, ArmorPen pen = ArmorPen::Normal,
                int attackerReach = 0) override;
     int takeDamage(int amount, ArmorPen pen = ArmorPen::Normal) override;

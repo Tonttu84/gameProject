@@ -5,6 +5,7 @@
 #include "../HDRS/units/Cavalry.hpp"
 #include "../HDRS/units/Horse.hpp"
 #include "../HDRS/units/Warhorse.hpp"
+#include "../HDRS/units/Priest.hpp"
 #include "../HDRS/Squad.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/Defines.hpp"
@@ -337,6 +338,42 @@ TEST_CASE("MountedUnit::getHp()/getmaxHP() delegate to the rider while mounted, 
     REQUIRE(c.getHp() == c.getmaxHP());                // fresh Horse stats, not stale rider numbers
 }
 
+TEST_CASE("MountedUnit::heal() restores the rider while mounted, even if the mount is also hurt") {
+    Cavalry c(REDTEAM); // Soldier rider: hitpoints=10/maxHP=10; Horse mount: hitpoints=15/maxHP=15
+
+    // Hit the rider for exactly 4 damage: target-select roll picks the rider
+    // (25 > boundary 20), AttackAttempt=999 guarantees the hit regardless of
+    // defenceroll, damage=4 with d1=1,d2=1 -> resultDMG = 4+1-1 = 4.
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(25);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d1
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d2
+    int dealt = c.defend(999, 4, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+
+    REQUIRE(dealt == 4);
+    REQUIRE(c.getHp() == 6);          // rider: 10 - 4
+    REQUIRE(c.hasMount() == true);    // mount untouched by the rider taking a hit
+
+    // Hit the mount too (10 <= boundary 20 -> mount), same fixed damage.
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(10);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d1
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d2
+    c.defend(999, 4, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+    REQUIRE(c.hasMount() == true);    // mount survived (15 - 4 = 11), still mounted
+
+    // heal() goes through effectTarget() -> the rider, capped at the
+    // rider's own maxHP. The mount's own (separately damaged) hitpoints are
+    // not touched by this at all — matches the desired "heal checks the
+    // rider" behavior; the mount being hurt is not this call's concern.
+    c.heal(100);
+    REQUIRE(c.getHp() == 10); // rider healed to full
+}
+
 // ── Cavalry footprint — only the mount counts for hex capacity ──────────────
 // A mounted rider doesn't take more ground space than the horse alone, so
 // getSize() (hex capacity, frontage, RangedCombat::pickHexTarget's weighting)
@@ -405,4 +442,100 @@ TEST_CASE("Cavalry battle(): a mount with its own weapon attacks independently a
 
     REQUIRE(target.getAlive() == false);
     REQUIRE(target.getHp() == -5);
+}
+
+// ── Priest::castBless vs. Cavalry — heal/rally target through the rider ─────
+// Priest::castBless() finds a target via Utility::findTarget(team, isBroken,
+// isWounded, team) — isBroken is the priority filter (any broken ally wins
+// immediately), isWounded the fallback ("unit.getHp() < unit.getmaxHP()").
+// Both predicates call straight through to getHp()/getmaxHP()/getBroken(),
+// which now delegate to effectTarget() (the rider) on a MountedUnit — so
+// these exercise the real Priest pathway, not just the underlying getters.
+
+TEST_CASE("Priest::castBless does not heal a cavalry whose mount is hurt but rider is not") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto priestPtr = std::make_unique<Priest>(REDTEAM);
+    auto cavPtr    = std::make_unique<Cavalry>(REDTEAM);
+    Cavalry* cav   = cavPtr.get();
+
+    Army red;
+    red.push_back(std::move(priestPtr));
+    red.push_back(std::move(cavPtr));
+    field.loadArmies(std::move(red), {});
+
+    // Damage only the mount (10 <= boundary 20 -> mount); rider untouched.
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(10);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d1
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d2
+    cav->defend(999, 4, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+
+    REQUIRE(cav->hasMount() == true);
+    REQUIRE(cav->getHp() == cav->getmaxHP()); // rider still full -> not "wounded" from the outside
+
+    AUnit* priest = field.getTeam(REDTEAM)[0].get();
+    priest->special(); // castBless(): finds no eligible target, does nothing
+
+    REQUIRE(cav->getHp() == cav->getmaxHP()); // unchanged — never healed
+
+    field.extractResult();
+}
+
+TEST_CASE("Priest::castBless detects and heals a cavalry whose rider is hurt") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto priestPtr = std::make_unique<Priest>(REDTEAM);
+    auto cavPtr    = std::make_unique<Cavalry>(REDTEAM);
+    Cavalry* cav   = cavPtr.get();
+
+    Army red;
+    red.push_back(std::move(priestPtr));
+    red.push_back(std::move(cavPtr));
+    field.loadArmies(std::move(red), {});
+
+    // Damage only the rider (25 > boundary 20 -> rider); mount untouched.
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(25);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d1
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d2
+    cav->defend(999, 4, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+
+    int hpAfterHit = cav->getHp();
+    REQUIRE(hpAfterHit < cav->getmaxHP());
+
+    AUnit* priest = field.getTeam(REDTEAM)[0].get();
+    priest->special(); // castBless(): finds the wounded rider, heals it
+
+    REQUIRE(cav->getHp() > hpAfterHit);
+    REQUIRE(cav->hasMount() == true); // mount untouched throughout
+
+    field.extractResult();
+}
+
+TEST_CASE("Priest::castBless detects and rallies a cavalry whose rider is broken") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto priestPtr = std::make_unique<Priest>(REDTEAM);
+    auto cavPtr    = std::make_unique<Cavalry>(REDTEAM);
+    Cavalry* cav   = cavPtr.get();
+    cav->setBroken(true); // sets the rider's own broken flag via effectTarget()
+
+    Army red;
+    red.push_back(std::move(priestPtr));
+    red.push_back(std::move(cavPtr));
+    field.loadArmies(std::move(red), {});
+
+    REQUIRE(cav->getBroken() == true);
+
+    AUnit* priest = field.getTeam(REDTEAM)[0].get();
+    priest->special(); // castBless(): isBroken is the priority filter — rallies immediately
+
+    REQUIRE(cav->getBroken() == false);
+
+    field.extractResult();
 }

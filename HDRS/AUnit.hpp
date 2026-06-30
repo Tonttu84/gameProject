@@ -80,12 +80,12 @@ public:
     virtual const AUnit* effectTarget() const { return this; }
 
     bool getAlive() const;
-    bool getBroken() const;
+    virtual bool getBroken() const;
     void setAlive(bool);
     bool rally();
     virtual int getHp() const;
     virtual int getmaxHP() const;
-    void setBroken(bool value);
+    virtual void setBroken(bool value);
     virtual void heal(int value);
     virtual void special() {};
     int getCast() const;

@@ -35,6 +35,8 @@ int  MountedUnit::getArmour() const    { return effectTarget()->getArmour(); }
 int  MountedUnit::getDefence() const   { return effectTarget()->getDefence(); }
 int  MountedUnit::getAttackPWR() const { return effectTarget()->getAttackPWR(); }
 void MountedUnit::heal(int value)      { effectTarget()->heal(value); }
+bool MountedUnit::getBroken() const    { return effectTarget()->getBroken(); }
+void MountedUnit::setBroken(bool value){ effectTarget()->setBroken(value); }
 
 bool MountedUnit::pickMountTarget(int shift) const
 {
