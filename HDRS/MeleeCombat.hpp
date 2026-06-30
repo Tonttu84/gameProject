@@ -12,6 +12,8 @@ struct MeleeAttack {
     int      hitBonus = 0;    // pre-computed attack-roll bonus (elevation, cohesion, etc.)
     int      damage   = 0;    // base damage (weapon + strength/divider + cohesion)
     ArmorPen pen      = ArmorPen::Normal;
+    int      reach    = 0;    // attacker's weapon reach — only consulted by MountedUnit
+                               // targets, to shift the mount/rider hit-roll toward the rider
 
     // Fires before the defender's shield/damage phase.
     // Set blocked=true to fully intercept the attack — defend() is skipped.

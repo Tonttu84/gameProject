@@ -46,18 +46,47 @@ public:
     Hex* getHex() const;
     void reset();
     int getTeam() const;
-    int takeDamage(int amount, ArmorPen pen = ArmorPen::Normal);
-    int defend(int AttackAttempt, int damage, ArmorPen pen = ArmorPen::Normal);
-    void battle(Battlefield &myBattlefield);
+    virtual int takeDamage(int amount, ArmorPen pen = ArmorPen::Normal);
+    // attackerReach: melee weapon reach of the attacker. Ignored by the base
+    // implementation — only MountedUnit targets use it, to shift the
+    // mount/rider hit-roll boundary toward the rider for longer weapons.
+    virtual int defend(int AttackAttempt, int damage, ArmorPen pen = ArmorPen::Normal,
+                        int attackerReach = 0);
+    virtual void battle(Battlefield &myBattlefield);
     AUnit *find_target(Battlefield &myBattlefield);
+
+    // Attack-bonus computation (engagement side, cohesion, elevation, cramped
+    // penalty) extracted out of battle() so MountedUnit can reuse the rider's
+    // own engagement context for the mount's attack.
+    int computeMeleeAttackBonus() const;
+
+    // Runs this unit's own weapon list against `target` using a pre-resolved
+    // attack bonus. Used directly by battle() for the normal case, and by
+    // MountedUnit to let a stowed mount attack via the rider's engagement
+    // context without the mount needing its own hex/engagedSide. No fatigue
+    // tracking — kept simple; a mount doesn't tire from kicking.
+    void attackWithWeapons(AUnit* target, int attackBonus);
+    bool hasAttacks() const { return !_attacks.empty(); }
+
+    // The unit that single-target, non-combat effects (heal, buffs, curses,
+    // ...) should actually apply to. Default: self. Composite units like
+    // MountedUnit override this to redirect to whichever sub-unit such
+    // effects naturally belong to (the rider, by default). Effect-casting
+    // code should resolve through this once rather than each effect type
+    // needing its own MountedUnit-aware special case — most callers don't
+    // even need to call it explicitly, since heal() etc. are themselves
+    // virtual and already route through it.
+    virtual AUnit* effectTarget() { return this; }
+    virtual const AUnit* effectTarget() const { return this; }
+
     bool getAlive() const;
     bool getBroken() const;
     void setAlive(bool);
     bool rally();
-    int getHp() const;
-    int getmaxHP() const;
+    virtual int getHp() const;
+    virtual int getmaxHP() const;
     void setBroken(bool value);
-    void heal(int value);
+    virtual void heal(int value);
     virtual void special() {};
     int getCast() const;
     void setCast(int setCast);
@@ -73,8 +102,9 @@ public:
 
     void setBattleSummon(bool value);
     bool getBattleSummon() const;
-     int getArmour() const;
-     
+     virtual int getArmour() const;
+     virtual int getDefence() const { return defence; }
+
     int  getShield() const;
     void setShield(int newVal);
 
@@ -100,13 +130,13 @@ public:
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
     int getFatigueCost() const;
-    int getAttackPWR() const { return attackPWR; }
+    virtual int getAttackPWR() const { return attackPWR; }
 
     // Per-turn attack counter: incremented by MeleeCombat::engage() after each
     // defend() call, reset at the start of Battlefield::makeBattle().
     // defend() applies MULTI_ATTACK_DEFENCE_PENALTY per count — units get easier
     // to hit the more times they've already been attacked this turn.
-    void resetAttacksReceived()     { _attacksReceivedThisTurn = 0; }
+    virtual void resetAttacksReceived() { _attacksReceivedThisTurn = 0; }
     void incrementAttacksReceived() { ++_attacksReceivedThisTurn; }
     bool getEngaged(Battlefield &myBattlefield) const;
 

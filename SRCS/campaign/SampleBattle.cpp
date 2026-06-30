@@ -6,6 +6,8 @@
 #include "units/Mage.hpp"
 #include "units/Priest.hpp"
 #include "units/Necromancer.hpp"
+#include "units/Cavalry.hpp"
+#include "units/Warhorse.hpp"
 
 void setupSampleBattle(Battlefield& field)
 {
@@ -85,12 +87,13 @@ void setupSampleBattle(Battlefield& field)
         }
     }
 
-    // Blue: holy order — soldiers, archers, mages and priests
+    // Blue: holy order — soldiers, archers, mages, priests and knights
     Army blue;
     appendArmy<Soldier>(blue, 450, BLUETEAM);
     appendArmy<Archer> (blue, 150, BLUETEAM);
     appendArmy<Mage>   (blue,   7, BLUETEAM);
     appendArmy<Priest> (blue,   7, BLUETEAM);
+    appendArmy<Cavalry>(blue,  30, BLUETEAM); // loose riders — Soldier on a plain Horse
     randomPlaceArmy(blue, field, {0, field.width - 1, 0, field.height / 4});
 
     // Blue squads: placed in the blue deployment zone (rows 0-7).
@@ -116,6 +119,21 @@ void setupSampleBattle(Battlefield& field)
         }
     }
 
+    // Cavalry squad: Templar Riders — Soldier on a Warhorse (light armor, hoof
+    // attack), so the squad showcases the mount fighting alongside its rider.
+    auto blueCavSq = std::make_unique<Squad>("Templar Riders", false);
+    blueCavSq->setType(SquadType::Cavalry);
+    {
+        Hex* h = field.hexGrid.getHex({8, 5});
+        for (int i = 0; i < 8; ++i) {
+            auto u = std::make_unique<Cavalry>(BLUETEAM, std::make_unique<Soldier>(BLUETEAM),
+                                                std::make_unique<Warhorse>(BLUETEAM));
+            u->setHex(h);
+            blueCavSq->addMember(u.get());
+            blue.push_back(std::move(u));
+        }
+    }
+
     // loadArmies calls computeDistances — terrain must be set before this line.
     field.loadArmies(std::move(red), std::move(blue));
 
@@ -123,4 +141,5 @@ void setupSampleBattle(Battlefield& field)
     field.getTeamData(REDTEAM).squads.push_back(std::move(redSq2));
     field.getTeamData(BLUETEAM).squads.push_back(std::move(blueSq1));
     field.getTeamData(BLUETEAM).squads.push_back(std::move(blueSq2));
+    field.getTeamData(BLUETEAM).squads.push_back(std::move(blueCavSq));
 }

@@ -76,6 +76,12 @@ constexpr int FOREST_COVER_DEF_BONUS  = 1;  // free shield roll value for defend
 constexpr int CRAMPED_COMBAT_PENALTY       = 1;  // atk and def penalty when unit size > half effective frontage
 constexpr int MULTI_ATTACK_DEFENCE_PENALTY = 1;  // defence malus per previous attack received this turn
 
+// Cavalry / mounted units
+constexpr int CAVALRY_FOREST_TARGET_PENALTY = 3;  // findTarget() distance penalty for Mounted searchers
+                                                   // considering a forest-sheltered enemy
+constexpr int RANGED_RIDER_BIAS             = 2;  // mount/rider hit-roll boundary shift favoring the rider
+                                                   // on ranged attacks (arrows arc down from above)
+
 // Projectile deviation
 constexpr int MAX_DEVIATION = 40; // maximum hexes a projectile can drift off-target
 

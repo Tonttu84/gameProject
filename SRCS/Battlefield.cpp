@@ -53,6 +53,7 @@ Hex* Battlefield::findTarget(const AUnit& searcher) const
     HexCoord myCoord = searcher.getHex()->coord;
 
     const auto& enemyTeam = (searcher.getTeam() == REDTEAM) ? _blue.units : _red.units;
+    bool mounted = (searcher.getCategory() == UnitCategory::Mounted);
     int bestDist = std::numeric_limits<int>::max();
     const AUnit* bestEnemy = nullptr;
     Hex* bestHex = nullptr;
@@ -60,6 +61,10 @@ Hex* Battlefield::findTarget(const AUnit& searcher) const
     for (const auto& enemy : enemyTeam) {
         if (!enemy || !enemy->getAlive() || !enemy->getHex()) continue;
         int d = HexGrid::distance(myCoord, enemy->getHex()->coord);
+        // Cavalry prefers open-ground targets over forest-sheltered ones —
+        // still goes there if it's the only option, just not the first choice.
+        if (mounted && enemy->getHex()->terrain == TerrainType::Forest)
+            d += CAVALRY_FOREST_TARGET_PENALTY;
         if (d < bestDist || (d == bestDist && enemy->sortsBefore(bestEnemy))) {
             bestDist  = d;
             bestEnemy = enemy.get();

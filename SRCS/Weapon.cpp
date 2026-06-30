@@ -34,4 +34,8 @@
     {
         return strDivider;
     }
+    int Weapon::getReach() const
+    {
+        return reach;
+    }
 

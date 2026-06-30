@@ -37,6 +37,64 @@ TEST_CASE("moveToward: unit advances one step toward enemy across open field") {
     field.extractResult();
 }
 
+// ── Cavalry targeting: forest deprioritization ───────────────────────────────
+// Mounted searchers add CAVALRY_FOREST_TARGET_PENALTY to a forest-sheltered
+// enemy's distance before comparing — prefer open ground, but still go for
+// the forest enemy if it's the only option.
+
+TEST_CASE("findTarget: Mounted searcher prefers a farther open enemy over a closer forest one") {
+    Battlefield& field = Utility::getBattlefield();
+
+    field.hexGrid.getHex({1, 10})->terrain = TerrainType::Forest;
+
+    auto redPtr = std::make_unique<Soldier>(REDTEAM);
+    redPtr->setCategory(UnitCategory::Mounted);
+    redPtr->setHex(field.hexGrid.getHex({0, 10}));
+
+    auto forestEnemy = std::make_unique<Soldier>(BLUETEAM);
+    forestEnemy->setHex(field.hexGrid.getHex({1, 10})); // distance 1, but Forest (+3 penalty = 4)
+    auto openEnemy = std::make_unique<Soldier>(BLUETEAM);
+    openEnemy->setHex(field.hexGrid.getHex({3, 10}));   // distance 3, Open
+
+    Army red, blue;
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(forestEnemy));
+    blue.push_back(std::move(openEnemy));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    Hex* target = field.findTarget(*field.getTeam(REDTEAM)[0]);
+    REQUIRE(target != nullptr);
+    REQUIRE(target->coord.q == 3); // picked the farther open enemy, not the closer forest one
+
+    field.hexGrid.getHex({1, 10})->terrain = TerrainType::Open;
+    field.extractResult();
+}
+
+TEST_CASE("findTarget: Mounted searcher still targets a forest enemy when it's the only one") {
+    Battlefield& field = Utility::getBattlefield();
+
+    field.hexGrid.getHex({1, 10})->terrain = TerrainType::Forest;
+
+    auto redPtr = std::make_unique<Soldier>(REDTEAM);
+    redPtr->setCategory(UnitCategory::Mounted);
+    redPtr->setHex(field.hexGrid.getHex({0, 10}));
+
+    auto forestEnemy = std::make_unique<Soldier>(BLUETEAM);
+    forestEnemy->setHex(field.hexGrid.getHex({1, 10}));
+
+    Army red, blue;
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(forestEnemy));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    Hex* target = field.findTarget(*field.getTeam(REDTEAM)[0]);
+    REQUIRE(target != nullptr);
+    REQUIRE(target->coord.q == 1); // only option — still goes for it
+
+    field.hexGrid.getHex({1, 10})->terrain = TerrainType::Open;
+    field.extractResult();
+}
+
 // ── Terrain tiebreaker ────────────────────────────────────────────────────────
 // CURRENTLY FAILS: the algorithm picks direction index 0 (NE) first regardless
 // of terrain cost. Fix: when multiple neighbors tie on distance reduction,

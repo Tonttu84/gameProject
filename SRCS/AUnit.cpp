@@ -135,7 +135,7 @@ bool AUnit::getEngaged(Battlefield &myBattlefield) const
 	return false;
 }
 
-int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen)
+int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerReach*/)
 {
 	int defenceroll = Utility::throwDice();
 
@@ -219,16 +219,8 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	return best;
 }
 
-	void AUnit::battle(Battlefield &myBattlefield)
+	int AUnit::computeMeleeAttackBonus() const
 	{
-		if (!canFightThisTurn || !getHex())
-			return;
-		if (fatigue > FATIGUE_MAX)
-		{
-			recover();
-			return;
-		}
-
 		// Bonus if the enemy hex assigned no unit to defend this side.
 		int attackBonus = cohesionStatBonus();
 		if (engagedSide) {
@@ -265,6 +257,35 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				}
 			}
 		}
+		return attackBonus;
+	}
+
+	void AUnit::attackWithWeapons(AUnit* target, int attackBonus)
+	{
+		if (!target) return;
+		for (auto it = _attacks.begin(); it != _attacks.end() && target->getAlive(); ++it)
+		{
+			MeleeAttack shot;
+			shot.hitBonus = attackBonus;
+			shot.damage   = it->getDamage() + strength / it->getStrDivider()
+			                + cohesionDmgBonus();
+			shot.pen      = ArmorPen::Normal;
+			shot.reach    = it->getReach();
+			MeleeCombat::engage(this, target, shot);
+		}
+	}
+
+	void AUnit::battle(Battlefield &myBattlefield)
+	{
+		if (!canFightThisTurn || !getHex())
+			return;
+		if (fatigue > FATIGUE_MAX)
+		{
+			recover();
+			return;
+		}
+
+		int attackBonus = computeMeleeAttackBonus();
 
 		bool attacked = false;
 		auto it = _attacks.begin();
@@ -280,6 +301,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				shot.damage   = it->getDamage() + strength / it->getStrDivider()
 				                + cohesionDmgBonus();
 				shot.pen      = ArmorPen::Normal;
+				shot.reach    = it->getReach();
 				MeleeCombat::engage(this, target, shot);
 				attacked = true;
 				++it;

@@ -25,6 +25,11 @@ enum class MoraleState {
     Broken      // fleeing; removed from squad automatically
 };
 
+// ─── Squad type ──────────────────────────────────────────────────────────────
+// Descriptive composition tag — not enforced on membership. Drives behavior
+// such as a dismounted rider leaving a Cavalry-typed squad automatically.
+enum class SquadType { Infantry, Cavalry, Flying, Mixed };
+
 // ─── Squad ───────────────────────────────────────────────────────────────────
 // An optional organisational layer over individual AUnit objects.
 // Units without a squad work exactly as before — Squad is additive, not replacing.
@@ -94,6 +99,12 @@ public:
     // nullptr means this squad is not assigned to any wing.
     void  setWing(Wing* wing) { _wing = wing; }
     Wing* getWing()     const { return _wing; }
+
+    // ── Type ──────────────────────────────────────────────────────────────────
+    // Descriptive only for now — not enforced on addMember(). Drives behavior
+    // like a dismounted MountedUnit leaving a Cavalry-typed squad automatically.
+    SquadType getType() const  { return _type; }
+    void      setType(SquadType t) { _type = t; }
 
     // ── Leadership ───────────────────────────────────────────────────────────
     // Leader must already be a member of this squad.
@@ -191,6 +202,7 @@ private:
     AUnit*              _flagBearer = nullptr;
     Wing*               _wing       = nullptr;  // non-owning; nullptr = wingless squad
     bool                _hasBanner;
+    SquadType           _type = SquadType::Infantry;
     bool                _shakenTested = false;  // true after shaken threshold fired; reset when % drops below
     MoraleState         _moraleState = MoraleState::Normal;
 

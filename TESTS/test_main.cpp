@@ -8,6 +8,7 @@
 #include "../HDRS/hex/HexGrid.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/BattleSetup.hpp"
+#include "../HDRS/campaign/SampleBattle.hpp"
 
 
 // ── AUnit::takeDamage ────────────────────────────────────────────────────────
@@ -556,6 +557,24 @@ TEST_CASE("archer exhausts ammo against unkillable target and switches to melee 
     REQUIRE(archer->getPreferredRange() == 1);
 
     field.extractResult();
+}
+
+// ── Sample battle smoke test ─────────────────────────────────────────────────
+// Full campaign setup (incl. scattered cavalry and a Warhorse-mounted cavalry
+// squad) run for several ticks under ASan/UBSan — catches crashes/asserts
+// from forest-avoidance targeting, mount-attacks-alongside-rider, and the
+// mount/rider death transitions at full unit-count scale, not just the
+// isolated unit tests above.
+
+TEST_CASE("setupSampleBattle: runs several ticks without crashing, including cavalry") {
+    Battlefield& field = Utility::getBattlefield();
+    setupSampleBattle(field);
+
+    int guard = 30;
+    while (field.tick() && --guard > 0) {}
+
+    field.extractResult();
+    REQUIRE(true);
 }
 
 // ── Debug visualization — run with: ./run_tests "[debug]" ─────────────────────

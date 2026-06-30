@@ -2,6 +2,10 @@
 #include "../HDRS/Battlefield.hpp"
 #include "../HDRS/units/Zombie.hpp"
 #include "../HDRS/units/Soldier.hpp"
+#include "../HDRS/units/Cavalry.hpp"
+#include "../HDRS/units/Horse.hpp"
+#include "../HDRS/units/Warhorse.hpp"
+#include "../HDRS/Squad.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/Defines.hpp"
 
@@ -219,4 +223,186 @@ TEST_CASE("rollTerrainRangedBlock: Bypass — ignores forest cover entirely, no 
     Utility::clearDiceRolls();
     REQUIRE(z.rollTerrainRangedBlock(ArmorPen::Bypass) == false);
     Utility::clearDiceRolls();
+}
+
+// ── Cavalry — MountedUnit damage routing and death transitions ──────────────
+//
+// Cavalry: rider size=10, mount (Horse) size=20, combined size=30.
+// pickMountTarget(shift): boundary = clamp(mountSize - shift, 1, 29).
+//   Melee, reach=0:               boundary=20 -> roll 1..20 mount, 21..30 rider.
+//   Ranged (RANGED_RIDER_BIAS=2): boundary=18 -> roll 1..18 mount, 19..30 rider.
+//
+// Only the mount/rider selection roll is mocked; AttackAttempt/damage are set
+// to 9999 so the hit-or-miss roll and lethal-damage roll can't go the other
+// way regardless of real RNG for the rest of defend()'s internal dice —
+// avoids needing to script every exploding-dice draw by hand.
+
+TEST_CASE("Cavalry defend(): low roll routes the hit to the mount, killing it dismounts the rider") {
+    Cavalry c(REDTEAM);
+    REQUIRE(c.hasMount());
+
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(10); // 10 <= boundary(20) -> mount is the target
+    int dealt = c.defend(9999, 9999, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+
+    REQUIRE(dealt > 0);
+    REQUIRE(c.hasMount() == false);
+    REQUIRE(c.getAlive() == true);   // rider survives
+    REQUIRE(c.getCategory() == UnitCategory::Foot);
+}
+
+TEST_CASE("Cavalry defend(): high roll routes the hit to the rider, killing it leaves a loose mount") {
+    Cavalry c(REDTEAM);
+
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(25); // 25 > boundary(20) -> rider is the target
+    int dealt = c.defend(9999, 9999, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+
+    REQUIRE(dealt > 0);
+    REQUIRE(c.getAlive() == true);   // resurrected as the loose mount, not actually dead
+    REQUIRE(c.getBroken() == true);
+    REQUIRE(c.getCategory() == UnitCategory::Mounted);
+}
+
+TEST_CASE("Cavalry defend(): weapon reach shifts the boundary toward the rider") {
+    Cavalry c(REDTEAM);
+
+    // reach=5: boundary = clamp(20-5,1,29) = 15. Roll 18 hits the rider here,
+    // even though the same roll would have hit the mount with reach=0 (boundary 20).
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(18);
+    int dealt = c.defend(9999, 9999, ArmorPen::Normal, 5);
+    Utility::clearDiceRolls();
+
+    REQUIRE(dealt > 0);
+    REQUIRE(c.getCategory() == UnitCategory::Mounted); // rider died -> object becomes the mount
+    REQUIRE(c.getBroken() == true);
+}
+
+TEST_CASE("Cavalry takeDamage(): ranged hits use a flat rider bias instead of reach") {
+    Cavalry c(REDTEAM);
+
+    // Ranged boundary = clamp(20-RANGED_RIDER_BIAS(2),1,29) = 18.
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(19); // 19 > 18 -> rider is the target
+    int dealt = c.takeDamage(9999, ArmorPen::Normal);
+    Utility::clearDiceRolls();
+
+    REQUIRE(dealt > 0);
+    REQUIRE(c.getCategory() == UnitCategory::Mounted); // rider died -> object becomes the mount
+}
+
+TEST_CASE("Cavalry: dismounted rider leaves a Cavalry-typed squad automatically") {
+    Squad sq("Lancers", false);
+    sq.setType(SquadType::Cavalry);
+    Cavalry c(REDTEAM);
+    sq.addMember(&c);
+    REQUIRE(c.getSquad() == &sq);
+
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(10); // mount is the target
+    c.defend(9999, 9999, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+
+    REQUIRE(c.hasMount() == false);
+    REQUIRE(c.getSquad() == nullptr);
+}
+
+// ── Warhorse — mount with its own attack ─────────────────────────────────────
+
+TEST_CASE("Warhorse has a hoof attack and light armor; a plain Horse has neither") {
+    Horse h(REDTEAM);
+    REQUIRE(h.hasAttacks() == false);
+    REQUIRE(h.getArmour() == 0);
+
+    Warhorse w(REDTEAM);
+    REQUIRE(w.hasAttacks() == true);
+    REQUIRE(w.getArmour() == LIGHTARMOUR);
+}
+
+TEST_CASE("MountedUnit::getHp()/getmaxHP() delegate to the rider while mounted, "
+          "and to the mount once the rider is gone") {
+    Cavalry c(REDTEAM); // Soldier rider: hitpoints=10, maxHP=10 (AUnit defaults)
+    REQUIRE(c.getHp() == 10);
+    REQUIRE(c.getmaxHP() == 10);
+
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(25); // 25 > boundary(20) -> rider is the target
+    c.defend(9999, 9999, ArmorPen::Normal, 0); // kills the rider; mount survives
+    Utility::clearDiceRolls();
+
+    REQUIRE(c.getCategory() == UnitCategory::Mounted); // confirms the mount took over
+    REQUIRE(c.getHp() == c.getmaxHP());                // fresh Horse stats, not stale rider numbers
+}
+
+// ── Cavalry footprint — only the mount counts for hex capacity ──────────────
+// A mounted rider doesn't take more ground space than the horse alone, so
+// getSize() (hex capacity, frontage, RangedCombat::pickHexTarget's weighting)
+// should reflect only the mount's size while mounted. The separate, more
+// detailed mount-vs-rider hit roll (pickMountTarget) still weighs both sizes
+// independently — that's unaffected by this.
+
+TEST_CASE("Cavalry::getSize() reflects only the mount while mounted") {
+    Cavalry c(REDTEAM); // Soldier rider (size=10 default) on a Horse (size=20)
+    REQUIRE(c.getSize() == 20);
+
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(10); // mount is the target -> dismounts the rider
+    c.defend(9999, 9999, ArmorPen::Normal, 0);
+    Utility::clearDiceRolls();
+
+    REQUIRE(c.getCategory() == UnitCategory::Foot);
+    REQUIRE(c.getSize() == 10); // shrinks to the rider-only footprint after dismounting
+}
+
+// ── Cavalry battle() — mount fights independently alongside the rider ───────
+//
+// Rider (Soldier, SwordAndShield): damage = getDamage()(5) + strength(10)/strDiv(3)
+//   = 5+3 = 8. With d1=6,d2=1: resultDMG = 8+6-1 = 13.
+// Mount (Warhorse, Hoof): damage = getDamage()(4) + strength(10)/strDiv(3) = 4+3 = 7.
+//   With d1=6,d2=1: resultDMG = 7+6-1 = 12.
+// Target: Zombie, defence=6, armour=0, shield=0, hitpoints=20, undead (no morale
+// dice). Pushing hit-roll=6 and defenceroll=1 for both attacks guarantees both
+// land regardless of the (small, here ~0) engagement attackBonus.
+// Expected final hitpoints: 20 - 13 - 12 = -5 (getHp() returns the raw value,
+// unclamped) — only explainable if BOTH the rider's and the mount's own
+// weapon independently landed.
+
+TEST_CASE("Cavalry battle(): a mount with its own weapon attacks independently alongside the rider") {
+    Battlefield bf;
+    HexCoord redCoord = {1, 14};
+    Hex* redHex = bf.hexGrid.getHex(redCoord);
+    REQUIRE(redHex != nullptr);
+    auto nb = bf.hexGrid.neighbors(redCoord);
+    Hex* enemyHex = bf.hexGrid.getHex(nb[1]); // E neighbor
+    REQUIRE(enemyHex != nullptr);
+
+    Cavalry cav(REDTEAM, std::make_unique<Soldier>(REDTEAM), std::make_unique<Warhorse>(REDTEAM));
+    cav.setHex(redHex);
+
+    Zombie target(BLUETEAM);
+    target.setHex(enemyHex);
+
+    bf.resolveEngagements();
+    REQUIRE(cav.getEngagedSide() != nullptr);
+
+    Utility::clearDiceRolls();
+    // Rider's attack: attacker-hit-roll(6,1) defenceroll(1,1) d1(6,1) d2(1,1)
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    // Mount's attack: same shape
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+
+    cav.battle(bf);
+    Utility::clearDiceRolls();
+
+    REQUIRE(target.getAlive() == false);
+    REQUIRE(target.getHp() == -5);
 }
