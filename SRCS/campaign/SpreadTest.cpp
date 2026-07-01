@@ -12,8 +12,8 @@
 //
 // Visual layout (even-r offset col, row — battle area rows 12-17):
 //
-//   col:  5        7        9
-//  row 12: [B-lt] [B-FULL] [B-lt]   <- blue light / full / light
+//   col:  6        7        8
+//  row 12: [B-lt] [B-FULL] [B-lt]   <- blue light / full / light (adjacent cols)
 //  row 17: [R-lt] [R-FULL] [R-lt]   <- red  light / full / light
 //
 // Blue centre (7,12): 40 Soldiers  — "full"
@@ -67,13 +67,13 @@ static void setupSpreadBattle(Battlefield& field, TerrainType t)
     // 2. Build armies with manually placed units.
     Army blue;
     placeUnits(blue, field, 7, 12, 40, BLUETEAM);  // centre — overfull
-    placeUnits(blue, field, 5, 12, 15, BLUETEAM);  // left   — light
-    placeUnits(blue, field, 9, 12, 15, BLUETEAM);  // right  — light
+    placeUnits(blue, field, 6, 12, 15, BLUETEAM);  // left   — light (col 6 adj to col 7)
+    placeUnits(blue, field, 8, 12, 15, BLUETEAM);  // right  — light (col 8 adj to col 7)
 
     Army red;
     placeUnits(red, field, 7, 17, 40, REDTEAM);    // centre — overfull
-    placeUnits(red, field, 5, 17, 15, REDTEAM);    // left   — light
-    placeUnits(red, field, 9, 17, 15, REDTEAM);    // right  — light
+    placeUnits(red, field, 6, 17, 15, REDTEAM);    // left   — light
+    placeUnits(red, field, 8, 17, 15, REDTEAM);    // right  — light
 
     // loadArmies takes ownership and calls computeDistances.
     field.loadArmies(std::move(red), std::move(blue));

@@ -165,19 +165,47 @@ static int hexRetentionThreshold(const Hex* hex) {
     return total;
 }
 
+// True if hex has at least one reachable side whose neighbor contains live
+// enemy units. Used to let spreading extend the front into an empty hex that
+// faces the enemy, not only to reinforce a hex that is already engaged.
+static bool hexAdjacentToEnemy(const Hex* hex, int friendlyTeam) {
+    for (HexSide* side : hex->sides) {
+        if (!side || side->blocked) continue;
+        const Hex* nb = (side->hexA == hex) ? side->hexB : side->hexA;
+        if (!nb) continue;
+        if (std::abs(hex->elevation - nb->elevation) >= 2) continue;
+        for (AUnit* u : nb->units)
+            if (u && u->getAlive() && u->getTeam() != friendlyTeam)
+                return true;
+    }
+    return false;
+}
+
 // Should a unit/squad sitting in fromHex take a lateral move to toHex to
-// redistribute along the line, rather than hold engaged in place? Only once
-// fromHex holds at least its own retention threshold (so a thin line never
-// bleeds itself dry over a single move), and only toward a hex that's itself
-// currently engaged and holds fewer fresh troops right now (so units actually
-// flow toward where they're needed, not just sideways at random).
+// redistribute along the line? Requires:
+//   1. fromHex has surplus fresh units beyond its own retention threshold.
+//   2. toHex is a useful destination: either already engaged, or adjacent to
+//      an enemy so that moving there would extend the engagement front.
+//      The original check (engaged-only) was circular: an empty flank hex can
+//      never become engaged unless someone moves there first.
+//   3. toHex currently holds fewer fresh size-points than fromHex.
 static bool shouldSpreadToward(const Hex* fromHex, const Hex* toHex) {
     if (!fromHex || !toHex) return false;
     if (hexFreshSize(fromHex) < hexRetentionThreshold(fromHex)) return false;
-    bool toEngaged = false;
+
+    // Determine friendly team from fromHex so we can check enemy adjacency.
+    int friendlyTeam = 0;
+    for (AUnit* u : fromHex->units)
+        if (u && u->getAlive()) { friendlyTeam = u->getTeam(); break; }
+    if (friendlyTeam == 0) return false;
+
+    bool toQualifies = false;
     for (HexSide* side : toHex->sides)
-        if (side && sideIsEngagedNow(*side)) { toEngaged = true; break; }
-    if (!toEngaged) return false;
+        if (side && sideIsEngagedNow(*side)) { toQualifies = true; break; }
+    if (!toQualifies)
+        toQualifies = hexAdjacentToEnemy(toHex, friendlyTeam);
+    if (!toQualifies) return false;
+
     return hexFreshSize(toHex) < hexFreshSize(fromHex);
 }
 
@@ -209,8 +237,12 @@ static DirChoice pickBestDirection(HexGrid& hexGrid, HexCoord from, int curDist,
     int bestDecrDist = curDist, bestDecrCost = INT_MAX;
     int bestLatCost  = INT_MAX;
 
+    // Random start direction so equal-cost ties are broken differently each
+    // call, preventing all units from always preferring the same flank.
+    int start = Utility::getRandom(0, 5);
     for (int i = 0; i < 6; ++i) {
-        auto dir = static_cast<HexDirection>(i);
+        int di = (start + i) % 6;
+        auto dir = static_cast<HexDirection>(di);
         if (!sidePassable(hexGrid.getSide(from, dir), cat)) continue;
         HexCoord nc = hexGrid.neighborCoord(from, dir);
         Hex* nh = hexGrid.getHex(nc);
@@ -223,11 +255,11 @@ static DirChoice pickBestDirection(HexGrid& hexGrid, HexCoord from, int curDist,
         if (d < curDist) {
             if (d < bestDecrDist || (d == bestDecrDist && cost < bestDecrCost)) {
                 bestDecrDist = d; bestDecrCost = cost;
-                result.decrDir = i; result.decrCoord = nc; result.decrHex = nh; result.decrCost = cost;
+                result.decrDir = di; result.decrCoord = nc; result.decrHex = nh; result.decrCost = cost;
             }
         } else if (d == curDist && cost < bestLatCost) {
             bestLatCost = cost;
-            result.latDir = i; result.latCoord = nc; result.latHex = nh; result.latCost = cost;
+            result.latDir = di; result.latCoord = nc; result.latHex = nh; result.latCost = cost;
         }
     }
     return result;
@@ -286,13 +318,37 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     // - Pre-contact: free to slide, but not two lateral moves in a row (mustDecrease).
     // - Engaged: mustDecrease can never be satisfied (enemy blocks that hex), so skip
     //   that gate entirely and govern purely by shouldSpreadToward() each tick.
+    bool engaged = unit.getEngaged(*this);
     if (choice.latDir >= 0) {
-        bool engaged = unit.getEngaged(*this);
         bool allowed = engaged ? shouldSpreadToward(unit.getHex(), choice.latHex)
                                : !mustDecrease;
         if (allowed) {
             moveAUnit(unit, choice.latCoord);
             if (choice.latCost > 1) unit.setSpentMove(static_cast<size_t>(choice.latCost - 1));
+            unit.setTookLateral(true);
+            return;
+        }
+    }
+
+    // Engaged fallback: the equidistant-to-target lateral may not qualify (it may
+    // be on the wrong flank relative to the enemy, especially when the unit targets
+    // a center enemy while the useful spread position is beside a flank enemy).
+    // Scan all 6 neighbors for any position that passes shouldSpreadToward so both
+    // flanks can be reinforced regardless of which specific enemy was targeted.
+    if (engaged) {
+        int fStart = Utility::getRandom(0, 5);
+        for (int i = 0; i < 6; ++i) {
+            int di = (fStart + i) % 6;
+            auto dir = static_cast<HexDirection>(di);
+            if (!sidePassable(hexGrid.getSide(from, dir), unit.getCategory())) continue;
+            HexCoord nc = hexGrid.neighborCoord(from, dir);
+            Hex* nh = hexGrid.getHex(nc);
+            if (!hexAcceptsUnit(nh, unit)) continue;
+            if (nh == choice.latHex) continue; // already tested above
+            if (!shouldSpreadToward(fromHex, nh)) continue;
+            int cost = terrainMoveCost(nh, hexGrid.getSide(from, dir), unit.getCategory());
+            moveAUnit(unit, nc);
+            if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
             unit.setTookLateral(true);
             return;
         }
@@ -454,15 +510,41 @@ void Battlefield::moveSquad(Squad& squad)
     bool     tookLateral = false;
     Hex*     nextHex     = nullptr;
     int      moveCost    = 1;
+    Hex*     fromHex     = ref->getHex();
+    bool     engaged     = ref->getEngaged(*this);
     if (choice.decrDir >= 0) {
         nextHex = choice.decrHex; moveCost = choice.decrCost;
     } else if (choice.latDir >= 0) {
-        Hex* fromHex   = ref->getHex();
-        bool engaged   = ref->getEngaged(*this);
         bool canSpread = shouldSpreadToward(fromHex, choice.latHex)
                        && hexFreshSize(fromHex) - squadFreshSize >= hexRetentionThreshold(fromHex);
         if (engaged ? canSpread : !mustDecrease) {
             nextHex = choice.latHex; moveCost = choice.latCost; tookLateral = true;
+        }
+    }
+
+    // Engaged fallback: same as moveToward — scan all neighbors when the
+    // equidistant-to-target lateral doesn't qualify for spreading.
+    if (!nextHex && engaged) {
+        int fStart = Utility::getRandom(0, 5);
+        for (int i = 0; i < 6; ++i) {
+            int di = (fStart + i) % 6;
+            auto dir = static_cast<HexDirection>(di);
+            if (!sidePassable(hexGrid.getSide(from, dir), ref->getCategory())) continue;
+            HexCoord nc = hexGrid.neighborCoord(from, dir);
+            Hex* nh = hexGrid.getHex(nc);
+            if (!nh || (nh->impassable && !flyer)) continue;
+            if (mounted && (nh->terrain == TerrainType::Forest || nh->terrain == TerrainType::Marsh)) continue;
+            bool hasEnemy = false;
+            for (AUnit* u : nh->units)
+                if (u && u->getAlive() && u->getTeam() != ref->getTeam()) { hasEnemy = true; break; }
+            if (hasEnemy) continue;
+            if (nh == choice.latHex) continue;
+            bool canSpread = shouldSpreadToward(fromHex, nh)
+                           && hexFreshSize(fromHex) - squadFreshSize >= hexRetentionThreshold(fromHex);
+            if (!canSpread) continue;
+            moveCost = terrainMoveCost(nh, hexGrid.getSide(from, dir), ref->getCategory());
+            nextHex = nh; tookLateral = true;
+            break;
         }
     }
     if (!nextHex) return;
@@ -489,7 +571,6 @@ void Battlefield::moveSquad(Squad& squad)
         std::sort(candidates.begin(), candidates.end(),
                   [](AUnit* a, AUnit* b){ return a->getSize() < b->getSize(); });
 
-        Hex* fromHex = hexGrid.getHex(from);
         int  freed   = 0;
         for (AUnit* victim : candidates) {
             if (freed >= needed) break;
