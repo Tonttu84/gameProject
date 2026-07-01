@@ -1,5 +1,5 @@
-#include "campaign/SpreadTest.hpp"
-#include "campaign/SampleBattle.hpp"
+#include "scenarios/SpreadTest.hpp"
+#include "scenarios/SampleBattle.hpp"
 #include "BattleSetup.hpp"
 #include "units/Soldier.hpp"
 #include "hex/HexGrid.hpp"

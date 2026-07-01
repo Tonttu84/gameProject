@@ -8,7 +8,7 @@
 #include "../HDRS/hex/HexGrid.hpp"
 #include "../HDRS/Utility.hpp"
 #include "../HDRS/BattleSetup.hpp"
-#include "../HDRS/campaign/SampleBattle.hpp"
+#include "../HDRS/scenarios/SampleBattle.hpp"
 
 
 // ── AUnit::takeDamage ────────────────────────────────────────────────────────

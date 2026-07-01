@@ -1,4 +1,4 @@
-#include "campaign/SampleBattle.hpp"
+#include "scenarios/SampleBattle.hpp"
 #include "BattleSetup.hpp"
 #include "Squad.hpp"
 #include "units/Soldier.hpp"
