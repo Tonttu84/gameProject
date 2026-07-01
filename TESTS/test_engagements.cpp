@@ -316,3 +316,110 @@ TEST_CASE("resolveEngagements: eviction also works for squad members across fati
                              + (s2.getEngagedSide() == side ? 1 : 0);
     REQUIRE(soldiersStillOnSide == 1);
 }
+
+// ── Bug-fix regression: corner-hex multi-side distribution ────────────────
+// When a hex is engaged on 2 sides simultaneously, fillSquadPass distributes
+// squad members round-robin so both sides get fighters instead of all
+// troops piling on the first side only.
+//
+// Setup: RED_HEX engaged from NE and E simultaneously. 8 soldiers in one
+// squad — enough to fill both Open-terrain sides (FRONTAGE=40 each, soldier
+// size=10 → 4 per side). Each side should end up with at least one soldier.
+
+TEST_CASE("resolveEngagements: squad distributes members across 2 simultaneously engaged sides") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+
+    auto nb     = bf.hexGrid.neighbors(RED_HEX);
+    Hex* enNE   = bf.hexGrid.getHex(nb[0]); // NE neighbor
+    Hex* enE    = bf.hexGrid.getHex(nb[1]); // E neighbor
+    REQUIRE(enNE != nullptr);
+    REQUIRE(enE  != nullptr);
+
+    // Squad must outlive its members.
+    Squad alpha("Alpha", true);
+    Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM), sm3(REDTEAM);
+    Soldier sm4(REDTEAM), sm5(REDTEAM), sm6(REDTEAM), sm7(REDTEAM);
+    alpha.addMember(&sm0); sm0.setHex(redHex);
+    alpha.addMember(&sm1); sm1.setHex(redHex);
+    alpha.addMember(&sm2); sm2.setHex(redHex);
+    alpha.addMember(&sm3); sm3.setHex(redHex);
+    alpha.addMember(&sm4); sm4.setHex(redHex);
+    alpha.addMember(&sm5); sm5.setHex(redHex);
+    alpha.addMember(&sm6); sm6.setHex(redHex);
+    alpha.addMember(&sm7); sm7.setHex(redHex);
+
+    // Enemies on both sides to create two simultaneously engaged HexSides.
+    Soldier enA(BLUETEAM), enB(BLUETEAM);
+    enA.setHex(enNE);
+    enB.setHex(enE);
+
+    bf.resolveEngagements();
+
+    // Identify the two engaged sides from redHex.
+    HexSide* sideNE = bf.hexGrid.getSide(RED_HEX, HexDirection::NE);
+    HexSide* sideE  = bf.hexGrid.getSide(RED_HEX, HexDirection::E);
+    REQUIRE(sideNE != nullptr);
+    REQUIRE(sideE  != nullptr);
+    REQUIRE(sideNE->engaged);
+    REQUIRE(sideE->engaged);
+
+    int onNE = 0, onE = 0;
+    for (Soldier* u : {&sm0, &sm1, &sm2, &sm3, &sm4, &sm5, &sm6, &sm7}) {
+        if (u->getEngagedSide() == sideNE) ++onNE;
+        if (u->getEngagedSide() == sideE)  ++onE;
+    }
+
+    // With round-robin distribution both sides must have fighters.
+    // Neither side should be left empty while the other overflows.
+    CHECK(onNE >= 1);
+    CHECK(onE  >= 1);
+    // All 8 soldiers should be assigned (4 per side × 2 sides = 8 capacity).
+    CHECK(onNE + onE == 8);
+}
+
+// ── Bug-fix regression: loner path skips blocked unit instead of stopping ──
+// When a too-large loner can't fit on the only free side, smaller loners that
+// DO fit must still get a chance — the loop must not break early on the first
+// failure.
+//
+// Rubble effectiveFrontage=30. One cavalry (size 20) fills the side halfway.
+// A second cavalry (size 20) can't join (20+20=40 > 30 and nothing smaller
+// to evict). The cavalry behind it should NOT block a soldier (size 10) from
+// taking the remaining 10 frontage units.
+
+TEST_CASE("resolveEngagements: loner smaller than blocker fills remaining rubble frontage") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    redHex->terrain = TerrainType::Rubble; // effectiveFrontage = 30
+
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    // Two loner cavalry (each size 20) and one loner soldier (size 10).
+    // Sorted: cav1, cav2, soldier — cav2 can't fit after cav1 is placed,
+    // but soldier (10) can fill the remaining 10-unit gap.
+    Cavalry cav1(REDTEAM), cav2(REDTEAM);
+    Soldier soldier(REDTEAM);
+    cav1.setHex(redHex);
+    cav2.setHex(redHex);
+    soldier.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    // cav1 must be assigned (first to try the only free side).
+    REQUIRE(cav1.getEngagedSide() != nullptr);
+
+    // cav2 must NOT be assigned (20+20=40 > cap 30, nothing smaller to evict).
+    CHECK(cav2.getEngagedSide() == nullptr);
+
+    // soldier MUST be assigned — it fits in the remaining 10-unit gap.
+    // (If the loop broke early on cav2's failure, soldier would be wrongly left out.)
+    REQUIRE(soldier.getEngagedSide() != nullptr);
+    CHECK(soldier.getEngagedSide() == cav1.getEngagedSide()); // same side as cav1
+}

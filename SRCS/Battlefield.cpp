@@ -815,6 +815,9 @@ static bool tryAssignToSide(AUnit* u, size_t si, const std::vector<HexSide*>& si
 }
 
 // Assign squad members with fatigue in [fatLow, fatHigh) to their squad's pre-allocated sides.
+// Distributes round-robin across all sides owned by this squad so that when a squad spans
+// multiple engaged sides (corner hex, surrounded position), troops fill each side
+// proportionally rather than piling onto the first side only.
 static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& sides,
                            const std::vector<Squad*>& sideOwner,
                            std::vector<int>& frontage,
@@ -831,22 +834,38 @@ static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& side
     if (members.empty()) return;
     std::sort(members.begin(), members.end(), [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
 
+    // Collect the squad-owned side indices once; we'll iterate them round-robin.
+    std::vector<size_t> ownedSides;
+    for (size_t si = 0; si < sides.size(); ++si)
+        if (sideOwner[si] == sq) ownedSides.push_back(si);
+    if (ownedSides.empty()) return;
+
     int cohTier = cohesionTierForHex(hex, sq->cohesionLevel());
+    size_t startIdx = 0; // advance after each successful assignment to distribute evenly
     for (AUnit* u : members) {
-        for (size_t si = 0; si < sides.size(); ++si) {
-            if (sideOwner[si] != sq) continue;
+        // Try each owned side beginning at startIdx (round-robin), wrapping around once.
+        bool assigned = false;
+        for (size_t attempt = 0; attempt < ownedSides.size(); ++attempt) {
+            size_t si = ownedSides[(startIdx + attempt) % ownedSides.size()];
             if (!tryAssignToSide(u, si, sides, frontage, seated)) continue;
             u->setCanFight(true);
             u->setEngagedSide(sides[si]);
             u->setCohesionBonus(cohTier);
             frontage[si] += static_cast<int>(u->getSize());
             seated[si].push_back(u);
+            startIdx = (startIdx + 1) % ownedSides.size(); // next unit starts at the next side
+            assigned = true;
             break;
         }
+        (void)assigned; // a unit that can't fit on any side simply sits in reserve this tick
     }
 }
 
 // Assign lone units with fatigue in [fatLow, fatHigh) round-robin to unclaimed sides.
+// Iterates loners largest-first. Each loner is tried on all free sides in round-robin
+// order; if it can't fit anywhere it is skipped so smaller units behind it still get
+// a chance. This prevents a too-large unit from blocking the assignment of units that
+// would fit in the remaining frontage.
 static void fillLonerPass(Hex* hex, const std::vector<HexSide*>& sides,
                            const std::vector<Squad*>& sideOwner,
                            std::vector<int>& frontage,
@@ -866,22 +885,24 @@ static void fillLonerPass(Hex* hex, const std::vector<HexSide*>& sides,
     std::vector<size_t> freeSides;
     for (size_t si = 0; si < sides.size(); ++si)
         if (sideOwner[si] == nullptr) freeSides.push_back(si);
+    if (freeSides.empty()) return;
 
-    size_t pi = 0;
-    while (pi < loners.size()) {
-        bool anyAssigned = false;
-        for (size_t fi = 0; fi < freeSides.size() && pi < loners.size(); ++fi) {
-            size_t si = freeSides[fi];
-            AUnit* u = loners[pi];
+    // Round-robin starting index: advances after each successful assignment so
+    // consecutive loners land on different sides rather than all piling on freeSides[0].
+    size_t startIdx = 0;
+    for (AUnit* u : loners) {
+        // Try each free side from startIdx, wrapping around once.
+        for (size_t attempt = 0; attempt < freeSides.size(); ++attempt) {
+            size_t si = freeSides[(startIdx + attempt) % freeSides.size()];
             if (!tryAssignToSide(u, si, sides, frontage, seated)) continue;
-            ++pi;
             u->setCanFight(true);
             u->setEngagedSide(sides[si]);
             frontage[si] += static_cast<int>(u->getSize());
             seated[si].push_back(u);
-            anyAssigned = true;
+            startIdx = (startIdx + 1) % freeSides.size(); // next loner starts at next side
+            break; // this loner is assigned; move on to the next one
         }
-        if (!anyAssigned) break;
+        // If no free side accepted u, it sits in reserve this tick — continue to next loner.
     }
 }
 
