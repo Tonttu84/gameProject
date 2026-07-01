@@ -85,7 +85,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial run clang
+.PHONY: all clean fclean re test test-serial run clang serve server frontend
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -154,3 +154,15 @@ re:
 
 run: $(NAME)
 	LD_LIBRARY_PATH=$(SFML_DIR)/lib ./$(NAME)
+
+# ── Campaign dev ──────────────────────────────────────────────────────────────
+server: $(NAME)
+	./$(NAME) server 8080
+
+frontend:
+	cd frontend && npm run dev
+
+# Launch C++ server + Vite dev server side-by-side.
+serve: $(NAME)
+	./$(NAME) server 8080 &
+	cd frontend && npm run dev
