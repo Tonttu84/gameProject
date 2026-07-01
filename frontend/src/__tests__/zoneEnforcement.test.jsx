@@ -13,6 +13,7 @@
  * component's behaviour (clicking an out-of-zone hex must not open ReachMenu).
  */
 
+import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import HexGrid from '../components/HexGrid'

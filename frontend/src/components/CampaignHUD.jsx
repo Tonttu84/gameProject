@@ -1,3 +1,4 @@
+import React from 'react'
 const CampaignHUD = ({ day, food, augury, roster }) => {
   const totalUnits = Object.values(roster).reduce((a, b) => a + b, 0)
   const dailyCost = Math.ceil(totalUnits / 10)

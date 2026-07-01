@@ -324,19 +324,18 @@ TEST_CASE("buildArmyFromPlacement: unknown unit type is skipped") {
     REQUIRE(army[0]->getTeam() == REDTEAM);
 }
 
-TEST_CASE("buildArmyFromPlacement: out-of-grid coord → unit added with null hex") {
+TEST_CASE("buildArmyFromPlacement: out-of-grid coord → unit is skipped") {
     HexGrid g;
     g.buildRect(16, 20);
 
     json placement = json::array({
-        json{{"unit_type", "Soldier"}, {"q", 99}, {"r", 99}},
-        json{{"unit_type", "Soldier"}, {"q", 3},  {"r", 5}},
+        json{{"unit_type", "Soldier"}, {"q", 99}, {"r", 99}},  // out of grid — skipped
+        json{{"unit_type", "Soldier"}, {"q", 3},  {"r", 5}},   // valid — included
     });
     auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
 
-    REQUIRE(army.size() == 2);
-    REQUIRE(army[0]->getHex() == nullptr);
-    REQUIRE(army[1]->getHex() != nullptr);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getHex() != nullptr);
 }
 
 TEST_CASE("buildArmyFromPlacement: empty array returns empty army") {

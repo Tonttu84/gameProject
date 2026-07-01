@@ -17,6 +17,7 @@
 
 #include <cstdio>
 #include <string>
+#include <unordered_map>
 
 using json = nlohmann::json;
 
@@ -131,11 +132,41 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
 {
     Army army;
     json j = json::parse(placementJson);
+
+    // Track capacity used per hex during this placement pass (sizeUsed on the
+    // Hex struct is only updated by setHex/clearHex during the battle itself).
+    std::unordered_map<HexCoord, int, HexCoordHash> usedPerHex;
+
     for (const auto& entry : j) {
         auto u = makeUnit(entry["unit_type"].get<std::string>(), team);
         if (!u) continue;
-        Hex* h = grid.getHex({entry["q"].get<int>(), entry["r"].get<int>()});
-        if (h) { u->setHex(h); u->setPlaced(true); }
+
+        HexCoord coord{entry["q"].get<int>(), entry["r"].get<int>()};
+        Hex* h = grid.getHex(coord);
+
+        // Reject missing or impassable hexes.
+        if (!h || h->impassable) continue;
+
+        // Reject hexes outside the player zone (only checked when a zone exists).
+        if (grid.hasPlayerZone()) {
+            int r = coord.r;
+            if (r < grid.playerZoneMinRow() || r > grid.playerZoneMaxRow()) continue;
+        }
+
+        // Reject forbidden terrain for this unit category.
+        bool forbidden = false;
+        for (TerrainType t : forbiddenTerrainForCategory(u->getCategory()))
+            if (h->terrain == t) { forbidden = true; break; }
+        if (forbidden) continue;
+
+        // Reject if placement would exceed hex capacity.
+        int& used = usedPerHex[coord];
+        int unitSize = static_cast<int>(u->getSize());
+        if (used + unitSize > Hex::CAPACITY) continue;
+        used += unitSize;
+
+        u->setHex(h);
+        u->setPlaced(true);
         army.push_back(std::move(u));
     }
     return army;

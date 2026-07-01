@@ -1,3 +1,4 @@
+import React from 'react'
 const EventCards = ({ events, onPick }) => (
   <div className="event-phase">
     <h2>The Augur Speaks</h2>

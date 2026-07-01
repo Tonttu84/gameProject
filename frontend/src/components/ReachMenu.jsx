@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 
 const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, onPlace, onClose }) => {
   const stackCounts = Object.fromEntries(placements.map(p => [p.type, p.count]))
@@ -27,14 +27,22 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
 
   const handleChange = (unit, rawVal) => {
     if (isForbidden(unit)) return
-    const val = Math.min(Math.max(0, parseInt(rawVal) || 0), maxCount(unit))
-    setCounts(c => ({ ...c, [unit.type]: val }))
+    const requested = parseInt(rawVal) || 0
+    const cap = maxCount(unit)
+    if (requested > cap)
+      console.warn(`[placement] ${unit.type}: requested ${requested} but only ${cap} available; capping.`)
+    setCounts(c => ({ ...c, [unit.type]: Math.min(Math.max(0, requested), cap) }))
   }
 
   const commit = () => {
     units.forEach(u => {
       onPlace(hex.col, hex.row, u.type, isForbidden(u) ? 0 : (counts[u.type] ?? 0))
     })
+    onClose()
+  }
+
+  const clear = () => {
+    units.forEach(u => onPlace(hex.col, hex.row, u.type, 0))
     onClose()
   }
 
@@ -67,6 +75,7 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
         )
       })}
       <button className="reach-commit" onClick={commit}>Place</button>
+      <button className="reach-clear" onClick={clear}>Clear</button>
     </div>
   )
 }

@@ -1,12 +1,13 @@
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import ReachMenu from './ReachMenu'
 
 const HEX_SIZE = 20
 const SQRT3 = Math.sqrt(3)
 
+// row → x (left-to-right), col → y (top-to-bottom) so the map matches combat orientation.
 const hexCenter = (col, row) => ({
-  x: HEX_SIZE * SQRT3 * (col + 0.5 * (row % 2)) + HEX_SIZE,
-  y: HEX_SIZE * 1.5 * row + HEX_SIZE,
+  x: HEX_SIZE * 1.5 * row + HEX_SIZE,
+  y: HEX_SIZE * SQRT3 * (col + 0.5 * (row % 2)) + HEX_SIZE,
 })
 
 const hexPoints = (cx, cy) => {
@@ -37,8 +38,8 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
 
   const { grid, playerZone, enemyZone } = info
 
-  const svgW = Math.ceil(HEX_SIZE * SQRT3 * (grid.width + 0.5) + HEX_SIZE * 2)
-  const svgH = Math.ceil(HEX_SIZE * 1.5 * grid.height + HEX_SIZE * 2)
+  const svgW = Math.ceil(HEX_SIZE * 1.5 * grid.height + HEX_SIZE * 2)
+  const svgH = Math.ceil(HEX_SIZE * SQRT3 * (grid.width + 0.5) + HEX_SIZE * 2)
 
   // axial coord → hex entry from map JSON (only non-default hexes are present)
   const terrainByAxial = useMemo(() => {
@@ -63,6 +64,16 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
   const inEnemyZone  = (row) => row >= enemyZone.rowMin  && row <= enemyZone.rowMax
 
   const placementsAt = (col, row) => placements.filter(p => p.col === col && p.row === row)
+
+  // Roster remaining after subtracting units placed on every hex OTHER than (col,row).
+  const rosterForHex = (col, row) => {
+    const remaining = { ...roster }
+    placements.forEach(p => {
+      if (p.col === col && p.row === row) return
+      remaining[p.type] = Math.max(0, (remaining[p.type] ?? 0) - p.count)
+    })
+    return remaining
+  }
 
   const handleHexClick = (col, row) => {
     if (disabled || !inPlayerZone(row)) return
@@ -132,8 +143,8 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
     }
   }
 
-  const playerLabelY = hexCenter(0, playerZone.rowMax).y + HEX_SIZE * 0.5
-  const enemyLabelY  = hexCenter(0, enemyZone.rowMin).y  - HEX_SIZE * 0.5
+  const playerLabelX = hexCenter(0, playerZone.rowMax).x + HEX_SIZE
+  const enemyLabelX  = hexCenter(0, enemyZone.rowMin).x  - HEX_SIZE
 
   const selectedHexData = selectedHex ? getHexData(selectedHex.col, selectedHex.row) : null
 
@@ -142,10 +153,12 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
       <div className="hex-grid-scroll">
         <svg width={svgW} height={svgH}>
           {hexElements}
-          <text x={svgW / 2} y={playerLabelY} textAnchor="middle" fontSize="10" fill="#5566bb" opacity="0.7">
+          <text x={playerLabelX} y={svgH / 2} textAnchor="middle" fontSize="10" fill="#5566bb" opacity="0.7"
+                transform={`rotate(-90, ${playerLabelX}, ${svgH / 2})`}>
             — player deployment zone —
           </text>
-          <text x={svgW / 2} y={enemyLabelY} textAnchor="middle" fontSize="10" fill="#bb5555" opacity="0.7">
+          <text x={enemyLabelX} y={svgH / 2} textAnchor="middle" fontSize="10" fill="#bb5555" opacity="0.7"
+                transform={`rotate(-90, ${enemyLabelX}, ${svgH / 2})`}>
             — enemy territory —
           </text>
         </svg>
@@ -154,7 +167,7 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
         <ReachMenu
           hex={selectedHex}
           placements={placementsAt(selectedHex.col, selectedHex.row)}
-          roster={roster}
+          roster={rosterForHex(selectedHex.col, selectedHex.row)}
           units={info.units}
           hexTerrain={selectedHexData?.terrain ?? 'Open'}
           hexCapacity={grid.hexCapacity}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { getInfo, getMap, postBattle } from './services/api'
 import HexGrid from './components/HexGrid'
 import EventCards from './components/EventCards'

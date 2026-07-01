@@ -94,9 +94,11 @@ static std::string readMapFile(const std::string& name)
 static Army buildDefaultPlayerArmy()
 {
     Army blue;
-    appendArmy<Soldier>(blue, 540, BLUETEAM);
-    appendArmy<Archer> (blue, 150, BLUETEAM);
-    appendArmy<Priest> (blue,  11, BLUETEAM);
+    appendArmy<Soldier>(blue, 300, BLUETEAM);
+    appendArmy<Archer> (blue,  50, BLUETEAM);
+    appendArmy<Mage>   (blue,   3, BLUETEAM);
+    appendArmy<Priest> (blue,   3, BLUETEAM);
+    appendArmy<Cavalry>(blue,  10, BLUETEAM);
     return blue;
 }
 

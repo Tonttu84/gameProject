@@ -85,7 +85,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial run clang serve server frontend
+.PHONY: all clean fclean re test test-serial run clang serve server frontend frontend-test
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -161,6 +161,12 @@ server: $(NAME)
 
 frontend:
 	cd frontend && npm run dev
+
+# Run React/Vitest tests via the nvm node installation (no sudo / PATH changes needed).
+NVM_NODE = $(HOME)/.nvm/versions/node/v24.11.1/bin/node
+NVM_NPM  = $(HOME)/.nvm/versions/node/v24.11.1/bin/npm
+frontend-test:
+	PATH="$(HOME)/.nvm/versions/node/v24.11.1/bin:$$PATH" $(NVM_NODE) $(NVM_NPM) --prefix frontend test
 
 # Launch C++ server + Vite dev server side-by-side.
 serve: $(NAME)

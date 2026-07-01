@@ -1,3 +1,4 @@
+import React from 'react'
 const BattleResult = ({ result, onNextDay }) => {
   const { winner, blue_survivors, red_survivors } = result
 
