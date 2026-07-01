@@ -97,3 +97,9 @@ arrows distrurb the whole square?
 Lisaa strateginen kartta
     -luo taistelukentta dynaamisesti
     -paranna grafiikat
+
+Migrate battle state to a DB, saving every tick, so battle replay can scrub forward and
+back instead of only playing forward live.
+
+Do the DB-migration work on a separate branch first — design the schema and per-tick
+storage approach and get it reviewed before touching the live engine/server code.
