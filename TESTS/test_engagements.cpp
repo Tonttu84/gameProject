@@ -412,14 +412,15 @@ TEST_CASE("resolveEngagements: loner smaller than blocker fills remaining rubble
 
     bf.resolveEngagements();
 
-    // cav1 must be assigned (first to try the only free side).
-    REQUIRE(cav1.getEngagedSide() != nullptr);
-
-    // cav2 must NOT be assigned (20+20=40 > cap 30, nothing smaller to evict).
-    CHECK(cav2.getEngagedSide() == nullptr);
+    // Exactly one cavalry must be assigned (the first to try the only free side);
+    // which one wins depends on sortKey, so we check the XOR rather than cav1 specifically.
+    bool cav1On = (cav1.getEngagedSide() != nullptr);
+    bool cav2On = (cav2.getEngagedSide() != nullptr);
+    CHECK(cav1On != cav2On); // exactly one, not both and not neither
 
     // soldier MUST be assigned — it fits in the remaining 10-unit gap.
     // (If the loop broke early on cav2's failure, soldier would be wrongly left out.)
+    AUnit* winner = cav1On ? static_cast<AUnit*>(&cav1) : static_cast<AUnit*>(&cav2);
     REQUIRE(soldier.getEngagedSide() != nullptr);
-    CHECK(soldier.getEngagedSide() == cav1.getEngagedSide()); // same side as cav1
+    CHECK(soldier.getEngagedSide() == winner->getEngagedSide()); // same side as whichever cav won
 }
