@@ -332,6 +332,35 @@ TEST_CASE("moveToward: a Mounted unit's spreading never enters Forest, even when
     field.extractResult();
 }
 
+TEST_CASE("moveToward: an engaged unit keeps spreading on consecutive ticks instead of freezing after one lateral move") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    auto apex = std::make_unique<Soldier>(BLUETEAM);
+    apex->setHex(field.hexGrid.getHex({1, 5}));
+    blue.push_back(std::move(apex));
+
+    for (int i = 0; i < 17; ++i) {
+        auto u = std::make_unique<Soldier>(REDTEAM);
+        u->setHex(field.hexGrid.getHex({0, 5}));
+        red.push_back(std::move(u));
+    }
+    auto thin = std::make_unique<Soldier>(REDTEAM);
+    thin->setHex(field.hexGrid.getHex({1, 4}));
+    red.push_back(std::move(thin));
+
+    field.loadArmies(std::move(red), std::move(blue));
+
+    AUnit& mover = *field.getTeam(REDTEAM)[0];
+    mover.setTookLateral(true); // simulate: unit already spread once last tick
+
+    field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({1, 5}));
+
+    REQUIRE(mover.getHex() != nullptr);
+    CHECK(mover.getHex()->coord == HexCoord{1, 4}); // must still spread, not freeze
+    field.extractResult();
+}
+
 TEST_CASE("moveSquad: a squad redistributes to a less-crowded engaged neighbor once its hex is over threshold") {
     Battlefield& field = Utility::getBattlefield();
 

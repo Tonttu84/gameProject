@@ -282,13 +282,15 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
         return;
     }
 
-    // Lateral: only if not mustDecrease, and respecting engaged/spreading constraints.
-    // Free to slide while not engaged (pre-contact maneuvering); once engaged, only
-    // toward a less-crowded engaged neighbor once this hex is past its own retention
-    // threshold — see shouldSpreadToward().
-    if (!mustDecrease && choice.latDir >= 0) {
+    // Lateral movement rules differ by contact state:
+    // - Pre-contact: free to slide, but not two lateral moves in a row (mustDecrease).
+    // - Engaged: mustDecrease can never be satisfied (enemy blocks that hex), so skip
+    //   that gate entirely and govern purely by shouldSpreadToward() each tick.
+    if (choice.latDir >= 0) {
         bool engaged = unit.getEngaged(*this);
-        if (!engaged || shouldSpreadToward(unit.getHex(), choice.latHex)) {
+        bool allowed = engaged ? shouldSpreadToward(unit.getHex(), choice.latHex)
+                               : !mustDecrease;
+        if (allowed) {
             moveAUnit(unit, choice.latCoord);
             if (choice.latCost > 1) unit.setSpentMove(static_cast<size_t>(choice.latCost - 1));
             unit.setTookLateral(true);
@@ -454,12 +456,12 @@ void Battlefield::moveSquad(Squad& squad)
     int      moveCost    = 1;
     if (choice.decrDir >= 0) {
         nextHex = choice.decrHex; moveCost = choice.decrCost;
-    } else if (!mustDecrease && choice.latDir >= 0) {
+    } else if (choice.latDir >= 0) {
         Hex* fromHex   = ref->getHex();
         bool engaged   = ref->getEngaged(*this);
         bool canSpread = shouldSpreadToward(fromHex, choice.latHex)
                        && hexFreshSize(fromHex) - squadFreshSize >= hexRetentionThreshold(fromHex);
-        if (!engaged || canSpread) {
+        if (engaged ? canSpread : !mustDecrease) {
             nextHex = choice.latHex; moveCost = choice.latCost; tookLateral = true;
         }
     }
