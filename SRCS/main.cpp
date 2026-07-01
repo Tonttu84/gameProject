@@ -1,4 +1,5 @@
 #include "campaign/SampleBattle.hpp"
+#include "campaign/SpreadTest.hpp"
 #include "campaign/UnitRegistry.hpp"
 #include "campaign/BattleServer.hpp"
 
@@ -39,6 +40,8 @@ int main(int argc, char* argv[])
         runBattleFromJson(field, renderer);
     else if (mode == "sample")
         runSampleBattle(field, renderer);
+    else if (mode == "spread")
+        runSpreadTest(field, renderer);
 
     sf::Event event;
     while (window.isOpen() && window.pollEvent(event))
