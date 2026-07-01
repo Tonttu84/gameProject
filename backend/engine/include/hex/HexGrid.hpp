@@ -124,6 +124,18 @@ public:
     std::vector<HexSide>&       getSides();
     const std::vector<HexSide>& getSides() const { return _sides; }
 
+    // Deployment zone row ranges (inclusive). Returns -1 if not set.
+    int playerZoneMinRow() const { return _playerZoneMinRow; }
+    int playerZoneMaxRow() const { return _playerZoneMaxRow; }
+    int enemyZoneMinRow()  const { return _enemyZoneMinRow;  }
+    int enemyZoneMaxRow()  const { return _enemyZoneMaxRow;  }
+    bool hasPlayerZone()   const { return _playerZoneMinRow >= 0; }
+    bool hasEnemyZone()    const { return _enemyZoneMinRow  >= 0; }
+
+    // Returns all hexes in the player/enemy zone (empty if zone not set).
+    std::vector<HexCoord> playerZone() const;
+    std::vector<HexCoord> enemyZone()  const;
+
     sf::Vector2f hexToPixel(HexCoord c) const;  // axial → flat 2D pixel position
     float        getHexSize() const;
     static int   distance(HexCoord a, HexCoord b);
@@ -152,6 +164,12 @@ public:
 private:
     sf::Vector2f _origin;
     float        _hexSize;
+
+    // Deployment zone row ranges. -1 = not set.
+    int _playerZoneMinRow = -1;
+    int _playerZoneMaxRow = -1;
+    int _enemyZoneMinRow  = -1;
+    int _enemyZoneMaxRow  = -1;
 
     std::unordered_map<HexCoord, Hex, HexCoordHash> _hexes;
     std::vector<HexSide> _sides;

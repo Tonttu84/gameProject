@@ -130,7 +130,9 @@ body {
   padding: 2px 4px;
   text-align: right;
 }
-.reach-commit { width: 100%; margin-top: 0.6rem; }
+.reach-capacity         { font-size: 11px; color: #7777aa; margin-bottom: 0.6rem; }
+.reach-row-forbidden    { opacity: 0.35; }
+.reach-commit           { width: 100%; margin-top: 0.6rem; }
 
 .result-screen {
   display: flex;

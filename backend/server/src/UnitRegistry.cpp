@@ -1,6 +1,4 @@
 #include "server/UnitRegistry.hpp"
-#include "hex/HexGrid.hpp"
-#include "Battlefield.hpp"
 #include "AUnit.hpp"
 #include "units/Soldier.hpp"
 #include "units/Archer.hpp"
@@ -9,8 +7,31 @@
 #include "units/Necromancer.hpp"
 #include "units/Cavalry.hpp"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wformat-security"
+#include "extern/json.hpp"
+#pragma GCC diagnostic pop
+
 #include <cstdio>
 #include <string>
+
+using json = nlohmann::json;
+
+// ── Unit factory ──────────────────────────────────────────────────────────────
+
+static std::unique_ptr<AUnit> makeUnit(const std::string& type, int team)
+{
+    if (type == "Soldier")    return std::make_unique<Soldier>(team);
+    if (type == "Archer")     return std::make_unique<Archer>(team);
+    if (type == "Mage")       return std::make_unique<Mage>(team);
+    if (type == "Priest")     return std::make_unique<Priest>(team);
+    if (type == "Cavalry")    return std::make_unique<Cavalry>(team);
+    if (type == "Necromancer")return std::make_unique<Necromancer>(team);
+    return nullptr;
+}
 
 // ── Tiny JSON helpers ─────────────────────────────────────────────────────────
 
@@ -33,15 +54,15 @@ static std::string forbiddenTerrainJson(UnitCategory cat)
 }
 
 static std::string jsonEntry(const char* type, const char* symbol,
-                              int size, const char* category,
+                              int placementSize, const char* category,
                               UnitCategory cat)
 {
     char buf[256];
     std::snprintf(buf, sizeof(buf),
-        "{\"type\":%s,\"symbol\":%s,\"size\":%d,\"category\":%s,\"forbiddenTerrain\":%s}",
+        "{\"type\":%s,\"symbol\":%s,\"placementSize\":%d,\"category\":%s,\"forbiddenTerrain\":%s}",
         jsonStr(type).c_str(),
         jsonStr(symbol).c_str(),
-        size,
+        placementSize,
         jsonStr(category).c_str(),
         forbiddenTerrainJson(cat).c_str());
     return buf;
@@ -102,4 +123,20 @@ std::string buildInfoJson()
         terrains.c_str());
 
     return buf;
+}
+
+// ── buildArmyFromPlacement ────────────────────────────────────────────────────
+
+Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid& grid)
+{
+    Army army;
+    json j = json::parse(placementJson);
+    for (const auto& entry : j) {
+        auto u = makeUnit(entry["unit_type"].get<std::string>(), team);
+        if (!u) continue;
+        Hex* h = grid.getHex({entry["q"].get<int>(), entry["r"].get<int>()});
+        if (h) { u->setHex(h); u->setPlaced(true); }
+        army.push_back(std::move(u));
+    }
+    return army;
 }

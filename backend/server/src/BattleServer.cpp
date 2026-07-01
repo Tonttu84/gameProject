@@ -38,34 +38,10 @@ using json = nlohmann::json;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-static TerrainType terrainFromString(const std::string& s)
+static PlacementZone zoneFromRows(int minRow, int maxRow, int cols)
 {
-    if (s == "Forest") return TerrainType::Forest;
-    if (s == "Marsh")  return TerrainType::Marsh;
-    if (s == "Rubble") return TerrainType::Rubble;
-    return TerrainType::Open;
-}
-
-static HexDirection sideFromInt(int i)
-{
-    return static_cast<HexDirection>(i % 6);
-}
-
-// Visual col/row → axial hex (same mapping as BattleSetup / SampleBattle).
-static Hex* getVisualHex(HexGrid& grid, int col, int row)
-{
-    return grid.getHex({col - row / 2, row});
-}
-
-static std::unique_ptr<AUnit> makeUnit(const std::string& type, int team)
-{
-    if (type == "Soldier")    return std::make_unique<Soldier>(team);
-    if (type == "Archer")     return std::make_unique<Archer>(team);
-    if (type == "Mage")       return std::make_unique<Mage>(team);
-    if (type == "Priest")     return std::make_unique<Priest>(team);
-    if (type == "Cavalry")    return std::make_unique<Cavalry>(team);
-    if (type == "Necromancer")return std::make_unique<Necromancer>(team);
-    return nullptr;
+    // Bounding columns across all rows: visual col = 0..cols-1 in all rows.
+    return {0, cols - 1, minRow, maxRow};
 }
 
 static std::string survivorJson(const Army& army)
@@ -108,45 +84,23 @@ static std::string resultToJson(const BattleResult& r)
 
 // ── Battle-from-JSON ──────────────────────────────────────────────────────────
 
-static void applyTerrainFromJson(Battlefield& field, const json& j)
+static std::string readMapFile(const std::string& name)
 {
-    if (!j.contains("terrain")) return;
-    for (const auto& entry : j["terrain"]) {
-        int col = entry["col"].get<int>();
-        int row = entry["row"].get<int>();
-        std::string type = entry["type"].get<std::string>();
-        Hex* h = getVisualHex(field.hexGrid, col, row);
-        if (h) h->terrain = terrainFromString(type);
-    }
-
-    if (j.contains("hexsides")) {
-        for (const auto& entry : j["hexsides"]) {
-            int col  = entry["col"].get<int>();
-            int row  = entry["row"].get<int>();
-            int side = entry["side"].get<int>();
-            Hex* h = getVisualHex(field.hexGrid, col, row);
-            if (!h) continue;
-            HexSide* hs = field.hexGrid.getSide(h->coord, sideFromInt(side));
-            if (!hs) continue;
-            if (entry.contains("blocked"))   hs->blocked   = entry["blocked"].get<bool>();
-            if (entry.contains("fortified")) {
-                hs->fortified = entry["fortified"].get<bool>();
-                if (hs->fortified) hs->fortifiedDefender = h;
-            }
-        }
-    }
-
-    if (j.contains("impassable")) {
-        for (const auto& entry : j["impassable"]) {
-            int col = entry["col"].get<int>();
-            int row = entry["row"].get<int>();
-            Hex* h = getVisualHex(field.hexGrid, col, row);
-            if (h) h->impassable = true;
-        }
-    }
+    std::ifstream f("maps/" + name + ".json");
+    if (!f) return {};
+    return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
 
-static Army buildEnemyFromPreset(const std::string& /*preset*/)
+static Army buildDefaultPlayerArmy()
+{
+    Army blue;
+    appendArmy<Soldier>(blue, 540, BLUETEAM);
+    appendArmy<Archer> (blue, 150, BLUETEAM);
+    appendArmy<Priest> (blue,  11, BLUETEAM);
+    return blue;
+}
+
+static Army buildDefaultEnemyArmy()
 {
     Army red;
     appendArmy<Soldier>     (red, 540, REDTEAM);
@@ -175,28 +129,43 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
         return;
     }
 
-    field.reset();
-    applyTerrainFromJson(field, j);
-
-    Army player;
-    if (j.contains("player")) {
-        for (const auto& entry : j["player"]) {
-            auto u = makeUnit(entry["type"].get<std::string>(), BLUETEAM);
-            if (!u) continue;
-            int col = entry["col"].get<int>();
-            int row = entry["row"].get<int>();
-            Hex* h = getVisualHex(field.hexGrid, col, row);
-            if (h) {
-                u->setHex(h);
-                u->setPlaced(true);
-            }
-            player.push_back(std::move(u));
-        }
+    // Load map terrain from maps/<name>.json into the grid.
+    std::string mapName = j.value("map", "sample_battle");
+    std::string mapContent = readMapFile(mapName);
+    if (mapContent.empty()) {
+        std::cerr << "battle: map not found: " << mapName << "\n";
+        std::cout << "{\"error\":\"map not found\"}\n";
+        return;
     }
 
-    std::string preset = j.value("enemy_preset", "default");
-    Army enemy = buildEnemyFromPreset(preset);
-    randomPlaceArmy(enemy, field, {0, field.width - 1, field.height * 3/4, field.height - 1});
+    field.reset();
+    field.hexGrid.fromJson(mapContent);
+
+    // Build player army from explicit placement, or default if absent.
+    Army player;
+    if (j.contains("player_placement") && !j["player_placement"].empty()) {
+        player = buildArmyFromPlacement(j["player_placement"].dump(), BLUETEAM, field.hexGrid);
+    } else {
+        player = buildDefaultPlayerArmy();
+        PlacementZone pz = field.hexGrid.hasPlayerZone()
+            ? zoneFromRows(field.hexGrid.playerZoneMinRow(),
+                           field.hexGrid.playerZoneMaxRow(), field.width)
+            : PlacementZone{0, field.width - 1, 0, field.height / 4};
+        randomPlaceArmy(player, field, pz);
+    }
+
+    // Build enemy army from explicit placement, or default if absent.
+    Army enemy;
+    if (j.contains("enemy_placement") && !j["enemy_placement"].empty()) {
+        enemy = buildArmyFromPlacement(j["enemy_placement"].dump(), REDTEAM, field.hexGrid);
+    } else {
+        enemy = buildDefaultEnemyArmy();
+        PlacementZone ez = field.hexGrid.hasEnemyZone()
+            ? zoneFromRows(field.hexGrid.enemyZoneMinRow(),
+                           field.hexGrid.enemyZoneMaxRow(), field.width)
+            : PlacementZone{0, field.width - 1, field.height * 3 / 4, field.height - 1};
+        randomPlaceArmy(enemy, field, ez);
+    }
 
     field.loadArmies(std::move(enemy), std::move(player));
 
@@ -220,6 +189,19 @@ void runServer(int port, const std::string& binaryPath)
 
     svr.Get("/api/info", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(buildInfoJson(), "application/json");
+    });
+
+    svr.Get("/api/map", [](const httplib::Request& req, httplib::Response& res) {
+        std::string name = req.has_param("name") ? req.get_param_value("name") : "sample_battle";
+        std::string path = "maps/" + name + ".json";
+        std::ifstream f(path);
+        if (!f) {
+            res.status = 404;
+            res.set_content("{\"error\":\"map not found\"}", "application/json");
+            return;
+        }
+        std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        res.set_content(body, "application/json");
     });
 
     svr.Post("/api/battle", [&binaryPath](const httplib::Request& req, httplib::Response& res) {
@@ -251,7 +233,8 @@ void runServer(int port, const std::string& binaryPath)
     });
 
     std::cout << "Campaign server running on http://localhost:" << port << "\n";
-    std::cout << "  GET  /api/info   — unit and grid metadata\n";
-    std::cout << "  POST /api/battle — run a battle from JSON\n";
+    std::cout << "  GET  /api/info        — unit and grid metadata\n";
+    std::cout << "  GET  /api/map[?name=] — map JSON (default: sample_battle)\n";
+    std::cout << "  POST /api/battle      — run a battle from JSON\n";
     svr.listen("0.0.0.0", port);
 }

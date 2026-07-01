@@ -299,6 +299,26 @@ int HexGrid::fleeDistance(const Hex* hex, bool mounted, bool redTeam) const
 
 // ── JSON serialization ────────────────────────────────────────────────────────
 
+std::vector<HexCoord> HexGrid::playerZone() const
+{
+    std::vector<HexCoord> result;
+    if (_playerZoneMinRow < 0) return result;
+    for (const auto& [coord, hex] : _hexes)
+        if (coord.r >= _playerZoneMinRow && coord.r <= _playerZoneMaxRow)
+            result.push_back(coord);
+    return result;
+}
+
+std::vector<HexCoord> HexGrid::enemyZone() const
+{
+    std::vector<HexCoord> result;
+    if (_enemyZoneMinRow < 0) return result;
+    for (const auto& [coord, hex] : _hexes)
+        if (coord.r >= _enemyZoneMinRow && coord.r <= _enemyZoneMaxRow)
+            result.push_back(coord);
+    return result;
+}
+
 std::string HexGrid::toJson(int cols, int rows, const std::string& name) const
 {
     json j;
@@ -347,6 +367,10 @@ std::string HexGrid::toJson(int cols, int rows, const std::string& name) const
         hexes.push_back(std::move(entry));
     }
     j["hexes"] = std::move(hexes);
+    if (_playerZoneMinRow >= 0)
+        j["player_zone_rows"] = json::array({_playerZoneMinRow, _playerZoneMaxRow});
+    if (_enemyZoneMinRow >= 0)
+        j["enemy_zone_rows"]  = json::array({_enemyZoneMinRow,  _enemyZoneMaxRow});
     return j.dump(2);
 }
 
@@ -356,6 +380,15 @@ void HexGrid::fromJson(const std::string& jsonStr)
 
     if (_hexes.empty())
         buildRect(j["cols"].get<int>(), j["rows"].get<int>());
+
+    if (j.contains("player_zone_rows")) {
+        _playerZoneMinRow = j["player_zone_rows"][0].get<int>();
+        _playerZoneMaxRow = j["player_zone_rows"][1].get<int>();
+    }
+    if (j.contains("enemy_zone_rows")) {
+        _enemyZoneMinRow = j["enemy_zone_rows"][0].get<int>();
+        _enemyZoneMaxRow = j["enemy_zone_rows"][1].get<int>();
+    }
 
     if (!j.contains("hexes")) return;
     for (const auto& entry : j["hexes"]) {

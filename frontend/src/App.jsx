@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getInfo, postBattle } from './services/api'
+import { getInfo, getMap, postBattle } from './services/api'
 import HexGrid from './components/HexGrid'
 import EventCards from './components/EventCards'
 import CampaignHUD from './components/CampaignHUD'
@@ -60,6 +60,7 @@ const STARTING_ROSTER = { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry:
 
 const App = () => {
   const [info,         setInfo]         = useState(null)
+  const [map,          setMap]          = useState(null)
   const [phase,        setPhase]        = useState('setup')
   const [day,          setDay]          = useState(1)
   const [food,         setFood]         = useState(100)
@@ -71,8 +72,8 @@ const App = () => {
   const [error,        setError]        = useState(null)
 
   useEffect(() => {
-    getInfo()
-      .then(setInfo)
+    Promise.all([getInfo(), getMap()])
+      .then(([infoData, mapData]) => { setInfo(infoData); setMap(mapData) })
       .catch(() => setError('Could not reach game server. Start it with: ./game server'))
   }, [])
 
@@ -94,13 +95,15 @@ const App = () => {
     if (placements.length === 0) return
     setPhase('battling')
 
-    // Expand placements: each stack entry becomes `count` individual unit objects
-    const playerUnits = placements.flatMap(p =>
-      Array.from({ length: p.count }, () => ({ type: p.type, col: p.col, row: p.row }))
-    )
+    const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
+
+    const playerPlacement = placements.flatMap(p => {
+      const { q, r } = toAxial(p.col, p.row)
+      return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r }))
+    })
 
     try {
-      const result = await postBattle({ player: playerUnits, enemy_preset: 'default' })
+      const result = await postBattle({ map: 'sample_battle', player_placement: playerPlacement, enemy_preset: 'default' })
       setBattleResult(result)
       setPhase('result')
     } catch (e) {
@@ -130,7 +133,7 @@ const App = () => {
     )
   }
 
-  if (!info) {
+  if (!info || !map) {
     return <div className="loading">Connecting to game server...</div>
   }
 
@@ -162,6 +165,7 @@ const App = () => {
         <div className="phase-placement">
           <HexGrid
             info={info}
+            map={map}
             placements={placements}
             onPlacementsChange={setPlacements}
             roster={roster}

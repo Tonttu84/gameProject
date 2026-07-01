@@ -1,5 +1,7 @@
 {
   "cols": 16,
+  "player_zone_rows": [0, 7],
+  "enemy_zone_rows": [22, 29],
   "hexes": [
     {
       "q": 7,
