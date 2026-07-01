@@ -98,7 +98,7 @@ STDCXX_RPATH := $(shell dirname $$($(CC) -print-file-name=libstdc++.so.6))
 $(NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(SFML_LIBS) -Wl,-rpath,$(SFML_DIR)/lib -Wl,-rpath,$(STDCXX_RPATH)
 
-$(OBJ_DIR)/%.o: $(BACKEND_DIR)/%.cpp
+$(OBJ_DIR)/%.o: $(BACKEND_DIR)/%.cpp | $(SFML_DIR)/include/SFML/Config.hpp
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
@@ -117,11 +117,11 @@ $(SFML_DIR)/include/SFML/Config.hpp:
 	rm $(SFML_TAR)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
-$(TEST_OBJ_DIR)/%.o: $(BACKEND_DIR)/%.cpp
+$(TEST_OBJ_DIR)/%.o: $(BACKEND_DIR)/%.cpp | $(SFML_DIR)/include/SFML/Config.hpp
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DTESTING -MMD -MP -c $< -o $@
 
-$(TEST_OBJ_DIR)/%.o: $(TEST_DIR)/%.cpp
+$(TEST_OBJ_DIR)/%.o: $(TEST_DIR)/%.cpp | $(SFML_DIR)/include/SFML/Config.hpp
 	@mkdir -p $(TEST_OBJ_DIR)
 	$(CC) $(CFLAGS) -DTESTING -I$(TEST_DIR) -MMD -MP -c $< -o $@
 
