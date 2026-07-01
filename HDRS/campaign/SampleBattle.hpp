@@ -1,6 +1,9 @@
 #pragma once
 #include "Battlefield.hpp"
+#include "render/BattleRenderer.hpp"
+#include <string>
 
-// Populates the battlefield with the current sample armies and calls loadArmies.
-// Edit SRCS/SampleBattle.cpp to change unit counts and composition.
 void setupSampleBattle(Battlefield& field);
+BattleResult runBattleLoop(Battlefield& field, BattleRenderer& renderer,
+                           const std::string& title);
+void runSampleBattle(Battlefield& field, BattleRenderer& renderer);

@@ -9,6 +9,6 @@ Horse::Horse(int setTeam): AUnit::AUnit(setTeam)
     armour    = 0;            // unarmored by default; a barded horse would set this higher
     defence   = 12;           // fast and evasive
     attackPWR = 0;             // never attacks independently while stowed
-    size      = 20;
     unitValue = 5;
+    size      = SIZE;
 }

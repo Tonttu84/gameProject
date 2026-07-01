@@ -11,6 +11,7 @@ Archer::Archer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Shorts
     // aimed range (accuracy/10 hexes). 50 → 50% chance, 5-hex aimed range.
     accuracy       = 50;
     preferredRange = 3; // hold bow range; drops to 1 when ammo runs out
+    size = SIZE;
 }
 
 Archer::Archer() noexcept {

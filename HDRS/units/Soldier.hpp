@@ -21,6 +21,8 @@
 class Soldier : public Human
 {
     public:
+        static constexpr int SIZE = 10;
+
         Soldier(int setTeam) noexcept;
         ~Soldier() noexcept = default ;
 

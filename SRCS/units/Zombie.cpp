@@ -28,6 +28,7 @@ Zombie::Zombie(int setTeam): AUnit::AUnit(setTeam)
     strength = 12;
     addWeapon(MeleeWeapons::Claws);
     fatigueCost = 0; //Undead dont need rest
+    size = SIZE;
 
 }
 

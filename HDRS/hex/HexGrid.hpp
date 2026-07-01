@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <queue>
 #include <unordered_map>
@@ -9,6 +10,22 @@
 
 enum class HexDirection { NE = 0, E = 1, SE = 2, SW = 3, W = 4, NW = 5 };
 enum class TerrainType  { Open, Forest, Marsh, Rubble };
+
+// Single source of truth for terrain display — both BattleRenderer (SFML) and
+// the React campaign UI read name/color from here.
+struct TerrainMeta {
+    const char* name;
+    uint8_t r, g, b;
+};
+inline constexpr TerrainMeta TERRAIN_META[] = {
+    {"Open",    90, 100,  65},
+    {"Forest",  55, 130,  40},
+    {"Marsh",   40, 110, 115},
+    {"Rubble", 120, 100,  70},
+};
+inline constexpr const TerrainMeta& terrainMeta(TerrainType t) {
+    return TERRAIN_META[static_cast<int>(t)];
+}
 
 struct HexCoord {
     int q = 0, r = 0;

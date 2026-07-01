@@ -9,6 +9,8 @@
 class Scorpion : public AUnit
 {
 public:
+    static constexpr int SIZE = 20;
+
     explicit Scorpion(int setTeam);
     ~Scorpion() noexcept override = default;
 };

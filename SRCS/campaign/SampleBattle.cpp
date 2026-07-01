@@ -8,6 +8,69 @@
 #include "units/Necromancer.hpp"
 #include "units/Cavalry.hpp"
 #include "units/Warhorse.hpp"
+#include "render/BattleRenderer.hpp"
+#include <SFML/Window/Event.hpp>
+#include <iostream>
+#include <thread>
+#include <chrono>
+
+static constexpr int PAUSED_SLEEP_MS = 50;
+static constexpr int TICK_SLEEP_MS   = 200;
+
+BattleResult runBattleLoop(Battlefield& field, BattleRenderer& renderer,
+                           const std::string& title)
+{
+    sf::RenderWindow& window = renderer.getWindow();
+    int  counter = 0;
+    bool paused  = false;
+    bool ongoing = true;
+
+    std::cout << "\n=== " << title << " — SPACE to pause ===\n";
+
+    while (ongoing && window.isOpen()) {
+        sf::Event event;
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) {
+                window.close();
+                return field.extractResult();
+            }
+            if (event.type == sf::Event::KeyPressed
+                    && event.key.code == sf::Keyboard::Space) {
+                paused = !paused;
+                std::cout << (paused ? "  [PAUSED]\n" : "  [RESUMED]\n");
+            }
+            renderer.handleEvent(event);
+        }
+
+        if (paused) {
+            renderer.render(field.hexGrid);
+            std::this_thread::sleep_for(std::chrono::milliseconds(PAUSED_SLEEP_MS));
+            continue;
+        }
+
+        ongoing = field.tick();
+        counter++;
+        std::cout << "Turn " << counter << "\n";
+        renderer.render(field.hexGrid);
+        std::this_thread::sleep_for(std::chrono::milliseconds(TICK_SLEEP_MS));
+    }
+
+    return field.extractResult();
+}
+
+void runSampleBattle(Battlefield& field, BattleRenderer& renderer)
+{
+    field.reset();
+    setupSampleBattle(field);
+    BattleResult result = runBattleLoop(field, renderer, "SAMPLE BATTLE");
+
+    std::cout << "\nBattle ended. ";
+    if      (result.winner == REDTEAM)  std::cout << "Red wins.\n";
+    else if (result.winner == BLUETEAM) std::cout << "Blue wins.\n";
+    else                                std::cout << "Draw.\n";
+    std::cout << "Red survivors: "  << result.redSurvivors.size()
+              << "  Blue survivors: " << result.blueSurvivors.size() << "\n";
+}
 
 void setupSampleBattle(Battlefield& field)
 {

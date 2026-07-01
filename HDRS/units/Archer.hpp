@@ -22,6 +22,8 @@
 class Archer : public Human
 {
     public:
+        static constexpr int SIZE = 10;
+
         Archer(int setTeam) noexcept;
         Archer() noexcept;
         ~Archer() noexcept = default ;

@@ -22,6 +22,8 @@ class Zombie : public AUnit
 {
 
     public:
+        static constexpr int SIZE = 10;
+
         size_t takeHit(TODO source, TODO type);
         void attacks(); //  cycles through all attacks
         ~Zombie() noexcept = default;

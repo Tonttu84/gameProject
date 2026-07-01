@@ -7,6 +7,7 @@ Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
     printSymbol    = 'M';
     accuracy       = 60; // 60% aimed chance, 6-hex aimed range
     preferredRange = 3;
+    size = SIZE;
 }
 
 Mage::Mage() noexcept {

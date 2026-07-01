@@ -21,6 +21,7 @@ Soldier::Soldier(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Swor
     attackPWR = 11;
     defence = 12;
     fatigueCost++; // Ekstra +1 fatigue from heavy armor
+    size = SIZE;
 } 
 
 

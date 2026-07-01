@@ -37,4 +37,5 @@ Skeleton::Skeleton(int setTeam) : AUnit(setTeam)
     if      (armorRoll <= 5) armour = 0;
     else if (armorRoll <= 8) armour = LIGHTARMOUR;
     else                     armour = HEAVYARMOUR;
+    size = SIZE;
 }

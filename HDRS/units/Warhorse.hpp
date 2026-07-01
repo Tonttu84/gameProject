@@ -9,6 +9,8 @@
 class Warhorse : public Horse
 {
 public:
+    static constexpr int SIZE = Horse::SIZE;
+
     explicit Warhorse(int setTeam);
     ~Warhorse() noexcept override = default;
 };

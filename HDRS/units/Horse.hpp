@@ -13,6 +13,8 @@
 class Horse : public AUnit
 {
 public:
+    static constexpr int SIZE = 20;
+
     explicit Horse(int setTeam);
     ~Horse() noexcept override = default;
 };

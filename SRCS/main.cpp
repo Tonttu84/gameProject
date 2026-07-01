@@ -1,41 +1,45 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   main.cpp                                           :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/08/16 08:31:32 by jrimpila          #+#    #+#             */
-/*   Updated: 2025/10/04 17:45:28 by jrimpila         ###   +#+               */
-/*                                                                            */
-/* ************************************************************************** */
-
-#include "../HDRS/campaign/Campaign.hpp"
+#include "campaign/SampleBattle.hpp"
+#include "campaign/UnitRegistry.hpp"
+#include "campaign/BattleServer.hpp"
 
 #include <SFML/Graphics.hpp>
+#include <iostream>
+#include <string>
 
-constexpr unsigned int WINDOW_WIDTH  = 1000; // SFML window width in pixels
-constexpr unsigned int WINDOW_HEIGHT = 1000; // SFML window height in pixels
+constexpr unsigned int WINDOW_WIDTH  = 1000;
+constexpr unsigned int WINDOW_HEIGHT = 1000;
+constexpr int          SERVER_PORT   = 8080;
 
 int main(int argc, char* argv[])
 {
-    Utility::load();
+    std::string mode = (argc > 1) ? argv[1] : "";
 
+    // ── Headless modes (no SFML window) ──────────────────────────────────────
+    if (mode == "info") {
+        std::cout << buildInfoJson() << "\n";
+        return 0;
+    }
+
+    if (mode == "server") {
+        int port = (argc > 2) ? std::stoi(argv[2]) : SERVER_PORT;
+        runServer(port, argv[0]);
+        return 0;
+    }
+
+    // ── SFML modes ────────────────────────────────────────────────────────────
+    Utility::load();
     Battlefield& field = Utility::getBattlefield();
 
     sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "Battlefield");
-
     BattleRenderer renderer(Utility::font, window);
     renderer.build(field.hexGrid);
     renderer.initView(window.getSize());
 
-    bool sample = (argc > 1 && std::string(argv[1]) == "sample");
-    if (sample)
+    if (mode == "battle")
+        runBattleFromJson(field, renderer);
+    else if (mode == "sample")
         runSampleBattle(field, renderer);
-    else
-        runCampaign(field, renderer);
 
-    // Keep window open after campaign ends so the user can see the final state.
     sf::Event event;
     while (window.isOpen() && window.pollEvent(event))
         if (event.type == sf::Event::Closed)
