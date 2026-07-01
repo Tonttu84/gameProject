@@ -2,6 +2,46 @@
 #include <algorithm>
 #include <cmath>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wformat-security"
+#include "extern/json.hpp"
+#pragma GCC diagnostic pop
+
+using json = nlohmann::json;
+
+// ── JSON helpers ──────────────────────────────────────────────────────────────
+
+static const char* dirName(HexDirection d) {
+    switch (d) {
+        case HexDirection::NE: return "NE";
+        case HexDirection::E:  return "E";
+        case HexDirection::SE: return "SE";
+        case HexDirection::SW: return "SW";
+        case HexDirection::W:  return "W";
+        case HexDirection::NW: return "NW";
+    }
+    return "NE";
+}
+
+static HexDirection dirFromName(const std::string& s) {
+    if (s == "E")  return HexDirection::E;
+    if (s == "SE") return HexDirection::SE;
+    if (s == "SW") return HexDirection::SW;
+    if (s == "W")  return HexDirection::W;
+    if (s == "NW") return HexDirection::NW;
+    return HexDirection::NE;
+}
+
+static TerrainType terrainFromName(const std::string& s) {
+    if (s == "Forest") return TerrainType::Forest;
+    if (s == "Marsh")  return TerrainType::Marsh;
+    if (s == "Rubble") return TerrainType::Rubble;
+    return TerrainType::Open;
+}
+
 // Axial neighbor offsets for NE E SE SW W NW (r increases southward)
 static constexpr int DQ[6] = { 1,  1,  0, -1, -1,  0};
 static constexpr int DR[6] = {-1,  0,  1,  1,  0, -1};
@@ -255,4 +295,93 @@ int HexGrid::fleeDistance(const Hex* hex, bool mounted, bool redTeam) const
         : (mounted ? _blueFleeMounted : _blueFleeGround);
     if (table.empty()) return UNREACHABLE;
     return table[static_cast<size_t>(it->second)];
+}
+
+// ── JSON serialization ────────────────────────────────────────────────────────
+
+std::string HexGrid::toJson(int cols, int rows, const std::string& name) const
+{
+    json j;
+    j["version"] = 1;
+    j["name"]    = name;
+    j["cols"]    = cols;
+    j["rows"]    = rows;
+
+    json hexes = json::array();
+    for (const auto& [coord, hex] : _hexes) {
+        json blockedSides    = json::array();
+        json fortifiedSides  = json::array();
+
+        for (int i = 0; i < 6; ++i) {
+            HexSide* side = hex.sides[static_cast<size_t>(i)];
+            if (!side) continue;
+            auto dir = static_cast<HexDirection>(i);
+            // Store blocked sides where this hex is hexA (owner of NE/E/SE).
+            if (side->blocked && side->hexA == &hex)
+                blockedSides.push_back(dirName(dir));
+            // Store fortified sides where this hex is the fortifiedDefender.
+            if (side->fortified && side->fortifiedDefender == &hex)
+                fortifiedSides.push_back(dirName(dir));
+        }
+
+        bool nonDefault = (hex.terrain   != TerrainType::Open)
+                       || (hex.elevation != 0)
+                       || hex.impassable
+                       || !blockedSides.empty()
+                       || !fortifiedSides.empty();
+        if (!nonDefault) continue;
+
+        json entry;
+        entry["q"] = coord.q;
+        entry["r"] = coord.r;
+        if (hex.terrain != TerrainType::Open)
+            entry["terrain"] = terrainMeta(hex.terrain).name;
+        if (hex.elevation != 0)
+            entry["elevation"] = hex.elevation;
+        if (hex.impassable)
+            entry["impassable"] = true;
+        if (!blockedSides.empty())
+            entry["blocked_sides"] = blockedSides;
+        if (!fortifiedSides.empty())
+            entry["fortified_sides"] = fortifiedSides;
+        hexes.push_back(std::move(entry));
+    }
+    j["hexes"] = std::move(hexes);
+    return j.dump(2);
+}
+
+void HexGrid::fromJson(const std::string& jsonStr)
+{
+    auto j = json::parse(jsonStr);
+
+    if (_hexes.empty())
+        buildRect(j["cols"].get<int>(), j["rows"].get<int>());
+
+    if (!j.contains("hexes")) return;
+    for (const auto& entry : j["hexes"]) {
+        int q = entry["q"].get<int>();
+        int r = entry["r"].get<int>();
+        Hex* h = getHex({q, r});
+        if (!h) continue;
+
+        if (entry.contains("terrain"))
+            h->terrain = terrainFromName(entry["terrain"].get<std::string>());
+        if (entry.contains("elevation"))
+            h->elevation = entry["elevation"].get<int>();
+        if (entry.contains("impassable"))
+            h->impassable = entry["impassable"].get<bool>();
+
+        if (entry.contains("blocked_sides")) {
+            for (const auto& ds : entry["blocked_sides"]) {
+                HexSide* hs = getSide({q, r}, dirFromName(ds.get<std::string>()));
+                if (hs) hs->blocked = true;
+            }
+        }
+        if (entry.contains("fortified_sides")) {
+            for (const auto& ds : entry["fortified_sides"]) {
+                HexSide* hs = getSide({q, r}, dirFromName(ds.get<std::string>()));
+                if (hs) { hs->fortified = true; hs->fortifiedDefender = h; }
+            }
+        }
+    }
 }

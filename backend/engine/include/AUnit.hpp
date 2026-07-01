@@ -35,6 +35,15 @@ enum class UnitCategory {
     Skirmisher  // light troops; Forest normal cost; Marsh +1; Rubble normal cost
 };
 
+// Single source of truth for terrain a unit category cannot enter.
+// Mounted → Forest + Marsh; all others → unrestricted.
+// Used by the placement API and (eventually) BFS terrain filtering.
+inline std::vector<TerrainType> forbiddenTerrainForCategory(UnitCategory cat) {
+    if (cat == UnitCategory::Mounted)
+        return {TerrainType::Forest, TerrainType::Marsh};
+    return {};
+}
+
 class AUnit : public std::enable_shared_from_this<AUnit> {
 public:
     AUnit() = default;
@@ -229,6 +238,7 @@ public:
 
     UnitCategory getCategory()           const { return _category; }
     void         setCategory(UnitCategory c)   { _category = c; }
+
 
     // The category a creature reports once it's on its own — e.g. a mount
     // that's just lost its rider — as opposed to whatever category it

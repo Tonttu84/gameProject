@@ -45,20 +45,10 @@ public:
 
     const int id; // REDTEAM or BLUETEAM
 
-    // ── Unit storage ─────────────────────────────────────────────────────────
-    std::vector<std::unique_ptr<AUnit>> units;
-
-    // Erase dead and fully-fled units from the vector each tick.
-    // Mirrors the erase loops currently inlined in Battlefield::makeBattle.
-    void pruneDeadUnits();
-
-    // Count alive units (mirrors Battlefield::countTeam).
-    size_t countAlive() const;
-
-    // Reset per-battle-tick flags on all units (canFight, engagedSide).
-    void resetUnitFlags();
-
     // ── Squad storage ─────────────────────────────────────────────────────────
+    // Declared before units so squads outlive units during destruction:
+    // AUnit::~AUnit() calls leaveSquad() → Squad::removeMember(), so the Squad
+    // must still be alive when the unit vector is destroyed.
     std::vector<std::unique_ptr<Squad>> squads;
 
     // Disband and erase squads that have no alive members.
@@ -70,6 +60,20 @@ public:
 
     // Disband and erase wings that have no remaining squads.
     void pruneEmptyWings();
+
+    // ── Unit storage ─────────────────────────────────────────────────────────
+    // Declared after squads/wings so units are destroyed first (reverse order).
+    std::vector<std::unique_ptr<AUnit>> units;
+
+    // Erase dead and fully-fled units from the vector each tick.
+    // Mirrors the erase loops currently inlined in Battlefield::makeBattle.
+    void pruneDeadUnits();
+
+    // Count alive units (mirrors Battlefield::countTeam).
+    size_t countAlive() const;
+
+    // Reset per-battle-tick flags on all units (canFight, engagedSide).
+    void resetUnitFlags();
 };
 
 class Battlefield

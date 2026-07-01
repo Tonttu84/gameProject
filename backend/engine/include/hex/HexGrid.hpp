@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <queue>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include <SFML/System/Vector2.hpp>
@@ -105,6 +106,14 @@ public:
     void buildGrid(int radius);
     void buildRect(int cols, int rows);
     void clearUnits();
+
+    // Serialize the grid's terrain/elevation/impassable/side state to JSON.
+    // Only non-default hexes are emitted. cols/rows must match the buildRect call.
+    std::string toJson(int cols, int rows, const std::string& name = "") const;
+
+    // Apply hex overrides from a JSON string produced by toJson().
+    // If the grid is empty, builds it from the JSON's cols/rows first.
+    void fromJson(const std::string& jsonStr);
 
     Hex*        getHex(HexCoord c);
     const Hex*  getHex(HexCoord c) const;

@@ -2,8 +2,11 @@
 #include "scenarios/SpreadTest.hpp"
 #include "server/UnitRegistry.hpp"
 #include "server/BattleServer.hpp"
+#include "Battlefield.hpp"
+#include "Utility.hpp"
 
 #include <SFML/Graphics.hpp>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -24,6 +27,24 @@ int main(int argc, char* argv[])
     if (mode == "server") {
         int port = (argc > 2) ? std::stoi(argv[2]) : SERVER_PORT;
         runServer(port, argv[0]);
+        return 0;
+    }
+
+    if (mode == "dump-map") {
+        // Headless: set up the sample battle terrain and write maps/sample_battle.json.
+        Battlefield& field = Utility::getBattlefield();
+        field.reset();
+        setupSampleBattle(field);
+        std::string out = field.hexGrid.toJson(
+            Battlefield::width, Battlefield::height, "sample_battle");
+        const char* path = (argc > 2) ? argv[2] : "maps/sample_battle.json";
+        std::ofstream f(path);
+        if (!f) {
+            std::cerr << "dump-map: cannot open " << path << "\n";
+            return 1;
+        }
+        f << out << "\n";
+        std::cout << "Wrote " << path << "\n";
         return 0;
     }
 

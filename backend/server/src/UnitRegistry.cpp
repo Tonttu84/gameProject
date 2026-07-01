@@ -1,6 +1,7 @@
 #include "server/UnitRegistry.hpp"
 #include "hex/HexGrid.hpp"
 #include "Battlefield.hpp"
+#include "AUnit.hpp"
 #include "units/Soldier.hpp"
 #include "units/Archer.hpp"
 #include "units/Mage.hpp"
@@ -17,9 +18,23 @@ static std::string jsonStr(const char* s) {
     return std::string("\"") + s + "\"";
 }
 
+static std::string forbiddenTerrainJson(UnitCategory cat)
+{
+    auto vec = forbiddenTerrainForCategory(cat);
+    if (vec.empty()) return "[]";
+    std::string s = "[";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        if (i > 0) s += ",";
+        s += "\"";
+        s += terrainMeta(vec[i]).name;
+        s += "\"";
+    }
+    return s + "]";
+}
+
 static std::string jsonEntry(const char* type, const char* symbol,
                               int size, const char* category,
-                              const char* forbiddenTerrain)
+                              UnitCategory cat)
 {
     char buf[256];
     std::snprintf(buf, sizeof(buf),
@@ -28,7 +43,7 @@ static std::string jsonEntry(const char* type, const char* symbol,
         jsonStr(symbol).c_str(),
         size,
         jsonStr(category).c_str(),
-        forbiddenTerrain);
+        forbiddenTerrainJson(cat).c_str());
     return buf;
 }
 
@@ -49,14 +64,14 @@ static std::string jsonTerrainEntry(int idx)
 std::string buildInfoJson()
 {
     // Unit types available for player placement.
-    // forbidden terrain uses JSON arrays; "[]" = no restrictions.
+    // forbidden terrain is derived from forbiddenTerrainForCategory() — no hardcoded strings.
     std::string units =
         "[" +
-        jsonEntry("Soldier",    "X", Soldier::SIZE,    "Foot",    "[]")           + "," +
-        jsonEntry("Archer",     "A", Archer::SIZE,     "Foot",    "[]")           + "," +
-        jsonEntry("Mage",       "M", Mage::SIZE,       "Foot",    "[]")           + "," +
-        jsonEntry("Priest",     "P", Priest::SIZE,     "Foot",    "[]")           + "," +
-        jsonEntry("Cavalry",    "C", Cavalry::SIZE,    "Mounted", "[\"Forest\",\"Marsh\"]") +
+        jsonEntry("Soldier", "X", Soldier::SIZE, "Foot",    UnitCategory::Foot)    + "," +
+        jsonEntry("Archer",  "A", Archer::SIZE,  "Foot",    UnitCategory::Foot)    + "," +
+        jsonEntry("Mage",    "M", Mage::SIZE,    "Foot",    UnitCategory::Foot)    + "," +
+        jsonEntry("Priest",  "P", Priest::SIZE,  "Foot",    UnitCategory::Foot)    + "," +
+        jsonEntry("Cavalry", "C", Cavalry::SIZE, "Mounted", UnitCategory::Mounted) +
         "]";
 
     // Terrain metadata — indices match TerrainType enum values.

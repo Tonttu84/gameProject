@@ -1,0 +1,398 @@
+{
+  "cols": 16,
+  "hexes": [
+    {
+      "q": 7,
+      "r": 17,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 6,
+      "r": 17,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 5,
+      "r": 17,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 4,
+      "r": 17,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 3,
+      "r": 17,
+      "terrain": "Rubble"
+    },
+    {
+      "q": -4,
+      "r": 17,
+      "terrain": "Forest"
+    },
+    {
+      "q": -5,
+      "r": 17,
+      "terrain": "Forest"
+    },
+    {
+      "q": -6,
+      "r": 17,
+      "terrain": "Forest"
+    },
+    {
+      "q": -7,
+      "r": 17,
+      "terrain": "Forest"
+    },
+    {
+      "q": -8,
+      "r": 17,
+      "terrain": "Forest"
+    },
+    {
+      "q": 7,
+      "r": 16,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 6,
+      "r": 16,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 5,
+      "r": 16,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 4,
+      "r": 16,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 3,
+      "r": 16,
+      "terrain": "Rubble"
+    },
+    {
+      "q": -4,
+      "r": 16,
+      "terrain": "Forest"
+    },
+    {
+      "q": -5,
+      "r": 16,
+      "terrain": "Forest"
+    },
+    {
+      "q": -6,
+      "r": 16,
+      "terrain": "Forest"
+    },
+    {
+      "q": -7,
+      "r": 16,
+      "terrain": "Forest"
+    },
+    {
+      "q": -8,
+      "r": 16,
+      "terrain": "Forest"
+    },
+    {
+      "q": 8,
+      "r": 15,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 7,
+      "r": 15,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 6,
+      "r": 15,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 5,
+      "r": 15,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 4,
+      "r": 15,
+      "terrain": "Rubble"
+    },
+    {
+      "elevation": 1,
+      "q": 3,
+      "r": 15
+    },
+    {
+      "elevation": 1,
+      "q": 2,
+      "r": 15
+    },
+    {
+      "elevation": 1,
+      "q": 1,
+      "r": 15
+    },
+    {
+      "elevation": 1,
+      "q": 0,
+      "r": 15
+    },
+    {
+      "elevation": 1,
+      "q": -1,
+      "r": 15
+    },
+    {
+      "elevation": 1,
+      "q": -2,
+      "r": 15
+    },
+    {
+      "q": -3,
+      "r": 15,
+      "terrain": "Forest"
+    },
+    {
+      "q": -4,
+      "r": 15,
+      "terrain": "Forest"
+    },
+    {
+      "q": -5,
+      "r": 15,
+      "terrain": "Forest"
+    },
+    {
+      "q": -6,
+      "r": 15,
+      "terrain": "Forest"
+    },
+    {
+      "q": -7,
+      "r": 15,
+      "terrain": "Forest"
+    },
+    {
+      "q": 8,
+      "r": 14,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 7,
+      "r": 14,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 6,
+      "r": 14,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 5,
+      "r": 14,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 4,
+      "r": 14,
+      "terrain": "Rubble"
+    },
+    {
+      "elevation": 1,
+      "q": 3,
+      "r": 14
+    },
+    {
+      "elevation": 1,
+      "q": 2,
+      "r": 14
+    },
+    {
+      "elevation": 1,
+      "q": 1,
+      "r": 14
+    },
+    {
+      "elevation": 1,
+      "q": 0,
+      "r": 14
+    },
+    {
+      "elevation": 1,
+      "q": -1,
+      "r": 14
+    },
+    {
+      "elevation": 1,
+      "q": -2,
+      "r": 14
+    },
+    {
+      "q": -3,
+      "r": 14,
+      "terrain": "Forest"
+    },
+    {
+      "q": -4,
+      "r": 14,
+      "terrain": "Forest"
+    },
+    {
+      "q": -5,
+      "r": 14,
+      "terrain": "Forest"
+    },
+    {
+      "q": -6,
+      "r": 14,
+      "terrain": "Forest"
+    },
+    {
+      "q": -7,
+      "r": 14,
+      "terrain": "Forest"
+    },
+    {
+      "q": 9,
+      "r": 13,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 8,
+      "r": 13,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 7,
+      "r": 13,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 6,
+      "r": 13,
+      "terrain": "Rubble"
+    },
+    {
+      "q": 5,
+      "r": 13,
+      "terrain": "Rubble"
+    },
+    {
+      "q": -2,
+      "r": 13,
+      "terrain": "Forest"
+    },
+    {
+      "q": -3,
+      "r": 13,
+      "terrain": "Forest"
+    },
+    {
+      "q": -4,
+      "r": 13,
+      "terrain": "Forest"
+    },
+    {
+      "q": -5,
+      "r": 13,
+      "terrain": "Forest"
+    },
+    {
+      "q": -6,
+      "r": 13,
+      "terrain": "Forest"
+    },
+    {
+      "q": 3,
+      "r": 12,
+      "terrain": "Marsh"
+    },
+    {
+      "q": 2,
+      "r": 12,
+      "terrain": "Marsh"
+    },
+    {
+      "q": 1,
+      "r": 12,
+      "terrain": "Marsh"
+    },
+    {
+      "q": 0,
+      "r": 12,
+      "terrain": "Marsh"
+    },
+    {
+      "q": 4,
+      "r": 11,
+      "terrain": "Marsh"
+    },
+    {
+      "q": 3,
+      "r": 11,
+      "terrain": "Marsh"
+    },
+    {
+      "q": 2,
+      "r": 11,
+      "terrain": "Marsh"
+    },
+    {
+      "q": 1,
+      "r": 11,
+      "terrain": "Marsh"
+    },
+    {
+      "impassable": true,
+      "q": 4,
+      "r": 10
+    },
+    {
+      "impassable": true,
+      "q": 3,
+      "r": 10
+    },
+    {
+      "impassable": true,
+      "q": 2,
+      "r": 10
+    },
+    {
+      "impassable": true,
+      "q": 1,
+      "r": 10
+    },
+    {
+      "impassable": true,
+      "q": 5,
+      "r": 9
+    },
+    {
+      "impassable": true,
+      "q": 4,
+      "r": 9
+    },
+    {
+      "impassable": true,
+      "q": 3,
+      "r": 9
+    },
+    {
+      "impassable": true,
+      "q": 2,
+      "r": 9
+    }
+  ],
+  "name": "sample_battle",
+  "rows": 30,
+  "version": 1
+}
