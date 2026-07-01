@@ -1,5 +1,5 @@
-#include "scenarios/BattleServer.hpp"
-#include "scenarios/UnitRegistry.hpp"
+#include "server/BattleServer.hpp"
+#include "server/UnitRegistry.hpp"
 #include "scenarios/SampleBattle.hpp"
 #include "BattleSetup.hpp"
 #include "hex/HexGrid.hpp"

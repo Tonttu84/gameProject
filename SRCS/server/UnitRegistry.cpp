@@ -1,4 +1,4 @@
-#include "scenarios/UnitRegistry.hpp"
+#include "server/UnitRegistry.hpp"
 #include "hex/HexGrid.hpp"
 #include "Battlefield.hpp"
 #include "units/Soldier.hpp"

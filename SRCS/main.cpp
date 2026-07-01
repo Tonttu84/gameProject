@@ -1,7 +1,7 @@
 #include "scenarios/SampleBattle.hpp"
 #include "scenarios/SpreadTest.hpp"
-#include "scenarios/UnitRegistry.hpp"
-#include "scenarios/BattleServer.hpp"
+#include "server/UnitRegistry.hpp"
+#include "server/BattleServer.hpp"
 
 #include <SFML/Graphics.hpp>
 #include <iostream>
