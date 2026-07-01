@@ -1,4 +1,4 @@
-#include "../HDRS/Battlefield.hpp"
+#include "Battlefield.hpp"
 
 void Team::pruneDeadUnits() {
     auto it = units.begin();

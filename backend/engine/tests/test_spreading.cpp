@@ -1,7 +1,7 @@
 #include "catch.hpp"
-#include "../HDRS/Battlefield.hpp"
-#include "../HDRS/BattleSetup.hpp"
-#include "../HDRS/units/Soldier.hpp"
+#include "Battlefield.hpp"
+#include "BattleSetup.hpp"
+#include "units/Soldier.hpp"
 
 static HexCoord viz(int col, int row) { return {col - row / 2, row}; }
 

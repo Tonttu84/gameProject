@@ -10,10 +10,10 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/MeleeCombat.hpp"
-#include "../HDRS/Squad.hpp"
-#include "../HDRS/WeaponEffects.hpp"
+#include "AUnit.hpp"
+#include "MeleeCombat.hpp"
+#include "Squad.hpp"
+#include "WeaponEffects.hpp"
 #include <algorithm>
 
 

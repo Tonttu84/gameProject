@@ -10,8 +10,8 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "../HDRS/Utility.hpp"
-#include "../HDRS/Battlefield.hpp"
+#include "Utility.hpp"
+#include "Battlefield.hpp"
 
 
 

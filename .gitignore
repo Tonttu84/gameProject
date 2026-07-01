@@ -1,5 +1,5 @@
 .vscode/
-SFML-2.6.0/
+backend/SFML-2.6.0/
 BUILD/
 game
 run_tests

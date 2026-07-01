@@ -1,6 +1,6 @@
-#include "../HDRS/MeleeCombat.hpp"
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/Utility.hpp"
+#include "MeleeCombat.hpp"
+#include "AUnit.hpp"
+#include "Utility.hpp"
 
 void MeleeCombat::engage(AUnit* attacker, AUnit* target, const MeleeAttack& shot)
 {

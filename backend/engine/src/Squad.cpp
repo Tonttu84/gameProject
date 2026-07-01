@@ -1,7 +1,7 @@
-#include "../HDRS/Squad.hpp"
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/hex/HexGrid.hpp"
-#include "../HDRS/Utility.hpp"
+#include "Squad.hpp"
+#include "AUnit.hpp"
+#include "hex/HexGrid.hpp"
+#include "Utility.hpp"
 #include <algorithm>
 #include <cassert>
 

@@ -1,9 +1,9 @@
 #include "catch.hpp"
 #include <set>
-#include "../HDRS/Battlefield.hpp"
-#include "../HDRS/units/Soldier.hpp"
-#include "../HDRS/units/Cavalry.hpp"
-#include "../HDRS/units/Zombie.hpp"
+#include "Battlefield.hpp"
+#include "units/Soldier.hpp"
+#include "units/Cavalry.hpp"
+#include "units/Zombie.hpp"
 
 // Coordinate inside the 16×30 grid (buildRect(16,30)) with all 6 neighbours valid.
 // col=8, r=14 → q = 8 - 14/2 = 1

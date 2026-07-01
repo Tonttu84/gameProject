@@ -1,5 +1,5 @@
-#include "../HDRS/WeaponEffects.hpp"
-#include "../HDRS/AUnit.hpp"
+#include "WeaponEffects.hpp"
+#include "AUnit.hpp"
 
 void applyWeaponAttackEffect(WeaponEffect effect, AUnit* attacker, AUnit* target)
 {

@@ -3,12 +3,12 @@
 // [.][debug] tests print the ASCII map each turn and are excluded from make test.
 
 #include "catch.hpp"
-#include "../HDRS/units/Soldier.hpp"
-#include "../HDRS/units/Cavalry.hpp"
-#include "../HDRS/hex/HexGrid.hpp"
-#include "../HDRS/Utility.hpp"
-#include "../HDRS/BattleSetup.hpp"
-#include "../HDRS/Squad.hpp"
+#include "units/Soldier.hpp"
+#include "units/Cavalry.hpp"
+#include "hex/HexGrid.hpp"
+#include "Utility.hpp"
+#include "BattleSetup.hpp"
+#include "Squad.hpp"
 
 // ── Basic approach ────────────────────────────────────────────────────────────
 // Grid: buildRect(16,30). Axial: q = col - r/2.

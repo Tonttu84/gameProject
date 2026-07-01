@@ -1,12 +1,12 @@
 #include "catch.hpp"
-#include "../HDRS/Battlefield.hpp"
-#include "../HDRS/units/Soldier.hpp"
-#include "../HDRS/units/Human.hpp"
-#include "../HDRS/units/Cavalry.hpp"
-#include "../HDRS/units/Warhorse.hpp"
-#include "../HDRS/units/Scorpion.hpp"
-#include "../HDRS/Utility.hpp"
-#include "../HDRS/Defines.hpp"
+#include "Battlefield.hpp"
+#include "units/Soldier.hpp"
+#include "units/Human.hpp"
+#include "units/Cavalry.hpp"
+#include "units/Warhorse.hpp"
+#include "units/Scorpion.hpp"
+#include "Utility.hpp"
+#include "Defines.hpp"
 
 // ── Repel — resolveRepel() unit tests ────────────────────────────────────────
 //

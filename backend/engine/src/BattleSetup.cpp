@@ -1,5 +1,5 @@
-#include "../HDRS/BattleSetup.hpp"
-#include "../HDRS/Utility.hpp"
+#include "BattleSetup.hpp"
+#include "Utility.hpp"
 #include <cassert>
 #include <iostream>
 

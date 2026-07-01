@@ -1,5 +1,5 @@
-#include "../HDRS/Battlefield.hpp"
-#include "../HDRS/RangedCombat.hpp"
+#include "Battlefield.hpp"
+#include "RangedCombat.hpp"
 #include <algorithm>
 #include <climits>
 #include <cstdlib>

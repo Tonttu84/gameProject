@@ -11,7 +11,7 @@
 /* ************************************************************************** */
 
 
-#include "../HDRS/BodyPart.hpp"
+#include "BodyPart.hpp"
 
 BodyPart::BodyPart()
 {

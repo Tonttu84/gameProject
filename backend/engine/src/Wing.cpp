@@ -1,5 +1,5 @@
-#include "../HDRS/Wing.hpp"
-#include "../HDRS/Squad.hpp"
+#include "Wing.hpp"
+#include "Squad.hpp"
 #include <algorithm>
 
 Wing::Wing(std::string name) : _name(std::move(name)) {}

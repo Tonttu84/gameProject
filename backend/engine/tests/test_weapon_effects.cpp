@@ -1,9 +1,9 @@
 #include "catch.hpp"
-#include "../HDRS/units/Human.hpp"
-#include "../HDRS/units/Soldier.hpp"
-#include "../HDRS/units/Zombie.hpp"
-#include "../HDRS/Utility.hpp"
-#include "../HDRS/Defines.hpp"
+#include "units/Human.hpp"
+#include "units/Soldier.hpp"
+#include "units/Zombie.hpp"
+#include "Utility.hpp"
+#include "Defines.hpp"
 
 // ── WeaponEffect — Lifedrain and MagicalChip ─────────────────────────────────
 //

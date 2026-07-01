@@ -17,7 +17,7 @@ jobs:
       - name: Cache SFML
         uses: actions/cache@v4
         with:
-          path: SFML-2.6.0
+          path: backend/SFML-2.6.0
           key: sfml-2.6.0-linux-gcc-64
 
       # The SFML prebuilt binary needs these runtime libs to load on the runner.

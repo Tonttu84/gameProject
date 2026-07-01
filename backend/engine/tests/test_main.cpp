@@ -1,14 +1,14 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-#include "../HDRS/units/Soldier.hpp"
-#include "../HDRS/units/Zombie.hpp"
-#include "../HDRS/units/Archer.hpp"
-#include "../HDRS/units/Mage.hpp"
-#include "../HDRS/hex/HexGrid.hpp"
-#include "../HDRS/Utility.hpp"
-#include "../HDRS/BattleSetup.hpp"
-#include "../HDRS/scenarios/SampleBattle.hpp"
+#include "units/Soldier.hpp"
+#include "units/Zombie.hpp"
+#include "units/Archer.hpp"
+#include "units/Mage.hpp"
+#include "hex/HexGrid.hpp"
+#include "Utility.hpp"
+#include "BattleSetup.hpp"
+#include "scenarios/SampleBattle.hpp"
 
 
 // ── AUnit::takeDamage ────────────────────────────────────────────────────────

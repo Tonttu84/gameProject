@@ -1,10 +1,10 @@
 #include "catch.hpp"
 
-#include "../HDRS/Squad.hpp"
-#include "../HDRS/Wing.hpp"
-#include "../HDRS/units/Soldier.hpp"
-#include "../HDRS/units/Zombie.hpp"
-#include "../HDRS/Utility.hpp"
+#include "Squad.hpp"
+#include "Wing.hpp"
+#include "units/Soldier.hpp"
+#include "units/Zombie.hpp"
+#include "Utility.hpp"
 
 
 // ── Squad: membership ─────────────────────────────────────────────────────────

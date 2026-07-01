@@ -1,6 +1,6 @@
-#include "../HDRS/RangedCombat.hpp"
-#include "../HDRS/AUnit.hpp"
-#include "../HDRS/Utility.hpp"
+#include "RangedCombat.hpp"
+#include "AUnit.hpp"
+#include "Utility.hpp"
 #include <algorithm>
 
 std::unordered_map<const Hex*, RangedCombat::SlotCache> RangedCombat::cache;
