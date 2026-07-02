@@ -115,3 +115,39 @@ Build a proper auth module (deferred — big task, do as its own branch/session)
     than hand-rolling crypto.
   - Deliberately a bit more infrastructure than this game currently needs — this project
     doubles as a portfolio piece, so a real C++/React auth flow is worth building properly.
+
+    Plan: Reserve-based reinforcement
+What changes and why
+The current lateral-spread logic (shouldSpreadToward) is size-of-fresh-units vs. an arbitrary retention multiplier — it has no knowledge of formation structure. The rank system now gives us precise, semantically meaningful data: _engagedRank from the last tick says exactly whether a unit is on the frontline (rank 1), in backup/reserve (ranks 2–3), or newly arrived (rank 0).
+
+New model
+hexReserveSize(hex) — sum of size-points of alive, non-broken units with _engagedRank >= 2. This is the hex's committed reserve depth, not a proxy derived from total fresh units.
+
+bestReinforceNeighbor(fromHex, unit) — scans all 6 neighbors, returns the one with fewest reserves that:
+
+has a passable side (not blocked, elevation diff < 2)
+is engaged (live enemy in a neighboring hex) OR adjacent to enemy (so we can pre-fill a flank)
+has fewer reserves than fromHex
+Ties broken by fewest-reserves (most needy), not terrain cost.
+
+Behavior per rank
+_engagedRank (prev tick)	What happens during moveToward
+0 (newly arrived / unengaged)	No lateral spreading; advance toward enemy as normal
+1 (frontline)	Holds — never spreads laterally while engaged
+2–3 (backup / reserve)	Calls bestReinforceNeighbor; moves if a needier neighbor exists
+Squads: same gate — ref->getEngagedRank() >= 2 → use bestReinforceNeighbor for the squad's lateral target; existing atomic-block move + displacement logic unchanged.
+
+Removals
+shouldSpreadToward, hexFreshSize, hexRetentionThreshold — no longer needed. The engaged lateral path is wholly replaced; the pre-contact lateral path already only uses !mustDecrease.
+
+Constants
+No new tuning constants. The threshold is structural: "do you have more reserves than your neighbor?" It's self-calibrating.
+
+6 test cases
+"reinforce: reserve unit (rank 2) moves to engaged neighbor with no reserves" — hex A has one rank-2 unit + enemy-engaged hex B with 0 reserves → unit moves to B
+"reinforce: frontline unit (rank 1) does not spread even if neighbor is empty" — rank-1 unit in hex A, hex B is engaged and empty → no move
+"reinforce: picks most needy neighbor when two qualify" — hex A borders B (1 reserve) and C (0 reserves), both engaged → moves to C, not B
+"reinforce: no move when sender reserves ≤ neighbor reserves" — both have 1 reserve → no move
+"reinforce: no move to unengaged non-enemy-adjacent neighbor" — neighbor has 0 reserves but no live enemies near it → no move
+"reinforce: rank-0 unit in contact does not spread" — unit just arrived, rank=0, nearby engaged neighbor needs help → unit stays (will cascade to rank 1 next tick)
+Does this match your intent, or do you want to adjust anything (squad behavior, the "adjacent to enemy" pre-fill rule, etc.) before I write the tests?

@@ -1,0 +1,666 @@
+From a38534c11fad21cf1272155cdfe972c0c029df87 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 2 Jul 2026 11:21:54 +0000
+Subject: [PATCH] Add sprite/terrain art spec + isometric rendering plan
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Hand-off package for the letters-to-sprites migration, split by audience:
+
+- assets/sprites/ART_BRIEF.md — art brief for claude.design: full unit
+  roster (Soldier/Archer/Mage/Priest/Necromancer, Zombie/Skeleton,
+  Cavalry/Templar Rider composites, Horse/Warhorse/Scorpion), mounted =
+  rider+mount composite that decomposes into matching parts, canvas sizes
+  scaled by unit SIZE, standard idle/walk/attack/death rig, team-color
+  strategy (neutral base + team-mask, recommended), isometric authoring
+  conventions, terrain tiles + elevation skirts + edge overlays, and a
+  large future library (props, fortifications, decals, FX, and a full
+  bestiary: giants/trolls/dragons/chariots/lizardmen/centaurs/nymphs/
+  summons) batched now for one style-locked pass.
+- assets/sprites/manifest.example.json — machine-readable art/engine
+  contract (per-sprite file, frame size, anchor, animations, variants,
+  team-color mode) with the full planned roster.
+- docs/RENDERING_PLAN.md — engine-side plan for the isometric renderer
+  do-over: projection + painter's depth sort, terrain/elevation rendering,
+  manifest/texture loading, unit sprite + team-mask tinting, and an
+  incremental migration order from the current letter renderer.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_019f3mj7BDVh35Cgp3wckiL7
+---
+ assets/sprites/ART_BRIEF.md          | 339 +++++++++++++++++++++++++++
+ assets/sprites/manifest.example.json | 115 +++++++++
+ docs/RENDERING_PLAN.md               | 152 ++++++++++++
+ 3 files changed, 606 insertions(+)
+ create mode 100644 assets/sprites/ART_BRIEF.md
+ create mode 100644 assets/sprites/manifest.example.json
+ create mode 100644 docs/RENDERING_PLAN.md
+
+diff --git a/assets/sprites/ART_BRIEF.md b/assets/sprites/ART_BRIEF.md
+new file mode 100644
+index 0000000..0148f32
+--- /dev/null
++++ b/assets/sprites/ART_BRIEF.md
+@@ -0,0 +1,339 @@
++# Sprite & Terrain Art Brief — for claude.design
++
++**Audience:** claude.design (art generation).
++**Companion files:**
++- `manifest.example.json` — the machine-readable contract you fill in and ship alongside the PNGs.
++- `../../docs/RENDERING_PLAN.md` — how the C++/SFML engine will consume all of this (for context; you don't need to act on it).
++
++This document is the single source of truth for *what to draw*. The engine team (Claude Code)
++reads `manifest.json` + these PNGs and wires up `sf::Texture`/`sf::Sprite` deterministically — it
++never guesses filenames, sizes, or frame counts. Keep the manifest and the PNGs in lockstep.
++
++---
++
++## 0. The one open decision (please confirm before drawing the full set)
++
++**Team color strategy.** Every unit belongs to team **Red** (team 1) or **Blue** (team 2), and
++the engine also flashes units for status (casting = yellow glow, routing/broken = orange). We need
++red/blue to read instantly on a busy battlefield. Three ways to deliver this — **we recommend A**:
++
++| | What you deliver | Pros | Cons |
++|---|---|---|---|
++| **A. Neutral base + team-mask** ✅ | One full-color, team-neutral sprite per frame **plus** a matching grayscale `_mask` sheet where **white = recolor this pixel, black = leave alone**. Mask covers cape/plume/shield/banner/barding only. | One canonical silhouette → perfect style consistency; ~1× art; engine tints only the mask so team + casting + routing all keep working. | You author a mask layer per sheet (cheap — it's a flat selection). |
++| **B. Two full variants** | A `_red` and a `_blue` fully-painted version of every frame. | Zero engine tint logic; looks great. | ~2× the art; status tints need separate handling; palette tweaks touch both sets. |
++| **C. Single neutral, tint whole sprite** | One sprite; engine multiplies the entire texture by team color. | Simplest handoff. | Full-texture multiply muddies detailed art and washes out color. Not recommended at 64–128px. |
++
++Default assumption if you don't hear back: **A**. The manifest field `defaults.teamColor` records
++the chosen mode (`"mask"` / `"variants"` / `"tint"`).
++
++---
++
++## 1. Rendering context — read this first, it drives everything
++
++The battle view is being rebuilt as **isometric** (2:1 dimetric, the classic tactics look —
++think *Final Fantasy Tactics* / *Battle for Wesnoth* staged in true iso). This changes how art
++must be authored:
++
++- **Units are upright billboards.** Draw each character standing, in a **3/4 top-down view facing
++  down-screen toward the camera** (we see their front). The engine anchors them by the **feet** and
++  sorts them back-to-front. Do **not** pre-rotate or pre-skew unit art — units stay screen-upright;
++  only terrain is projected into the iso plane.
++- **Terrain tiles ARE drawn in iso.** Tile top-faces are flattened hexagons (2:1). Elevation is
++  shown by extruding the hex downward — you provide the top face and the vertical "skirt" (cliff
++  face) as separate pieces so the engine can stack them for any height.
++- **One consistent light source: top-left, slightly high.** Every sprite, tile, and future prop must
++  be lit the same way or the scene falls apart. Soft ambient fill, warm key. Shadows fall
++  down-right. Give each unit a soft contact shadow ellipse baked at its feet (or as a separate
++  `_shadow` — see §6).
++- **Readable silhouettes + a subtle dark contour** (1–2px) so units pop against noisy terrain when
++  small on screen.
++
++**Style recommendation (adjustable):** high-resolution **pixel art** with a chunky 2–3px "pixel"
++and a cohesive ~32-color medieval-fantasy palette — crafted but detailed enough to reward the 64/128
++canvas. If you'd rather go hand-painted/painterly at these sizes, that's fine too — **pick one and
++lock a shared palette**, then everything (units, terrain, future props) must match it. Confirm the
++style choice with the palette swatch in your first delivery so we lock it before the full run.
++
++---
++
++## 2. Canvas sizes — detail scales with unit size
++
++The engine already renders bigger creatures physically larger (a SIZE-20 mount draws ~1.4× a SIZE-10
++footman). So bigger units get **more canvas and more detail**:
++
++| Class | Engine SIZE | Frame canvas | Character occupies | Notes |
++|---|---|---|---|---|
++| Foot (human & undead) | 10 | **64 × 64** | ~40–48px tall, centered, feet near bottom | Soldier, Archer, Mage, Priest, Necromancer, Zombie, Skeleton |
++| Mounted composite | 20 | **128 × 128** | tall — horse body + rider fills most of it | Cavalry, Templar Rider, (Scorpion Rider) |
++| Large beast / mount alone | 20 | **128 × 96** | wide & low | Scorpion, riderless Horse/Warhorse |
++| Terrain top-face tile | — | **128 × 74** | hexagon fills the box edge-to-edge | see §5 |
++| Elevation skirt (cliff) | — | **128 × 24** | one 16px-high step of side face | tileable vertically |
++| Projectiles / FX | — | **32 × 32** or **64 × 64** | see §4 | |
++
++Power-of-two frames where possible (64, 128, 32). Transparent background (straight alpha).
++The **anchor** (feet / center-bottom for units, hex center for tiles) is recorded per-sprite in the
++manifest — that's the pixel the engine pins to the tile.
++
++---
++
++## 3. Unit roster — every sprite we need
++
++Each unit ships as **one sprite sheet** containing all its animations (rows), **plus** a parallel
++`_mask` sheet (if team mode A). One texture per unit keeps SFML fast.
++
++### Animation rig (standard for every unit)
++
++The reference game uses 2 poses per unit (idle + attack). You asked us to over-request now so the
++style is locked in one pass rather than re-commissioned later — so the **standard rig is richer**.
++Draw them all in a single sitting for consistency; priority is marked so you can sequence work:
++
++| Row | Animation | Frames | fps | Priority | Notes |
++|---|---|---|---|---|---|
++| 0 | `idle` | 2 | 3 | **must** | gentle breathing/bob; the resting pose |
++| 1 | `walk` | 4 | 8 | should | units cross hexes; a 2-frame shuffle is acceptable if 4 is too much |
++| 2 | `attack` | 3 | 10 | **must** | windup → strike → recover. For ranged/casters this is the shoot/cast motion |
++| 3 | `death` | 2 | 6 | should | fall → corpse/settle; last frame may linger briefly before cleanup |
++
++Lay each animation out as a **horizontal strip** (frames left→right), animations **stacked as rows**
++top→bottom. All frames the same `frameW × frameH`. Record exact `frames`/`fps`/`row` per animation in
++the manifest — the table above is the default, deviate freely and just reflect it there.
++
++### 3a. Human foot — 64×64 (`kind: unit`, SIZE 10)
++
++| Key | Name | Read as | Attack = |
++|---|---|---|---|
++| `soldier` | Soldier | Heavy infantry: helm, sword, kite shield | melee swing |
++| `archer` | Archer | Light leather, longbow, quiver | draw & loose (spawns `arrow`) |
++| `mage` | Mage | Robed, staff, arcane | cast (spawns `fx_fireball`) |
++| `priest` | Priest | Robed, holy symbol, radiant | cast-in-place (spawns `fx_bless` on an ally, no projectile) |
++| `necromancer` | Necromancer | Dark robe, skull-topped staff, sickly green | raise-dead cast (spawns `fx_raise` on the ground) |
++
++### 3b. Undead foot — 64×64 (`kind: unit`, SIZE 10)
++
++These are **summoned mid-battle** by the Necromancer and vanish when the battle ends, but they are
++fully visible while alive — full rig required.
++
++| Key | Name | Read as |
++|---|---|---|
++| `zombie` | Zombie | Shambling rotted corpse; slow, lurching attack |
++| `skeleton` | Skeleton | Bone warrior, rusty blade/shield |
++
++### 3c. Mounts & large creatures — 128×96 wide (`kind: unit`, SIZE 20)
++
++| Key | Name | Read as | Note |
++|---|---|---|---|
++| `horse` | Horse (riderless) | A plain horse, no rider, **panicked/fleeing** | This is the "lost its rider" state of a Cavalry — see §3e. Idle = spooked; walk = bolting |
++| `warhorse` | Warhorse (riderless) | Barded/armored horse, riderless | Loose state of a Templar Rider; may reuse `horse` rig with armor if cheaper — tell us in the manifest |
++| `scorpion` | Scorpion | Large desert beast, armored carapace, **long segmented stinger tail** | The tail is its reach weapon — make it prominent. Wide, low stance |
++
++### 3d. Mounted composites — 128×128 tall (`kind: unit`, SIZE 20)
++
++**A mounted unit is a single sprite showing rider + mount together** — one combined image, its own
++sheet, but drawn so the rider clearly reads as the *same* soldier art riding the *same* mount art
++(style continuity, see §3e). The rider faces down-screen; the mount is broadside-ish so the animal
++reads.
++
++| Key | Name | Composition | Attack = |
++|---|---|---|---|
++| `cavalry` | Cavalry | `soldier` rider on a plain `horse` | rider melee swing (+ optional hoof) |
++| `templar_rider` | Templar Rider | `soldier` rider on an armored `warhorse` (barding, heraldry) | rider melee swing + hoof |
++| `scorpion_rider` | Scorpion Rider *(planned/optional)* | rider on a `scorpion` (stinger reach) | rider strike + tail sting |
++
++`scorpion_rider` is **optional for the first drop** — but if you're drawing the scorpion anyway,
++doing the rider version now keeps the style matched. Mark it `"planned": true` in the manifest if
++you defer it.
++
++### 3e. Decomposition states — why continuity matters
++
++When a mounted unit loses a part mid-battle it visually **decomposes into its components**, so the
++composite art must be built from the same soldier + mount you draw standalone:
++
++- Cavalry **loses its mount** → becomes a dismounted **`soldier`** standing in place (reuses 3a).
++- Cavalry **loses its rider** → becomes a riderless, bolting **`horse`** (reuses 3c).
++
++So: the soldier on top of `cavalry` should look like `soldier`, and the horse under it like `horse`.
++Same for `templar_rider` → `soldier` + `warhorse`. No new art for the decomposed states — just make
++the composite from matching parts.
++
++---
++
++## 4. Projectiles & effects (`kind: projectile` / `kind: fx`)
++
++Small, on a transparent field. The engine positions/rotates them.
++
++| Key | kind | Canvas | Frames | Notes |
++|---|---|---|---|---|
++| `arrow` | projectile | 32×32 | 1 | drawn pointing **right (east, +x)**; engine rotates to flight angle |
++| `fx_fireball` | projectile | 32×32 | 2 | traveling flame, flickers between the 2 frames |
++| `fx_fireball_impact` | fx | 64×64 | 3–4 | burst on hit, plays once |
++| `fx_bless` | fx | 64×64 | 3 | Priest's radiant heal/blessing, plays once over the target |
++| `fx_raise` | fx | 64×64 | 3 | Necromancer's ground eruption under a newly raised undead |
++| `fx_hit` | fx | 32×32 | 2–3 | generic melee impact spark / small blood puff |
++
++**Status FX (optional — engine can fall back to a color tint):**
++
++| Key | kind | Canvas | Frames | Notes |
++|---|---|---|---|---|
++| `fx_cast_glow` | fx | 64×64 | 2 (loop) | soft ring/aura under a unit while it's casting (currently shown as a yellow flash) |
++| `fx_routing` | fx | 64×64 | 2 (loop) | panic/rout marker over a broken, fleeing unit (currently orange) |
++
++---
++
++## 5. Terrain — isometric hex tiles
++
++Terrain is the biggest new surface. It's modular so we can stack elevation and drop props later.
++
++### 5a. Top-face tiles (`kind: tile`, 128 × 74)
++
++The walkable surface of a hex, drawn as a flat pointy-top hexagon **filling the 128×74 box to its
++edges** so neighboring tiles tessellate seamlessly (we'll send a tessellation test image to verify
++edge alignment; keep the hexagon centered and edge-accurate). Anchor = hex center `[64, 37]`.
++
++| Key | TerrainType | Base color (from engine) | Read as |
++|---|---|---|---|
++| `tile_open` | Open | `#5A6441` (90,100,65) | grass / open field |
++| `tile_forest` | Forest | `#378228` (55,130,40) | forest floor / undergrowth — **trees are separate props (§7), the tile is just the ground** |
++| `tile_marsh` | Marsh | `#286E73` (40,110,115) | murky water / mud |
++| `tile_rubble` | Rubble | `#786446` (120,100,70) | broken stone, debris |
++| `tile_impassable` | (impassable flag) | `#554B5F` (85,75,95) | sheer rock / deep water — nothing may stand here |
++
++Provide **2–3 variants** per terrain (`variants` in the manifest) so a field of the same terrain
++doesn't visibly repeat. Tint the art around the base color above but you own the final look; the
++engine currently also **darkens by elevation** (higher = we may skip that once real art lands).
++
++### 5b. Elevation skirts / cliff faces (`kind: skirt`, 128 × 24)
++
++When a hex sits higher than the neighbor in front of it, the engine draws the exposed **side face(s)**
++below the top tile. Deliver one **16px-high step** of vertical cliff face, horizontally aligned to the
++tile, **tileable vertically** so multiple elevation steps stack cleanly (elevation ranges 0–3).
++
++| Key | Used for |
++|---|---|
++| `skirt_rock` | generic exposed rock/dirt cliff face (works under any terrain) |
++| `skirt_grass` *(optional)* | grassy-topped dirt face, for Open tiles specifically |
++
++### 5c. Hexside overlays (`kind: overlay`)
++
++Individual **hex edges** carry two flags the engine draws today as colored lines; give them real art
++(sitting on one edge of the hexagon, matching iso perspective — think a short segment of the hex rim):
++
++| Key | Flag | Read as |
++|---|---|---|
++| `edge_blocked` | `HexSide.blocked` (cliff/wall; auto when elevation differs by ≥2) | impassable barrier along that edge |
++| `edge_fortified` | `HexSide.fortified` | a defensive work — low rampart/palisade (this is the seed of §7 fortifications) |
++
++Provide these for **one canonical edge orientation**; the engine will place/mirror per direction
++(6 sides: NE, E, SE, SW, W, NW). If a single mirrored piece won't read from all 6 angles, tell us and
++we'll spec per-direction pieces.
++
++---
++
++## 6. Shadows & anchoring
++
++- Every unit needs a **soft contact shadow** so it sits on the ground. Bake a faint ellipse into the
++  bottom of the unit frame **or** deliver a separate `_shadow` sprite (say so in the manifest via a
++  `shadow` field). Baked-in is simpler and preferred unless you want dynamic shadow scaling.
++- The **anchor** pixel = where the unit's feet meet the ground = the point the engine pins to the hex
++  center. For a 64×64 foot unit standing with feet near the bottom, anchor ≈ `[32, 60]`. For a
++  128×128 mount, the hooves' midpoint, e.g. `[64, 120]`. Record the real value per sprite.
++
++---
++
++## 7. Future graphics — draw them in THIS batch
++
++These aren't wired into the engine yet, but **draw them now, in the same sitting as everything
++above.** A prop drawn six months later in a slightly different hand never quite matches; batching the
++whole world in one style/palette/light pass is the single biggest thing that makes an isometric scene
++read as one coherent place. Treat this as a real part of the commission, not a "someday" list.
++
++All of these follow the **prop convention** (`kind: "prop"` in the manifest): transparent,
++screen-upright billboard, bottom-center anchor, top-left light, baked contact shadow — same as units.
++Props anchored to a hex **edge** (walls, gates) anchor at the edge midpoint instead of the center.
++Give a `variants` count wherever repetition would show.
++
++### 7a. Vegetation & scatter (stand on tiles)
++- **Trees** — the payload for Forest hexes. At least: `prop_tree_pine`, `prop_tree_oak`,
++  `prop_tree_dead` (bare/blighted, pairs with undead/necromancer themes). 2–3 variants each.
++- **Bushes / shrubs** — `prop_bush`, low undergrowth for Forest/Open edges.
++- **Rocks / boulders** — `prop_rock_small`, `prop_rock_large`, for Rubble and mountain flavor.
++- **Reeds / lilies** — `prop_reeds`, marsh dressing for `tile_marsh`.
++- **Stumps / logs / grass tufts** — `prop_stump`, `prop_grass_tuft`, cheap ground scatter.
++
++### 7b. Fortifications (the big future feature — anchor to hex edges/tiles)
++`edge_fortified` (§5c) is the seed; the full set:
++- **Walls** — `prop_wall_stone`, `prop_wall_wood` (palisade). A straight segment sitting on one hex
++  edge, in iso, plus a **corner/junction** piece if a single segment won't turn cleanly.
++- **Gate** — `prop_gate` (closed) — an openable version can come later.
++- **Rampart / earthwork** — `prop_rampart` (low defensive bank, the "fortified" look).
++- **Tower** — `prop_tower`, stands on a tile, taller than a unit (occludes — the iso sort handles it).
++- **Banners / standards** — `prop_banner` on a tile or wall; **team-tintable** (give it a `_mask`
++  like units so it flies red or blue).
++
++### 7c. Ground decals & battlefield aftermath (flat on the tile, drawn under units)
++These are `kind: "decal"` — no billboard, they lie flat in the iso plane like a tile overlay:
++- **Corpse / bones** — `decal_corpse`, `decal_bones`; where the dead settle after `death`.
++- **Blood / scorch** — `decal_blood`, `decal_scorch` (fireball aftermath), `decal_crater`.
++- **Deployment-zone marker** — `decal_zone` (subtle, tintable) to shade the player/enemy setup rows.
++
++### 7d. A bit more combat FX variety (cheap while you're in the FX mindset)
++- **Bigger spell hits** — `fx_explosion_large` (64–96px) for future AoE.
++- **Buff/debuff auras** — `fx_shield` (defensive buff), `fx_curse` (necro debuff) — loopable rings
++  like `fx_cast_glow`.
++- **Muzzle/loose puffs** — `fx_arrow_loose` at the bow, `fx_cast_spark` at a staff tip.
++
++If any of these balloon the batch beyond what's reasonable, mark them `"planned": true` and prioritize
++7b (fortifications) and 7a (trees) — those are the confirmed next features. But the whole point of the
++ask is: **the more of this you can knock out in one style-locked pass, the better it all fits.**
++
++---
++
++### 7e. Extended creature library — draw the whole bestiary in this pass
++
++We want a **large reusable creature library** for future content, commissioned now so the whole
++roster shares one hand. None of these are wired into the engine yet — all `kind:"unit"`,
++`"planned": true`. The key rule, same as the current units: **canvas and detail scale with the
++creature's physical size.** Use these size tiers (the engine `SIZE` is a planning estimate; anchor is
++feet/base-center):
++
++| Tier | Engine SIZE (est.) | Canvas | Examples |
++|---|---|---|---|
++| Small | ~5–10 | 64 × 64 | nymph, sprite, imp, small summons |
++| Medium | ~10–20 | 96 × 96 | lizardman, ghoul, wolf, harpy |
++| Large | ~20–30 | 128 × 128 | centaur, chariot, minotaur, bear |
++| Huge | ~30–60 | 160 × 160 | troll, ogre, treant, wyvern |
++| Giant | ~60–100 | 192 × 192 | giant, cyclops, hydra |
++| Colossal | ~100+ | 256 × 192 | dragon (winged, wide), behemoth |
++
++Same standard rig (idle/walk/attack/death), same team-mask layer where the creature has cloth/
++heraldry (many beasts won't need one — omit `mask` then). Suggested first library (expand freely):
++
++- **Humanoid monsters:** `lizardman`, `orc`, `goblin`, `minotaur`, `troll`, `ogre`, `cyclops`, `giant`.
++- **Beasts & mounts:** `wolf`, `bear`, `boar`, `centaur`, `chariot` (2-horse + driver, wide),
++  `wyvern`, `dragon`, `hydra`, `basilisk`.
++- **Fey / nature:** `nymph`, `dryad`, `treant`, `sprite`, `pixie`.
++- **Summons / conjured:** `imp`, `demon`, `elemental_fire`, `elemental_earth`, `elemental_water`,
++  `air_elemental`, `golem_stone`, `wisp` (these pair with Mage/Necromancer/Priest summon mechanics).
++- **Undead (extends §3b):** `ghoul`, `wraith`, `lich`, `bone_dragon`, `skeleton_archer`.
++
++Chariots and multi-creature units follow the **composite rule** (§3d/§3e): draw as one sprite but
++built from parts that match their standalone versions where those exist (a chariot's horses read like
++`horse`, its driver like a `soldier`), so future decomposition/damage states stay seamless.
++
++Mark anything you defer `"planned": true` with a best-guess canvas; we'll only pull a creature into
++the manifest+engine when its mechanics are built. Prioritize breadth of silhouettes over polish on
++the speculative ones — the point is a **style-locked bestiary** we can draw from for years.
++
++## 8. Deliverable checklist
++
++Drop a single folder (we'll place it at `assets/sprites/`) containing:
++
++1. **`manifest.json`** — every sprite keyed as in `manifest.example.json`, with real `frameW/frameH`,
++   `anchor`, per-animation `frames/fps/row`, `variants`, and the chosen `defaults.teamColor`.
++2. **`units/*.png`** — one sheet per unit (§3) + parallel `_mask.png` if team mode A.
++3. **`fx/*.png`** — projectiles & effects (§4).
++4. **`terrain/*.png`** — top-face tiles (+variants), skirts, edge overlays (§5).
++5. **A palette swatch + one finished `soldier` sheet first**, so we can lock style/palette/team-color
++   before you run the full roster. Cheap insurance against a mismatch across 15+ sheets.
++
++Filenames and pixel dimensions in `manifest.json` are the contract — as long as those match the PNGs,
++the engine wires everything up automatically.
+diff --git a/assets/sprites/manifest.example.json b/assets/sprites/manifest.example.json
+new file mode 100644
+index 0000000..ba76370
+--- /dev/null
++++ b/assets/sprites/manifest.example.json
+@@ -0,0 +1,115 @@
++{
++  "_comment": [
++    "CONTRACT between claude.design (art) and the C++/SFML engine. Ship the real file as",
++    "assets/sprites/manifest.json with the same shape. Filenames + pixel sizes here MUST match",
++    "the delivered PNGs exactly — the engine reads this and wires up sf::Texture/sf::Sprite with",
++    "zero guessing. See ART_BRIEF.md for what each sprite depicts and ../../docs/RENDERING_PLAN.md",
++    "for how it's consumed. Field reference is in the '_fields' block below.",
++    "This example enumerates the full planned roster; drop 'planned:true' entries you defer."
++  ],
++
++  "_fields": {
++    "version": "manifest schema version (int).",
++    "projection": "iso tile geometry the engine uses to place tiles/skirts. tileW/tileH = top-face box in px; elevationStep = px height of one elevation level (one skirt tile).",
++    "defaults": "fps fallback for animations; teamColor is the chosen strategy: 'mask' | 'variants' | 'tint' (see ART_BRIEF §0).",
++    "sprites.<key>.kind": "'unit' | 'tile' | 'skirt' | 'overlay' | 'projectile' | 'fx' | 'prop' | 'decal'.",
++    "sprites.<key>.sheet": "spritesheet PNG (units/props with animation rows). Use 'file' instead for single-image sprites (tiles/fx/projectiles).",
++    "sprites.<key>.mask": "grayscale team-tint mask sheet, same dims as sheet (only when teamColor='mask'). white=recolor, black=keep.",
++    "sprites.<key>.frameW/frameH": "one animation frame's px size (sheets).",
++    "sprites.<key>.w/h": "image px size (single-image sprites).",
++    "sprites.<key>.anchor": "[x,y] px pinned to the target point: unit/prop feet -> hex center; tile -> hex center; edge prop -> edge midpoint.",
++    "sprites.<key>.size": "engine AUnit SIZE this maps to (sanity/scale reference only).",
++    "sprites.<key>.variants": "number of interchangeable variant images (suffix _0.._N-1) for anti-repetition; omit or 1 = single.",
++    "sprites.<key>.shadow": "'baked' (in-frame) | a separate shadow sprite key. Default baked.",
++    "sprites.<key>.animations": "map name->{row, frames, fps}. row = 0-based row index in the sheet.",
++    "sprites.<key>.planned": "true = specced but may ship in a later drop."
++  },
++
++  "version": 1,
++  "projection": { "type": "iso-hex-pointy", "tileW": 128, "tileH": 74, "elevationStep": 16 },
++  "defaults": { "fps": 8, "teamColor": "mask" },
++
++  "sprites": {
++
++    "soldier":     { "kind": "unit", "sheet": "units/soldier.png",     "mask": "units/soldier_mask.png",     "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++    "archer":      { "kind": "unit", "sheet": "units/archer.png",      "mask": "units/archer_mask.png",      "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++    "mage":        { "kind": "unit", "sheet": "units/mage.png",        "mask": "units/mage_mask.png",        "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++    "priest":      { "kind": "unit", "sheet": "units/priest.png",      "mask": "units/priest_mask.png",      "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++    "necromancer": { "kind": "unit", "sheet": "units/necromancer.png", "mask": "units/necromancer_mask.png", "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++
++    "zombie":      { "kind": "unit", "sheet": "units/zombie.png",      "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
++      "animations": { "idle": {"row":0,"frames":2,"fps":2}, "walk": {"row":1,"frames":4,"fps":5}, "attack": {"row":2,"frames":3,"fps":7}, "death": {"row":3,"frames":2,"fps":5} } },
++    "skeleton":    { "kind": "unit", "sheet": "units/skeleton.png",    "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++
++    "horse":       { "kind": "unit", "sheet": "units/horse.png",       "frameW": 128, "frameH": 96,  "anchor": [64, 90],  "size": 20,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9} } },
++    "warhorse":    { "kind": "unit", "sheet": "units/warhorse.png",    "mask": "units/warhorse_mask.png",    "frameW": 128, "frameH": 96,  "anchor": [64, 90],  "size": 20,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9} } },
++    "scorpion":    { "kind": "unit", "sheet": "units/scorpion.png",    "frameW": 128, "frameH": 96,  "anchor": [64, 88],  "size": 20,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++
++    "cavalry":       { "kind": "unit", "sheet": "units/cavalry.png",       "mask": "units/cavalry_mask.png",       "frameW": 128, "frameH": 128, "anchor": [64, 120], "size": 20,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++    "templar_rider": { "kind": "unit", "sheet": "units/templar_rider.png", "mask": "units/templar_rider_mask.png", "frameW": 128, "frameH": 128, "anchor": [64, 120], "size": 20,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++    "scorpion_rider":{ "kind": "unit", "sheet": "units/scorpion_rider.png","mask": "units/scorpion_rider_mask.png","frameW": 128, "frameH": 128, "anchor": [64, 118], "size": 20, "planned": true,
++      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
++
++    "arrow":              { "kind": "projectile", "file": "fx/arrow.png",              "w": 32, "h": 32 },
++    "fx_fireball":        { "kind": "projectile", "file": "fx/fireball.png",           "frameW": 32, "frameH": 32, "animations": { "fly": {"row":0,"frames":2,"fps":12} } },
++    "fx_fireball_impact": { "kind": "fx",         "file": "fx/fireball_impact.png",    "frameW": 64, "frameH": 64, "animations": { "play": {"row":0,"frames":4,"fps":16} } },
++    "fx_bless":           { "kind": "fx",         "file": "fx/bless.png",              "frameW": 64, "frameH": 64, "animations": { "play": {"row":0,"frames":3,"fps":10} } },
++    "fx_raise":           { "kind": "fx",         "file": "fx/raise.png",              "frameW": 64, "frameH": 64, "animations": { "play": {"row":0,"frames":3,"fps":10} } },
++    "fx_hit":             { "kind": "fx",         "file": "fx/hit.png",                "frameW": 32, "frameH": 32, "animations": { "play": {"row":0,"frames":3,"fps":16} } },
++    "fx_cast_glow":       { "kind": "fx",         "file": "fx/cast_glow.png",          "frameW": 64, "frameH": 64, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
++    "fx_routing":         { "kind": "fx",         "file": "fx/routing.png",            "frameW": 64, "frameH": 64, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
++
++    "tile_open":       { "kind": "tile",  "file": "terrain/tile_open.png",       "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
++    "tile_forest":     { "kind": "tile",  "file": "terrain/tile_forest.png",     "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
++    "tile_marsh":      { "kind": "tile",  "file": "terrain/tile_marsh.png",      "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
++    "tile_rubble":     { "kind": "tile",  "file": "terrain/tile_rubble.png",     "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
++    "tile_impassable": { "kind": "tile",  "file": "terrain/tile_impassable.png", "w": 128, "h": 74, "anchor": [64, 37], "variants": 2 },
++
++    "skirt_rock":  { "kind": "skirt", "file": "terrain/skirt_rock.png",  "w": 128, "h": 24 },
++    "skirt_grass": { "kind": "skirt", "file": "terrain/skirt_grass.png", "w": 128, "h": 24, "planned": true },
++
++    "edge_blocked":   { "kind": "overlay", "file": "terrain/edge_blocked.png",   "w": 128, "h": 40, "anchor": [64, 20] },
++    "edge_fortified": { "kind": "overlay", "file": "terrain/edge_fortified.png", "w": 128, "h": 48, "anchor": [64, 28] },
++
++    "prop_tree_pine": { "kind": "prop", "file": "props/tree_pine.png", "w": 96,  "h": 128, "anchor": [48, 120], "variants": 3, "planned": true },
++    "prop_tree_oak":  { "kind": "prop", "file": "props/tree_oak.png",  "w": 96,  "h": 128, "anchor": [48, 120], "variants": 3, "planned": true },
++    "prop_tree_dead": { "kind": "prop", "file": "props/tree_dead.png", "w": 96,  "h": 128, "anchor": [48, 120], "variants": 2, "planned": true },
++    "prop_bush":      { "kind": "prop", "file": "props/bush.png",      "w": 64,  "h": 48,  "anchor": [32, 44],  "variants": 3, "planned": true },
++    "prop_rock_small":{ "kind": "prop", "file": "props/rock_small.png","w": 64,  "h": 48,  "anchor": [32, 44],  "variants": 3, "planned": true },
++    "prop_rock_large":{ "kind": "prop", "file": "props/rock_large.png","w": 96,  "h": 80,  "anchor": [48, 76],  "variants": 2, "planned": true },
++    "prop_reeds":     { "kind": "prop", "file": "props/reeds.png",     "w": 64,  "h": 48,  "anchor": [32, 44],  "variants": 2, "planned": true },
++    "prop_stump":     { "kind": "prop", "file": "props/stump.png",     "w": 48,  "h": 40,  "anchor": [24, 36],  "variants": 2, "planned": true },
++    "prop_grass_tuft":{ "kind": "prop", "file": "props/grass_tuft.png","w": 32,  "h": 24,  "anchor": [16, 22],  "variants": 3, "planned": true },
++
++    "prop_wall_stone": { "kind": "prop", "file": "props/wall_stone.png", "w": 128, "h": 96,  "anchor": [64, 60], "planned": true, "_note": "sits on one hex edge, edge-midpoint anchor" },
++    "prop_wall_wood":  { "kind": "prop", "file": "props/wall_wood.png",  "w": 128, "h": 96,  "anchor": [64, 60], "planned": true, "_note": "palisade; on a hex edge" },
++    "prop_gate":       { "kind": "prop", "file": "props/gate.png",       "w": 128, "h": 112, "anchor": [64, 68], "planned": true, "_note": "on a hex edge" },
++    "prop_rampart":    { "kind": "prop", "file": "props/rampart.png",    "w": 128, "h": 64,  "anchor": [64, 44], "planned": true, "_note": "low earthwork; on a hex edge; matches edge_fortified" },
++    "prop_tower":      { "kind": "prop", "file": "props/tower.png",      "w": 128, "h": 160, "anchor": [64, 150],"planned": true, "_note": "stands on a tile; taller than a unit" },
++    "prop_banner":     { "kind": "prop", "file": "props/banner.png",     "mask": "props/banner_mask.png", "w": 64, "h": 96, "anchor": [32, 90], "planned": true, "_note": "team-tintable via mask" },
++
++    "decal_corpse":  { "kind": "decal", "file": "props/decal_corpse.png", "w": 96, "h": 56, "anchor": [48, 28], "variants": 2, "planned": true },
++    "decal_bones":   { "kind": "decal", "file": "props/decal_bones.png",  "w": 96, "h": 56, "anchor": [48, 28], "variants": 2, "planned": true },
++    "decal_blood":   { "kind": "decal", "file": "props/decal_blood.png",  "w": 96, "h": 56, "anchor": [48, 28], "variants": 3, "planned": true },
++    "decal_scorch":  { "kind": "decal", "file": "props/decal_scorch.png", "w": 96, "h": 56, "anchor": [48, 28], "variants": 2, "planned": true },
++    "decal_crater":  { "kind": "decal", "file": "props/decal_crater.png", "w": 96, "h": 56, "anchor": [48, 28], "planned": true },
++    "decal_zone":    { "kind": "decal", "file": "props/decal_zone.png",   "mask": "props/decal_zone_mask.png", "w": 128, "h": 74, "anchor": [64, 37], "planned": true, "_note": "deployment-zone tint; matches tile footprint" },
++
++    "fx_explosion_large": { "kind": "fx", "file": "fx/explosion_large.png", "frameW": 96, "frameH": 96, "planned": true, "animations": { "play": {"row":0,"frames":5,"fps":16} } },
++    "fx_shield":          { "kind": "fx", "file": "fx/shield.png",          "frameW": 64, "frameH": 64, "planned": true, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
++    "fx_curse":           { "kind": "fx", "file": "fx/curse.png",           "frameW": 64, "frameH": 64, "planned": true, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
++    "fx_arrow_loose":     { "kind": "fx", "file": "fx/arrow_loose.png",     "frameW": 32, "frameH": 32, "planned": true, "animations": { "play": {"row":0,"frames":2,"fps":16} } },
++    "fx_cast_spark":      { "kind": "fx", "file": "fx/cast_spark.png",      "frameW": 32, "frameH": 32, "planned": true, "animations": { "play": {"row":0,"frames":2,"fps":16} } }
++  }
++}
+diff --git a/docs/RENDERING_PLAN.md b/docs/RENDERING_PLAN.md
+new file mode 100644
+index 0000000..cb3b74c
+--- /dev/null
++++ b/docs/RENDERING_PLAN.md
+@@ -0,0 +1,152 @@
++# Rendering Do-Over: Isometric Battle View
++
++**Status:** PLAN. **Audience:** engine side (Claude Code / SFML).
++**Companions:** `assets/sprites/ART_BRIEF.md` (what the art is), `assets/sprites/manifest.example.json`
++(the art contract). This doc is how the engine consumes them.
++
++The current renderer (`backend/render/src/BattleRenderer.cpp`) draws a flat, 90°-rotated pointy-top
++hex grid with units as single `sf::Text` letters. We are replacing it wholesale with a **2:1
++isometric** renderer that draws real terrain tiles and animated unit sprites. This is a rewrite of
++the *view only* — the engine/simulation (`backend/engine/`) is untouched; the renderer still consumes
++`HexGrid` + `AUnit` state read-only, exactly as the module boundary in CLAUDE.md requires.
++
++---
++
++## 1. What stays, what goes
++
++**Goes:** the 90° view rotation (`initView`), `sf::Text` unit glyphs, `sf::Text` coord labels as the
++primary display, terrain-as-flat-colored-`ConvexShape`, the `symF`/`drawUnit` letter path.
++
++**Stays / reused:** `HexGrid` axial coords + `hexToPixel` as the *flat* basis we project from;
++`grid.getHexSize()`; `Hex.terrain/elevation/impassable`; `HexSide.blocked/fortified`; the intra-hex
++formation logic in `renderUnitsInHex` (fighters at engaged edges, support massed behind) — that
++placement is good and just needs its output positions run through the iso transform instead of the
++flat one. Keep a **letters fallback** (env var `BATTLE_RENDER=letters`) during the transition so we
++can bisect regressions.
++
++---
++
++## 2. Isometric projection
++
++Pointy-top axial hex `(q, r)` with integer `elevation`. Two-step: flat hex pixel → iso screen.
++
++```
++// flat basis: reuse HexGrid::hexToPixel(coord) -> (fx, fy)   (existing)
++// iso squash + elevation lift:
++screenX = fx
++screenY = fy * ISO_SQUASH - elevation * ELEV_PX
++```
++
++- `ISO_SQUASH ≈ 0.60` gives the flattened 2:1-ish look; tune against the delivered `tile_*` art so a
++  tile's on-screen height matches `projection.tileH` while its width matches `projection.tileW`.
++- `ELEV_PX = projection.elevationStep` (16) — one elevation level lifts the tile up by one skirt.
++- Screen scale: choose so one hex's flat width maps to `projection.tileW` px. Derive from
++  `getHexSize()`; expose zoom via the existing mouse-wheel handler.
++- No view rotation. Pan/zoom stay on the `sf::View`.
++
++**Depth order (painter's algorithm).** Draw strictly back-to-front. Depth key per hex:
++
++```
++depth = (r * BIG + q) ;  // rows front-to-back; within a row, columns left-to-right
++```
++
++Sort all draw items (tiles, skirts, edge overlays, decals, units, props) by `(depth, layer)` where
++`layer` orders things sharing a hex: `skirt < tile < decal < edge_overlay < prop_ground < unit <
++prop_tall < fx`. This makes raised front terrain and tall props correctly occlude units behind them.
++A single `std::vector<DrawItem>` built each frame, `std::stable_sort`, then draw, is simplest and
++plenty fast for these grid sizes.
++
++---
++
++## 3. Terrain rendering
++
++Per hex, back-to-front:
++
++1. **Skirts (cliff faces).** For the front-facing directions (SW, and the two lower edges), if this
++   hex's `elevation` exceeds the neighbor's (or the neighbor is off-grid), draw `skirt_rock` repeated
++   `(elevation - neighborElevation)` times, stacked downward from the tile's lower edge. This is what
++   turns elevation into visible cliffs/plateaus. `impassable` hexes render as a full rock column
++   (`tile_impassable` top + skirts down to the base).
++2. **Top-face tile.** `tile_<terrain>` (pick a `variants` index deterministically, e.g.
++   `hash(q,r) % variants`, so the field is stable frame-to-frame but non-repeating). Anchor `[64,37]`
++   at the projected hex center.
++3. **Ground decals** (future): `decal_blood`/`decal_corpse`/`decal_zone` lie flat on the tile.
++4. **Edge overlays.** For each of the 6 `HexSide`s: `edge_blocked` if `blocked` (or auto-cliff
++   `|Δelev|>=2`), `edge_fortified` if `fortified`. Place at the edge midpoint, choose the piece
++   orientation from the direction (NE/E/SE/SW/W/NW). Later these become the `prop_wall_*`/`prop_rampart`
++   props anchored to the same edge.
++
++The engine currently darkens terrain by elevation and blends a team tint into occupied hexes — with
++real art, drop the darken (skirts convey height now) and, if desired, keep a *very* subtle team tint
++on the tile or move team identity entirely onto the unit sprites (see §5). Terrain colors in
++`TERRAIN_META` (HexGrid.hpp) stay the single source of truth and match the tile art (ART_BRIEF §5a).
++
++---
++
++## 4. Manifest + texture loading
++
++New, self-contained in `backend/render/` (keep the engine trust boundary — this only reads asset
++files shipped with the build):
++
++- **`SpriteManifest`** — parse `assets/sprites/manifest.json` (reuse the bundled `nlohmann::json`).
++  Struct per sprite: kind, texture handle, frame size, anchor, variant count, `map<string, Anim>`
++  where `Anim{ row, frames, fps }`. Validate defensively (missing/short files → log + skip that
++  sprite, never throw into the render loop).
++- **`TextureCache`** — owns `sf::Texture`s keyed by file path; one texture per sheet (+ its `_mask`).
++  Load once at renderer init.
++- **`AnimatedSprite`** helper — holds a sprite key + current animation + a clock; `frameRect()` =
++  `row * frameH` down, `(int(t*fps) % frames) * frameW` across. Sets origin to the manifest `anchor`.
++
++**Team tinting (manifest `defaults.teamColor`):**
++- `"mask"` (recommended): draw base sheet, then draw the `_mask` sheet at the same transform with
++  `sprite.setColor(teamOrStatusColor)` and additive/multiply blend so only masked (white) pixels take
++  color. Cleanest via a tiny fragment shader (`base.rgb + mask.r * tint`), or two draws with
++  `sf::BlendAdd`. The existing status precedence still applies: casting → yellow, broken → orange,
++  else squad-debug palette or team red/blue. Only the *mask* draw takes that color; the base is
++  untouched.
++- `"variants"`: pick `<key>_red` / `<key>_blue`; status shown via `fx_cast_glow`/`fx_routing` overlays.
++- `"tint"`: `sprite.setColor` on the whole texture (today's behavior, lowest quality).
++
++---
++
++## 5. Units
++
++- Map an `AUnit` to a manifest key. Cleanest: add a virtual `const char* AUnit::spriteKey() const`
++  (override per class: Soldier→`"soldier"`, Cavalry→`"cavalry"`, …). This also fixes a latent gap —
++  the decomposition states already flip `printSymbol` ('C'→'H' on rider death), so `spriteKey()`
++  returns `"horse"` for a riderless Cavalry and `"soldier"` for a dismounted one, and the sprite swap
++  is automatic (ART_BRIEF §3e). Fallback: a `switch` on `printSymbol` in the renderer (matches the
++  existing `BattleServer.cpp:52` switch) if we don't want to touch the engine header yet.
++- Position: reuse `renderUnitsInHex`'s formation math to get each unit's flat sub-position within the
++  hex, then project through §2. Anchor the sprite by its feet (`anchor`) at that projected point.
++- Animation state from unit flags: `getCast() != 0` → `attack`/cast; `getBroken()` → fleeing (`walk`);
++  in an engaged hex and alive → `attack` cycling; otherwise `idle`. Death: when a unit disappears from
++  a hex between frames, optionally play `death` + drop a `decal_corpse` (needs a small
++  render-side "recently died" cache since the engine prunes dead in `cleanup()`).
++- Size already scales in-engine (SIZE 10 vs 20); with real art, scale each sprite so its authored
++  canvas maps to the intended on-tile footprint rather than re-deriving from `√(size/CAPACITY)`.
++
++---
++
++## 6. Migration order (incremental, each step shippable)
++
++1. Land `assets/sprites/` (art + real `manifest.json`) and this plan. *(art dependency: claude.design)*
++2. `SpriteManifest` + `TextureCache` + `AnimatedSprite`, unit-tested against the manifest — no render
++   change yet.
++3. Iso projection + terrain tiles + skirts, replacing the `ConvexShape` grid. Units still letters.
++4. Swap unit letters → animated sprites at the `// SPRITE SWAP POINT` (BattleRenderer.cpp:216).
++5. Edge overlays, decals, projectiles/FX (`arrow`, `fx_fireball`, …) tied to combat events.
++6. Props (trees, fortifications) once §7 art lands — same `DrawItem`/depth pipeline, no new plumbing.
++
++Keep `BATTLE_RENDER=letters` working through step 4 so CI/dev can compare.
++
++---
++
++## 7. Open decisions
++
++- **Team color mode** — recommend `"mask"` (ART_BRIEF §0). Locks step 2/4 shader work.
++- **Art style** — pixel vs painterly (ART_BRIEF §1). Doesn't affect engine code, only asset bytes.
++- **Death corpses** — do we persist a `decal_corpse` where units die, or just fade? Affects the
++  render-side death cache in §5.
++
++None block starting steps 1–3; they only affect steps 4–5.
+-- 
+2.43.0
+
