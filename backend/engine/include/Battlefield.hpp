@@ -94,11 +94,18 @@ class Battlefield
         void moveUnits(void);
         void makeBattle(void);
 
+        // ENGINE ENTRY POINT: takes ownership of both armies and precomputes flee-distance
+        // BFS tables. Assumes every unit already has a valid hex (set by randomPlaceArmy /
+        // buildArmyFromPlacement upstream) — not re-validated here. See API.md #4.
         void loadArmies(Army red, Army blue);
         // Call whenever impassable/terrain/blocked flags change mid-battle (e.g. a spell).
         void recomputeDistances();
         void reset(); // clear hex occupancy and corpse count between battles
+        // ENGINE ENTRY POINT: advances one turn. No external input — operates purely on
+        // state already loaded via loadArmies(). See API.md #4.
         bool tick();
+        // ENGINE ENTRY POINT: the only way surviving units cross back out of the engine.
+        // Filters out battleSummon units. See API.md #4.
         BattleResult extractResult();
 
         // Cross-reference consistency checks. Called at the top of each tick.

@@ -400,6 +400,28 @@ TEST_CASE("randomPlaceArmy sets placed flag on every unit") {
         REQUIRE(unit->getPlaced() == true);
 }
 
+// SECURITY_NOTES.md #6: a zone too small for the army must fail gracefully
+// (return false) instead of calling exit() and killing the process.
+TEST_CASE("randomPlaceArmy returns false without terminating when zone is too full") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Single-hex zone: w=3..3, h=5..5 → one hex, capacity 640. 70 Soldiers of
+    // size 10 = 700 > 640, so the zone cannot hold the whole army.
+    PlacementZone zone = {3, 3, 5, 5};
+    Army army;
+    appendArmy<Soldier>(army, 70, REDTEAM);
+
+    bool ok = randomPlaceArmy(army, field, zone);
+    REQUIRE(ok == false);
+
+    bool anyUnplaced = false;
+    for (const auto& unit : army)
+        if (!unit->getPlaced()) anyUnplaced = true;
+    REQUIRE(anyUnplaced == true);
+    // Reaching this line at all proves the process didn't exit() — the real
+    // regression this test guards against.
+}
+
 TEST_CASE("countTeam matches placed army sizes after loadArmies") {
     Battlefield& field = Utility::getBattlefield();
 
@@ -453,6 +475,20 @@ TEST_CASE("extractResult winner is BLUETEAM when only blue survives") {
     REQUIRE(result.blueSurvivors.size() > 0);
     for (const auto& unit : result.blueSurvivors)
         REQUIRE(unit->getBattleSummon() == false);
+}
+
+TEST_CASE("tick/extractResult with both armies empty: no crash, draw, nothing to survive") {
+    Battlefield& field = Utility::getBattlefield();
+
+    field.loadArmies({}, {});
+
+    REQUIRE(field.tick() == false); // neither team has anyone alive — battle is already over
+    BattleResult result = field.extractResult();
+
+    REQUIRE(result.winner == 0); // draw — no team constant matches "nobody"
+    REQUIRE(result.redSurvivors.empty());
+    REQUIRE(result.blueSurvivors.empty());
+    REQUIRE(result.corpses == 0);
 }
 
 TEST_CASE("extractResult clears internal state so a second call returns empty") {

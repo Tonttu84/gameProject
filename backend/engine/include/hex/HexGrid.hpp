@@ -113,6 +113,12 @@ public:
 
     // Apply hex overrides from a JSON string produced by toJson().
     // If the grid is empty, builds it from the JSON's cols/rows first.
+    //
+    // BOUNDARY (see SECURITY_NOTES.md #3, #7, #8): jsonStr is not necessarily trusted —
+    // reachable from the network via the path-traversal-vulnerable map lookup in
+    // BattleServer.cpp. Field presence/type is validated (malformed hex entries are skipped,
+    // not thrown); zone rows are clamped/rejected if inverted or out of grid range. cols/rows
+    // passed to buildRect() are NOT range-checked — see SECURITY_NOTES.md #8.
     void fromJson(const std::string& jsonStr);
 
     Hex*        getHex(HexCoord c);

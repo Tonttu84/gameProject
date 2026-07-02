@@ -374,44 +374,80 @@ std::string HexGrid::toJson(int cols, int rows, const std::string& name) const
     return j.dump(2);
 }
 
+// Returns true and writes *out if j[key] exists and is an integer. Otherwise leaves *out
+// untouched and returns false. Used throughout fromJson() to avoid nlohmann::json's
+// operator[]/.get<T>() throwing on a missing key or a value of the wrong type — see
+// SECURITY_NOTES.md #3 (map JSON may come from an attacker-influenced path).
+static bool tryGetInt(const json& j, const char* key, int& out)
+{
+    auto it = j.find(key);
+    if (it == j.end() || !it->is_number_integer()) return false;
+    out = it->get<int>();
+    return true;
+}
+
+// Largest single grid dimension fromJson() will build (see SECURITY_NOTES.md #8). The
+// engine's own fixed battlefield is 30x16; this leaves generous headroom for hand-authored
+// custom maps while still bounding worst-case allocation from a malformed cols/rows.
+static constexpr int MAX_GRID_DIM = 500;
+
 void HexGrid::fromJson(const std::string& jsonStr)
 {
-    auto j = json::parse(jsonStr);
-
-    if (_hexes.empty())
-        buildRect(j["cols"].get<int>(), j["rows"].get<int>());
-
-    if (j.contains("player_zone_rows")) {
-        _playerZoneMinRow = j["player_zone_rows"][0].get<int>();
-        _playerZoneMaxRow = j["player_zone_rows"][1].get<int>();
-    }
-    if (j.contains("enemy_zone_rows")) {
-        _enemyZoneMinRow = j["enemy_zone_rows"][0].get<int>();
-        _enemyZoneMaxRow = j["enemy_zone_rows"][1].get<int>();
+    json j;
+    try {
+        j = json::parse(jsonStr);
+    } catch (const json::parse_error&) {
+        return; // malformed JSON — leave the grid as-is
     }
 
-    if (!j.contains("hexes")) return;
+    if (_hexes.empty()) {
+        int cols = 0, rows = 0;
+        if (tryGetInt(j, "cols", cols) && tryGetInt(j, "rows", rows) &&
+            cols > 0 && rows > 0 && cols <= MAX_GRID_DIM && rows <= MAX_GRID_DIM) {
+            buildRect(cols, rows);
+        } else {
+            return; // can't safely build a grid — nothing further to apply
+        }
+    }
+
+    auto applyZoneRows = [&](const char* key, int& minRow, int& maxRow) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_array() || it->size() != 2) return;
+        if (!(*it)[0].is_number_integer() || !(*it)[1].is_number_integer()) return;
+        int lo = (*it)[0].get<int>();
+        int hi = (*it)[1].get<int>();
+        if (lo < 0 || hi < 0 || lo > hi) return; // reject inverted/negative ranges (SECURITY_NOTES.md #7)
+        minRow = lo;
+        maxRow = hi;
+    };
+    applyZoneRows("player_zone_rows", _playerZoneMinRow, _playerZoneMaxRow);
+    applyZoneRows("enemy_zone_rows",  _enemyZoneMinRow,  _enemyZoneMaxRow);
+
+    if (!j.contains("hexes") || !j["hexes"].is_array()) return;
     for (const auto& entry : j["hexes"]) {
-        int q = entry["q"].get<int>();
-        int r = entry["r"].get<int>();
+        if (!entry.is_object()) continue;
+        int q = 0, r = 0;
+        if (!tryGetInt(entry, "q", q) || !tryGetInt(entry, "r", r)) continue;
         Hex* h = getHex({q, r});
         if (!h) continue;
 
-        if (entry.contains("terrain"))
+        if (entry.contains("terrain") && entry["terrain"].is_string())
             h->terrain = terrainFromName(entry["terrain"].get<std::string>());
-        if (entry.contains("elevation"))
-            h->elevation = entry["elevation"].get<int>();
-        if (entry.contains("impassable"))
+        if (int elevation; tryGetInt(entry, "elevation", elevation))
+            h->elevation = elevation;
+        if (entry.contains("impassable") && entry["impassable"].is_boolean())
             h->impassable = entry["impassable"].get<bool>();
 
-        if (entry.contains("blocked_sides")) {
+        if (entry.contains("blocked_sides") && entry["blocked_sides"].is_array()) {
             for (const auto& ds : entry["blocked_sides"]) {
+                if (!ds.is_string()) continue;
                 HexSide* hs = getSide({q, r}, dirFromName(ds.get<std::string>()));
                 if (hs) hs->blocked = true;
             }
         }
-        if (entry.contains("fortified_sides")) {
+        if (entry.contains("fortified_sides") && entry["fortified_sides"].is_array()) {
             for (const auto& ds : entry["fortified_sides"]) {
+                if (!ds.is_string()) continue;
                 HexSide* hs = getSide({q, r}, dirFromName(ds.get<std::string>()));
                 if (hs) { hs->fortified = true; hs->fortifiedDefender = h; }
             }

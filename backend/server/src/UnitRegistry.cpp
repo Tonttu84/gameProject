@@ -128,20 +128,68 @@ std::string buildInfoJson()
 
 // ── buildArmyFromPlacement ────────────────────────────────────────────────────
 
+// Upper bound on total requested unit size, in the same hex-capacity size-points
+// Hex::CAPACITY is measured in (NOT a unit/entry count — see SECURITY_NOTES.md #4). A
+// single unit can be as large as an entire hex (640 size-points), so a flat count of
+// "units" doesn't bound resource usage the way a size-points budget does. Scales with
+// whatever map is loaded: the whole grid could never legitimately hold more than
+// hexCount() * Hex::CAPACITY size-points total, so nothing beyond that is worth
+// processing regardless of team/zone. Every entry with a valid type counts toward this
+// total as soon as it's constructed, even if it's later rejected for that specific hex
+// (capacity/terrain/zone) — otherwise a flood of entries all targeting one full hex would
+// bypass the budget entirely.
+static size_t placementSizeBudget(const HexGrid& grid)
+{
+    return static_cast<size_t>(grid.hexCount()) * static_cast<size_t>(Hex::CAPACITY);
+}
+
+// Secondary, generous hard cap on raw entry count — defense in depth against a flood of
+// minimum-size (currently as small as 10, but DESIGN.md plans size-1 creatures) units,
+// which the size-points budget alone would process a lot of before exhausting.
+static constexpr size_t MAX_PLACEMENT_ENTRIES = 50000;
+
 Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid& grid)
 {
     Army army;
-    json j = json::parse(placementJson);
+
+    json j;
+    try {
+        j = json::parse(placementJson);
+    } catch (const json::parse_error&) {
+        return army; // malformed JSON — treat as no placements rather than throwing
+    }
+    if (!j.is_array()) return army;
 
     // Track capacity used per hex during this placement pass (sizeUsed on the
     // Hex struct is only updated by setHex/clearHex during the battle itself).
     std::unordered_map<HexCoord, int, HexCoordHash> usedPerHex;
 
+    const size_t sizeBudget = placementSizeBudget(grid);
+    size_t totalRequestedSize = 0;
+    size_t processed = 0;
+
     for (const auto& entry : j) {
-        auto u = makeUnit(entry["unit_type"].get<std::string>(), team);
+        if (processed++ >= MAX_PLACEMENT_ENTRIES) break;
+
+        // SECURITY (see SECURITY_NOTES.md #3): entry is attacker-controlled — validate
+        // shape/types before touching a field, rather than letting operator[]/.get<T>()
+        // throw on a missing key or wrong type.
+        if (!entry.is_object()) continue;
+        auto typeIt = entry.find("unit_type");
+        auto qIt    = entry.find("q");
+        auto rIt    = entry.find("r");
+        if (typeIt == entry.end() || !typeIt->is_string()) continue;
+        if (qIt == entry.end() || !qIt->is_number_integer()) continue;
+        if (rIt == entry.end() || !rIt->is_number_integer()) continue;
+
+        auto u = makeUnit(typeIt->get<std::string>(), team);
         if (!u) continue;
 
-        HexCoord coord{entry["q"].get<int>(), entry["r"].get<int>()};
+        int unitSize = static_cast<int>(u->getSize());
+        if (totalRequestedSize + static_cast<size_t>(unitSize) > sizeBudget) break;
+        totalRequestedSize += static_cast<size_t>(unitSize);
+
+        HexCoord coord{qIt->get<int>(), rIt->get<int>()};
         Hex* h = grid.getHex(coord);
 
         // Reject missing or impassable hexes.
@@ -161,7 +209,6 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
 
         // Reject if placement would exceed hex capacity.
         int& used = usedPerHex[coord];
-        int unitSize = static_cast<int>(u->getSize());
         if (used + unitSize > Hex::CAPACITY) continue;
         used += unitSize;
 

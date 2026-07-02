@@ -249,3 +249,36 @@ describe('P6: Clear button zeros all placements on the hex and closes', () => {
     expect(onClose).toHaveBeenCalled()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Boundary: input clamping (ReachMenu.jsx handleChange/maxCount) — these
+// guards exist in the component but had no regression coverage.
+// ---------------------------------------------------------------------------
+
+describe('Boundary: negative and over-capacity input clamping', () => {
+  it('typing a negative count is clamped to 0, not committed as negative', () => {
+    const { onPlace } = renderMenu({ roster: { Soldier: 10, Mage: 5 } })
+    const [soldierInput] = screen.getAllByRole('spinbutton')
+    fireEvent.change(soldierInput, { target: { value: '-5' } })
+    expect(soldierInput).toHaveValue(0)
+    fireEvent.click(screen.getByRole('button', { name: /place/i }))
+    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Soldier', 0)
+  })
+
+  it('a hex already over capacity from stale placements shows max=0, not negative', () => {
+    // 12 size-points already used by Mage on a hexCapacity=10 hex (stale/inconsistent
+    // state) — maxCount's Math.max(0, cap) must prevent a negative `max` attribute.
+    renderMenu({
+      placements: [{ type: 'Mage', col: 1, row: 4, count: 6 }], // 6 * size 2 = 12 > 10
+      hexCapacity: 10,
+    })
+    const [soldierInput] = screen.getAllByRole('spinbutton')
+    expect(soldierInput).toHaveAttribute('max', '0')
+  })
+
+  it('empty roster: unit with no roster entry has max 0, not undefined/NaN', () => {
+    renderMenu({ roster: {} })
+    const inputs = screen.getAllByRole('spinbutton')
+    inputs.forEach(input => expect(input).toHaveAttribute('max', '0'))
+  })
+})
