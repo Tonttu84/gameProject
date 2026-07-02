@@ -198,15 +198,12 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
         return static_cast<unsigned int>(std::max(4.f, std::min(s, _hexSize * 1.5f)));
     };
 
-    float avgSym = 0.f, avgUnitSz = 0.f;
-    for (AUnit* u : alive) {
-        avgSym    += _hexSize * 1.6f * std::sqrt(static_cast<float>(u->getSize())
-                                                 / static_cast<float>(Hex::CAPACITY));
-        avgUnitSz += static_cast<float>(u->getSize());
-    }
-    float nf   = static_cast<float>(alive.size());
-    avgSym     = std::max(4.f, std::min(avgSym / nf, _hexSize * 1.5f));
-    avgUnitSz /= nf;
+    float avgSym = 0.f;
+    for (AUnit* u : alive)
+        avgSym += _hexSize * 1.6f * std::sqrt(static_cast<float>(u->getSize())
+                                              / static_cast<float>(Hex::CAPACITY));
+    float nf = static_cast<float>(alive.size());
+    avgSym   = std::max(4.f, std::min(avgSym / nf, _hexSize * 1.5f));
 
     sf::Text sym;
     sym.setFont(_font);

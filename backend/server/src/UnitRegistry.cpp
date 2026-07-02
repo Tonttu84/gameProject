@@ -1,11 +1,6 @@
 #include "server/UnitRegistry.hpp"
 #include "AUnit.hpp"
-#include "units/Soldier.hpp"
-#include "units/Archer.hpp"
-#include "units/Mage.hpp"
-#include "units/Priest.hpp"
-#include "units/Necromancer.hpp"
-#include "units/Cavalry.hpp"
+#include "UnitCatalog.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -21,52 +16,10 @@
 
 using json = nlohmann::json;
 
-// ── Unit factory ──────────────────────────────────────────────────────────────
-
-static std::unique_ptr<AUnit> makeUnit(const std::string& type, int team)
-{
-    if (type == "Soldier")    return std::make_unique<Soldier>(team);
-    if (type == "Archer")     return std::make_unique<Archer>(team);
-    if (type == "Mage")       return std::make_unique<Mage>(team);
-    if (type == "Priest")     return std::make_unique<Priest>(team);
-    if (type == "Cavalry")    return std::make_unique<Cavalry>(team);
-    if (type == "Necromancer")return std::make_unique<Necromancer>(team);
-    return nullptr;
-}
-
 // ── Tiny JSON helpers ─────────────────────────────────────────────────────────
 
 static std::string jsonStr(const char* s) {
     return std::string("\"") + s + "\"";
-}
-
-static std::string forbiddenTerrainJson(UnitCategory cat)
-{
-    auto vec = forbiddenTerrainForCategory(cat);
-    if (vec.empty()) return "[]";
-    std::string s = "[";
-    for (size_t i = 0; i < vec.size(); ++i) {
-        if (i > 0) s += ",";
-        s += "\"";
-        s += terrainMeta(vec[i]).name;
-        s += "\"";
-    }
-    return s + "]";
-}
-
-static std::string jsonEntry(const char* type, const char* symbol,
-                              int placementSize, const char* category,
-                              UnitCategory cat)
-{
-    char buf[256];
-    std::snprintf(buf, sizeof(buf),
-        "{\"type\":%s,\"symbol\":%s,\"placementSize\":%d,\"category\":%s,\"forbiddenTerrain\":%s}",
-        jsonStr(type).c_str(),
-        jsonStr(symbol).c_str(),
-        placementSize,
-        jsonStr(category).c_str(),
-        forbiddenTerrainJson(cat).c_str());
-    return buf;
 }
 
 static std::string jsonTerrainEntry(int idx)
@@ -85,16 +38,25 @@ static std::string jsonTerrainEntry(int idx)
 
 std::string buildInfoJson()
 {
-    // Unit types available for player placement.
-    // forbidden terrain is derived from forbiddenTerrainForCategory() — no hardcoded strings.
-    std::string units =
-        "[" +
-        jsonEntry("Soldier", "X", Soldier::SIZE, "Foot",    UnitCategory::Foot)    + "," +
-        jsonEntry("Archer",  "A", Archer::SIZE,  "Foot",    UnitCategory::Foot)    + "," +
-        jsonEntry("Mage",    "M", Mage::SIZE,    "Foot",    UnitCategory::Foot)    + "," +
-        jsonEntry("Priest",  "P", Priest::SIZE,  "Foot",    UnitCategory::Foot)    + "," +
-        jsonEntry("Cavalry", "C", Cavalry::SIZE, "Mounted", UnitCategory::Mounted) +
-        "]";
+    // Unit types available for player placement — the catalog's placeable
+    // entries, with every value read off a live instance so this can never
+    // drift from the unit constructors (see UnitCatalog.hpp).
+    json unitsJson = json::array();
+    for (const auto& entry : unitCatalog()) {
+        if (!entry.placeable) continue;
+        auto u = entry.make(BLUETEAM);
+        json forbidden = json::array();
+        for (TerrainType t : forbiddenTerrainForCategory(u->getCategory()))
+            forbidden.push_back(terrainMeta(t).name);
+        unitsJson.push_back({
+            {"type",             entry.typeName},
+            {"symbol",           std::string(1, u->getPrintSymbol())},
+            {"placementSize",    static_cast<int>(u->getSize())},
+            {"category",         categoryName(u->getCategory())},
+            {"forbiddenTerrain", forbidden},
+        });
+    }
+    std::string units = unitsJson.dump();
 
     // Terrain metadata — indices match TerrainType enum values.
     std::string terrains =
@@ -182,7 +144,7 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
         if (qIt == entry.end() || !qIt->is_number_integer()) continue;
         if (rIt == entry.end() || !rIt->is_number_integer()) continue;
 
-        auto u = makeUnit(typeIt->get<std::string>(), team);
+        auto u = makeUnitByName(typeIt->get<std::string>(), team);
         if (!u) continue;
 
         int unitSize = static_cast<int>(u->getSize());

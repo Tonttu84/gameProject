@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <vector>
 #include <climits>
 #include "Utility.hpp"
@@ -103,7 +104,18 @@ class Battlefield
         void reset(); // clear hex occupancy and corpse count between battles
         // ENGINE ENTRY POINT: advances one turn. No external input — operates purely on
         // state already loaded via loadArmies(). See API.md #4.
+        // Returns false when the battle is over: one side annihilated OR the
+        // day's turn limit (setMaxTicks) has been reached — extractResult()
+        // then scores as it stands (both sides alive = draw).
         bool tick();
+
+        // Battle length: the day is over after this many ticks. Defaults to
+        // DEFAULT_MAX_BATTLE_TICKS; BattleInput's "max_turns" overrides it per
+        // battle. Reset to the default by reset(); the tick counter restarts
+        // on reset() and loadArmies().
+        void setMaxTicks(int n) { _maxTicks = n; }
+        int  getMaxTicks() const { return _maxTicks; }
+        int  getTicksRun() const { return _ticksRun; }
         // ENGINE ENTRY POINT: the only way surviving units cross back out of the engine.
         // Filters out battleSummon units. See API.md #4.
         BattleResult extractResult();
@@ -139,11 +151,28 @@ class Battlefield
         size_t getCorpses();
         void   setCorpses(size_t setCorpses);
 
+        // ── Tick event log ────────────────────────────────────────────────────
+        // Lightweight narrative sink for replay recording: engine code appends
+        // human-readable lines (deaths, flees, summons); ReplayRecorder drains
+        // them once per tick via takeTickLog(). Not required to be exhaustive —
+        // it exists so a replay can show roughly what happened, not to be a
+        // combat audit trail.
+        void logEvent(std::string line) { _tickLog.push_back(std::move(line)); }
+        std::vector<std::string> takeTickLog() {
+            std::vector<std::string> out;
+            out.swap(_tickLog);
+            return out;
+        }
+
     private:
         void onTurnStart();
         void onTurnEnd();
+        void logDeaths(const Team& team);
 
         Team   _red{REDTEAM};
         Team   _blue{BLUETEAM};
         size_t corpses = 0;
+        std::vector<std::string> _tickLog;
+        int    _maxTicks = DEFAULT_MAX_BATTLE_TICKS;
+        int    _ticksRun = 0;
 };

@@ -74,6 +74,13 @@ constexpr int SPELLRANGE         = 10; // max hex distance for spells
 constexpr int BATTLEFIELD_WIDTH  = 30;  // visual width  — hex rows (r), depth between armies
 constexpr int BATTLEFIELD_HEIGHT = 16;  // visual height — hex columns (q), battle-line width
 
+// Battle length: after this many turns the day is over and the battle is
+// scored as it stands (both sides alive = draw). Default for every battle
+// loop; BattleInput can override per battle via "max_turns" (clamped to
+// [1, MAX_BATTLE_TICKS_CAP] at the trust boundary).
+constexpr int DEFAULT_MAX_BATTLE_TICKS = 400;
+constexpr int MAX_BATTLE_TICKS_CAP     = 5000;
+
 // Terrain movement costs (total ticks to enter; 1 = one tick = no debt)
 constexpr int TERRAIN_COST_OPEN       = 1;
 constexpr int TERRAIN_COST_FOREST     = 2;  // Mounted: impassable

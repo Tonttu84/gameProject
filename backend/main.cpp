@@ -2,6 +2,7 @@
 #include "scenarios/SpreadTest.hpp"
 #include "server/UnitRegistry.hpp"
 #include "server/BattleServer.hpp"
+#include "UnitCatalog.hpp"
 #include "Battlefield.hpp"
 #include "Utility.hpp"
 
@@ -21,6 +22,13 @@ int main(int argc, char* argv[])
     // ── Headless modes (no SFML window) ──────────────────────────────────────
     if (mode == "info") {
         std::cout << buildInfoJson() << "\n";
+        return 0;
+    }
+
+    if (mode == "dump-units") {
+        // Headless: full unit catalog (single source of truth for unit facts).
+        // The campaign server imports this into the DB at startup.
+        std::cout << unitCatalogJson() << "\n";
         return 0;
     }
 

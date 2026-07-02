@@ -49,11 +49,11 @@ void Priest::castBless(void)
 
     if (target->getBroken())
     {
-        std::cout << "The divine healing helps a soldier find his courage" << std::endl;
+        Utility::getBattlefield().logEvent("The divine healing helps a soldier find his courage");
         target->setBroken(false);
     }
     else
-        std::cout << "The divine healing helps a soldier" << std::endl;
+        Utility::getBattlefield().logEvent("The divine healing helps a soldier");
     target->heal(1 + Utility::throwDice());
     target->recover();
     setCast(2);
