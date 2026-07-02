@@ -84,6 +84,9 @@ static std::string resultToJson(const BattleResult& r)
 
 // ── Battle-from-JSON ──────────────────────────────────────────────────────────
 
+// SECURITY (see SECURITY_NOTES.md #1): `name` is attacker-controlled (GET /api/map?name=,
+// POST /api/battle's "map" field) and is concatenated directly into a filesystem path with
+// no sanitization here. Every caller MUST reject path separators/".." in `name` first.
 static std::string readMapFile(const std::string& name)
 {
     std::ifstream f("maps/" + name + ".json");
@@ -111,6 +114,9 @@ static Army buildDefaultEnemyArmy()
     return red;
 }
 
+// Entry point for `./game battle`, the subprocess POST /api/battle spawns per request.
+// BOUNDARY: `input` (stdin) is the raw, fully untrusted HTTP request body. Every field read
+// from `j` below must be treated as attacker-controlled — see SECURITY_NOTES.md #1, #3, #4.
 void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
 {
     std::istreambuf_iterator<char> begin(std::cin), end;
@@ -193,6 +199,8 @@ void runServer(int port, const std::string& binaryPath)
         res.set_content(buildInfoJson(), "application/json");
     });
 
+    // BOUNDARY: `name` is attacker-controlled — see readMapFile()'s comment and
+    // SECURITY_NOTES.md #1 (path traversal).
     svr.Get("/api/map", [](const httplib::Request& req, httplib::Response& res) {
         std::string name = req.has_param("name") ? req.get_param_value("name") : "sample_battle";
         std::string path = "maps/" + name + ".json";
@@ -206,8 +214,12 @@ void runServer(int port, const std::string& binaryPath)
         res.set_content(body, "application/json");
     });
 
+    // BOUNDARY: req.body is the fully untrusted request payload, piped as-is into the
+    // ./game battle subprocess's stdin — see runBattleFromJson() for what happens to it.
     svr.Post("/api/battle", [&binaryPath](const httplib::Request& req, httplib::Response& res) {
         // Write input to a temp file, run ./game battle, read result.
+        // NOTE: inFile/outFile are named only by server PID, not per-request — concurrent
+        // requests (httplib may dispatch on multiple threads) can race on the same files.
         std::string inFile  = "/tmp/battle_in_"  + std::to_string(getpid()) + ".json";
         std::string outFile = "/tmp/battle_out_" + std::to_string(getpid()) + ".json";
 
