@@ -538,3 +538,50 @@ TEST_CASE("fromJson: cols/rows within bounds still builds normally") {
     g.fromJson(j.dump());
     REQUIRE(g.hexCount() == 16 * 20);
 }
+
+// ── hold_turns in placement JSON ──────────────────────────────────────────────
+
+TEST_CASE("buildArmyFromPlacement: hold_turns is applied when present") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"hold_turns", 4}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getHoldTurns() == 4);
+}
+
+TEST_CASE("buildArmyFromPlacement: missing hold_turns defaults to 0") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getHoldTurns() == 0);
+}
+
+TEST_CASE("buildArmyFromPlacement: negative hold_turns is clamped to 0") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"hold_turns", -3}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getHoldTurns() == 0);
+}
+
+TEST_CASE("buildArmyFromPlacement: non-integer hold_turns is ignored, unit still placed with holdTurns=0") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"hold_turns", "forever"}},
+        json{{"unit_type", "Archer"},  {"q", 4}, {"r", 5}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 2);
+    REQUIRE(army[0]->getHoldTurns() == 0);
+}

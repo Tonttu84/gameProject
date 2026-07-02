@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstddef>
+#include <climits>
 #include "Defines.hpp"
 
 // Forward declarations — Squad does not include AUnit.hpp, Wing.hpp, or Battlefield.hpp
@@ -159,6 +160,19 @@ public:
     // (Does not affect squad collective state — that recovers through improveMorale().)
     int attemptRally();
 
+    // ── Hold order ────────────────────────────────────────────────────────────
+    // Hold order: the whole squad skips movement for _holdTurns ticks.
+    // 0 = advance normally; N = hold for N ticks then advance; INT_MAX = hold forever.
+    // tickHold() decrements (if < INT_MAX) and returns true while holding.
+    // Sets hold on the squad only — does not propagate to individual members.
+    int  getHoldTurns()  const { return _holdTurns; }
+    void setHoldTurns(int t)   { _holdTurns = t; }
+    bool tickHold() {
+        if (_holdTurns <= 0) return false;
+        if (_holdTurns < INT_MAX) --_holdTurns;
+        return true;
+    }
+
     // ── Movement ──────────────────────────────────────────────────────────────
     // Movement order: squads move before lone units each tick so that squads
     // claim their hex first. Lone units fill gaps afterwards and won't block
@@ -203,6 +217,7 @@ private:
     Wing*               _wing       = nullptr;  // non-owning; nullptr = wingless squad
     bool                _hasBanner;
     SquadType           _type = SquadType::Infantry;
+    int                 _holdTurns   = 0;
     bool                _shakenTested = false;  // true after shaken threshold fired; reset when % drops below
     MoraleState         _moraleState = MoraleState::Normal;
 

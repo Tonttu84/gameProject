@@ -99,7 +99,8 @@ const App = () => {
 
     const playerPlacement = placements.flatMap(p => {
       const { q, r } = toAxial(p.col, p.row)
-      return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r }))
+      const holdTurns = p.holdTurns ?? 0
+      return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r, hold_turns: holdTurns }))
     })
 
     try {

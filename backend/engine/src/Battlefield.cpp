@@ -495,6 +495,8 @@ void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
 
 void Battlefield::moveSquad(Squad& squad)
 {
+    if (squad.tickHold()) return;
+
     // Navigate and track the per-tick lateral-move flag via the flag bearer
     // rather than the leader: the bearer auto-transfers to the next eligible
     // member on death (Squad::onFlagBearerDeath), so it stays a single stable
@@ -652,6 +654,7 @@ void Battlefield::moveTeam(Team& team)
         }
         // Non-broken squad members already moved in the squad pre-pass.
         if (u.getSquad()) continue;
+        if (u.tickHold()) continue; // holding position
         if (u.getFatigue() >= 100 || u.getCast() > 0) continue; // exhausted or casting
 
         // Ranged units (archers, mages, necromancers) maintain a preferred

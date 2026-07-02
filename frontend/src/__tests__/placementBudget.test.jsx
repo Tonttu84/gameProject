@@ -149,8 +149,7 @@ describe('P2: console.warn fires when placement exceeds available roster', () =>
     })
     fireEvent.click(screen.getByTestId('hex-1-4'))
     // Set Soldier input to 5 (over the available 2)
-    const [soldierInput] = screen.getAllByRole('spinbutton')
-    fireEvent.change(soldierInput, { target: { value: '5' } })
+    fireEvent.change(screen.getByTestId('count-Soldier'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /place/i }))
     expect(warnSpy).toHaveBeenCalled()
   })
@@ -164,8 +163,7 @@ describe('P2: console.warn fires when placement exceeds available roster', () =>
       onPlacementsChange,
     })
     fireEvent.click(screen.getByTestId('hex-1-4'))
-    const [soldierInput] = screen.getAllByRole('spinbutton')
-    fireEvent.change(soldierInput, { target: { value: '5' } })
+    fireEvent.change(screen.getByTestId('count-Soldier'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /place/i }))
     // onPlacementsChange must not commit more than 2 Soldiers
     const calls = onPlacementsChange.mock.calls
@@ -191,9 +189,7 @@ describe('P5: hex capacity in ReachMenu accounts for other unit types on the sam
       placements: [{ type: 'Mage', col: 1, row: 4, count: 2 }],
       hexCapacity: 10,
     })
-    const inputs = screen.getAllByRole('spinbutton')
-    // inputs[0] = Soldier, inputs[1] = Mage
-    expect(inputs[0]).toHaveAttribute('max', '6')
+    expect(screen.getByTestId('count-Soldier')).toHaveAttribute('max', '6')
   })
 
   it('Mage max is reduced by capacity already used by Soldiers', () => {
@@ -202,8 +198,7 @@ describe('P5: hex capacity in ReachMenu accounts for other unit types on the sam
       placements: [{ type: 'Soldier', col: 1, row: 4, count: 4 }],
       hexCapacity: 10,
     })
-    const inputs = screen.getAllByRole('spinbutton')
-    expect(inputs[1]).toHaveAttribute('max', '3')
+    expect(screen.getByTestId('count-Mage')).toHaveAttribute('max', '3')
   })
 
   it('capacity bar shows total size used', () => {
@@ -231,8 +226,8 @@ describe('P6: Clear button zeros all placements on the hex and closes', () => {
       placements: [{ type: 'Soldier', col: 1, row: 4, count: 5 }],
     })
     fireEvent.click(screen.getByRole('button', { name: /clear/i }))
-    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Soldier', 0)
-    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Mage', 0)
+    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Soldier', 0, 0)
+    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Mage', 0, 0)
   })
 
   it('clicking Clear calls onClose', () => {
@@ -246,6 +241,7 @@ describe('P6: Clear button zeros all placements on the hex and closes', () => {
     fireEvent.click(screen.getByRole('button', { name: /clear/i }))
     // Should still call onPlace with 0 for each type and close
     expect(onPlace).toHaveBeenCalledTimes(2)
+    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Soldier', 0, 0)
     expect(onClose).toHaveBeenCalled()
   })
 })
@@ -258,11 +254,11 @@ describe('P6: Clear button zeros all placements on the hex and closes', () => {
 describe('Boundary: negative and over-capacity input clamping', () => {
   it('typing a negative count is clamped to 0, not committed as negative', () => {
     const { onPlace } = renderMenu({ roster: { Soldier: 10, Mage: 5 } })
-    const [soldierInput] = screen.getAllByRole('spinbutton')
+    const soldierInput = screen.getByTestId('count-Soldier')
     fireEvent.change(soldierInput, { target: { value: '-5' } })
     expect(soldierInput).toHaveValue(0)
     fireEvent.click(screen.getByRole('button', { name: /place/i }))
-    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Soldier', 0)
+    expect(onPlace).toHaveBeenCalledWith(1, 4, 'Soldier', 0, 0)
   })
 
   it('a hex already over capacity from stale placements shows max=0, not negative', () => {
@@ -272,13 +268,11 @@ describe('Boundary: negative and over-capacity input clamping', () => {
       placements: [{ type: 'Mage', col: 1, row: 4, count: 6 }], // 6 * size 2 = 12 > 10
       hexCapacity: 10,
     })
-    const [soldierInput] = screen.getAllByRole('spinbutton')
-    expect(soldierInput).toHaveAttribute('max', '0')
+    expect(screen.getByTestId('count-Soldier')).toHaveAttribute('max', '0')
   })
 
   it('empty roster: unit with no roster entry has max 0, not undefined/NaN', () => {
     renderMenu({ roster: {} })
-    const inputs = screen.getAllByRole('spinbutton')
-    inputs.forEach(input => expect(input).toHaveAttribute('max', '0'))
+    screen.getAllByTestId(/^count-/).forEach(input => expect(input).toHaveAttribute('max', '0'))
   })
 })

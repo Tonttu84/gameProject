@@ -83,10 +83,10 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
     )
   }
 
-  const handlePlace = (col, row, type, count) => {
+  const handlePlace = (col, row, type, count, holdTurns = 0) => {
     onPlacementsChange(prev => {
       const filtered = prev.filter(p => !(p.col === col && p.row === row && p.type === type))
-      if (count > 0) return [...filtered, { type, col, row, count }]
+      if (count > 0) return [...filtered, { type, col, row, count, holdTurns }]
       return filtered
     })
   }

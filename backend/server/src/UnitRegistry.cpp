@@ -212,6 +212,13 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
         if (used + unitSize > Hex::CAPACITY) continue;
         used += unitSize;
 
+        // Optional hold_turns: integer >= 0. Non-integer or negative → 0.
+        auto holdIt = entry.find("hold_turns");
+        if (holdIt != entry.end() && holdIt->is_number_integer()) {
+            int ht = holdIt->get<int>();
+            if (ht > 0) u->setHoldTurns(ht);
+        }
+
         u->setHex(h);
         u->setPlaced(true);
         army.push_back(std::move(u));

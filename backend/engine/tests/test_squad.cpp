@@ -1,5 +1,6 @@
 #include "catch.hpp"
 
+#include <climits>
 #include "Squad.hpp"
 #include "Wing.hpp"
 #include "units/Soldier.hpp"
@@ -335,4 +336,55 @@ TEST_CASE("Wing::disband clears back-pointers on all squads") {
 TEST_CASE("Wing getName returns the name given at construction") {
     Wing w("Right Flank");
     REQUIRE(w.getName() == "Right Flank");
+}
+
+// ── Hold order: AUnit ─────────────────────────────────────────────────────────
+
+TEST_CASE("AUnit: holdTurns defaults to 0, tickHold returns false") {
+    Soldier s(REDTEAM);
+    REQUIRE(s.getHoldTurns() == 0);
+    REQUIRE(s.tickHold() == false);
+    REQUIRE(s.getHoldTurns() == 0); // unchanged
+}
+
+TEST_CASE("AUnit: tickHold returns true and decrements while holdTurns > 0") {
+    Soldier s(REDTEAM);
+    s.setHoldTurns(3);
+    REQUIRE(s.tickHold() == true);  REQUIRE(s.getHoldTurns() == 2);
+    REQUIRE(s.tickHold() == true);  REQUIRE(s.getHoldTurns() == 1);
+    REQUIRE(s.tickHold() == true);  REQUIRE(s.getHoldTurns() == 0);
+    REQUIRE(s.tickHold() == false); REQUIRE(s.getHoldTurns() == 0);
+}
+
+TEST_CASE("AUnit: holdTurns INT_MAX never decrements to 0") {
+    Soldier s(REDTEAM);
+    s.setHoldTurns(INT_MAX);
+    for (int i = 0; i < 100; ++i)
+        REQUIRE(s.tickHold() == true);
+    REQUIRE(s.getHoldTurns() == INT_MAX);
+}
+
+// ── Hold order: Squad ─────────────────────────────────────────────────────────
+
+TEST_CASE("Squad: holdTurns defaults to 0, tickHold returns false") {
+    Squad sq("Alpha", true);
+    REQUIRE(sq.getHoldTurns() == 0);
+    REQUIRE(sq.tickHold() == false);
+    REQUIRE(sq.getHoldTurns() == 0);
+}
+
+TEST_CASE("Squad: tickHold returns true and decrements while holdTurns > 0") {
+    Squad sq("Alpha", true);
+    sq.setHoldTurns(2);
+    REQUIRE(sq.tickHold() == true);  REQUIRE(sq.getHoldTurns() == 1);
+    REQUIRE(sq.tickHold() == true);  REQUIRE(sq.getHoldTurns() == 0);
+    REQUIRE(sq.tickHold() == false);
+}
+
+TEST_CASE("Squad: holdTurns INT_MAX never decrements to 0") {
+    Squad sq("Alpha", true);
+    sq.setHoldTurns(INT_MAX);
+    for (int i = 0; i < 100; ++i)
+        REQUIRE(sq.tickHold() == true);
+    REQUIRE(sq.getHoldTurns() == INT_MAX);
 }

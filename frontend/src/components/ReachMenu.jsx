@@ -1,10 +1,15 @@
 import React, { useState } from 'react'
 
 const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, onPlace, onClose }) => {
-  const stackCounts = Object.fromEntries(placements.map(p => [p.type, p.count]))
+  const stackCounts    = Object.fromEntries(placements.map(p => [p.type, p.count]))
+  const stackHoldTurns = Object.fromEntries(placements.map(p => [p.type, p.holdTurns ?? 0]))
 
   const [counts, setCounts] = useState(() =>
     Object.fromEntries(units.map(u => [u.type, stackCounts[u.type] ?? 0]))
+  )
+
+  const [holdTurns, setHoldTurns] = useState(() =>
+    Object.fromEntries(units.map(u => [u.type, stackHoldTurns[u.type] ?? 0]))
   )
 
   const isForbidden = (unit) => unit.forbiddenTerrain?.includes(hexTerrain)
@@ -34,15 +39,24 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
     setCounts(c => ({ ...c, [unit.type]: Math.min(Math.max(0, requested), cap) }))
   }
 
+  const handleHoldChange = (type, rawVal) => {
+    const v = Math.max(0, parseInt(rawVal) || 0)
+    setHoldTurns(h => ({ ...h, [type]: v }))
+  }
+
   const commit = () => {
     units.forEach(u => {
-      onPlace(hex.col, hex.row, u.type, isForbidden(u) ? 0 : (counts[u.type] ?? 0))
+      onPlace(
+        hex.col, hex.row, u.type,
+        isForbidden(u) ? 0 : (counts[u.type] ?? 0),
+        isForbidden(u) ? 0 : (holdTurns[u.type] ?? 0),
+      )
     })
     onClose()
   }
 
   const clear = () => {
-    units.forEach(u => onPlace(hex.col, hex.row, u.type, 0))
+    units.forEach(u => onPlace(hex.col, hex.row, u.type, 0, 0))
     onClose()
   }
 
@@ -69,7 +83,18 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
               value={forbidden ? 0 : (counts[u.type] ?? 0)}
               onChange={e => handleChange(u, e.target.value)}
               className="reach-input"
+              data-testid={`count-${u.type}`}
               disabled={forbidden}
+            />
+            <input
+              type="number"
+              min={0}
+              value={holdTurns[u.type] ?? 0}
+              onChange={e => handleHoldChange(u.type, e.target.value)}
+              className="reach-hold-input"
+              data-testid={`hold-turns-${u.type}`}
+              disabled={forbidden}
+              title="Hold turns (0 = advance immediately)"
             />
           </div>
         )

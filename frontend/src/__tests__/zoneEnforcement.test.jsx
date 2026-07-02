@@ -219,10 +219,10 @@ const renderReachMenu = (props = {}) => {
 }
 
 describe('ReachMenu: unit placement inputs', () => {
-  it('renders a number input for each unit type', () => {
+  it('renders a count input for each unit type', () => {
     renderReachMenu()
-    const inputs = screen.getAllByRole('spinbutton')
-    expect(inputs).toHaveLength(2) // Soldier + Cavalry
+    expect(screen.getByTestId('count-Soldier')).toBeInTheDocument()
+    expect(screen.getByTestId('count-Cavalry')).toBeInTheDocument()
   })
 
   it('the Place button calls onPlace for each unit and then onClose', () => {
@@ -236,18 +236,14 @@ describe('ReachMenu: unit placement inputs', () => {
   it('terrain-forbidden unit input is disabled', () => {
     // Cavalry is forbidden on Forest
     renderReachMenu({ hexTerrain: 'Forest' })
-    // The Cavalry input should be disabled
-    const inputs = screen.getAllByRole('spinbutton')
-    // inputs are ordered by units array: [Soldier, Cavalry]
-    expect(inputs[0]).not.toBeDisabled() // Soldier
-    expect(inputs[1]).toBeDisabled()     // Cavalry on Forest
+    expect(screen.getByTestId('count-Soldier')).not.toBeDisabled()
+    expect(screen.getByTestId('count-Cavalry')).toBeDisabled()
   })
 
   it('terrain-allowed unit input is enabled', () => {
     renderReachMenu({ hexTerrain: 'Open' })
-    const inputs = screen.getAllByRole('spinbutton')
-    expect(inputs[0]).not.toBeDisabled()
-    expect(inputs[1]).not.toBeDisabled()
+    expect(screen.getByTestId('count-Soldier')).not.toBeDisabled()
+    expect(screen.getByTestId('count-Cavalry')).not.toBeDisabled()
   })
 
   it('shows available roster count next to each unit', () => {

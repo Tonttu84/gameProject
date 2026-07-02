@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <assert.h>
+#include <climits>
 #include "Weapon.hpp"
 #include "WeaponList.hpp"
 #include <vector>
@@ -228,6 +229,18 @@ public:
     // Damage bonus kicks in one tier later.
     int cohesionDmgBonus()  const { return _cohesionBonus >= 3 ? 2 : _cohesionBonus >= 2 ? 1 : 0; }
 
+    // Hold order: unit skips movement for _holdTurns ticks.
+    // 0 = move normally; N = hold for N more ticks then advance; INT_MAX = hold forever.
+    // tickHold() decrements (if < INT_MAX) and returns true while the unit is holding.
+    // Broken units always flee regardless of hold.
+    int  getHoldTurns()  const     { return _holdTurns; }
+    void setHoldTurns(int t)       { _holdTurns = t; }
+    bool tickHold() {
+        if (_holdTurns <= 0) return false;
+        if (_holdTurns < INT_MAX) --_holdTurns;
+        return true;
+    }
+
     int  getPreferredRange()  const  { return preferredRange; }
     void setPreferredRange(int r)    { preferredRange = r; }
     int  getMovementSpeed()  const  { return movementSpeed; }
@@ -302,6 +315,7 @@ protected:
     int _cohesionBonus = 0;  // per-tick tier (0-3), set by resolveEngagements, reset each tick
     UnitCategory _category = UnitCategory::Foot;
     std::vector<Weapon> _attacks;
+    int _holdTurns = 0;
 
 };
 

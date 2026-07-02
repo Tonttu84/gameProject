@@ -6,6 +6,7 @@
 // [.][debug] tests print the ASCII map each turn and are excluded from make test.
 
 #include "catch.hpp"
+#include <climits>
 #include "units/Soldier.hpp"
 #include "units/Cavalry.hpp"
 #include "hex/HexGrid.hpp"
@@ -788,6 +789,104 @@ TEST_CASE("flee: picks open SW over forest SE when both are primary flee directi
     REQUIRE(unit->getHex()->coord.r == 15);
 
     seHex->terrain = TerrainType::Open;
+    field.extractResult();
+}
+
+// ── Hold order: movement suppression ─────────────────────────────────────────
+
+TEST_CASE("hold order: lone unit does not advance while holdTurns > 0") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Red at {0,5}, Blue at {5,5}. Red would normally advance E each tick.
+    auto redPtr  = std::make_unique<Soldier>(REDTEAM);
+    auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
+    redPtr->setHex(field.hexGrid.getHex({0, 5}));
+    bluePtr->setHex(field.hexGrid.getHex({5, 5}));
+    redPtr->setHoldTurns(2);
+
+    Army red, blue;
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(bluePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    // Tick 1: still holding (holdTurns ticks from 2 → 1)
+    field.moveUnits();
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+    REQUIRE(unit->getHex()->coord.q == 0);
+    REQUIRE(unit->getHoldTurns() == 1);
+
+    // Tick 2: still holding (holdTurns ticks from 1 → 0)
+    field.moveUnits();
+    REQUIRE(unit->getHex()->coord.q == 0);
+    REQUIRE(unit->getHoldTurns() == 0);
+
+    // Tick 3: hold expired — unit should advance
+    field.moveUnits();
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {5, 5}) < 5);
+
+    field.extractResult();
+}
+
+TEST_CASE("hold order: broken unit flees even when holdTurns > 0") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto redPtr = std::make_unique<Soldier>(REDTEAM);
+    redPtr->setHex(field.hexGrid.getHex({3, 10}));
+    redPtr->setBroken(true);
+    redPtr->setHoldTurns(INT_MAX);
+
+    Army red;
+    red.push_back(std::move(redPtr));
+    field.loadArmies(std::move(red), {});
+
+    HexCoord before = field.getTeam(REDTEAM)[0]->getHex()->coord;
+    field.moveUnits();
+    HexCoord after  = field.getTeam(REDTEAM)[0]->getHex()->coord;
+    REQUIRE(after != before); // fled despite hold order
+
+    field.extractResult();
+}
+
+TEST_CASE("hold order: squad does not advance while holdTurns > 0") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto sq = std::make_unique<Squad>("Alpha", false);
+    Squad* sqPtr = sq.get();
+
+    auto a = std::make_unique<Soldier>(REDTEAM);
+    auto b = std::make_unique<Soldier>(REDTEAM);
+    a->setHex(field.hexGrid.getHex({0, 8}));
+    b->setHex(field.hexGrid.getHex({0, 9}));
+    sqPtr->setHoldTurns(2);
+
+    Army red, blue;
+    sqPtr->addMember(a.get());
+    sqPtr->addMember(b.get());
+    sqPtr->setFlagBearer(a.get());
+
+    auto blueEnemy = std::make_unique<Soldier>(BLUETEAM);
+    blueEnemy->setHex(field.hexGrid.getHex({5, 8}));
+    blue.push_back(std::move(blueEnemy));
+    red.push_back(std::move(a));
+    red.push_back(std::move(b));
+    field.loadArmies(std::move(red), std::move(blue));
+    field.getTeamData(REDTEAM).squads.push_back(std::move(sq));
+
+    HexCoord refBefore = field.getTeam(REDTEAM)[0]->getHex()->coord;
+
+    // Two ticks: squad holds
+    field.moveUnits();
+    REQUIRE(field.getTeam(REDTEAM)[0]->getHex()->coord == refBefore);
+    REQUIRE(sqPtr->getHoldTurns() == 1);
+
+    field.moveUnits();
+    REQUIRE(field.getTeam(REDTEAM)[0]->getHex()->coord == refBefore);
+    REQUIRE(sqPtr->getHoldTurns() == 0);
+
+    // Third tick: hold expired — squad advances
+    field.moveUnits();
+    REQUIRE(HexGrid::distance(field.getTeam(REDTEAM)[0]->getHex()->coord, {5, 8}) < 5);
+
     field.extractResult();
 }
 
