@@ -103,3 +103,15 @@ back instead of only playing forward live.
 
 Do the DB-migration work on a separate branch first — design the schema and per-tick
 storage approach and get it reviewed before touching the live engine/server code.
+
+Build a proper auth module (deferred — big task, do as its own branch/session):
+  - Full user accounts, following the fullstackopen pattern: POST /api/users (register),
+    POST /api/login (returns JWT), password hashing, per-user identity, Authorization:
+    Bearer middleware protecting endpoints (at minimum POST /api/battle).
+  - User storage should live in the DB once the per-tick DB migration above lands — don't
+    build a separate throwaway JSON-file user store first.
+  - Password hashing + JWT signing: OK to add a vendored/downloaded C++ dependency the same
+    way the Makefile already vendors SFML (e.g. jwt-cpp + a bcrypt/argon2 C++ port) rather
+    than hand-rolling crypto.
+  - Deliberately a bit more infrastructure than this game currently needs — this project
+    doubles as a portfolio piece, so a real C++/React auth flow is worth building properly.
