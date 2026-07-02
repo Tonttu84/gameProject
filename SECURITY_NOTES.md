@@ -35,10 +35,14 @@ Every endpoint, including `POST /api/battle` (which spawns a subprocess per requ
 to anyone who can reach the port. `auth/` is an empty placeholder — there is no session,
 token, or API-key mechanism to hang a check on yet.
 
-**Not fixed in this pass**: adding real authentication is a design decision (session vs. API
-key vs. reverse-proxy auth, single-player-campaign-vs-multiplayer intent, etc.), not a bug fix.
-Flagging as the top follow-up item. Until it exists, treat this server as local/trusted-network
-only — do not expose the port publicly.
+**Not fixed in this pass — deliberately deferred to its own branch/session** (too large for a
+bug-fix pass; see TODO.txt). Design decided: full user accounts following the fullstackopen
+pattern (`POST /api/users` register, `POST /api/login` → JWT, password hashing, `Authorization:
+Bearer` middleware on at least `POST /api/battle`), with user storage living in the DB once the
+separately-planned per-tick DB migration lands (not a throwaway JSON-file store), and a vendored
+C++ crypto/JWT dependency (à la how the Makefile already vendors SFML) rather than hand-rolled
+crypto. Until it exists, treat this server as local/trusted-network only — do not expose the
+port publicly.
 
 ### 3. Uncaught exceptions from malformed JSON crash the battle subprocess — High — Fixed
 **Where**: `backend/server/src/UnitRegistry.cpp` `buildArmyFromPlacement()` (was
@@ -53,13 +57,19 @@ throws `json::out_of_range` / `json::type_error`. `runBattleFromJson()` only wra
 `field.hexGrid.fromJson()` are called *outside* that try/catch, so the exception is uncaught
 and terminates the `./game battle` subprocess (SIGABRT via `std::terminate`).
 
+The same issue also applied to `runBattleFromJson()`'s own `j.value("map", "sample_battle")`
+call: `.value()` throws `type_error` if `"map"` exists but isn't a string (e.g. `{"map": 123}`),
+not just if it's missing.
+
 Impact: any client can crash the battle subprocess per request with a single malformed field —
 cheap repeatable DoS against `/api/battle` (the parent server itself survives; it just returns
 500, but every such request burns a process spawn).
 
-**Status: Fixed** — validate field presence/type in `buildArmyFromPlacement` and
-`HexGrid::fromJson`, skip malformed entries instead of throwing; wrap the whole
-`runBattleFromJson` body in try/catch as defense in depth.
+**Status: Fixed** — every field read from attacker-controlled JSON at these three sites now
+checks presence/type first (via `.find()`/`.is_*()` or a small `tryGetInt` helper) and skips/
+defaults instead of calling a throwing accessor; `buildArmyFromPlacement` and `HexGrid::fromJson`
+also wrap their own top-level `json::parse` in try/catch, so neither can throw at all regardless
+of caller.
 
 ### 4. Unbounded placement array size — Medium — Fixed
 **Where**: `backend/server/src/UnitRegistry.cpp` `buildArmyFromPlacement()`.
@@ -115,24 +125,31 @@ Since asserts are compiled in (no `-DNDEBUG` in the Makefile's `CFLAGS`), a viol
 aborts the process — same DoS shape as finding 6, but reachable purely through a bad map file
 (itself reachable via finding 1's path traversal, or simply a corrupted/hand-edited map JSON).
 
-**Status: Fixed** — `HexGrid::fromJson` now clamps/rejects zone rows that are out of range or
-inverted (min > max) instead of storing them as-is; added a regression test.
+**Status: Fixed** — `HexGrid::fromJson` now rejects zone rows that are negative or inverted
+(min > max) instead of storing them as-is (leaves the zone unset, same as if the field were
+absent). It does not clamp against actual grid row count — `HexGrid` doesn't retain `rows` as
+a member after `buildRect()` — but rejecting negative/inverted values is what fixes the
+assertion violation in `BattleSetup.cpp`, which only requires `hEnd >= hStart`. Added a
+regression test.
 
-### 8. `cols`/`rows` in map JSON are not bounds-checked before grid allocation — Low — Accepted / follow-up
+### 8. `cols`/`rows` in map JSON are not bounds-checked before grid allocation — Low — Fixed
 **Where**: `backend/engine/src/hex/HexGrid.cpp` `fromJson()` → `buildRect(cols, rows)`
 (`HexGrid.cpp:125-149`).
 
-`j["cols"].get<int>()` / `j["rows"].get<int>()` accept any `int`, including negative or huge
+`j["cols"].get<int>()` / `j["rows"].get<int>()` accepted any `int`, including negative or huge
 values, with no range check before `buildRect` computes `cols * rows` (int, can overflow) and
-reserves that many hex map entries. A crafted map file with e.g. `"cols": 1000000000` can
+reserves that many hex map entries. A crafted map file with e.g. `"cols": 1000000000` could
 trigger a very large allocation attempt.
 
-**Not fixed in this pass**: lower severity than findings 1-7 (only reachable through the same
-path-traversal/malformed-file vector as finding 3, and `Battlefield::width`/`height` are
-actually fixed compile-time constants in the only real caller — `runBattleFromJson` always
-loads the map into the already-built `Battlefield::hexGrid`, so `buildRect` only runs if
-`_hexes.empty()`, i.e. this path is largely dev/tooling-only today). Flagged for when map files
-become more dynamically generated/uploaded.
+Lower severity than findings 1-7 (only reachable through the same path-traversal/malformed-file
+vector as finding 3, and `Battlefield::width`/`height` are fixed compile-time constants in the
+only real caller — `runBattleFromJson` always loads the map into the already-built
+`Battlefield::hexGrid`, so `buildRect` only runs if `_hexes.empty()`, i.e. this path is largely
+dev/tooling-only today) — but cheap enough to close while already editing this function.
+
+**Status: Fixed** — `cols`/`rows` must now be positive integers no larger than 500 each (chosen
+as generous headroom over the engine's own 30×16 battlefield); out-of-range values leave the
+grid unbuilt instead of attempting the allocation. Added a regression test.
 
 ---
 

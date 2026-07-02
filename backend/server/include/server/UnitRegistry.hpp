@@ -9,7 +9,10 @@ std::string buildInfoJson();
 
 // Creates an Army from a JSON placement array string:
 // [{"unit_type":"Soldier","q":3,"r":5}, ...]
-// Unknown unit types are skipped. Coords not in grid leave the unit with no hex.
+// Entries are skipped entirely (not added to the returned Army) if: unit_type is unknown,
+// malformed (missing/wrong-typed unit_type/q/r), q/r doesn't resolve to a hex in the grid,
+// the hex is impassable or outside the placement zone (when one is set), the unit's category
+// forbids the hex's terrain, or placing it would exceed the hex's remaining capacity.
 //
 // BOUNDARY (see SECURITY_NOTES.md #3, #4, #5): placementJson is attacker-controlled — it is
 // the "player_placement"/"enemy_placement" field of a POST /api/battle body, forwarded

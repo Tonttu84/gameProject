@@ -84,9 +84,20 @@ static std::string resultToJson(const BattleResult& r)
 
 // ── Battle-from-JSON ──────────────────────────────────────────────────────────
 
+// Rejects empty names, path separators, and ".." so a map name can never escape maps/.
+// Map names are otherwise just the bare filename stem (no extension, no directories).
+bool isSafeMapName(const std::string& name)
+{
+    if (name.empty()) return false;
+    if (name.find("..") != std::string::npos) return false;
+    if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) return false;
+    return true;
+}
+
 // SECURITY (see SECURITY_NOTES.md #1): `name` is attacker-controlled (GET /api/map?name=,
-// POST /api/battle's "map" field) and is concatenated directly into a filesystem path with
-// no sanitization here. Every caller MUST reject path separators/".." in `name` first.
+// POST /api/battle's "map" field) and is concatenated directly into a filesystem path.
+// Every caller MUST pass `name` through isSafeMapName() first — this function does not
+// re-check it, to keep the "not found" vs "rejected" distinction visible at the call site.
 static std::string readMapFile(const std::string& name)
 {
     std::ifstream f("maps/" + name + ".json");
@@ -138,7 +149,16 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
     }
 
     // Load map terrain from maps/<name>.json into the grid.
-    std::string mapName = j.value("map", "sample_battle");
+    // NOTE: not j.value("map", ...) — that throws if "map" exists but isn't a string
+    // (SECURITY_NOTES.md #3); attacker-controlled, so it must not throw at all.
+    std::string mapName = "sample_battle";
+    if (j.contains("map") && j["map"].is_string())
+        mapName = j["map"].get<std::string>();
+    if (!isSafeMapName(mapName)) {
+        std::cerr << "battle: invalid map name: " << mapName << "\n";
+        std::cout << "{\"error\":\"invalid map name\"}\n";
+        return;
+    }
     std::string mapContent = readMapFile(mapName);
     if (mapContent.empty()) {
         std::cerr << "battle: map not found: " << mapName << "\n";
@@ -159,7 +179,11 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
             ? zoneFromRows(field.hexGrid.playerZoneMinRow(),
                            field.hexGrid.playerZoneMaxRow(), field.width)
             : PlacementZone{0, field.width - 1, 0, field.height / 4};
-        randomPlaceArmy(player, field, pz);
+        if (!randomPlaceArmy(player, field, pz)) {
+            std::cerr << "battle: player deployment zone too small for default army\n";
+            std::cout << "{\"error\":\"deployment zone too small\"}\n";
+            return;
+        }
     }
 
     // Build enemy army from explicit placement, or default if absent.
@@ -172,7 +196,11 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
             ? zoneFromRows(field.hexGrid.enemyZoneMinRow(),
                            field.hexGrid.enemyZoneMaxRow(), field.width)
             : PlacementZone{0, field.width - 1, field.height * 3 / 4, field.height - 1};
-        randomPlaceArmy(enemy, field, ez);
+        if (!randomPlaceArmy(enemy, field, ez)) {
+            std::cerr << "battle: enemy deployment zone too small for default army\n";
+            std::cout << "{\"error\":\"deployment zone too small\"}\n";
+            return;
+        }
     }
 
     field.loadArmies(std::move(enemy), std::move(player));
@@ -203,14 +231,17 @@ void runServer(int port, const std::string& binaryPath)
     // SECURITY_NOTES.md #1 (path traversal).
     svr.Get("/api/map", [](const httplib::Request& req, httplib::Response& res) {
         std::string name = req.has_param("name") ? req.get_param_value("name") : "sample_battle";
-        std::string path = "maps/" + name + ".json";
-        std::ifstream f(path);
-        if (!f) {
+        if (!isSafeMapName(name)) {
+            res.status = 400;
+            res.set_content("{\"error\":\"invalid map name\"}", "application/json");
+            return;
+        }
+        std::string body = readMapFile(name);
+        if (body.empty()) {
             res.status = 404;
             res.set_content("{\"error\":\"map not found\"}", "application/json");
             return;
         }
-        std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
         res.set_content(body, "application/json");
     });
 

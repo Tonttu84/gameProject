@@ -128,20 +128,47 @@ std::string buildInfoJson()
 
 // ── buildArmyFromPlacement ────────────────────────────────────────────────────
 
+// Upper bound on how many placement entries a single request will process (see
+// SECURITY_NOTES.md #4). Comfortably above any legitimate army (the built-in default
+// armies top out around 700 units) and far below what would make per-entry unit
+// allocation a viable resource-exhaustion vector.
+static constexpr size_t MAX_PLACEMENT_ENTRIES = 5000;
+
 Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid& grid)
 {
     Army army;
-    json j = json::parse(placementJson);
+
+    json j;
+    try {
+        j = json::parse(placementJson);
+    } catch (const json::parse_error&) {
+        return army; // malformed JSON — treat as no placements rather than throwing
+    }
+    if (!j.is_array()) return army;
 
     // Track capacity used per hex during this placement pass (sizeUsed on the
     // Hex struct is only updated by setHex/clearHex during the battle itself).
     std::unordered_map<HexCoord, int, HexCoordHash> usedPerHex;
 
+    size_t processed = 0;
     for (const auto& entry : j) {
-        auto u = makeUnit(entry["unit_type"].get<std::string>(), team);
+        if (processed++ >= MAX_PLACEMENT_ENTRIES) break;
+
+        // SECURITY (see SECURITY_NOTES.md #3): entry is attacker-controlled — validate
+        // shape/types before touching a field, rather than letting operator[]/.get<T>()
+        // throw on a missing key or wrong type.
+        if (!entry.is_object()) continue;
+        auto typeIt = entry.find("unit_type");
+        auto qIt    = entry.find("q");
+        auto rIt    = entry.find("r");
+        if (typeIt == entry.end() || !typeIt->is_string()) continue;
+        if (qIt == entry.end() || !qIt->is_number_integer()) continue;
+        if (rIt == entry.end() || !rIt->is_number_integer()) continue;
+
+        auto u = makeUnit(typeIt->get<std::string>(), team);
         if (!u) continue;
 
-        HexCoord coord{entry["q"].get<int>(), entry["r"].get<int>()};
+        HexCoord coord{qIt->get<int>(), rIt->get<int>()};
         Hex* h = grid.getHex(coord);
 
         // Reject missing or impassable hexes.

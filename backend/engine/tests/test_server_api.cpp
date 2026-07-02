@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include "server/UnitRegistry.hpp"
+#include "server/BattleServer.hpp"
 #include "hex/HexGrid.hpp"
 #include "Battlefield.hpp"
 #include "units/Cavalry.hpp"
@@ -343,4 +344,174 @@ TEST_CASE("buildArmyFromPlacement: empty array returns empty army") {
     g.buildRect(16, 20);
     auto army = buildArmyFromPlacement(json::array().dump(), BLUETEAM, g);
     REQUIRE(army.empty());
+}
+
+// ── SECURITY_NOTES.md #1: path traversal ─────────────────────────────────────
+
+TEST_CASE("isSafeMapName: rejects parent-directory traversal") {
+    REQUIRE_FALSE(isSafeMapName(".."));
+    REQUIRE_FALSE(isSafeMapName("../../etc/passwd"));
+    REQUIRE_FALSE(isSafeMapName("foo/../../bar"));
+}
+
+TEST_CASE("isSafeMapName: rejects path separators") {
+    REQUIRE_FALSE(isSafeMapName("sub/dir"));
+    REQUIRE_FALSE(isSafeMapName("sub\\dir"));
+    REQUIRE_FALSE(isSafeMapName("/etc/passwd"));
+}
+
+TEST_CASE("isSafeMapName: rejects empty name") {
+    REQUIRE_FALSE(isSafeMapName(""));
+}
+
+TEST_CASE("isSafeMapName: accepts a normal map name") {
+    REQUIRE(isSafeMapName("sample_battle"));
+    REQUIRE(isSafeMapName("my-map_2"));
+}
+
+// ── SECURITY_NOTES.md #3, #4: malformed/oversized placement JSON ────────────
+
+TEST_CASE("buildArmyFromPlacement: entry missing unit_type is skipped, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"q", 3}, {"r", 5}},                                    // missing unit_type
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}},          // valid
+    });
+    Army army;
+    REQUIRE_NOTHROW(army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g));
+    REQUIRE(army.size() == 1);
+}
+
+TEST_CASE("buildArmyFromPlacement: wrong-typed q/r is skipped, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", "not-a-number"}, {"r", 5}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}},          // valid
+    });
+    Army army;
+    REQUIRE_NOTHROW(army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g));
+    REQUIRE(army.size() == 1);
+}
+
+TEST_CASE("buildArmyFromPlacement: non-object array entry is skipped, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({ 42, "oops", json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}} });
+    Army army;
+    REQUIRE_NOTHROW(army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g));
+    REQUIRE(army.size() == 1);
+}
+
+TEST_CASE("buildArmyFromPlacement: malformed top-level JSON returns empty army, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    Army army;
+    REQUIRE_NOTHROW(army = buildArmyFromPlacement("{not valid json", BLUETEAM, g));
+    REQUIRE(army.empty());
+}
+
+TEST_CASE("buildArmyFromPlacement: non-array top-level JSON returns empty army, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    Army army;
+    REQUIRE_NOTHROW(army = buildArmyFromPlacement(json{{"unit_type", "Soldier"}}.dump(), BLUETEAM, g));
+    REQUIRE(army.empty());
+}
+
+TEST_CASE("buildArmyFromPlacement: array beyond the processing cap is truncated") {
+    HexGrid g;
+    g.buildRect(16, 20); // 320 hexes, capacity 640 each — plenty of room per hex
+
+    // 5001 valid entries, cycling through every hex in the grid so per-hex capacity
+    // isn't the limiting factor — only the entry-count cap should matter here.
+    json placement = json::array();
+    int idx = 0;
+    for (int r = 0; r < 20; ++r) {
+        for (int col = 0; col < 16; ++col) {
+            if (idx >= 5001) break;
+            int q = col - r / 2;
+            for (int rep = 0; rep < 16 && idx < 5001; ++rep, ++idx)
+                placement.push_back(json{{"unit_type", "Soldier"}, {"q", q}, {"r", r}});
+        }
+    }
+    REQUIRE(placement.size() == 5001);
+
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    // Every entry is individually valid and fits (no capacity/terrain rejection possible
+    // here), so a smaller result size can only mean the processing cap truncated the input.
+    REQUIRE(army.size() < placement.size());
+    REQUIRE(army.size() > 0);
+}
+
+// ── SECURITY_NOTES.md #7: invalid deployment zone rows ───────────────────────
+
+TEST_CASE("fromJson: negative zone rows are rejected, zone stays unset") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json j;
+    j["cols"] = 16; j["rows"] = 20;
+    j["player_zone_rows"] = json::array({-1, 5});
+    g.fromJson(j.dump());
+    REQUIRE(g.hasPlayerZone() == false);
+}
+
+TEST_CASE("fromJson: inverted zone rows (min > max) are rejected, zone stays unset") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json j;
+    j["cols"] = 16; j["rows"] = 20;
+    j["enemy_zone_rows"] = json::array({10, 2});
+    g.fromJson(j.dump());
+    REQUIRE(g.hasEnemyZone() == false);
+}
+
+// ── SECURITY_NOTES.md #3, #8: malformed/oversized map JSON ───────────────────
+
+TEST_CASE("fromJson: hex entry missing q or r is skipped, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json j;
+    j["cols"] = 16; j["rows"] = 20;
+    j["hexes"] = json::array({
+        json{{"q", 3}, {"terrain", "Forest"}},                    // missing r — skipped
+        json{{"q", 5}, {"r", 5}, {"terrain", "Forest"}},          // valid
+    });
+    REQUIRE_NOTHROW(g.fromJson(j.dump()));
+    REQUIRE(g.getHex({5, 5})->terrain == TerrainType::Forest);
+}
+
+TEST_CASE("fromJson: malformed top-level JSON is a no-op, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    REQUIRE_NOTHROW(g.fromJson("{not valid json"));
+    REQUIRE(g.getHex({0, 0}) != nullptr); // grid untouched, still usable
+}
+
+TEST_CASE("fromJson: oversized cols/rows on an empty grid leaves it unbuilt, not thrown") {
+    HexGrid g; // never built — fromJson must build it itself
+    json j;
+    j["cols"] = 1000000000;
+    j["rows"] = 1000000000;
+    REQUIRE_NOTHROW(g.fromJson(j.dump()));
+    REQUIRE(g.hexCount() == 0);
+}
+
+TEST_CASE("fromJson: negative cols/rows on an empty grid leaves it unbuilt, not thrown") {
+    HexGrid g;
+    json j;
+    j["cols"] = -5;
+    j["rows"] = 20;
+    REQUIRE_NOTHROW(g.fromJson(j.dump()));
+    REQUIRE(g.hexCount() == 0);
+}
+
+TEST_CASE("fromJson: cols/rows within bounds still builds normally") {
+    HexGrid g;
+    json j;
+    j["cols"] = 16;
+    j["rows"] = 20;
+    g.fromJson(j.dump());
+    REQUIRE(g.hexCount() == 16 * 20);
 }
