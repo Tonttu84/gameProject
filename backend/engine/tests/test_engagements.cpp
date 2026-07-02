@@ -424,3 +424,33 @@ TEST_CASE("resolveEngagements: loner smaller than blocker fills remaining rubble
     REQUIRE(soldier.getEngagedSide() != nullptr);
     CHECK(soldier.getEngagedSide() == winner->getEngagedSide()); // same side as whichever cav won
 }
+
+// ── FATIGUE_VERY_TIRED boundary (desperate pass) ─────────────────────────────
+// resolveEngagements runs three loner passes per hex: fresh [0, FATIGUE_TIRED),
+// tired [FATIGUE_TIRED, FATIGUE_VERY_TIRED), and a "desperate" pass
+// [FATIGUE_VERY_TIRED, FATIGUE_MAX). FATIGUE_TIRED (30) and FATIGUE_MAX (100) are
+// exercised elsewhere in this file; FATIGUE_VERY_TIRED (60) — the boundary between
+// the tired and desperate passes — was not. A unit at exactly fatigue==60 must
+// fall into the desperate pass's inclusive lower bound, not be silently skipped
+// by an off-by-one in either pass's range.
+
+TEST_CASE("resolveEngagements: a lone unit at exactly FATIGUE_VERY_TIRED is still seated") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Soldier soldier(REDTEAM);
+    soldier.addFatigue(FATIGUE_VERY_TIRED); // exactly 60 — desperate pass lower bound
+    soldier.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    REQUIRE(soldier.getEngagedSide() != nullptr);
+}
+}

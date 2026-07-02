@@ -477,6 +477,20 @@ TEST_CASE("extractResult winner is BLUETEAM when only blue survives") {
         REQUIRE(unit->getBattleSummon() == false);
 }
 
+TEST_CASE("tick/extractResult with both armies empty: no crash, draw, nothing to survive") {
+    Battlefield& field = Utility::getBattlefield();
+
+    field.loadArmies({}, {});
+
+    REQUIRE(field.tick() == false); // neither team has anyone alive — battle is already over
+    BattleResult result = field.extractResult();
+
+    REQUIRE(result.winner == 0); // draw — no team constant matches "nobody"
+    REQUIRE(result.redSurvivors.empty());
+    REQUIRE(result.blueSurvivors.empty());
+    REQUIRE(result.corpses == 0);
+}
+
 TEST_CASE("extractResult clears internal state so a second call returns empty") {
     Battlefield& field = Utility::getBattlefield();
 
