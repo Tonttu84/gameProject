@@ -1,0 +1,115 @@
+{
+  "_comment": [
+    "CONTRACT between claude.design (art) and the C++/SFML engine. Ship the real file as",
+    "assets/sprites/manifest.json with the same shape. Filenames + pixel sizes here MUST match",
+    "the delivered PNGs exactly — the engine reads this and wires up sf::Texture/sf::Sprite with",
+    "zero guessing. See ART_BRIEF.md for what each sprite depicts and ../../docs/RENDERING_PLAN.md",
+    "for how it's consumed. Field reference is in the '_fields' block below.",
+    "This example enumerates the full planned roster; drop 'planned:true' entries you defer."
+  ],
+
+  "_fields": {
+    "version": "manifest schema version (int).",
+    "projection": "iso tile geometry the engine uses to place tiles/skirts. tileW/tileH = top-face box in px; elevationStep = px height of one elevation level (one skirt tile).",
+    "defaults": "fps fallback for animations; teamColor is the chosen strategy: 'mask' | 'variants' | 'tint' (see ART_BRIEF §0).",
+    "sprites.<key>.kind": "'unit' | 'tile' | 'skirt' | 'overlay' | 'projectile' | 'fx' | 'prop' | 'decal'.",
+    "sprites.<key>.sheet": "spritesheet PNG (units/props with animation rows). Use 'file' instead for single-image sprites (tiles/fx/projectiles).",
+    "sprites.<key>.mask": "grayscale team-tint mask sheet, same dims as sheet (only when teamColor='mask'). white=recolor, black=keep.",
+    "sprites.<key>.frameW/frameH": "one animation frame's px size (sheets).",
+    "sprites.<key>.w/h": "image px size (single-image sprites).",
+    "sprites.<key>.anchor": "[x,y] px pinned to the target point: unit/prop feet -> hex center; tile -> hex center; edge prop -> edge midpoint.",
+    "sprites.<key>.size": "engine AUnit SIZE this maps to (sanity/scale reference only).",
+    "sprites.<key>.variants": "number of interchangeable variant images (suffix _0.._N-1) for anti-repetition; omit or 1 = single.",
+    "sprites.<key>.shadow": "'baked' (in-frame) | a separate shadow sprite key. Default baked.",
+    "sprites.<key>.animations": "map name->{row, frames, fps}. row = 0-based row index in the sheet.",
+    "sprites.<key>.planned": "true = specced but may ship in a later drop."
+  },
+
+  "version": 1,
+  "projection": { "type": "iso-hex-pointy", "tileW": 128, "tileH": 74, "elevationStep": 16 },
+  "defaults": { "fps": 8, "teamColor": "mask" },
+
+  "sprites": {
+
+    "soldier":     { "kind": "unit", "sheet": "units/soldier.png",     "mask": "units/soldier_mask.png",     "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+    "archer":      { "kind": "unit", "sheet": "units/archer.png",      "mask": "units/archer_mask.png",      "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+    "mage":        { "kind": "unit", "sheet": "units/mage.png",        "mask": "units/mage_mask.png",        "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+    "priest":      { "kind": "unit", "sheet": "units/priest.png",      "mask": "units/priest_mask.png",      "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+    "necromancer": { "kind": "unit", "sheet": "units/necromancer.png", "mask": "units/necromancer_mask.png", "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+
+    "zombie":      { "kind": "unit", "sheet": "units/zombie.png",      "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
+      "animations": { "idle": {"row":0,"frames":2,"fps":2}, "walk": {"row":1,"frames":4,"fps":5}, "attack": {"row":2,"frames":3,"fps":7}, "death": {"row":3,"frames":2,"fps":5} } },
+    "skeleton":    { "kind": "unit", "sheet": "units/skeleton.png",    "frameW": 64,  "frameH": 64,  "anchor": [32, 60],  "size": 10,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+
+    "horse":       { "kind": "unit", "sheet": "units/horse.png",       "frameW": 128, "frameH": 96,  "anchor": [64, 90],  "size": 20,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9} } },
+    "warhorse":    { "kind": "unit", "sheet": "units/warhorse.png",    "mask": "units/warhorse_mask.png",    "frameW": 128, "frameH": 96,  "anchor": [64, 90],  "size": 20,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9} } },
+    "scorpion":    { "kind": "unit", "sheet": "units/scorpion.png",    "frameW": 128, "frameH": 96,  "anchor": [64, 88],  "size": 20,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+
+    "cavalry":       { "kind": "unit", "sheet": "units/cavalry.png",       "mask": "units/cavalry_mask.png",       "frameW": 128, "frameH": 128, "anchor": [64, 120], "size": 20,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+    "templar_rider": { "kind": "unit", "sheet": "units/templar_rider.png", "mask": "units/templar_rider_mask.png", "frameW": 128, "frameH": 128, "anchor": [64, 120], "size": 20,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":9}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+    "scorpion_rider":{ "kind": "unit", "sheet": "units/scorpion_rider.png","mask": "units/scorpion_rider_mask.png","frameW": 128, "frameH": 128, "anchor": [64, 118], "size": 20, "planned": true,
+      "animations": { "idle": {"row":0,"frames":2,"fps":3}, "walk": {"row":1,"frames":4,"fps":8}, "attack": {"row":2,"frames":3,"fps":10}, "death": {"row":3,"frames":2,"fps":6} } },
+
+    "arrow":              { "kind": "projectile", "file": "fx/arrow.png",              "w": 32, "h": 32 },
+    "fx_fireball":        { "kind": "projectile", "file": "fx/fireball.png",           "frameW": 32, "frameH": 32, "animations": { "fly": {"row":0,"frames":2,"fps":12} } },
+    "fx_fireball_impact": { "kind": "fx",         "file": "fx/fireball_impact.png",    "frameW": 64, "frameH": 64, "animations": { "play": {"row":0,"frames":4,"fps":16} } },
+    "fx_bless":           { "kind": "fx",         "file": "fx/bless.png",              "frameW": 64, "frameH": 64, "animations": { "play": {"row":0,"frames":3,"fps":10} } },
+    "fx_raise":           { "kind": "fx",         "file": "fx/raise.png",              "frameW": 64, "frameH": 64, "animations": { "play": {"row":0,"frames":3,"fps":10} } },
+    "fx_hit":             { "kind": "fx",         "file": "fx/hit.png",                "frameW": 32, "frameH": 32, "animations": { "play": {"row":0,"frames":3,"fps":16} } },
+    "fx_cast_glow":       { "kind": "fx",         "file": "fx/cast_glow.png",          "frameW": 64, "frameH": 64, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
+    "fx_routing":         { "kind": "fx",         "file": "fx/routing.png",            "frameW": 64, "frameH": 64, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
+
+    "tile_open":       { "kind": "tile",  "file": "terrain/tile_open.png",       "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
+    "tile_forest":     { "kind": "tile",  "file": "terrain/tile_forest.png",     "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
+    "tile_marsh":      { "kind": "tile",  "file": "terrain/tile_marsh.png",      "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
+    "tile_rubble":     { "kind": "tile",  "file": "terrain/tile_rubble.png",     "w": 128, "h": 74, "anchor": [64, 37], "variants": 3 },
+    "tile_impassable": { "kind": "tile",  "file": "terrain/tile_impassable.png", "w": 128, "h": 74, "anchor": [64, 37], "variants": 2 },
+
+    "skirt_rock":  { "kind": "skirt", "file": "terrain/skirt_rock.png",  "w": 128, "h": 24 },
+    "skirt_grass": { "kind": "skirt", "file": "terrain/skirt_grass.png", "w": 128, "h": 24, "planned": true },
+
+    "edge_blocked":   { "kind": "overlay", "file": "terrain/edge_blocked.png",   "w": 128, "h": 40, "anchor": [64, 20] },
+    "edge_fortified": { "kind": "overlay", "file": "terrain/edge_fortified.png", "w": 128, "h": 48, "anchor": [64, 28] },
+
+    "prop_tree_pine": { "kind": "prop", "file": "props/tree_pine.png", "w": 96,  "h": 128, "anchor": [48, 120], "variants": 3, "planned": true },
+    "prop_tree_oak":  { "kind": "prop", "file": "props/tree_oak.png",  "w": 96,  "h": 128, "anchor": [48, 120], "variants": 3, "planned": true },
+    "prop_tree_dead": { "kind": "prop", "file": "props/tree_dead.png", "w": 96,  "h": 128, "anchor": [48, 120], "variants": 2, "planned": true },
+    "prop_bush":      { "kind": "prop", "file": "props/bush.png",      "w": 64,  "h": 48,  "anchor": [32, 44],  "variants": 3, "planned": true },
+    "prop_rock_small":{ "kind": "prop", "file": "props/rock_small.png","w": 64,  "h": 48,  "anchor": [32, 44],  "variants": 3, "planned": true },
+    "prop_rock_large":{ "kind": "prop", "file": "props/rock_large.png","w": 96,  "h": 80,  "anchor": [48, 76],  "variants": 2, "planned": true },
+    "prop_reeds":     { "kind": "prop", "file": "props/reeds.png",     "w": 64,  "h": 48,  "anchor": [32, 44],  "variants": 2, "planned": true },
+    "prop_stump":     { "kind": "prop", "file": "props/stump.png",     "w": 48,  "h": 40,  "anchor": [24, 36],  "variants": 2, "planned": true },
+    "prop_grass_tuft":{ "kind": "prop", "file": "props/grass_tuft.png","w": 32,  "h": 24,  "anchor": [16, 22],  "variants": 3, "planned": true },
+
+    "prop_wall_stone": { "kind": "prop", "file": "props/wall_stone.png", "w": 128, "h": 96,  "anchor": [64, 60], "planned": true, "_note": "sits on one hex edge, edge-midpoint anchor" },
+    "prop_wall_wood":  { "kind": "prop", "file": "props/wall_wood.png",  "w": 128, "h": 96,  "anchor": [64, 60], "planned": true, "_note": "palisade; on a hex edge" },
+    "prop_gate":       { "kind": "prop", "file": "props/gate.png",       "w": 128, "h": 112, "anchor": [64, 68], "planned": true, "_note": "on a hex edge" },
+    "prop_rampart":    { "kind": "prop", "file": "props/rampart.png",    "w": 128, "h": 64,  "anchor": [64, 44], "planned": true, "_note": "low earthwork; on a hex edge; matches edge_fortified" },
+    "prop_tower":      { "kind": "prop", "file": "props/tower.png",      "w": 128, "h": 160, "anchor": [64, 150],"planned": true, "_note": "stands on a tile; taller than a unit" },
+    "prop_banner":     { "kind": "prop", "file": "props/banner.png",     "mask": "props/banner_mask.png", "w": 64, "h": 96, "anchor": [32, 90], "planned": true, "_note": "team-tintable via mask" },
+
+    "decal_corpse":  { "kind": "decal", "file": "props/decal_corpse.png", "w": 96, "h": 56, "anchor": [48, 28], "variants": 2, "planned": true },
+    "decal_bones":   { "kind": "decal", "file": "props/decal_bones.png",  "w": 96, "h": 56, "anchor": [48, 28], "variants": 2, "planned": true },
+    "decal_blood":   { "kind": "decal", "file": "props/decal_blood.png",  "w": 96, "h": 56, "anchor": [48, 28], "variants": 3, "planned": true },
+    "decal_scorch":  { "kind": "decal", "file": "props/decal_scorch.png", "w": 96, "h": 56, "anchor": [48, 28], "variants": 2, "planned": true },
+    "decal_crater":  { "kind": "decal", "file": "props/decal_crater.png", "w": 96, "h": 56, "anchor": [48, 28], "planned": true },
+    "decal_zone":    { "kind": "decal", "file": "props/decal_zone.png",   "mask": "props/decal_zone_mask.png", "w": 128, "h": 74, "anchor": [64, 37], "planned": true, "_note": "deployment-zone tint; matches tile footprint" },
+
+    "fx_explosion_large": { "kind": "fx", "file": "fx/explosion_large.png", "frameW": 96, "frameH": 96, "planned": true, "animations": { "play": {"row":0,"frames":5,"fps":16} } },
+    "fx_shield":          { "kind": "fx", "file": "fx/shield.png",          "frameW": 64, "frameH": 64, "planned": true, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
+    "fx_curse":           { "kind": "fx", "file": "fx/curse.png",           "frameW": 64, "frameH": 64, "planned": true, "animations": { "loop": {"row":0,"frames":2,"fps":6} } },
+    "fx_arrow_loose":     { "kind": "fx", "file": "fx/arrow_loose.png",     "frameW": 32, "frameH": 32, "planned": true, "animations": { "play": {"row":0,"frames":2,"fps":16} } },
+    "fx_cast_spark":      { "kind": "fx", "file": "fx/cast_spark.png",      "frameW": 32, "frameH": 32, "planned": true, "animations": { "play": {"row":0,"frames":2,"fps":16} } }
+  }
+}
