@@ -539,8 +539,10 @@ TEST_CASE("flee: red broken unit moves toward higher r (south away from blue edg
     red.push_back(std::move(redPtr));
     field.loadArmies(std::move(red), {});
 
+    // Both SE and SW are Open (cost 1) → equal-cost tie; getRandom(0,1) breaks it.
+    // Either diagonal is correct; the test only checks r==15.
     Utility::clearDiceRolls();
-    Utility::pushDiceRoll(1); // getRandom(0,1)=1 → swap=false → order: SE,SW,E,W,NE,NW
+    Utility::pushDiceRoll(1); // consumed by the equal-cost tiebreak
 
     field.flee(field.getTeam(REDTEAM)[0]);
 
@@ -756,6 +758,36 @@ TEST_CASE("movement debug: forest strip forces units to route around", "[.][debu
     }
 
     for (Hex* h : forestHexes) h->terrain = TerrainType::Open;
+    field.extractResult();
+}
+
+// ── Flee: terrain cost preference ────────────────────────────────────────────
+// The primary flee path tries SE and SW (red) and picks the cheaper one.
+// With SW=Open (cost 1) and SE=Forest (cost 2), SW must win regardless of
+// which diagonal is examined first.
+
+TEST_CASE("flee: picks open SW over forest SE when both are primary flee directions") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Hex* seHex = field.hexGrid.getHex({3, 15});
+    seHex->terrain = TerrainType::Forest;
+
+    auto redPtr = std::make_unique<Soldier>(REDTEAM);
+    redPtr->setBroken(true);
+    redPtr->setHex(field.hexGrid.getHex({3, 14}));
+
+    Army red;
+    red.push_back(std::move(redPtr));
+    field.loadArmies(std::move(red), {});
+
+    field.flee(field.getTeam(REDTEAM)[0]);
+
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+    REQUIRE(unit->getAlive() == true);
+    REQUIRE(unit->getHex()->coord.q == 2);
+    REQUIRE(unit->getHex()->coord.r == 15);
+
+    seHex->terrain = TerrainType::Open;
     field.extractResult();
 }
 

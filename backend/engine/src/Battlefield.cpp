@@ -384,14 +384,52 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
     int curFleeDist  = flyer ? std::abs(c.r - fleeRow)
                              : hexGrid.fleeDistance(myHex, mounted, isRed);
 
+    auto fleeDist = [&](Hex* nh, HexCoord nc) {
+        return flyer ? std::abs(nc.r - fleeRow)
+                     : hexGrid.fleeDistance(nh, mounted, isRed);
+    };
+
+    // ── Primary: simple diagonal flee ────────────────────────────────────────
+    // Try the two "natural" backward diagonals (SE+SW for red, NE+NW for blue).
+    // Keep only those that don't increase flee distance, then pick the cheapest.
+    // Random tiebreak between equal-cost candidates keeps behaviour unpredictable.
+    // This matches the feel of the old dumb flee without locking onto one side.
+    const HexDirection diagA = isRed ? HexDirection::SE : HexDirection::NE;
+    const HexDirection diagB = isRed ? HexDirection::SW : HexDirection::NW;
+
+    struct Cand { HexCoord coord; int cost; };
+    Cand best{}; int bestCost = INT_MAX; bool found = false;
+
+    for (HexDirection d : {diagA, diagB}) {
+        if (!sidePassable(hexGrid.getSide(c, d), unit->getCategory())) continue;
+        HexCoord nc = hexGrid.neighborCoord(c, d);
+        Hex* nh = hexGrid.getHex(nc);
+        if (!hexAcceptsUnit(nh, *unit)) continue;
+        int dist = fleeDist(nh, nc);
+        if (dist == HexGrid::UNREACHABLE || dist > curFleeDist) continue;
+        int cost = terrainMoveCost(nh, hexGrid.getSide(c, d), unit->getCategory());
+        if (!found || cost < bestCost ||
+            (cost == bestCost && Utility::getRandom(0, 1) == 0)) {
+            best = {nc, cost}; bestCost = cost; found = true;
+        }
+    }
+
+    if (found) {
+        moveAUnit(*unit, best.coord);
+        if (best.cost > 1) unit->setSpentMove(static_cast<size_t>(best.cost - 1));
+        unit->setTookLateral(false);
+        return;
+    }
+
+    // ── Fallback: BFS-guided flee ─────────────────────────────────────────────
+    // Both diagonals were blocked or would increase distance (e.g. near map edge
+    // or behind impassable terrain). Hand off to pickBestDirection so the unit
+    // can route around the obstacle rather than rallying in place needlessly.
     bool mustDecrease = unit->getTookLateral();
 
     DirChoice choice = pickBestDirection(hexGrid, c, curFleeDist, unit->getCategory(),
-        [&](Hex* nh, HexCoord nc) {
-            return flyer ? std::abs(nc.r - fleeRow)
-                         : hexGrid.fleeDistance(nh, mounted, isRed);
-        },
-        [&](Hex* nh, HexCoord) { return hexAcceptsUnit(nh, *unit); });
+        [&](Hex* nh, HexCoord nc) { return fleeDist(nh, nc); },
+        [&](Hex* nh, HexCoord)    { return hexAcceptsUnit(nh, *unit); });
 
     if (choice.decrDir >= 0) {
         moveAUnit(*unit, choice.decrCoord);
