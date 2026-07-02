@@ -1,0 +1,30 @@
+import app from './app.js'
+import config from './utils/config.js'
+import { connectDb } from './utils/db.js'
+import { dumpUnits, getInfo } from './services/engine.js'
+import { syncCatalog } from './services/catalogSync.js'
+
+// Boot: DB up → catalog synced from the engine (single source of truth) →
+// info cache warmed → listen. A failed catalog sync aborts the boot on
+// purpose: serving stale/invalid unit data would be worse than being down.
+const start = async () => {
+  await connectDb()
+  const count = await syncCatalog(await dumpUnits())
+  console.log(`unit catalog synced (${count} types)`)
+  await getInfo()
+
+  app.listen(config.PORT, () => {
+    console.log(`campaign server on http://localhost:${config.PORT}`)
+    console.log('  GET  /api/units             — unit catalog (from DB)')
+    console.log('  GET  /api/info              — grid/placeable-unit info')
+    console.log('  GET  /api/map[?name=]       — map JSON')
+    console.log('  POST /api/battles           — run + store a battle')
+    console.log('  GET  /api/battles/:id       — battle summary')
+    console.log('  GET  /api/battles/:id/ticks — replay tick range')
+  })
+}
+
+start().catch((err) => {
+  console.error('boot failed:', err)
+  process.exit(1)
+})
