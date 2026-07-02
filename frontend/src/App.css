@@ -171,3 +171,42 @@ body {
 .error-screen { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 3rem; }
 .error-screen h2 { color: var(--danger); }
 .loading      { padding: 2rem; text-align: center; color: #666; }
+
+/* ── Battle replay ─────────────────────────────────────────────────────────── */
+.replay-view     { display: flex; flex-direction: column; gap: 0.75rem; }
+.replay-header   { display: flex; align-items: center; justify-content: space-between; }
+.replay-controls { display: flex; align-items: center; gap: 0.6rem; }
+.replay-controls button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.35rem 0.9rem;
+  font-family: var(--font);
+  font-size: 14px;
+  cursor: pointer;
+}
+.replay-controls button:disabled { background: #333; color: #666; cursor: default; }
+.replay-controls input[type='range'] { flex: 1; accent-color: var(--accent); }
+.result-replay {
+  margin-top: 0.5rem;
+  margin-right: 0.75rem;
+  background: #2a2a44;
+  color: #aab8ff;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.5rem 1.4rem;
+  font-family: var(--font);
+  font-size: 14px;
+  cursor: pointer;
+}
+.result-replay:hover { background: #333355; }
+.replay-log {
+  min-height: 4.5rem;
+  max-height: 8rem;
+  overflow-y: auto;
+  font-size: 13px;
+  color: #999;
+  border-top: 1px solid #2a2a2a;
+  padding-top: 0.4rem;
+}

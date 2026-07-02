@@ -100,11 +100,26 @@ Lisaa strateginen kartta
 
 Migrate battle state to a DB, saving every tick, so battle replay can scrub forward and
 back instead of only playing forward live.
+  → DONE on feature/db-replay (2026-07): campaign-server/ (Express+Mongoose, embedded
+    persistent mongod), ./game dump-units catalog sync, per-tick Tick docs, ReplayView
+    scrubber in the frontend.
 
 Do the DB-migration work on a separate branch first — design the schema and per-tick
 storage approach and get it reviewed before touching the live engine/server code.
 
+Later: a scheduled/CI contract test that the C++ engine's dump-units output matches what
+is actually stored in the campaign DB (not just at boot-sync time) — catches a server
+running against a stale DB or an engine rebuilt without a server restart. A first version
+exists as campaign-server/tests/engine.integration.test.js (runs only when ./game is
+built); the CI/scheduled variant should compare against the LIVE server's DB instead of
+a fresh sync.
+
 Build a proper auth module (deferred — big task, do as its own branch/session):
+  - Design decision (2026-07): auth SHARES the campaign DB (same mongod instance,
+    same gamedb database) — just a separate users collection/Mongoose model. Battle
+    docs already carry a nullable user ref (models/battle.js) so per-user battle
+    history and campaign saves attach without a migration. The auth routes/middleware
+    go in campaign-server/ (routes/, middleware/ are laid out for a tokenExtractor).
   - Full user accounts, following the fullstackopen pattern: POST /api/users (register),
     POST /api/login (returns JWT), password hashing, per-user identity, Authorization:
     Bearer middleware protecting endpoints (at minimum POST /api/battle).

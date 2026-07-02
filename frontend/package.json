@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "server": "cd .. && ./game server 8080",
+    "server": "npm --prefix ../campaign-server start",
     "start": "concurrently \"npm run server\" \"npm run dev\""
   },
   "dependencies": {
