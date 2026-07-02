@@ -3,7 +3,7 @@
 #include <cassert>
 #include <iostream>
 
-void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
+bool randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
 {
     assert(zone.wEnd >= zone.wStart && "wEnd must be >= wStart");
     assert(zone.hEnd >= zone.hStart && "hEnd must be >= hStart");
@@ -57,10 +57,11 @@ void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
         if (!placed)
         {
             std::cerr << "randomPlaceArmy: zone is full\n";
-            exit(1);
+            return false; // caller decides how to handle a partially-placed army
         }
     }
 
     for (const auto& unit : army)
         assert(unit->getHex() && "Unit was not placed");
+    return true;
 }

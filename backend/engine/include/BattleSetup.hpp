@@ -20,9 +20,11 @@ void appendArmy(Army& army, size_t count, int team)
 }
 
 // Randomly places every not-yet-placed unit of `army` within `zone`.
+// Returns true if every unit was placed, false if the zone filled up first (army is left
+// partially placed — units already placed keep getPlaced()==true; the rest do not). Does
+// NOT terminate the process on failure (see SECURITY_NOTES.md #6) — callers must check the
+// return value and decide how to handle a zone that's too small for the army.
 // PlacementZone bounds ultimately trace back to a map file's deployment zone rows (see
 // HexGrid::fromJson) — callers should not assume wEnd>=wStart/hEnd>=hStart without having
 // gone through HexGrid's own validation first (asserted here, not re-checked).
-// CURRENT BEHAVIOR (see SECURITY_NOTES.md #6): calls exit(1) if the zone fills up before
-// every unit is placed, terminating the whole process rather than failing gracefully.
-void randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone);
+bool randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone);

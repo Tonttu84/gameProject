@@ -400,6 +400,28 @@ TEST_CASE("randomPlaceArmy sets placed flag on every unit") {
         REQUIRE(unit->getPlaced() == true);
 }
 
+// SECURITY_NOTES.md #6: a zone too small for the army must fail gracefully
+// (return false) instead of calling exit() and killing the process.
+TEST_CASE("randomPlaceArmy returns false without terminating when zone is too full") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Single-hex zone: w=3..3, h=5..5 → one hex, capacity 640. 70 Soldiers of
+    // size 10 = 700 > 640, so the zone cannot hold the whole army.
+    PlacementZone zone = {3, 3, 5, 5};
+    Army army;
+    appendArmy<Soldier>(army, 70, REDTEAM);
+
+    bool ok = randomPlaceArmy(army, field, zone);
+    REQUIRE(ok == false);
+
+    bool anyUnplaced = false;
+    for (const auto& unit : army)
+        if (!unit->getPlaced()) anyUnplaced = true;
+    REQUIRE(anyUnplaced == true);
+    // Reaching this line at all proves the process didn't exit() — the real
+    // regression this test guards against.
+}
+
 TEST_CASE("countTeam matches placed army sizes after loadArmies") {
     Battlefield& field = Utility::getBattlefield();
 
