@@ -1,5 +1,6 @@
 #include "Battlefield.hpp"
 #include "RangedCombat.hpp"
+#include "UnitCatalog.hpp"
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
@@ -345,7 +346,7 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
     HexCoord c = myHex->coord;
 
     if (c.q == 0 || c.q == width - 1 || c.r == 0 || c.r == height - 1) {
-        std::cout << "A soldier fled the battlefield and turns to banditry\n";
+        logEvent("A soldier fled the battlefield and turns to banditry");
         unit->setAlive(false);
         return;
     }
@@ -652,8 +653,24 @@ void Battlefield::makeBattle()
     }
 }
 
+// Narrate deaths into the tick log before the dead are pruned, so a replay
+// can show what was lost this tick. Uses the catalog symbol→name mapping;
+// symbols outside the catalog (e.g. loose-horse 'H') fall back to the symbol.
+void Battlefield::logDeaths(const Team& team)
+{
+    for (const auto& u : team.units) {
+        if (!u || u->getAlive()) continue;
+        std::string name = unitNameForSymbol(u->getPrintSymbol());
+        if (name.empty()) name = std::string(1, u->getPrintSymbol());
+        logEvent(name + (team.id == REDTEAM ? " (red)" : " (blue)") + " fell");
+    }
+}
+
 void Battlefield::cleanup()
 {
+    logDeaths(_red);
+    logDeaths(_blue);
+
     auto it = _blue.units.begin();
     while (it != _blue.units.end()) {
         if (!(*it) || !(*it)->getAlive()) {
@@ -689,12 +706,16 @@ void Battlefield::reset()
     _red.units.clear();
     _blue.units.clear();
     corpses = 0;
+    _tickLog.clear();
+    _ticksRun = 0;
+    _maxTicks = DEFAULT_MAX_BATTLE_TICKS;
 }
 
 void Battlefield::loadArmies(Army red, Army blue)
 {
     _red.units  = std::move(red);
     _blue.units = std::move(blue);
+    _ticksRun   = 0; // new battle, fresh day
     // Red flees south (r = height-1); Blue flees north (r = 0).
     hexGrid.computeDistances(height - 1, 0);
 }
@@ -1087,12 +1108,20 @@ void Battlefield::onTurnEnd()
 
 bool Battlefield::tick()
 {
+    // Turn header first, so the events of this tick follow it in the replay
+    // log (and in the DB's per-tick log via ReplayRecorder).
+    logEvent("Turn " + std::to_string(_ticksRun + 1));
     onTurnStart();
     triggerSpecialPhase();
     moveUnits();
     resolveEngagements();
     makeBattle();
     onTurnEnd();
+    ++_ticksRun;
+    if (_ticksRun >= _maxTicks) {
+        logEvent("The day is over — the battle ends as it stands");
+        return false;
+    }
     return countTeam(REDTEAM) > 0 && countTeam(BLUETEAM) > 0;
 }
 
@@ -1100,8 +1129,13 @@ BattleResult Battlefield::extractResult()
 {
     BattleResult result;
     result.corpses = corpses;
-    result.winner  = (countTeam(REDTEAM) > 0) ? REDTEAM :
-                     (countTeam(BLUETEAM) > 0) ? BLUETEAM : 0;
+    // Both sides still standing = draw (battle ended on the turn limit or an
+    // aborted run, not by annihilation); otherwise the surviving side wins.
+    size_t redLeft  = countTeam(REDTEAM);
+    size_t blueLeft = countTeam(BLUETEAM);
+    result.winner = (redLeft > 0 && blueLeft > 0) ? 0 :
+                    (redLeft > 0)  ? REDTEAM :
+                    (blueLeft > 0) ? BLUETEAM : 0;
 
     for (auto& unit : _red.units)
         if (unit && unit->getAlive() && !unit->getBattleSummon())

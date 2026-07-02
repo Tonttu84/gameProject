@@ -184,7 +184,7 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 		if (resultDMG > 0)
 		{
 			shield--;
-			std::cout << "Shield damaged by a strong blow" << std::endl;
+			Utility::getBattlefield().logEvent("Shield damaged by a strong blow");
 		}
 	}
 
@@ -475,7 +475,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		int r1 = Utility::throwDice(), r2 = Utility::throwDice();
 		if ((morale + r1 - r2) >= 12)
 		{
-			std::cout << "With nowhere to flee to a soldier rallies" << std::endl;
+			Utility::getBattlefield().logEvent("With nowhere to flee to a soldier rallies");
 			broken = false;
 			return true;
 		}
@@ -575,7 +575,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		if (morale + cohesionStatBonus() + m1 - m2 > damage)
 			return true;
 		setBroken(true);
-		std::cout << "One coward valued his life more than his honor" << std::endl;
+		Utility::getBattlefield().logEvent("One coward valued his life more than his honor");
 		return false;
 	}
 

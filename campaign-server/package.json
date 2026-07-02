@@ -1,0 +1,21 @@
+{
+  "name": "campaign-server",
+  "version": "0.1.0",
+  "description": "Campaign BFF: serves the unit catalog and maps, runs battles via the C++ engine, stores per-tick replays in MongoDB",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mongodb-memory-server": "^10.2.3",
+    "mongoose": "^8.16.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.1",
+    "vitest": "^3.2.4"
+  }
+}

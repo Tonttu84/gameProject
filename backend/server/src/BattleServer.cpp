@@ -1,5 +1,7 @@
 #include "server/BattleServer.hpp"
 #include "server/UnitRegistry.hpp"
+#include "server/ReplayRecorder.hpp"
+#include "UnitCatalog.hpp"
 #include "scenarios/SampleBattle.hpp"
 #include "BattleSetup.hpp"
 #include "hex/HexGrid.hpp"
@@ -27,6 +29,7 @@
 #include "extern/httplib.h"
 #pragma GCC diagnostic pop
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -44,42 +47,31 @@ static PlacementZone zoneFromRows(int minRow, int maxRow, int cols)
     return {0, cols - 1, minRow, maxRow};
 }
 
-static std::string survivorJson(const Army& army)
+static json survivorJson(const Army& army)
 {
-    std::unordered_map<std::string, int> counts;
+    json counts = json::object();
     for (const auto& u : army) {
         if (!u) continue;
-        switch (u->getPrintSymbol()) {
-            case 'X': counts["Soldier"]++;     break;
-            case 'A': counts["Archer"]++;      break;
-            case 'M': counts["Mage"]++;        break;
-            case 'P': counts["Priest"]++;      break;
-            case 'C': counts["Cavalry"]++;     break;
-            case 'N': counts["Necromancer"]++; break;
-            case 'S': counts["Skeleton"]++;    break;
-            case 'Z': counts["Zombie"]++;      break;
-            default: break;
-        }
+        // Catalog-derived symbol→name mapping; symbols no catalog type
+        // constructs with (e.g. the runtime loose-horse 'H') are skipped,
+        // matching the old hardcoded switch.
+        std::string name = unitNameForSymbol(u->getPrintSymbol());
+        if (name.empty()) continue;
+        counts[name] = counts.value(name, 0) + 1;
     }
-    std::string out = "{";
-    bool first = true;
-    for (const auto& [k, v] : counts) {
-        if (!first) out += ",";
-        out += "\"" + k + "\":" + std::to_string(v);
-        first = false;
-    }
-    return out + "}";
+    return counts;
 }
 
-static std::string resultToJson(const BattleResult& r)
+static json resultToJson(const BattleResult& r)
 {
     const char* winner = (r.winner == BLUETEAM) ? "blue"
                        : (r.winner == REDTEAM)  ? "red"
                        :                          "draw";
-    std::string out = std::string("{\"winner\":\"") + winner + "\","
-                    + "\"blue_survivors\":" + survivorJson(r.blueSurvivors) + ","
-                    + "\"red_survivors\":"  + survivorJson(r.redSurvivors)  + "}";
-    return out;
+    return {
+        {"winner",         winner},
+        {"blue_survivors", survivorJson(r.blueSurvivors)},
+        {"red_survivors",  survivorJson(r.redSurvivors)},
+    };
 }
 
 // ── Battle-from-JSON ──────────────────────────────────────────────────────────
@@ -92,6 +84,12 @@ bool isSafeMapName(const std::string& name)
     if (name.find("..") != std::string::npos) return false;
     if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) return false;
     return true;
+}
+
+int clampMaxTurns(int requested)
+{
+    if (requested < 1) return DEFAULT_MAX_BATTLE_TICKS;
+    return std::min(requested, MAX_BATTLE_TICKS_CAP);
 }
 
 // SECURITY (see SECURITY_NOTES.md #1): `name` is attacker-controlled (GET /api/map?name=,
@@ -205,8 +203,28 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
 
     field.loadArmies(std::move(enemy), std::move(player));
 
-    BattleResult result = runBattleLoop(field, renderer, "BATTLE");
-    std::cout << resultToJson(result) << "\n";
+    // Optional per-battle turn limit ("the day is over"). Attacker-controlled,
+    // so type-checked and clamped; anything invalid falls back to the default.
+    int maxTicks = DEFAULT_MAX_BATTLE_TICKS;
+    if (j.contains("max_turns") && j["max_turns"].is_number_integer())
+        maxTicks = clampMaxTurns(j["max_turns"].get<int>());
+
+    // Record tick 0 (deployment) plus one snapshot after every engine tick;
+    // the whole replay rides out on stdout with the result for the campaign
+    // server to store.
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+    BattleResult result = runBattleLoop(field, renderer, "BATTLE",
+                                        [&] { recorder.recordTick(field); },
+                                        maxTicks);
+
+    json out = resultToJson(result);
+    out["replay"] = recorder.toJson(mapName);
+    // Explicit flush: the binary is built with LeakSanitizer, and third-party
+    // leaks (SFML/freetype glyphs) make LSan _exit() at shutdown, which skips
+    // stdio cleanup — without this flush anything still buffered is lost and
+    // the consumer sees truncated JSON.
+    std::cout << out.dump() << "\n" << std::flush;
 }
 
 // ── HTTP server ───────────────────────────────────────────────────────────────

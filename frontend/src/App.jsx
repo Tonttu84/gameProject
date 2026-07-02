@@ -4,6 +4,7 @@ import HexGrid from './components/HexGrid'
 import EventCards from './components/EventCards'
 import CampaignHUD from './components/CampaignHUD'
 import BattleResult from './components/BattleResult'
+import ReplayView from './components/ReplayView'
 import './App.css'
 
 const EVENT_POOL = [
@@ -191,7 +192,25 @@ const App = () => {
       )}
 
       {phase === 'result' && battleResult && (
-        <BattleResult result={battleResult} onNextDay={nextDay} />
+        <BattleResult
+          result={battleResult}
+          onNextDay={nextDay}
+          onWatchReplay={
+            battleResult.id && battleResult.tickCount > 0
+              ? () => setPhase('replay')
+              : undefined
+          }
+        />
+      )}
+
+      {phase === 'replay' && battleResult?.id && (
+        <ReplayView
+          battleId={battleResult.id}
+          tickCount={battleResult.tickCount}
+          info={info}
+          map={map}
+          onBack={() => setPhase('result')}
+        />
       )}
     </div>
   )

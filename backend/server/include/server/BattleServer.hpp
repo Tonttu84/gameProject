@@ -16,3 +16,8 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer);
 // "map" field against path traversal. See SECURITY_NOTES.md #1. Exposed (not static) so it's
 // unit-testable from backend/engine/tests/.
 bool isSafeMapName(const std::string& name);
+
+// Clamp BattleInput's attacker-controlled "max_turns" to a sane battle length:
+// < 1 (or absent/mistyped, handled at the call site) → DEFAULT_MAX_BATTLE_TICKS,
+// otherwise capped at MAX_BATTLE_TICKS_CAP. Exposed for unit tests.
+int clampMaxTurns(int requested);

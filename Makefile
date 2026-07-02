@@ -85,7 +85,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial run clang serve server frontend frontend-test
+.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -141,11 +141,22 @@ test-serial: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(TEST
 	./$(TEST_NAME)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
+# Campaign DB (embedded persistent mongod). Lives OUTSIDE the repo on a real
+# Linux filesystem because mongod cannot run on /mnt/c (drvfs) — this default
+# mirrors campaign-server/utils/config.js (DB_PATH); change both together.
+DB_DIR = $(HOME)/.gameproject/db
+
 clean:
 	rm -f $(OBJS) $(DEPS) $(TEST_OBJS) $(TEST_DEPS) $(UNIT_OBJS) $(UNIT_DEPS) \
 	      $(CLANG_OBJS) $(CLANG_DEPS)
 
-fclean: clean
+# Wipe the campaign DB (battles, replays, unit catalog). The catalog re-syncs
+# on the next campaign-server start; battles/replays are gone for good.
+# campaign-server/data holds only stray test/legacy files, cleared too.
+db-clean:
+	rm -rf $(DB_DIR) campaign-server/data
+
+fclean: clean db-clean
 	rm -f $(NAME) $(TEST_NAME) $(CLANG_NAME)
 
 re:
@@ -159,6 +170,11 @@ run: $(NAME)
 server: $(NAME)
 	./$(NAME) server 8080
 
+# Node BFF (campaign-server/): DB + replay storage; spawns ./game itself.
+# This is what the frontend's /api proxy points at (port 3001).
+server-node: $(NAME)
+	cd campaign-server && npm start
+
 frontend:
 	cd frontend && npm run dev
 
@@ -168,7 +184,7 @@ NVM_NPM  = $(HOME)/.nvm/versions/node/v24.11.1/bin/npm
 frontend-test:
 	PATH="$(HOME)/.nvm/versions/node/v24.11.1/bin:$$PATH" $(NVM_NODE) $(NVM_NPM) --prefix frontend test
 
-# Launch C++ server + Vite dev server side-by-side.
+# Launch campaign server (Node BFF) + Vite dev server side-by-side.
 serve: $(NAME)
-	./$(NAME) server 8080 &
+	cd campaign-server && npm start &
 	cd frontend && npm run dev

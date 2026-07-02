@@ -267,6 +267,13 @@ public:
     UnitCategory getCategory()           const { return _category; }
     void         setCategory(UnitCategory c)   { _category = c; }
 
+    // Stable per-battle identity for replay recording. -1 = not yet assigned;
+    // ReplayRecorder assigns serials on first sight. Kept on the unit itself
+    // (not in a pointer-keyed map) so a freed unit's address being reused by a
+    // mid-battle summon can never resurrect a dead unit's id in the replay.
+    int  getReplayId() const   { return _replayId; }
+    void setReplayId(int id)   { _replayId = id; }
+
 
     // The category a creature reports once it's on its own — e.g. a mount
     // that's just lost its rider — as opposed to whatever category it
@@ -333,6 +340,7 @@ protected:
     UnitCategory _category = UnitCategory::Foot;
     std::vector<Weapon> _attacks;
     int _holdTurns = 0;
+    int _replayId = -1;
 
 };
 

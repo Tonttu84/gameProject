@@ -18,14 +18,22 @@ static constexpr int PAUSED_SLEEP_MS = 50;
 static constexpr int TICK_SLEEP_MS   = 200;
 
 BattleResult runBattleLoop(Battlefield& field, BattleRenderer& renderer,
-                           const std::string& title)
+                           const std::string& title,
+                           const std::function<void()>& onTick,
+                           int maxTicks)
 {
     sf::RenderWindow& window = renderer.getWindow();
     int  counter = 0;
     bool paused  = false;
     bool ongoing = true;
 
-    std::cout << "\n=== " << title << " — SPACE to pause ===\n";
+    // The engine owns the day-length rule: tick() returns false at the limit
+    // and extractResult() scores both-sides-alive as a draw.
+    field.setMaxTicks(maxTicks);
+
+    // Progress goes to stderr: battle mode's stdout is a JSON contract
+    // (the campaign server parses it), so nothing else may print there.
+    std::cerr << "\n=== " << title << " — SPACE to pause ===\n";
 
     while (ongoing && window.isOpen()) {
         sf::Event event;
@@ -37,7 +45,7 @@ BattleResult runBattleLoop(Battlefield& field, BattleRenderer& renderer,
             if (event.type == sf::Event::KeyPressed
                     && event.key.code == sf::Keyboard::Space) {
                 paused = !paused;
-                std::cout << (paused ? "  [PAUSED]\n" : "  [RESUMED]\n");
+                std::cerr << (paused ? "  [PAUSED]\n" : "  [RESUMED]\n");
             }
             renderer.handleEvent(event);
         }
@@ -50,7 +58,10 @@ BattleResult runBattleLoop(Battlefield& field, BattleRenderer& renderer,
 
         ongoing = field.tick();
         counter++;
-        std::cout << "Turn " << counter << "\n";
+        if (onTick) onTick();
+        if (!ongoing && counter >= maxTicks)
+            std::cerr << "Day over after " << counter << " turns\n";
+        std::cerr << "Turn " << counter << "\n";
         renderer.render(field.hexGrid);
         std::this_thread::sleep_for(std::chrono::milliseconds(TICK_SLEEP_MS));
     }

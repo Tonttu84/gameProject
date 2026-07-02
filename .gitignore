@@ -4,3 +4,4 @@ BUILD/
 game
 run_tests
 .claude/
+game_clang

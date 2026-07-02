@@ -1,5 +1,5 @@
 import React from 'react'
-const BattleResult = ({ result, onNextDay }) => {
+const BattleResult = ({ result, onNextDay, onWatchReplay }) => {
   const { winner, blue_survivors, red_survivors } = result
 
   const totalBlue = Object.values(blue_survivors).reduce((a, b) => a + b, 0)
@@ -24,6 +24,11 @@ const BattleResult = ({ result, onNextDay }) => {
           ))}
         </div>
       </div>
+      {onWatchReplay && (
+        <button className="result-replay" onClick={onWatchReplay}>
+          Watch Replay
+        </button>
+      )}
       <button className="result-next" onClick={onNextDay}>
         {winner === 'blue' ? 'Press On' : 'Retreat & Regroup'}
       </button>
