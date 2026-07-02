@@ -154,9 +154,9 @@ TEST_CASE("moveToward: unit does not enter enemy-occupied adjacent hex") {
 
     // Red at {0,5}, Blue directly E at {1,5}.
     // Pass 1: {1,5} has enemy → hexAcceptsUnit false → skip.
-    // Pass 2: engaged=true (enemy adjacent), hex is nowhere near its retention
-    // threshold (one Soldier vs. 160 for one engaged open side) → shouldSpreadToward
-    // returns false → lateral blocked. Unit must stay at {0,5}.
+    // Pass 2: engaged=true (enemy adjacent). resolveEngagements() seats the
+    // lone Soldier at rank 1 (easily fits alone on the side) — seated units
+    // never disengage, so the lateral/reinforcement path never even runs.
     auto redPtr = std::make_unique<Soldier>(REDTEAM);
     auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
     redPtr->setHex(field.hexGrid.getHex({0, 5}));
@@ -167,6 +167,9 @@ TEST_CASE("moveToward: unit does not enter enemy-occupied adjacent hex") {
     blue.push_back(std::move(bluePtr));
     field.loadArmies(std::move(red), std::move(blue));
 
+    field.resolveEngagements();
+    REQUIRE(field.getTeam(REDTEAM)[0]->getEngagedRank() == 1);
+
     field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({1, 5}));
 
     AUnit* unit = field.getTeam(REDTEAM)[0].get();
@@ -176,147 +179,151 @@ TEST_CASE("moveToward: unit does not enter enemy-occupied adjacent hex") {
     field.extractResult();
 }
 
-// ── Spreading to less-crowded engaged hexes ──────────────────────────────────
-// shouldSpreadToward()/hexRetentionThreshold(): a hex retains
-// effectiveFrontage(side)*ENGAGED_SIDE_RETENTION_MULTIPLIER fresh size-points
-// per currently engaged side (one open-terrain side = 40*4 = 160) before its
-// excess is willing to take a lateral move to another engaged hex holding
-// fewer fresh troops right now.
+// ── Reserve-based reinforcement: overflow units redistribute ────────────────
+// A unit only counts as a "reserve" once _engagedRank == 0 — never seated on
+// any HexSide (seating happens in resolveEngagements(), top-down rank 1→2→3
+// per engaged side; FRONTAGE=40 -> 4 Soldiers/rank * 3 ranks = 12 seated per
+// side). Seated units (any rank) never move; only genuine overflow does,
+// purely by comparing reserve size-points against neighbors (no requirement
+// that the destination itself be engaged).
 //
 // Geometry reused by all of these: a single Blue "apex" unit at {1,5} is
-// simultaneously adjacent to {0,5} (its W side) and {1,4} (its NW side) — the
-// same corner shape described in the design conversation, where one corner
-// hex touches two segments of the line at once.
+// simultaneously adjacent to {0,5} (its W side) and {1,4} (its NW side) — a
+// corner hex touching two segments of the line at once. Per the axial-delta
+// comment at the top of this file: NE={1,4} E={1,5}(apex) SE={0,6}
+// SW={-1,6} W={-1,5} NW={0,4} relative to {0,5}.
 
-TEST_CASE("moveToward: a unit spreads from an over-threshold engaged hex to a less-crowded engaged neighbor") {
+TEST_CASE("moveToward: an overflow reserve unit redistributes to a less-crowded neighbor") {
     Battlefield& field = Utility::getBattlefield();
+
+    // Seal off every neighbor of {0,5} except {1,4} (NE) and {0,6} (SE), so
+    // only those two empty hexes can qualify as reinforcement targets.
+    field.hexGrid.getHex({-1, 6})->impassable = true; // SW
+    field.hexGrid.getHex({-1, 5})->impassable = true; // W
+    field.hexGrid.getHex({0, 4})->impassable  = true; // NW
 
     Army red, blue;
     auto apex = std::make_unique<Soldier>(BLUETEAM);
     apex->setHex(field.hexGrid.getHex({1, 5}));
     blue.push_back(std::move(apex));
 
-    // {0,5}: 17 fresh Soldiers (170 size) — over the 160 threshold for its
-    // one engaged (open-terrain) side.
+    // {0,5}: 17 fresh Soldiers on one engaged (open-terrain) side —
+    // 4/rank * 3 ranks = 12 seated, 5 unseated (rank 0, reserve = 50).
+    std::vector<AUnit*> stack;
     for (int i = 0; i < 17; ++i) {
         auto u = std::make_unique<Soldier>(REDTEAM);
         u->setHex(field.hexGrid.getHex({0, 5}));
+        stack.push_back(u.get());
         red.push_back(std::move(u));
     }
-    // {1,4}: a single lone Soldier — engaged via the same apex, far under {0,5}'s count.
+    // {1,4}: a single lone Soldier — seats easily alone on its own side (via
+    // the same apex), so its hex ends up with 0 reserves.
     auto thin = std::make_unique<Soldier>(REDTEAM);
     thin->setHex(field.hexGrid.getHex({1, 4}));
     red.push_back(std::move(thin));
 
     field.loadArmies(std::move(red), std::move(blue));
+    field.resolveEngagements();
 
-    field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({1, 5}));
+    AUnit* overflow = nullptr;
+    for (AUnit* u : stack) if (u->getEngagedRank() == 0) overflow = u;
+    REQUIRE(overflow != nullptr);
 
-    AUnit* mover = field.getTeam(REDTEAM)[0].get();
-    REQUIRE(mover->getHex() != nullptr);
-    // Both {1,4} (engaged via apex) and {0,6} (adjacent to apex from another angle)
-    // qualify; the random start direction in pickBestDirection may pick either.
-    HexCoord dest = mover->getHex()->coord;
+    auto& teamUnits = field.getTeam(REDTEAM);
+    std::unique_ptr<AUnit>* slot = nullptr;
+    for (auto& up : teamUnits) if (up.get() == overflow) { slot = &up; break; }
+    REQUIRE(slot != nullptr);
+
+    field.moveToward(*slot, field.hexGrid.getHex({1, 5}));
+
+    REQUIRE(overflow->getHex() != nullptr);
+    // Both {1,4} (its lone occupant seated, 0 reserves) and {0,6} (empty, 0
+    // reserves) qualify; the random start direction in bestReinforceNeighbor
+    // may pick either.
+    HexCoord dest = overflow->getHex()->coord;
     CHECK((dest == HexCoord{1, 4} || dest == HexCoord{0, 6}));
 
+    field.hexGrid.getHex({-1, 6})->impassable = false;
+    field.hexGrid.getHex({-1, 5})->impassable = false;
+    field.hexGrid.getHex({0, 4})->impassable  = false;
     field.extractResult();
 }
 
-TEST_CASE("moveToward: a blocked hexside prevents spreading to the hex behind it") {
+TEST_CASE("moveToward: a Mounted overflow reserve never enters Forest, even when it's the only "
+          "candidate available") {
     Battlefield& field = Utility::getBattlefield();
 
-    // Block the hexside between {1,4} and the apex {1,5}.
-    // hexAdjacentToEnemy skips blocked sides, so {1,4} cannot see the enemy
-    // and must not be picked as a spread target even though it would otherwise
-    // be an equidistant lateral candidate.
-    HexSide* wall = field.hexGrid.getSide({1, 4}, HexDirection::SE);
-    REQUIRE(wall != nullptr);
-    wall->blocked = true;
-
-    Army red, blue;
-    auto apex = std::make_unique<Soldier>(BLUETEAM);
-    apex->setHex(field.hexGrid.getHex({1, 5}));
-    blue.push_back(std::move(apex));
-
-    for (int i = 0; i < 17; ++i) {
-        auto u = std::make_unique<Soldier>(REDTEAM);
-        u->setHex(field.hexGrid.getHex({0, 5}));
-        red.push_back(std::move(u));
-    }
-    auto thin = std::make_unique<Soldier>(REDTEAM);
-    thin->setHex(field.hexGrid.getHex({1, 4}));
-    red.push_back(std::move(thin));
-
-    field.loadArmies(std::move(red), std::move(blue));
-
-    field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({1, 5}));
-
-    AUnit* mover = field.getTeam(REDTEAM)[0].get();
-    REQUIRE(mover->getHex() != nullptr);
-    // Must not have entered {1,4} — the blocked wall cuts it off from the enemy.
-    // The unit may stay at {0,5} or spread to another qualifying neighbor.
-    CHECK(mover->getHex()->coord != HexCoord{1, 4});
-
-    wall->blocked = false;
-    field.extractResult();
-}
-
-TEST_CASE("moveToward: a Mounted unit's spreading never enters Forest, even when it's the only "
-          "candidate the rule would otherwise prefer") {
-    Battlefield& field = Utility::getBattlefield();
-
-    Hex* forestCandidate = field.hexGrid.getHex({1, 4});
+    Hex* forestCandidate = field.hexGrid.getHex({1, 4}); // NE
     forestCandidate->terrain = TerrainType::Forest;
-    // Remove the other equal-distance lateral tie so {1,4} (Forest) is the
-    // *only* candidate the spreading rule would otherwise pick — isolates
-    // whether Mounted's Forest ban actually holds under the new rule, rather
-    // than the unit just happening to take the other tie instead.
-    Hex* otherTie = field.hexGrid.getHex({0, 6});
-    otherTie->impassable = true;
+    // Seal off every other neighbor of {0,5} so Forest is the *only* legal
+    // reinforcement candidate — isolates whether Mounted's Forest ban holds
+    // even when it's the sole alternative to just holding position.
+    field.hexGrid.getHex({0, 6})->impassable  = true; // SE
+    field.hexGrid.getHex({-1, 6})->impassable = true; // SW
+    field.hexGrid.getHex({-1, 5})->impassable = true; // W
+    field.hexGrid.getHex({0, 4})->impassable  = true; // NW
 
     Army red, blue;
     auto apex = std::make_unique<Soldier>(BLUETEAM);
     apex->setHex(field.hexGrid.getHex({1, 5}));
     blue.push_back(std::move(apex));
 
-    auto cavPtr = std::make_unique<Cavalry>(REDTEAM); // Mounted, size 20
-    cavPtr->setHex(field.hexGrid.getHex({0, 5}));
-    red.push_back(std::move(cavPtr));
-    for (int i = 0; i < 16; ++i) { // pads {0,5} to 180 — over the 160 threshold
-        auto u = std::make_unique<Soldier>(REDTEAM);
-        u->setHex(field.hexGrid.getHex({0, 5}));
-        red.push_back(std::move(u));
+    // 7 identical Cavalry (size 20, Mounted) on one engaged Open side:
+    // 40 cap/rank / 20 = 2 per rank * 3 ranks = 6 seated; equal-size units
+    // can't evict each other, so the 7th is guaranteed overflow (rank 0) —
+    // deterministic regardless of seating order, unlike mixing in smaller
+    // units a bigger one could just evict its way past.
+    std::vector<Cavalry*> cavs;
+    for (int i = 0; i < 7; ++i) {
+        auto c = std::make_unique<Cavalry>(REDTEAM);
+        c->setHex(field.hexGrid.getHex({0, 5}));
+        cavs.push_back(c.get());
+        red.push_back(std::move(c));
     }
-    // A lone Soldier in the forest hex would otherwise make it the obvious
-    // (least-crowded, engaged) spread target for a Foot unit.
-    auto thin = std::make_unique<Soldier>(REDTEAM);
-    thin->setHex(forestCandidate);
-    red.push_back(std::move(thin));
 
     field.loadArmies(std::move(red), std::move(blue));
+    field.resolveEngagements();
 
-    field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({1, 5}));
+    Cavalry* overflow = nullptr;
+    for (Cavalry* c : cavs) if (c->getEngagedRank() == 0) overflow = c;
+    REQUIRE(overflow != nullptr);
 
-    AUnit* cav = field.getTeam(REDTEAM)[0].get();
-    REQUIRE(cav->getHex() != nullptr);
-    CHECK(cav->getHex()->coord == HexCoord{0, 5}); // held — Mounted cannot enter Forest, spread or not
+    auto& teamUnits = field.getTeam(REDTEAM);
+    std::unique_ptr<AUnit>* slot = nullptr;
+    for (auto& up : teamUnits) if (up.get() == overflow) { slot = &up; break; }
+    REQUIRE(slot != nullptr);
+
+    field.moveToward(*slot, field.hexGrid.getHex({1, 5}));
+
+    REQUIRE(overflow->getHex() != nullptr);
+    CHECK(overflow->getHex()->coord != HexCoord{1, 4}); // never entered Forest
+    CHECK(overflow->getHex()->coord == HexCoord{0, 5}); // held — nowhere legal to go
 
     forestCandidate->terrain = TerrainType::Open;
-    otherTie->impassable = false;
+    field.hexGrid.getHex({0, 6})->impassable  = false;
+    field.hexGrid.getHex({-1, 6})->impassable = false;
+    field.hexGrid.getHex({-1, 5})->impassable = false;
+    field.hexGrid.getHex({0, 4})->impassable  = false;
     field.extractResult();
 }
 
-TEST_CASE("moveToward: an engaged unit keeps spreading on consecutive ticks instead of freezing after one lateral move") {
+TEST_CASE("moveToward: an overflow reserve keeps redistributing on consecutive ticks instead of freezing after one lateral move") {
     Battlefield& field = Utility::getBattlefield();
+
+    field.hexGrid.getHex({-1, 6})->impassable = true; // SW
+    field.hexGrid.getHex({-1, 5})->impassable = true; // W
+    field.hexGrid.getHex({0, 4})->impassable  = true; // NW
 
     Army red, blue;
     auto apex = std::make_unique<Soldier>(BLUETEAM);
     apex->setHex(field.hexGrid.getHex({1, 5}));
     blue.push_back(std::move(apex));
 
+    std::vector<AUnit*> stack;
     for (int i = 0; i < 17; ++i) {
         auto u = std::make_unique<Soldier>(REDTEAM);
         u->setHex(field.hexGrid.getHex({0, 5}));
+        stack.push_back(u.get());
         red.push_back(std::move(u));
     }
     auto thin = std::make_unique<Soldier>(REDTEAM);
@@ -324,20 +331,37 @@ TEST_CASE("moveToward: an engaged unit keeps spreading on consecutive ticks inst
     red.push_back(std::move(thin));
 
     field.loadArmies(std::move(red), std::move(blue));
+    field.resolveEngagements();
 
-    AUnit& mover = *field.getTeam(REDTEAM)[0];
-    mover.setTookLateral(true); // simulate: unit already spread once last tick
+    AUnit* overflow = nullptr;
+    for (AUnit* u : stack) if (u->getEngagedRank() == 0) overflow = u;
+    REQUIRE(overflow != nullptr);
+    overflow->setTookLateral(true); // simulate: unit already spread once last tick
 
-    field.moveToward(field.getTeam(REDTEAM)[0], field.hexGrid.getHex({1, 5}));
+    auto& teamUnits = field.getTeam(REDTEAM);
+    std::unique_ptr<AUnit>* slot = nullptr;
+    for (auto& up : teamUnits) if (up.get() == overflow) { slot = &up; break; }
+    REQUIRE(slot != nullptr);
 
-    REQUIRE(mover.getHex() != nullptr);
-    // Must have spread — not frozen at {0,5}. Either {1,4} or {0,6} is valid.
-    HexCoord dest2 = mover.getHex()->coord;
+    field.moveToward(*slot, field.hexGrid.getHex({1, 5}));
+
+    REQUIRE(overflow->getHex() != nullptr);
+    // Must have redistributed — not frozen at {0,5} by the pre-contact
+    // "no two laterals in a row" rule, which only applies before contact.
+    HexCoord dest2 = overflow->getHex()->coord;
     CHECK((dest2 == HexCoord{1, 4} || dest2 == HexCoord{0, 6}));
+
+    field.hexGrid.getHex({-1, 6})->impassable = false;
+    field.hexGrid.getHex({-1, 5})->impassable = false;
+    field.hexGrid.getHex({0, 4})->impassable  = false;
     field.extractResult();
 }
 
-TEST_CASE("moveSquad: a squad redistributes to a less-crowded engaged neighbor once its hex is over threshold") {
+TEST_CASE("moveSquad: an engaged squad holds position even in a badly overcrowded hex") {
+    // Squads have no reinforcement/redistribution path at all — that's a
+    // per-unit loner mechanism (moveToward's bestReinforceNeighbor). A squad
+    // always moves as one atomic block, and while engaged it simply holds,
+    // no matter how many reserve size-points are piled up around it.
     Battlefield& field = Utility::getBattlefield();
 
     auto sqOwned = std::make_unique<Squad>("Spreaders", false);
@@ -348,9 +372,6 @@ TEST_CASE("moveSquad: a squad redistributes to a less-crowded engaged neighbor o
     apex->setHex(field.hexGrid.getHex({1, 5}));
     blue.push_back(std::move(apex));
 
-    // {0,5}: squad of 4 (40 size) plus 17 lone Soldiers (170) — well past the
-    // 160 threshold, with enough margin that the squad's full 40 can leave
-    // and still leave 170 >= 160 behind.
     Hex* origin = field.hexGrid.getHex({0, 5});
     for (int i = 0; i < 4; ++i) {
         auto u = std::make_unique<Soldier>(REDTEAM);
@@ -374,15 +395,13 @@ TEST_CASE("moveSquad: a squad redistributes to a less-crowded engaged neighbor o
 
     for (AUnit* m : sq->getMembers()) {
         REQUIRE(m->getHex() != nullptr);
-        // Squad moves as a unit; {1,4} (engaged) and {0,6} (adjacent to enemy) both qualify.
-        HexCoord sq_dest = m->getHex()->coord;
-        CHECK((sq_dest == HexCoord{1, 4} || sq_dest == HexCoord{0, 6}));
+        CHECK(m->getHex()->coord == HexCoord{0, 5}); // held — squads never redistribute
     }
 
     field.extractResult();
 }
 
-TEST_CASE("moveSquad: a squad does not leave if doing so would drop its hex below the retention threshold") {
+TEST_CASE("moveSquad: an engaged squad holds even when it would itself be the reserve") {
     Battlefield& field = Utility::getBattlefield();
 
     auto sqOwned = std::make_unique<Squad>("Holdouts", false);
@@ -393,9 +412,10 @@ TEST_CASE("moveSquad: a squad does not leave if doing so would drop its hex belo
     apex->setHex(field.hexGrid.getHex({1, 5}));
     blue.push_back(std::move(apex));
 
-    // {0,5}: squad of 4 (40) + 13 lone Soldiers (130) = 170 — just over the
-    // 160 threshold, but pulling the squad's 40 back out would drop it to
-    // 130, below threshold, so the squad must hold position.
+    // {0,5}: squad of 4 (40) + 13 lone Soldiers (130) — enough loners to
+    // overflow the 3-rank capacity (12 seated), so some of them (and
+    // possibly squad members too) end up rank-0 reserves. Doesn't matter:
+    // squads never redistribute regardless of their own seating state.
     Hex* origin = field.hexGrid.getHex({0, 5});
     for (int i = 0; i < 4; ++i) {
         auto u = std::make_unique<Soldier>(REDTEAM);
@@ -419,7 +439,7 @@ TEST_CASE("moveSquad: a squad does not leave if doing so would drop its hex belo
 
     for (AUnit* m : sq->getMembers()) {
         REQUIRE(m->getHex() != nullptr);
-        CHECK(m->getHex()->coord == HexCoord{0, 5}); // held — leaving would gut the hex below threshold
+        CHECK(m->getHex()->coord == HexCoord{0, 5}); // held — squads never redistribute
     }
 
     field.extractResult();

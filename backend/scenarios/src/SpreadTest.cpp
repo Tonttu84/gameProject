@@ -7,8 +7,9 @@
 
 // Scenario: 3×2 grid of hexes — two engaged hexes per team, with the centre hex
 // "overfull" and the flanks "light".  When both centre hexes are engaged, the
-// shouldSpreadToward() logic should pull excess units from the centre outward
-// into the flanking engaged hexes.
+// reserve-based reinforcement logic (bestReinforceNeighbor in Battlefield.cpp)
+// should pull excess (rank-0 overflow) units from the centre outward into the
+// less-crowded flanking hexes.
 //
 // Visual layout (even-r offset col, row — battle area rows 12-17):
 //

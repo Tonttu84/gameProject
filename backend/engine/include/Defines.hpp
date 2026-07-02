@@ -74,13 +74,6 @@ constexpr int SPELLRANGE         = 10; // max hex distance for spells
 constexpr int BATTLEFIELD_WIDTH  = 30;  // visual width  — hex rows (r), depth between armies
 constexpr int BATTLEFIELD_HEIGHT = 16;  // visual height — hex columns (q), battle-line width
 
-// Movement / formation
-// A hex retains effectiveFrontage(side)*this many fresh (non-tired) size-points
-// per currently engaged HexSide before it's willing to spread its excess to a
-// less-crowded engaged neighbor — see shouldSpreadToward() in Battlefield.cpp.
-// One engaged open-terrain side retains 40*4=160 (16 humans); two retain 320 (32).
-constexpr int ENGAGED_SIDE_RETENTION_MULTIPLIER = 4;
-
 // Terrain movement costs (total ticks to enter; 1 = one tick = no debt)
 constexpr int TERRAIN_COST_OPEN       = 1;
 constexpr int TERRAIN_COST_FOREST     = 2;  // Mounted: impassable
