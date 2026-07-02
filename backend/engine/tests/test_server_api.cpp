@@ -249,7 +249,7 @@ TEST_CASE("zone_rows survive toJson/fromJson round-trip") {
     REQUIRE(g2.enemyZoneMaxRow()  == 1);
 }
 
-TEST_CASE("playerZone() returns all hexes whose r is in [minRow, maxRow]") {
+TEST_CASE("playerZone() returns all hexes whose r is in (minRow..maxRow)") {
     HexGrid g;
     g.buildRect(16, 20);
     g.fromJson(makeMapWithZones());  // player rows 18-19
@@ -268,7 +268,7 @@ TEST_CASE("playerZone() returns all hexes whose r is in [minRow, maxRow]") {
         REQUIRE((c.r == 18 || c.r == 19));
 }
 
-TEST_CASE("enemyZone() returns all hexes whose r is in [minRow, maxRow]") {
+TEST_CASE("enemyZone() returns all hexes whose r is in (minRow..maxRow)") {
     HexGrid g;
     g.buildRect(16, 20);
     g.fromJson(makeMapWithZones());  // enemy rows 0-1

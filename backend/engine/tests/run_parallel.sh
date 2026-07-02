@@ -16,6 +16,7 @@ fi
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
+status=0
 
 # Catch2's list mode returns the listed count as its exit code, not a
 # pass/fail status, so don't let `set -e` treat a nonzero count as failure.
@@ -39,6 +40,30 @@ while IFS= read -r line; do
     i=$((i + 1))
 done < "$TMPDIR/all_tests.txt"
 
+# Verify every shard file round-trips through Catch2's own filter parser before trusting
+# the run: a test name containing characters the -f parser treats as syntax (e.g. a literal
+# '[' or ']' outside the leading position, which restarts parsing in tag-filter mode
+# mid-name — this bit us once, see the "(minRow..maxRow)" test names in
+# test_server_api.cpp, previously "[minRow, maxRow]") can silently resolve to zero matches
+# instead of erroring. That's a dropped test with no visible symptom today, and a masked
+# failure the day someone breaks that test — exactly what CI's use of test-serial instead
+# of this script is meant to catch, so catch it here too instead of relying on that.
+for ((i = 0; i < JOBS; i++)); do
+    [ -s "$TMPDIR/shard_$i.txt" ] || continue
+    # Catch2's list mode returns the listed count as its exit code (see the comment on the
+    # first --list-test-names-only call above) — under pipefail that would otherwise abort
+    # the script via set -e before the check below ever runs.
+    resolved=$("$BIN" -f "$TMPDIR/shard_$i.txt" --list-test-names-only 2>/dev/null | wc -l || true)
+    expected=$(wc -l < "$TMPDIR/shard_$i.txt")
+    if [ "$resolved" -ne "$expected" ]; then
+        echo "error: shard $i's filter file names $expected test(s) but resolved to $resolved — a test name likely contains characters Catch2's -f parser treats specially. Rename the offending test case(s)." >&2
+        status=1
+    fi
+done
+if [ "$status" -ne 0 ]; then
+    exit "$status"
+fi
+
 pids=()
 shards=()
 for ((i = 0; i < JOBS; i++)); do
@@ -49,7 +74,6 @@ for ((i = 0; i < JOBS; i++)); do
     fi
 done
 
-status=0
 for pid in "${pids[@]}"; do
     wait "$pid" || status=1
 done
