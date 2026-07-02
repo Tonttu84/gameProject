@@ -195,6 +195,21 @@ public:
     void     setEngagedSide(HexSide* s) { engagedSide = s; }
     HexSide* getEngagedSide() const { return engagedSide; }
 
+    // Combat rank (1=frontline, 2=backup, 3=reserve, 0=unseated).
+    // Persists across ticks so non-squad units promote one rank per tick.
+    // Reset to 0 by setHex() (unit moved) and restoreForNextBattle().
+    // NOT reset by Team::resetUnitFlags() — that is intentional.
+    int  getEngagedRank() const { return _engagedRank; }
+    void setEngagedRank(int r)  { _engagedRank = r; }
+
+    // The HexSide this unit is positioned behind regardless of rank.
+    // Set for ALL ranked units (rank 1–3); nullptr for unseated.
+    // Rank-1 units: formationSide == engagedSide.
+    // Rank 2/3 units: formationSide set but engagedSide is nullptr (can't fight).
+    // Reset to nullptr by resetUnitFlags() each tick.
+    HexSide* getFormationSide() const { return _formationSide; }
+    void     setFormationSide(HexSide* s) { _formationSide = s; }
+
     // Sets currentHex directly, without touching hex->units (unlike setHex()).
     // For syncing tactical context onto a sub-unit that is never independently
     // placed in the grid — e.g. MountedUnit's rider/mount, the same way
@@ -300,7 +315,9 @@ protected:
     bool broken = false;
     bool _tookLateralLastMove = false;
     bool canFightThisTurn = false;
-    HexSide* engagedSide = nullptr;
+    HexSide* engagedSide    = nullptr;
+    HexSide* _formationSide = nullptr;
+    int  _engagedRank       = 0;
     bool spellcaster = false;
     bool placed = false;
     bool undead = false;

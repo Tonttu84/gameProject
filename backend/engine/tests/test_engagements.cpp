@@ -453,3 +453,224 @@ TEST_CASE("resolveEngagements: a lone unit at exactly FATIGUE_VERY_TIRED is stil
 
     REQUIRE(soldier.getEngagedSide() != nullptr);
 }
+
+// ── Combat ranks system ──────────────────────────────────────────────────────
+//
+// Design rules:
+//   Squad members  → placed top-down (rank 1 first) each tick.
+//   New loners     → cascade: try rank 1 → 2 → 3; prefer unclaimed sides.
+//   Existing loners→ promote exactly one rank per tick (or stay if blocked).
+//   Only rank-1 units get engagedSide + canFight=true.
+//   _engagedRank persists across resolveEngagements calls (NOT reset by
+//   resetUnitFlags); it is reset to 0 by setHex() when a unit changes hex.
+
+// ── Test 1: Single-tick cascade ──────────────────────────────────────────────
+// A new loner with all ranks empty cascades directly to rank 1 in the first
+// resolveEngagements call and can fight immediately.
+TEST_CASE("combat ranks: new loner cascades to rank 1 when all ranks are empty", "[ranks]") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Soldier loner(REDTEAM);
+    loner.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    CHECK(loner.getEngagedRank() == 1);
+    CHECK(loner.getEngagedSide() != nullptr);
+    CHECK(loner.getCanFight() == true);
+}
+
+// ── Test 2: Cross-tick promotion (one rank per tick) ─────────────────────────
+// A loner blocked from rank 1 starts in rank 2. When rank 1 frees up it
+// promotes exactly one rank per resolveEngagements call — not two.
+TEST_CASE("combat ranks: existing loner promotes one rank per tick when space opens", "[ranks]") {
+    // Fill rank 1 exactly: 4 squad members × size 10 = 40 = FRONTAGE.
+    // One extra loner → can't fit in rank 1 → starts in rank 2.
+    // Kill one squad member → loner promotes from rank 2 to rank 1.
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Squad alpha("Alpha", true);
+    Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM), sm3(REDTEAM);
+    alpha.addMember(&sm0); sm0.setHex(redHex);
+    alpha.addMember(&sm1); sm1.setHex(redHex);
+    alpha.addMember(&sm2); sm2.setHex(redHex);
+    alpha.addMember(&sm3); sm3.setHex(redHex);
+
+    Soldier loner(REDTEAM);
+    loner.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    // Tick 0: rank 1 full (4 × 10 = 40/40). Loner cascades to rank 2.
+    bf.resolveEngagements();
+    REQUIRE(loner.getEngagedRank() == 2);
+    CHECK(loner.getEngagedSide() == nullptr);  // rank 2 → can't fight
+    CHECK(loner.getCanFight() == false);
+
+    // Free one slot in rank 1: kill sm0.
+    sm0.setAlive(false);
+
+    // Tick 1: squad has 3 members (30/40 in rank 1). Loner (was rank 2) tries
+    // rank 1 → fits (30+10=40). Loner promoted to rank 1.
+    bf.resolveEngagements();
+    CHECK(loner.getEngagedRank() == 1);
+    CHECK(loner.getEngagedSide() != nullptr);
+    CHECK(loner.getCanFight() == true);
+}
+
+// ── Test 3: Non-squad fills vacancy on squad-owned side (BUG-1 regression) ───
+// A squad of 3 claims a side (30/40 rank-1 used). One loner on the same hex.
+// Loner should immediately fill the remaining rank-1 capacity (cascade to rank 1
+// on the squad side because it's the only available side).
+TEST_CASE("combat ranks: loner fills remaining rank-1 capacity on squad's side (BUG-1)", "[ranks]") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    // Squad outlives its members (dtors call leaveSquad).
+    Squad alpha("Alpha", true);
+    Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM);
+    alpha.addMember(&sm0); sm0.setHex(redHex);
+    alpha.addMember(&sm1); sm1.setHex(redHex);
+    alpha.addMember(&sm2); sm2.setHex(redHex);
+
+    Soldier loner(REDTEAM);
+    loner.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    // Squad fills 30/40. Loner should take the remaining 10 → rank 1.
+    CHECK(loner.getEngagedRank() == 1);
+    CHECK(loner.getEngagedSide() != nullptr);
+    CHECK(loner.getCanFight() == true);
+
+    // Squad members must also be in rank 1.
+    for (Soldier* u : {&sm0, &sm1, &sm2})
+        CHECK(u->getEngagedRank() == 1);
+}
+
+// ── Test 4: Squad reaches rank 1 immediately (top-down fill) ─────────────────
+// Squad members bypass the loner bottom-up rule and are placed in rank 1
+// directly in the first resolveEngagements call.
+TEST_CASE("combat ranks: squad members reach rank 1 in the first tick", "[ranks]") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Squad alpha("Alpha", true);
+    Soldier sm0(REDTEAM), sm1(REDTEAM);
+    alpha.addMember(&sm0); sm0.setHex(redHex);
+    alpha.addMember(&sm1); sm1.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    CHECK(sm0.getEngagedRank() == 1);
+    CHECK(sm1.getEngagedRank() == 1);
+    CHECK(sm0.getEngagedSide() != nullptr);
+    CHECK(sm1.getEngagedSide() != nullptr);
+    CHECK(sm0.getCanFight() == true);
+    CHECK(sm1.getCanFight() == true);
+}
+
+// ── Test 5: Two-squad mixing — larger squad wins rank-1 priority ─────────────
+// When two squads share one engaged side, allocateSidesToGroups gives the side
+// to the larger squad. The smaller squad's members are unseated.
+TEST_CASE("combat ranks: larger squad keeps rank-1 priority when two squads share one side", "[ranks]") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    // Alpha: 4 members (larger). Beta: 2 members (smaller).
+    // Only 1 engaged side → allocation gives the side to Alpha.
+    Squad alpha("Alpha", true), beta("Beta", false);
+    Soldier a0(REDTEAM), a1(REDTEAM), a2(REDTEAM), a3(REDTEAM);
+    Soldier b0(REDTEAM), b1(REDTEAM);
+    alpha.addMember(&a0); a0.setHex(redHex);
+    alpha.addMember(&a1); a1.setHex(redHex);
+    alpha.addMember(&a2); a2.setHex(redHex);
+    alpha.addMember(&a3); a3.setHex(redHex);
+    beta.addMember(&b0);  b0.setHex(redHex);
+    beta.addMember(&b1);  b1.setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    // All Alpha members should be in rank 1 of the allocated side.
+    for (Soldier* u : {&a0, &a1, &a2, &a3}) {
+        CHECK(u->getEngagedRank() == 1);
+        CHECK(u->getEngagedSide() != nullptr);
+    }
+    // Beta members have no allocated side and stay unseated.
+    for (Soldier* u : {&b0, &b1}) {
+        CHECK(u->getEngagedRank() == 0);
+        CHECK(u->getEngagedSide() == nullptr);
+        CHECK(u->getCanFight() == false);
+    }
+}
+
+// ── Test 6: Rank-3 overflow — excess units remain unseated ───────────────────
+// FRONTAGE=40, size=10 → 4 units per rank × 3 ranks = 12 total capacity.
+// Placing 13 loners: the 13th must stay unseated (rank 0, no engagedSide).
+TEST_CASE("combat ranks: units beyond 3-rank capacity stay unseated", "[ranks]") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    // 13 loners: 12 fit across 3 ranks (40/rank ÷ 10 per unit = 4 per rank).
+    // The 13th must be unseated.
+    Soldier s0(REDTEAM),  s1(REDTEAM),  s2(REDTEAM),  s3(REDTEAM),
+            s4(REDTEAM),  s5(REDTEAM),  s6(REDTEAM),  s7(REDTEAM),
+            s8(REDTEAM),  s9(REDTEAM),  s10(REDTEAM), s11(REDTEAM),
+            s12(REDTEAM);
+    std::vector<Soldier*> all = {&s0,&s1,&s2,&s3,&s4,&s5,&s6,&s7,&s8,&s9,&s10,&s11,&s12};
+    for (Soldier* u : all) u->setHex(redHex);
+
+    Soldier enemy(BLUETEAM);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    int seated = 0, unseated = 0;
+    for (Soldier* u : all) {
+        if (u->getEngagedRank() > 0) ++seated;
+        else                          ++unseated;
+    }
+    CHECK(seated   == 12);
+    CHECK(unseated ==  1);
+
+    // The 13th (unseated) must have no engagedSide and canFight=false.
+    for (Soldier* u : all) {
+        if (u->getEngagedRank() == 0) {
+            CHECK(u->getEngagedSide() == nullptr);
+            CHECK(u->getCanFight()    == false);
+        }
+    }
+}

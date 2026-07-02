@@ -259,17 +259,20 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
         return;
     }
 
-    // Engaged: mirror the combat assignment from resolveEngagements().
-    // Units with getEngagedSide() set draw at their assigned edge (fighters, 1.3× size).
-    // Units with no assignment are support, massed behind the line (0.7× size, dimmed).
+    // Engaged: draw units layered by combat rank.
+    // Rank 1 (frontline) — at the edge, 1.3× size, full alpha.
+    // Rank 2 (backup)    — 1 step inward, 1.0× size, slightly dimmed.
+    // Rank 3 (reserve)   — 2 steps inward, 0.85× size, dimmed.
+    // Unseated (rank 0)  — hex centre, 0.7× size, 140 alpha (support pool).
     float fStep = avgSym * 0.85f;
+    int edgeWidth = std::max(1, static_cast<int>(_hexSize * 1.5f / fStep));
 
-    struct Placement { AUnit* unit; sf::Vector2f pos; };
-    std::vector<Placement> fighters;
+    struct Placement { AUnit* unit; sf::Vector2f pos; float sizeMul; sf::Uint8 alpha; };
+    std::vector<Placement> formation;
     std::vector<AUnit*>    support;
 
-    static constexpr int MAX_FIGHTER_RANKS = 3;
-    int edgeWidth = std::max(1, static_cast<int>(_hexSize * 1.5f / fStep));
+    static const float   RANK_SIZE_MUL[4] = { 0.f, 1.3f, 1.0f, 0.85f };
+    static const sf::Uint8 RANK_ALPHA[4]  = {   0,  255,   200,   160  };
 
     for (int d : engagedDirs) {
         HexSide* side = hex.sides[d];
@@ -281,25 +284,27 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
         sf::Vector2f eMid  = { flatCenter.x + eDir.x * _hexSize * 0.78f,
                                flatCenter.y + eDir.y * _hexSize * 0.78f };
 
-        // Collect only the units combat-assigned to this side.
-        std::vector<AUnit*> edgeUnits;
-        for (AUnit* u : alive)
-            if (u->getEngagedSide() == side) edgeUnits.push_back(u);
+        for (int ri = 1; ri <= 3; ++ri) {
+            std::vector<AUnit*> rankUnits;
+            for (AUnit* u : alive)
+                if (u->getFormationSide() == side && u->getEngagedRank() == ri)
+                    rankUnits.push_back(u);
+            if (rankUnits.empty()) continue;
 
-        int rem = static_cast<int>(edgeUnits.size()), ei = 0;
-        for (int rank = 0; rank < MAX_FIGHTER_RANKS && ei < rem; ++rank) {
-            int   rankCount = std::min(edgeWidth, rem - ei);
-            float t0        = -(rankCount - 1) * fStep * 0.5f;
-            float rankOff   = static_cast<float>(rank) * fStep;
-            for (int i = 0; i < rankCount; ++i, ++ei)
-                fighters.push_back({ edgeUnits[ei], {
+            int   cnt     = std::min(edgeWidth, static_cast<int>(rankUnits.size()));
+            float rankOff = static_cast<float>(ri - 1) * fStep;
+            float t0      = -(cnt - 1) * fStep * 0.5f;
+            for (int i = 0; i < cnt; ++i)
+                formation.push_back({ rankUnits[i], {
                     eMid.x + pDir.x * (t0 + static_cast<float>(i) * fStep) + inDir.x * rankOff,
-                    eMid.y + pDir.y * (t0 + static_cast<float>(i) * fStep) + inDir.y * rankOff }});
+                    eMid.y + pDir.y * (t0 + static_cast<float>(i) * fStep) + inDir.y * rankOff },
+                    RANK_SIZE_MUL[ri], RANK_ALPHA[ri] });
         }
     }
-    // Unassigned units (no engagedSide from resolveEngagements) are support.
+
+    // Unseated units (rank 0) go to the support pool in the hex centre.
     for (AUnit* u : alive)
-        if (!u->getEngagedSide()) support.push_back(u);
+        if (u->getEngagedRank() == 0) support.push_back(u);
 
     // Group support by squad so same-squad members draw together; loners last.
     std::sort(support.begin(), support.end(), [](AUnit* a, AUnit* b) {
@@ -313,7 +318,7 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
         return a->getSortKey() < b->getSortKey();
     });
 
-    // Draw support first so fighters render on top
+    // Draw deepest ranks first so frontline renders on top.
     if (!support.empty()) {
         float sStep   = avgSym * 0.70f;
         int   sPerRow = std::max(1, static_cast<int>(_hexSize * 1.3f / sStep));
@@ -329,9 +334,11 @@ void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
                          symF(support[si], 0.7f), 140);
         }
     }
-
-    for (auto& [u, pos] : fighters)
-        drawUnit(u, pos, symF(u, 1.3f));
+    // Draw formation back-to-front so rank 1 appears over rank 2/3.
+    std::sort(formation.begin(), formation.end(),
+              [](const Placement& a, const Placement& b){ return a.sizeMul < b.sizeMul; });
+    for (auto& [u, pos, sm, al] : formation)
+        drawUnit(u, pos, symF(u, sm), al);
 }
 
 void BattleRenderer::render(const HexGrid& grid) {

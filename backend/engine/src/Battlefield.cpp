@@ -903,48 +903,77 @@ static void allocateSidesToGroups(Hex* hex, const std::vector<HexSide*>& sides,
                 sideOwner[si] = g.squad;
 }
 
-// Tries to seat `u` on side si, evicting smaller already-seated units one at
-// a time if `u` doesn't fit otherwise. An empty side always accepts the
-// first unit regardless of size (a giant is never excluded just for being
-// big), and once nothing seated is smaller than `u`, it's seated anyway —
-// taking whatever overflow results, same as the empty-side case. A unit
-// can never displace something its own size or bigger, so small units
-// cannot evict a big one already seated, but a big unit can displace
-// several smaller ones to make room for itself. Evicted units are
-// unassigned (no engagedSide, can't fight) and simply sit out this tick —
-// they are not retried on another side.
-static bool tryAssignToSide(AUnit* u, size_t si, const std::vector<HexSide*>& sides,
-                             std::vector<int>& frontage,
-                             std::vector<std::vector<AUnit*>>& seated)
+// ── Ranked fill helpers ───────────────────────────────────────────────────────
+//
+// Each engaged HexSide has 3 ranked pools: ri=0 (rank 1 / frontline),
+// ri=1 (rank 2 / backup), ri=2 (rank 3 / reserve). Each pool has the same
+// size capacity as effectiveFrontage(side).
+//
+// Only rank-1 units (ri==0) get setEngagedSide + setCanFight(true).
+// _engagedRank persists across ticks so loners promote one rank per tick;
+// squad members are re-seated top-down from rank 1 each tick.
+
+struct RankSlots {
+    int                  frontage = 0;
+    std::vector<AUnit*>  units;
+};
+
+// Try to place `u` in rank `ri` of side `si`.
+// In rank 1 (ri==0) only: evicts the smallest seated unit (pushing it to rank 2
+// if capacity allows) when `u` doesn't fit and something smaller is present.
+// Returns false if `u` cannot be placed (nothing smaller to evict, or still too
+// large after eviction).
+static bool tryAssignToRankSlot(AUnit* u, size_t si, int ri,
+                                 const std::vector<HexSide*>& sides,
+                                 std::vector<std::array<RankSlots, 3>>& ranks)
 {
     int cap = effectiveFrontage(*sides[si]);
-    while (frontage[si] + static_cast<int>(u->getSize()) > cap && !seated[si].empty()) {
-        size_t smallestIdx = 0;
-        for (size_t i = 1; i < seated[si].size(); ++i)
-            if (seated[si][i]->getSize() < seated[si][smallestIdx]->getSize())
-                smallestIdx = i;
-        AUnit* smallest = seated[si][smallestIdx];
-        if (smallest->getSize() >= u->getSize())
-            return false; // nothing evictable is smaller than u — it doesn't get this side
+    RankSlots& slot = ranks[si][ri];
 
-        smallest->setCanFight(false);
-        smallest->setEngagedSide(nullptr);
-        smallest->setCohesionBonus(0);
-        frontage[si] -= static_cast<int>(smallest->getSize());
-        seated[si].erase(seated[si].begin() + static_cast<long>(smallestIdx));
+    if (ri == 0) {
+        // Eviction within rank 1: push the smallest displaced unit to rank 2 (if space).
+        while (slot.frontage + static_cast<int>(u->getSize()) > cap && !slot.units.empty()) {
+            size_t smallestIdx = 0;
+            for (size_t i = 1; i < slot.units.size(); ++i)
+                if (slot.units[i]->getSize() < slot.units[smallestIdx]->getSize())
+                    smallestIdx = i;
+            AUnit* smallest = slot.units[smallestIdx];
+            if (smallest->getSize() >= u->getSize())
+                return false; // nothing strictly smaller — unit can't push its way in
+
+            slot.frontage -= static_cast<int>(smallest->getSize());
+            slot.units.erase(slot.units.begin() + static_cast<long>(smallestIdx));
+            smallest->setCohesionBonus(0); // was set by squad pass; clear since demoted
+
+            // Demote evicted unit to rank 2 if there is room, otherwise unseat it.
+            RankSlots& rank2 = ranks[si][1];
+            if (rank2.frontage + static_cast<int>(smallest->getSize()) <= cap) {
+                rank2.frontage += static_cast<int>(smallest->getSize());
+                rank2.units.push_back(smallest);
+                smallest->setEngagedRank(2);
+            } else {
+                smallest->setEngagedRank(0); // fully unseated
+            }
+        }
     }
+
+    if (slot.frontage + static_cast<int>(u->getSize()) > cap) return false;
+    slot.frontage += static_cast<int>(u->getSize());
+    slot.units.push_back(u);
+    u->setEngagedRank(ri + 1); // convert 0-indexed ri to 1-indexed rank
+    // formationSide is applied in the final apply loop after all ranks are filled,
+    // so we don't set it here (sides[si] is available there).
     return true;
 }
 
-// Assign squad members with fatigue in [fatLow, fatHigh) to their squad's pre-allocated sides.
-// Distributes round-robin across all sides owned by this squad so that when a squad spans
-// multiple engaged sides (corner hex, surrounded position), troops fill each side
-// proportionally rather than piling onto the first side only.
-static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& sides,
-                           const std::vector<Squad*>& sideOwner,
-                           std::vector<int>& frontage,
-                           std::vector<std::vector<AUnit*>>& seated,
-                           int fatLow, int fatHigh)
+// Seat squad members (fatigue in [fatLow, fatHigh)) into their squad's allocated sides.
+// Top-down fill: rank 1 first, then rank 2, then rank 3.
+// Round-robin across owned sides within each rank level for even distribution.
+static void fillSquadPassRanked(Squad* sq, Hex* hex,
+                                 const std::vector<HexSide*>& sides,
+                                 const std::vector<Squad*>& sideOwner,
+                                 std::vector<std::array<RankSlots, 3>>& ranks,
+                                 int fatLow, int fatHigh)
 {
     std::vector<AUnit*> members;
     for (AUnit* m : sq->getMembers()) {
@@ -954,82 +983,102 @@ static void fillSquadPass(Squad* sq, Hex* hex, const std::vector<HexSide*>& side
         members.push_back(m);
     }
     if (members.empty()) return;
-    std::sort(members.begin(), members.end(), [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+    std::sort(members.begin(), members.end(),
+              [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
 
-    // Collect the squad-owned side indices once; we'll iterate them round-robin.
     std::vector<size_t> ownedSides;
     for (size_t si = 0; si < sides.size(); ++si)
         if (sideOwner[si] == sq) ownedSides.push_back(si);
     if (ownedSides.empty()) return;
 
     int cohTier = cohesionTierForHex(hex, sq->cohesionLevel());
-    size_t startIdx = 0; // advance after each successful assignment to distribute evenly
+    size_t startIdx = 0;
+
     for (AUnit* u : members) {
-        // Try each owned side beginning at startIdx (round-robin), wrapping around once.
         bool assigned = false;
-        for (size_t attempt = 0; attempt < ownedSides.size(); ++attempt) {
-            size_t si = ownedSides[(startIdx + attempt) % ownedSides.size()];
-            if (!tryAssignToSide(u, si, sides, frontage, seated)) continue;
-            u->setCanFight(true);
-            u->setEngagedSide(sides[si]);
-            u->setCohesionBonus(cohTier);
-            frontage[si] += static_cast<int>(u->getSize());
-            seated[si].push_back(u);
-            startIdx = (startIdx + 1) % ownedSides.size(); // next unit starts at the next side
-            assigned = true;
-            break;
+        // Top-down: try rank 1 → 2 → 3 across all owned sides.
+        for (int ri = 0; ri < 3 && !assigned; ++ri) {
+            for (size_t attempt = 0; attempt < ownedSides.size() && !assigned; ++attempt) {
+                size_t si = ownedSides[(startIdx + attempt) % ownedSides.size()];
+                if (!tryAssignToRankSlot(u, si, ri, sides, ranks)) continue;
+                if (ri == 0) u->setCohesionBonus(cohTier); // cohesion only in rank 1
+                startIdx = (startIdx + 1) % ownedSides.size();
+                assigned = true;
+            }
         }
-        (void)assigned; // a unit that can't fit on any side simply sits in reserve this tick
+        (void)assigned;
     }
 }
 
-// Assign lone units with fatigue in [fatLow, fatHigh) round-robin to unclaimed sides.
-// Iterates loners largest-first. Each loner is tried on all free sides in round-robin
-// order; if it can't fit anywhere it is skipped so smaller units behind it still get
-// a chance. This prevents a too-large unit from blocking the assignment of units that
-// would fit in the remaining frontage.
-static void fillLonerPass(Hex* hex, const std::vector<HexSide*>& sides,
-                           const std::vector<Squad*>& sideOwner,
-                           std::vector<int>& frontage,
-                           std::vector<std::vector<AUnit*>>& seated,
-                           int fatLow, int fatHigh)
+// Place lone units (fatigue in [fatLow, fatHigh)):
+//   • Existing loners (_engagedRank > 0): promote exactly one rank per tick
+//     (or stay at their current rank if the better rank is full).
+//     Prefer non-squad sides first, then squad sides as fallback.
+//   • New loners (_engagedRank == 0): cascade from rank 1 → 2 → 3.
+//     Prefer non-squad sides; only fall back to squad-owned sides when no
+//     non-squad side can accommodate them at any rank.
+static void fillLonerPassRanked(Hex* hex,
+                                 const std::vector<HexSide*>& sides,
+                                 const std::vector<Squad*>& sideOwner,
+                                 std::vector<std::array<RankSlots, 3>>& ranks,
+                                 int fatLow, int fatHigh)
 {
-    std::vector<AUnit*> loners;
+    std::vector<AUnit*> existingLoners, newLoners;
     for (AUnit* u : hex->units) {
         if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
         int f = u->getFatigue();
         if (f < fatLow || f >= fatHigh) continue;
-        loners.push_back(u);
+        if (u->getEngagedRank() > 0) existingLoners.push_back(u);
+        else                          newLoners.push_back(u);
     }
-    if (loners.empty()) return;
-    std::sort(loners.begin(), loners.end(), [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
 
-    std::vector<size_t> freeSides;
+    std::sort(existingLoners.begin(), existingLoners.end(),
+              [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+    std::sort(newLoners.begin(), newLoners.end(),
+              [](AUnit* a, AUnit* b){ return a->biggerThan(b); });
+
+    // Partition sides into free (unclaimed) and squad-owned.
+    std::vector<size_t> freeSides, squadSides;
     for (size_t si = 0; si < sides.size(); ++si)
-        if (sideOwner[si] == nullptr) freeSides.push_back(si);
-    if (freeSides.empty()) return;
+        (sideOwner[si] == nullptr ? freeSides : squadSides).push_back(si);
 
-    // Round-robin starting index: advances after each successful assignment so
-    // consecutive loners land on different sides rather than all piling on freeSides[0].
-    size_t startIdx = 0;
-    for (AUnit* u : loners) {
-        // Try each free side from startIdx, wrapping around once.
-        for (size_t attempt = 0; attempt < freeSides.size(); ++attempt) {
-            size_t si = freeSides[(startIdx + attempt) % freeSides.size()];
-            if (!tryAssignToSide(u, si, sides, frontage, seated)) continue;
-            u->setCanFight(true);
-            u->setEngagedSide(sides[si]);
-            frontage[si] += static_cast<int>(u->getSize());
-            seated[si].push_back(u);
-            startIdx = (startIdx + 1) % freeSides.size(); // next loner starts at next side
-            break; // this loner is assigned; move on to the next one
+    // Helper: try a unit on a list of sides at a specific rank index.
+    auto tryOnSides = [&](AUnit* u, int ri, const std::vector<size_t>& siList) -> bool {
+        for (size_t si : siList)
+            if (tryAssignToRankSlot(u, si, ri, sides, ranks)) return true;
+        return false;
+    };
+
+    // Existing loners: promote one rank (or stay). Prefer free sides, then squad sides.
+    for (AUnit* u : existingLoners) {
+        int prevRank = u->getEngagedRank(); // 1-indexed
+        int targetRi = std::max(0, prevRank - 2); // 0-indexed rank one better (clamped to ri=0)
+        int stayRi   = prevRank - 1;              // 0-indexed current rank
+
+        bool placed = tryOnSides(u, targetRi, freeSides)
+                   || tryOnSides(u, targetRi, squadSides);
+        if (!placed && stayRi != targetRi)
+            placed = tryOnSides(u, stayRi, freeSides)
+                  || tryOnSides(u, stayRi, squadSides);
+        (void)placed; // if unseated this tick, _engagedRank keeps its old value for next tick
+    }
+
+    // New loners: cascade rank 1 → 2 → 3; free sides preferred at each level.
+    for (AUnit* u : newLoners) {
+        bool placed = false;
+        for (int ri = 0; ri < 3 && !placed; ++ri) {
+            placed = tryOnSides(u, ri, freeSides)
+                  || tryOnSides(u, ri, squadSides);
         }
-        // If no free side accepted u, it sits in reserve this tick — continue to next loner.
+        (void)placed;
     }
 }
 
 void Battlefield::resolveEngagements()
 {
+    // resetUnitFlags clears canFight / engagedSide / cohesionBonus but intentionally
+    // does NOT reset _engagedRank — that field persists across ticks so loners
+    // can promote one rank per tick.
     _red.resetUnitFlags();
     _blue.resetUnitFlags();
 
@@ -1039,25 +1088,36 @@ void Battlefield::resolveEngagements()
     for (auto& [hex, sides] : hexSideMap) {
         const auto squadsHere = collectSquadsInHex(hex);
         std::vector<Squad*> sideOwner(sides.size(), nullptr);
-        std::vector<int>    frontage(sides.size(), 0);
-        // Tracks who's actually seated on each side, alongside frontage, so a
-        // bigger unit in a later pass can evict a smaller one seated by an
-        // earlier pass (see tryAssignToSide).
-        std::vector<std::vector<AUnit*>> seated(sides.size());
-
         allocateSidesToGroups(hex, sides, squadsHere, sideOwner);
 
-        // Fresh then tired squad members fill squad-owned sides before loners touch anything.
+        // Per-side, per-rank slot tracking [sideIdx][ri=0,1,2].
+        std::vector<std::array<RankSlots, 3>> ranks(sides.size());
+
+        // Squad pass (top-down): fresh → tired → very tired.
         for (Squad* sq : squadsHere)
-            fillSquadPass(sq, hex, sides, sideOwner, frontage, seated, 0,             FATIGUE_TIRED);
+            fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, 0,             FATIGUE_TIRED);
         for (Squad* sq : squadsHere)
-            fillSquadPass(sq, hex, sides, sideOwner, frontage, seated, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
-        fillLonerPass(hex, sides, sideOwner, frontage, seated, 0,             FATIGUE_TIRED);
-        fillLonerPass(hex, sides, sideOwner, frontage, seated, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
-        // Desperate pass: very tired units only when sides would otherwise be empty.
+            fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
+        fillLonerPassRanked(hex, sides, sideOwner, ranks, 0,             FATIGUE_TIRED);
+        fillLonerPassRanked(hex, sides, sideOwner, ranks, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
+        // Desperate pass: very tired units when sides would otherwise sit empty.
         for (Squad* sq : squadsHere)
-            fillSquadPass(sq, hex, sides, sideOwner, frontage, seated, FATIGUE_VERY_TIRED, FATIGUE_MAX);
-        fillLonerPass(hex, sides, sideOwner, frontage, seated, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+            fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+        fillLonerPassRanked(hex, sides, sideOwner, ranks, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+
+        // Apply results: rank-1 units hold the boundary (engagedSide + canFight).
+        // Rank 2/3 units get formationSide so the renderer can draw them in depth.
+        for (size_t si = 0; si < sides.size(); ++si) {
+            for (int ri = 0; ri < 3; ++ri) {
+                for (AUnit* u : ranks[si][ri].units) {
+                    u->setFormationSide(sides[si]);
+                    if (ri == 0) {
+                        u->setEngagedSide(sides[si]);
+                        u->setCanFight(true);
+                    }
+                }
+            }
+        }
     }
 }
 

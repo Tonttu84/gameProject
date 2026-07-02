@@ -48,6 +48,7 @@ AUnit::~AUnit()
 }
 
 void AUnit::setHex(Hex* hex) {
+	if (hex != currentHex) _engagedRank = 0;
 	removeFromHex(currentHex, this);
 	currentHex = hex;
 	if (hex) {
@@ -604,6 +605,8 @@ void AUnit::restoreForNextBattle()
 	cast             = 0;
 	canFightThisTurn = false;
 	engagedSide      = nullptr;
+	_formationSide   = nullptr;
+	_engagedRank     = 0;
 	spentMove        = 0;
 }
 
