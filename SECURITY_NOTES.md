@@ -80,8 +80,18 @@ send an array with millions of entries; each iteration heap-allocates a unit
 DoS, cheap to send (a JSON array of `{"unit_type":"Soldier","q":0,"r":0}` repeated is small on
 the wire but expensive to process).
 
-**Status: Fixed** — cap placement array length before processing (loop simply stops
-accepting entries past the cap; already-collected units are kept, not an error).
+**Status: Fixed** — the loop stops once the *total size-points requested* (not raw entry
+count) would exceed `grid.hexCount() * Hex::CAPACITY` — the most the whole grid could ever
+legitimately hold. This matters, not just a smaller flat number: hex capacity is measured
+in size-points (`Hex::CAPACITY = 640`), and a single unit can already be as large as a full
+hex (`Horse::SIZE = 20`, and DESIGN.md plans creatures up to size 640+) — a cap expressed as
+"N units" doesn't bound resource usage consistently once units of very different sizes
+exist, whereas a size-points budget does by construction. Every entry with a valid type
+counts toward the budget as soon as it's constructed, even if that specific hex later
+rejects it (otherwise flooding one already-full hex with entries would dodge the budget
+entirely). A generous flat entry-count ceiling (50,000) remains as defense in depth against
+a future flood of minimum-size units, which the size budget alone would still process a lot
+of before exhausting.
 
 ### 5. No server-side roster/budget validation — Medium — Accepted / follow-up
 **Where**: `backend/server/src/UnitRegistry.cpp` `buildArmyFromPlacement()`.

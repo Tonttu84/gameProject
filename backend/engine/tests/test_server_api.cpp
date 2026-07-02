@@ -420,29 +420,52 @@ TEST_CASE("buildArmyFromPlacement: non-array top-level JSON returns empty army, 
     REQUIRE(army.empty());
 }
 
-TEST_CASE("buildArmyFromPlacement: array beyond the processing cap is truncated") {
+// The size-points budget must be measured in size-points, not raw entry/unit count —
+// hex capacity itself is size-points (Hex::CAPACITY = 640), and a future unit could be as
+// large as a full hex. This test proves the budget is consumed by *requested* size
+// regardless of whether a given entry is ultimately placeable, by exhausting it entirely
+// with entries that (beyond the first 64) all fail the per-hex capacity check anyway —
+// then showing a handful of entries at a completely different, empty hex are never
+// reached, even though that hex has ample room on its own.
+TEST_CASE("buildArmyFromPlacement: total requested size-points, not entry count, is capped") {
     HexGrid g;
-    g.buildRect(16, 20); // 320 hexes, capacity 640 each — plenty of room per hex
+    g.buildRect(16, 20); // 320 hexes * 640 capacity = 204800 size-point budget
 
-    // 5001 valid entries, cycling through every hex in the grid so per-hex capacity
-    // isn't the limiting factor — only the entry-count cap should matter here.
     json placement = json::array();
-    int idx = 0;
-    for (int r = 0; r < 20; ++r) {
-        for (int col = 0; col < 16; ++col) {
-            if (idx >= 5001) break;
-            int q = col - r / 2;
-            for (int rep = 0; rep < 16 && idx < 5001; ++rep, ++idx)
-                placement.push_back(json{{"unit_type", "Soldier"}, {"q", q}, {"r", r}});
-        }
-    }
-    REQUIRE(placement.size() == 5001);
+    // Batch 1: 20480 Soldier (size 10) entries all targeting hex (3,5) = 204800
+    // size-points requested. Only the first 64 (640/10) can ever be placed there.
+    for (int i = 0; i < 20480; ++i)
+        placement.push_back(json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}});
+    // Batch 2: a few entries at an entirely different, untouched hex with room to spare.
+    for (int i = 0; i < 5; ++i)
+        placement.push_back(json{{"unit_type", "Soldier"}, {"q", 7}, {"r", 7}});
 
     auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
-    // Every entry is individually valid and fits (no capacity/terrain rejection possible
-    // here), so a smaller result size can only mean the processing cap truncated the input.
-    REQUIRE(army.size() < placement.size());
-    REQUIRE(army.size() > 0);
+
+    int atFirstHex = 0, atSecondHex = 0;
+    for (const auto& u : army) {
+        if (u->getHex()->coord.q == 3 && u->getHex()->coord.r == 5) ++atFirstHex;
+        if (u->getHex()->coord.q == 7 && u->getHex()->coord.r == 7) ++atSecondHex;
+    }
+    REQUIRE(atFirstHex == Hex::CAPACITY / Soldier::SIZE); // that one hex filled to capacity
+    REQUIRE(atSecondHex == 0); // never reached — size-points budget exhausted by batch 1
+}
+
+TEST_CASE("buildArmyFromPlacement: legitimate armies well within grid capacity are unaffected") {
+    HexGrid g;
+    g.buildRect(16, 20);
+
+    // The built-in default enemy army (540+150+11 = 701 units) is representative of a
+    // real request — must place in full, nowhere near either cap.
+    json placement = json::array();
+    for (int i = 0; i < 701; ++i) {
+        int col = i % 16, row = i % 20;
+        int q = col - row / 2; // visual offset → axial, same conversion the frontend uses
+        placement.push_back(json{{"unit_type", "Soldier"}, {"q", q}, {"r", row}});
+    }
+
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 701);
 }
 
 // ── SECURITY_NOTES.md #7: invalid deployment zone rows ───────────────────────
