@@ -453,4 +453,3 @@ TEST_CASE("resolveEngagements: a lone unit at exactly FATIGUE_VERY_TIRED is stil
 
     REQUIRE(soldier.getEngagedSide() != nullptr);
 }
-}
