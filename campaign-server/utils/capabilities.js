@@ -1,3 +1,5 @@
+import { FOOD_KG_PER_SIZE_SQ_PER_DAY, DAYS_PER_TURN } from './campaignConfig.js'
+
 // Campaign-layer unit capabilities, DERIVED from the engine-exported combat
 // stats (unittypes collection, i.e. `./game dump-units`). Nothing here is
 // hand-maintained per unit type: a future Flyer or new skirmisher gets its
@@ -24,3 +26,20 @@ export const forageValue = (stats) => Math.max(1, stats.speed * 2)
 // (armour 2, speed 3).
 export const screenValue = (stats) =>
   stats.armour + Math.floor(stats.attack / 6) + stats.speed
+
+// Food need in kg per TURN (one turn = DAYS_PER_TURN days of campaigning):
+// size² × FOOD_KG_PER_SIZE_SQ_PER_DAY × DAYS_PER_TURN. Size lives on the
+// unit type root, not in stats, so this takes the size directly.
+export const foodPerTurn = (size) =>
+  size * size * FOOD_KG_PER_SIZE_SQ_PER_DAY * DAYS_PER_TURN
+
+// Total kg/turn for an army ({type: count} object or Map), given a catalog
+// Map of name → unit type doc. Unknown types eat as a size-10 human — the
+// roster is validated at the mutating routes, so this is only a guard.
+export const armyFoodPerTurn = (army, catalog) => {
+  const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
+  let total = 0
+  for (const [type, count] of entries)
+    total += count * foodPerTurn(catalog.get(type)?.size ?? 10)
+  return Math.ceil(total)
+}

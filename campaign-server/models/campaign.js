@@ -1,8 +1,8 @@
 import mongoose from 'mongoose'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
-// plain fields — enemy.army, enemy.plannedPlacement, events[].isReal — and
-// must NEVER reach a client through Mongoose toJSON. Every response goes
+// plain fields — enemy.army, enemy.plannedPlacement, events[].isReal,
+// forage.enemyPlan — and must NEVER reach a client through Mongoose toJSON. Every response goes
 // through services/campaignView.js, the single serializer that decides what
 // the player may see. Do not add routes that res.json() a campaign document.
 
@@ -18,9 +18,21 @@ const eventSchema = new mongoose.Schema(
   { _id: false },
 )
 
+// Forage rings around the shared camp area: near/mid/far, near depletes
+// first, no regrowth — the emptying land is the campaign clock.
+const ringSchema = new mongoose.Schema(
+  {
+    ring: { type: Number, required: true }, // 0 near, 1 mid, 2 far
+    richness: { type: Number, required: true },
+    initialRichness: { type: Number, required: true },
+  },
+  { _id: false },
+)
+
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   status: { type: String, enum: ['active', 'won', 'lost'], default: 'active' },
+  // One `day` = one campaign turn = two weeks of campaigning (DAYS_PER_TURN).
   day: { type: Number, default: 1 },
   battleFoughtToday: { type: Boolean, default: false },
 
@@ -38,6 +50,16 @@ const campaignSchema = new mongoose.Schema({
   events: {
     drawn: { type: [eventSchema], default: [] },
     picked: { type: Boolean, default: false },
+  },
+
+  forage: {
+    rings: { type: [ringSchema], required: true },
+    // This turn's player forager assignment, unit-type → count. Assigned
+    // units are unavailable for the turn's battle; cleared at newDay.
+    assignment: { type: Map, of: Number, default: {} },
+    // Forage capacity (in kg) the enemy commits this turn — HIDDEN (knowing
+    // the enemy's forage effort is scouting intel, not free information).
+    enemyPlan: { type: Number, default: 0 },
   },
 
   enemy: {

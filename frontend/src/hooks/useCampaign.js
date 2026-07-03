@@ -3,6 +3,7 @@ import {
   getCampaigns,
   createCampaign,
   pickCampaignEvent,
+  setCampaignForage,
   postCampaignBattle,
   endCampaignDay,
 } from '../services/api'
@@ -42,6 +43,10 @@ export default function useCampaign(user) {
     setCampaign(await pickCampaignEvent(campaign.id, eventId))
   }
 
+  const assignForagers = async (assignment) => {
+    setCampaign(await setCampaignForage(campaign.id, assignment))
+  }
+
   const fight = async (playerPlacement) => {
     const res = await postCampaignBattle(campaign.id, { player_placement: playerPlacement })
     setCampaign(res.campaign)
@@ -54,5 +59,5 @@ export default function useCampaign(user) {
     return res.report
   }
 
-  return { campaign, loading, create, pickEvent, fight, endDay, reload }
+  return { campaign, loading, create, pickEvent, assignForagers, fight, endDay, reload }
 }

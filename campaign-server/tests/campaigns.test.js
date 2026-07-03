@@ -1,10 +1,11 @@
-import { beforeAll, afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, test, vi } from 'vitest'
 import supertest from 'supertest'
 import mongoose from 'mongoose'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { createUserAndToken } from './helpers/auth.js'
 import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
+import { pushRoll, clearRolls } from '../utils/dice.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
 // C++ binary. getInfo feeds buildEnemyPlacement's zone geometry.
@@ -50,29 +51,49 @@ beforeEach(async () => {
 const auth = (req) => req.set('Authorization', `Bearer ${token}`)
 const createCampaign = () => auth(api.post('/api/campaigns')).send({})
 
+afterEach(clearRolls)
+
 // The hidden-information discipline: NO campaign response may ever contain
-// the enemy army composition, the planned enemy placement, or event truth
-// flags. Checked on every response the tests receive.
+// the enemy army composition, the planned enemy placement, event truth
+// flags, or the enemy's forage plan. Checked on every response the tests
+// receive.
 const expectNoHiddenInfo = (body) => {
   const raw = JSON.stringify(body)
   expect(raw).not.toContain('isReal')
   expect(raw).not.toContain('plannedPlacement')
   expect(raw).not.toContain('initialStrength')
+  expect(raw).not.toContain('enemyPlan')
   if (body.campaign?.enemy) expect(body.campaign.enemy.army).toBeUndefined()
   if (body.enemy) expect(body.enemy.army).toBeUndefined()
 }
 
+// Fixture-catalog campaign math, used by the expectations below:
+// - player food need/turn: 300 Soldier×28 + 50 Archer×28 + 3 Mage×28 +
+//   3 Priest×28 + 10 Cavalry×112 + 12 LightCavalry×112 = 12,432 kg
+// - enemy forage plan: 0.4 × (540×2 + 150×2 + 11×2 + 20×6 points × 15 kg) = 9,132 kg
+
 describe('POST /api/campaigns', () => {
-  test('creates a campaign with starting state and day-1 events', async () => {
+  test('creates a campaign with starting state and turn-1 events', async () => {
     const res = await createCampaign()
     expect(res.status).toBe(201)
     expect(res.body.day).toBe(1)
     expect(res.body.status).toBe('active')
-    expect(res.body.resources.food).toBe(100)
+    expect(res.body.resources.food).toBe(50000)
+    expect(res.body.resources.foodNeedPerTurn).toBe(12432)
     expect(res.body.roster.Soldier).toBe(300)
     expect(res.body.roster.LightCavalry).toBe(12)
     expect(res.body.events).toHaveLength(3)
     expect(res.body.enemy.stance).toBe('camp')
+    // Fresh land: three untouched rings, nobody assigned to forage yet.
+    expect(res.body.forage.rings).toEqual([
+      { ring: 0, richness: 20000, initialRichness: 20000 },
+      { ring: 1, richness: 35000, initialRichness: 35000 },
+      { ring: 2, richness: 55000, initialRichness: 55000 },
+    ])
+    expect(res.body.forage.assignment).toEqual({})
+    expect(res.body.forage.capacityKg).toBe(0)
+    expect(res.body.forage.kgPerUnit.Soldier).toBe(30)
+    expect(res.body.forage.kgPerUnit.LightCavalry).toBe(90)
     expectNoHiddenInfo(res.body)
   })
 
@@ -81,6 +102,7 @@ describe('POST /api/campaigns', () => {
     const doc = await Campaign.findById(res.body.id)
     expect(doc.enemy.army.get('Soldier')).toBe(540)
     expect(doc.events.drawn.some((e) => e.isReal)).toBe(true)
+    expect(doc.forage.enemyPlan).toBe(9132)
     // Placement only covers types present in the (test) catalog, but it must
     // exist and be axial-shaped.
     expect(Array.isArray(doc.enemy.plannedPlacement)).toBe(true)
@@ -134,6 +156,45 @@ describe('POST /api/campaigns/:id/events/pick', () => {
       eventId: 'nonsense',
     })
     expect(res.status).toBe(400)
+  })
+})
+
+describe('POST /api/campaigns/:id/forage', () => {
+  const assign = (id, assignment) =>
+    auth(api.post(`/api/campaigns/${id}/forage`)).send({ assignment })
+
+  test('sets the assignment and reports capacity; re-issuing replaces it', async () => {
+    const { body: c } = await createCampaign()
+
+    const res = await assign(c.id, { Soldier: 100, LightCavalry: 5 })
+    expect(res.status).toBe(200)
+    expect(res.body.forage.assignment).toEqual({ Soldier: 100, LightCavalry: 5 })
+    expect(res.body.forage.capacityKg).toBe(100 * 30 + 5 * 90)
+    expectNoHiddenInfo(res.body)
+
+    const replaced = await assign(c.id, { Cavalry: 4 })
+    expect(replaced.body.forage.assignment).toEqual({ Cavalry: 4 })
+    expect(replaced.body.forage.capacityKg).toBe(4 * 60) // speed 2 → 4 pts × 15 kg
+  })
+
+  test('rejects overdrafts, bad counts, and missing bodies', async () => {
+    const { body: c } = await createCampaign()
+    expect((await assign(c.id, { Soldier: 301 })).status).toBe(400)
+    expect((await assign(c.id, { Soldier: -1 })).status).toBe(400)
+    expect((await assign(c.id, { Soldier: 2.5 })).status).toBe(400)
+    expect((await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({})).status).toBe(400)
+  })
+
+  test('foragers are unavailable for the battle line', async () => {
+    const { body: c } = await createCampaign()
+    await assign(c.id, { Soldier: 300 })
+
+    const res = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4 }],
+    })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/out foraging/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
   })
 })
 
@@ -197,18 +258,41 @@ describe('POST /api/campaigns/:id/battles', () => {
 })
 
 describe('POST /api/campaigns/:id/end-day', () => {
-  test('advances the day: upkeep, fresh events, report', async () => {
+  test('advances the turn: upkeep, enemy foraging, fresh events, report', async () => {
     const { body: c } = await createCampaign()
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
 
-    // 378 units → ceil(37.8) = 38 food upkeep.
-    expect(res.body.report.upkeep.foodConsumed).toBe(38)
+    // Two weeks of eating: 12,432 kg for the starting roster.
+    expect(res.body.report.upkeep.foodConsumed).toBe(12432)
     expect(res.body.campaign.day).toBe(2)
-    expect(res.body.campaign.resources.food).toBe(62)
+    expect(res.body.campaign.resources.food).toBe(50000 - 12432)
     expect(res.body.campaign.events).toHaveLength(3)
     expect(res.body.campaign.battleFoughtToday).toBe(false)
+
+    // The enemy foraged the near ring even though we sent nobody out.
+    expect(res.body.report.forage.harvested).toEqual({ food: 0, materials: 0 })
+    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 9132)
+    expect(res.body.report.forage.clashes).toEqual([])
+  })
+
+  test('foragers harvest at end of turn; the assignment clears for the new turn', async () => {
+    const { body: c } = await createCampaign()
+    await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({
+      assignment: { Soldier: 100 }, // capacity 3000 kg
+    })
+    pushRoll(1000) // near ring is contested with the enemy — force no clash
+
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+
+    expect(res.body.report.forage.harvested).toEqual({ food: 2400, materials: 600 })
+    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 3000 - 9132)
+    expect(res.body.campaign.resources.food).toBe(50000 + 2400 - 12432)
+    expect(res.body.campaign.resources.materials).toBe(600)
+    expect(res.body.campaign.forage.assignment).toEqual({})
   })
 
   test('starvation causes desertion', async () => {

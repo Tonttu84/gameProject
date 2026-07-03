@@ -26,9 +26,10 @@ const start = async () => {
     console.log('  GET  /api/battles/:id/ticks — replay tick range')
     console.log('  POST /api/campaigns              — start a campaign')
     console.log('  GET  /api/campaigns[/:id]        — my campaigns / one view')
-    console.log('  POST /api/campaigns/:id/events/pick — pick the day\'s omen')
-    console.log('  POST /api/campaigns/:id/battles  — fight today\'s battle')
-    console.log('  POST /api/campaigns/:id/end-day  — resolve the day')
+    console.log('  POST /api/campaigns/:id/events/pick — pick the turn\'s omen')
+    console.log('  POST /api/campaigns/:id/forage   — assign foragers for the turn')
+    console.log('  POST /api/campaigns/:id/battles  — fight the turn\'s battle')
+    console.log('  POST /api/campaigns/:id/end-day  — resolve the turn (two weeks)')
   })
 }
 

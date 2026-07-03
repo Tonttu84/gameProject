@@ -3,6 +3,7 @@ import { getInfo, getMap, setToken } from './services/api'
 import useCampaign from './hooks/useCampaign'
 import HexGrid from './components/HexGrid'
 import EventCards from './components/EventCards'
+import ForagePanel from './components/ForagePanel'
 import CampaignHUD from './components/CampaignHUD'
 import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
@@ -27,7 +28,7 @@ const App = () => {
     () => window.localStorage.getItem('tutorialEnabled') !== 'off',
   )
 
-  const { campaign, loading, create, pickEvent, fight, endDay } = useCampaign(user)
+  const { campaign, loading, create, pickEvent, assignForagers, fight, endDay } = useCampaign(user)
 
   useEffect(() => {
     Promise.all([getInfo(), getMap()])
@@ -169,7 +170,7 @@ const App = () => {
             title="Welcome, commander"
             lines={[
               'Log in (or register) to take command of your army.',
-              'Each day you read the omens, deploy, and fight — or rest and regroup.',
+              'Each turn — two weeks of campaigning — you forage, read the omens, and fight or regroup.',
               'Your campaign is saved on the server; you can return any time.',
             ]}
           />
@@ -219,8 +220,8 @@ const App = () => {
           <h2>{campaign.status === 'won' ? 'Victory!' : 'Defeat'}</h2>
           <p>
             {campaign.status === 'won'
-              ? `The enemy is broken after ${campaign.day} days. The country is yours.`
-              : `Your army is destroyed on day ${campaign.day}.`}
+              ? `The enemy is broken after ${campaign.day} turns. The country is yours.`
+              : `Your army is destroyed on turn ${campaign.day}.`}
           </p>
           <button className="btn-primary" data-testid="start-campaign" onClick={startCampaign}>
             New Campaign
@@ -233,39 +234,57 @@ const App = () => {
   // ── Active campaign ───────────────────────────────────────────────────────
   const roster = campaign.roster
   const totalUnits = Object.values(roster).reduce((a, b) => a + b, 0)
+  // Units out foraging are unavailable for this turn's battle line.
+  const forageAssignment = campaign.forage?.assignment ?? {}
+  const availableRoster = Object.fromEntries(
+    Object.entries(roster).map(([type, n]) => [type, n - (forageAssignment[type] ?? 0)]),
+  )
 
   return (
     <div className="app">
       <CampaignHUD
         day={campaign.day}
         food={campaign.resources.food}
+        foodNeed={campaign.resources.foodNeedPerTurn}
+        materials={campaign.resources.materials}
         augury={campaign.auguryScore}
         roster={roster}
+        forage={campaign.forage}
       />
       {authBar}
 
       {phase === 'setup' && (
         <div className="phase-setup">
-          <h2>Day {campaign.day} — Morning Council</h2>
+          <h2>Turn {campaign.day} — War Council</h2>
           <TutorialIntro
             id="council"
             enabled={tutorial}
-            title="The morning council"
+            title="The war council"
             lines={[
-              'Each day starts here: your army eats, the augur reads the signs.',
-              'Consult the augur to see the day’s omens, then deploy your line.',
+              'Each turn covers two weeks of campaigning: your army eats, the land empties, the augur reads the signs.',
+              'Send out foragers, consult the augur, then deploy your line — or rest and regroup.',
               `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'offering battle' : 'shadowing your army'}.`,
             ]}
           />
           <p>
             Your army has {totalUnits} soldiers.
-            Food stores: <strong>{campaign.resources.food}</strong>.
+            Food stores: <strong>{campaign.resources.food} kg</strong> —
+            they will eat <strong>{campaign.resources.foodNeedPerTurn} kg</strong> this turn.
           </p>
           {campaign.resources.food <= 0 && (
             <p className="warning">No food! Units will desert.</p>
           )}
           {campaign.enemy.battleOffer && (
-            <p className="warning">Enemy banners are formed up — they offer battle today.</p>
+            <p className="warning">Enemy banners are formed up — they offer battle this turn.</p>
+          )}
+          {campaign.forage && (
+            <ForagePanel
+              key={campaign.day}
+              forage={campaign.forage}
+              roster={roster}
+              onAssign={guarded(assignForagers)}
+              tutorial={tutorial}
+            />
           )}
           {campaign.events.length > 0 ? (
             <button className="btn-primary" onClick={startAugury}>
@@ -302,8 +321,8 @@ const App = () => {
             title="Deployment"
             lines={[
               'Click a highlighted hex in your half to place troops; the enemy waits beyond the red line.',
-              'Units left unplaced stay safe in camp.',
-              'Fight when ready — or end the day without battle.',
+              'Units left unplaced stay safe in camp; foragers are out sweeping the rings.',
+              'Fight when ready — or end the turn without battle.',
             ]}
           />
           <HexGrid
@@ -311,7 +330,7 @@ const App = () => {
             map={map}
             placements={placements}
             onPlacementsChange={setPlacements}
-            roster={roster}
+            roster={availableRoster}
             disabled={phase === 'battling'}
           />
           <div className="placement-bar">
@@ -326,7 +345,7 @@ const App = () => {
                   Fight!
                 </button>
                 <button className="login-toggle" data-testid="end-day" onClick={nextDay}>
-                  End Day{campaign.battleFoughtToday ? '' : ' (no battle)'}
+                  End Turn{campaign.battleFoughtToday ? '' : ' (no battle)'}
                 </button>
               </>
             )}

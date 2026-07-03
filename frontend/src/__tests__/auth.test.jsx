@@ -23,6 +23,7 @@ vi.mock('../services/api', () => ({
   getCampaigns: vi.fn(),
   createCampaign: vi.fn(),
   pickCampaignEvent: vi.fn(),
+  setCampaignForage: vi.fn(),
   postCampaignBattle: vi.fn(),
   endCampaignDay: vi.fn(),
 }))
@@ -51,11 +52,11 @@ beforeEach(() => {
 })
 
 // Renders App with a stored session and an active campaign — lands on the
-// Morning Council like a returning player.
+// War Council like a returning player.
 const renderApp = async () => {
   window.localStorage.setItem('loggedGameUser', JSON.stringify(sessionUser))
   const view = render(<App />)
-  await screen.findByText(/Morning Council/)
+  await screen.findByText(/War Council/)
   return view
 }
 
@@ -105,7 +106,7 @@ describe('App auth state', () => {
   it('logged out: shows the login prompt, no campaign UI', async () => {
     render(<App />)
     await screen.findByText(/The Campaign Awaits/)
-    expect(screen.queryByText(/Morning Council/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/War Council/)).not.toBeInTheDocument()
     expect(getCampaigns).not.toHaveBeenCalled()
   })
 
@@ -119,7 +120,7 @@ describe('App auth state', () => {
     fireEvent.click(screen.getByTestId('login-submit'))
 
     expect(await screen.findByTestId('auth-username')).toHaveTextContent('Logged in as tonttu')
-    await screen.findByText(/Morning Council/)
+    await screen.findByText(/War Council/)
     expect(setToken).toHaveBeenCalledWith('jwt-token')
     expect(JSON.parse(window.localStorage.getItem('loggedGameUser'))).toEqual(sessionUser)
   })
