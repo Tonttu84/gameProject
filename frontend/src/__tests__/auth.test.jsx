@@ -5,7 +5,8 @@
  * register modes), logged in it shows the username and a logout button. The
  * session ({ token, username, name }) is persisted in localStorage under
  * 'loggedGameUser' and rehydrated on mount; api.setToken() is what actually
- * feeds the Bearer token to postBattle. The Fight button requires a login.
+ * feeds the Bearer token to the protected campaign calls. All campaign state
+ * lives server-side, so logged-out users only see the login prompt.
  */
 
 import React from 'react'
@@ -15,16 +16,21 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 vi.mock('../services/api', () => ({
   getInfo: vi.fn(),
   getMap: vi.fn(),
-  postBattle: vi.fn(),
   getTicks: vi.fn(),
   login: vi.fn(),
   register: vi.fn(),
   setToken: vi.fn(),
+  getCampaigns: vi.fn(),
+  createCampaign: vi.fn(),
+  pickCampaignEvent: vi.fn(),
+  postCampaignBattle: vi.fn(),
+  endCampaignDay: vi.fn(),
 }))
 
-import { getInfo, getMap, login, register, setToken } from '../services/api'
+import { getInfo, getMap, login, register, setToken, getCampaigns } from '../services/api'
 import App from '../App'
 import LoginForm from '../components/LoginForm'
+import { campaignFixture } from './fixtures/campaign'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -41,11 +47,16 @@ beforeEach(() => {
   window.localStorage.clear()
   getInfo.mockResolvedValue(info)
   getMap.mockResolvedValue({ hexes: [] })
+  getCampaigns.mockResolvedValue([campaignFixture])
 })
 
+// Renders App with a stored session and an active campaign — lands on the
+// Morning Council like a returning player.
 const renderApp = async () => {
-  render(<App />)
+  window.localStorage.setItem('loggedGameUser', JSON.stringify(sessionUser))
+  const view = render(<App />)
   await screen.findByText(/Morning Council/)
+  return view
 }
 
 describe('LoginForm', () => {
@@ -91,21 +102,29 @@ describe('LoginForm', () => {
 })
 
 describe('App auth state', () => {
-  it('login stores the session and shows the username', async () => {
+  it('logged out: shows the login prompt, no campaign UI', async () => {
+    render(<App />)
+    await screen.findByText(/The Campaign Awaits/)
+    expect(screen.queryByText(/Morning Council/)).not.toBeInTheDocument()
+    expect(getCampaigns).not.toHaveBeenCalled()
+  })
+
+  it('login stores the session, sets the token, and loads the campaign', async () => {
     login.mockResolvedValue(sessionUser)
-    await renderApp()
+    render(<App />)
+    await screen.findByText(/The Campaign Awaits/)
 
     fireEvent.change(screen.getByTestId('login-username'), { target: { value: 'tonttu' } })
     fireEvent.change(screen.getByTestId('login-password'), { target: { value: 'salainen' } })
     fireEvent.click(screen.getByTestId('login-submit'))
 
     expect(await screen.findByTestId('auth-username')).toHaveTextContent('Logged in as tonttu')
+    await screen.findByText(/Morning Council/)
     expect(setToken).toHaveBeenCalledWith('jwt-token')
     expect(JSON.parse(window.localStorage.getItem('loggedGameUser'))).toEqual(sessionUser)
   })
 
   it('rehydrates a stored session without calling login', async () => {
-    window.localStorage.setItem('loggedGameUser', JSON.stringify(sessionUser))
     await renderApp()
 
     expect(screen.getByTestId('auth-username')).toHaveTextContent('Logged in as tonttu')
@@ -113,31 +132,7 @@ describe('App auth state', () => {
     expect(login).not.toHaveBeenCalled()
   })
 
-  it('Fight is gated on login: disabled with a hint logged out, no hint logged in', async () => {
-    const { container } = render(<App />)
-    await screen.findByText(/Morning Council/)
-
-    // setup → augury → placement
-    fireEvent.click(screen.getByText('Consult the Augur'))
-    fireEvent.click(container.querySelector('.event-card'))
-
-    const fight = screen.getByText('Fight!')
-    expect(fight).toBeDisabled()
-    expect(screen.getByText('Log in to fight')).toBeInTheDocument()
-
-    // Log in from the placement screen — the hint disappears (the button
-    // stays disabled only because nothing is placed yet).
-    login.mockResolvedValue(sessionUser)
-    fireEvent.change(screen.getByTestId('login-username'), { target: { value: 'tonttu' } })
-    fireEvent.change(screen.getByTestId('login-password'), { target: { value: 'salainen' } })
-    fireEvent.click(screen.getByTestId('login-submit'))
-
-    await screen.findByTestId('auth-username')
-    expect(screen.queryByText('Log in to fight')).not.toBeInTheDocument()
-  })
-
   it('logout clears the stored session and the token', async () => {
-    window.localStorage.setItem('loggedGameUser', JSON.stringify(sessionUser))
     await renderApp()
 
     fireEvent.click(screen.getByTestId('logout-button'))
@@ -146,5 +141,6 @@ describe('App auth state', () => {
     expect(window.localStorage.getItem('loggedGameUser')).toBeNull()
     expect(setToken).toHaveBeenLastCalledWith(null)
     expect(screen.getByTestId('login-submit')).toBeInTheDocument()
+    expect(screen.getByText(/The Campaign Awaits/)).toBeInTheDocument()
   })
 })

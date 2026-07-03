@@ -26,3 +26,23 @@ export const postBattle = (payload) =>
 export const getBattle = (id) => axios.get(`/api/battles/${id}`).then(r => r.data)
 export const getTicks  = (id, from, to) =>
   axios.get(`/api/battles/${id}/ticks`, { params: { from, to } }).then(r => r.data)
+
+// ── Campaigns (all protected) ────────────────────────────────────────────────
+// The server owns all campaign state; responses are campaignView objects that
+// never include hidden info (enemy army, planned placement, event truth).
+const authed = () => ({ headers: { Authorization: token } })
+
+export const createCampaign = () =>
+  axios.post('/api/campaigns', {}, authed()).then(r => r.data)
+export const getCampaigns = () =>
+  axios.get('/api/campaigns', authed()).then(r => r.data)
+export const getCampaign = (id) =>
+  axios.get(`/api/campaigns/${id}`, authed()).then(r => r.data)
+export const pickCampaignEvent = (id, eventId) =>
+  axios.post(`/api/campaigns/${id}/events/pick`, { eventId }, authed()).then(r => r.data)
+// Returns the battle summary plus the refreshed campaign view.
+export const postCampaignBattle = (id, payload) =>
+  axios.post(`/api/campaigns/${id}/battles`, payload, authed()).then(r => r.data)
+// Returns { report, campaign }.
+export const endCampaignDay = (id) =>
+  axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

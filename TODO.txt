@@ -37,6 +37,18 @@ marching). Currently all unit fatigue costs are flat — armor type should be a 
 on fatigueCost so plate > chain > leather > none. Soldier already has +1 heavy armor penalty as a
 start; generalize this across all unit/armor types when adding more variety.
 
+Body parts / hit locations (2026-07, builds on the BodyPart/Hittable stubs in Human.hpp):
+  - Hits resolve to a body part; armor becomes per-piece items covering specific parts,
+    each with: protection value, encumbrance penalty, and a defence penalty.
+  - Encumbrance penalty applies to combat and at 2x to spellcasting (mages are meant to
+    be discouraged from armoring up). Enc penalty can never be negative; the defence
+    penalty CAN be negative (i.e. helpful) — never on mundane gear, but magical items
+    may actively aid defence.
+  - Size-based hit-location bias: tall attackers (use size as the proxy) hit heads more
+    easily; a short attacker striking a larger target hits lower parts more often —
+    unless wielding a long weapon (reach shifts the reachable locations upward, same
+    spirit as the existing mount/rider reach shift in MountedUnit::pickMountTarget).
+
 Historical archer mechanics (not yet implemented):
   - Morale suppression from volleys: arrow hits should inflict a temporary morale penalty
     on all units in the target hex, not just kill points. Historically the psychological

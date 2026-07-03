@@ -1,60 +1,25 @@
 import { Router } from 'express'
 import Battle from '../models/battle.js'
 import Tick from '../models/tick.js'
-import { runBattle } from '../services/engine.js'
+import { runAndPersistBattle } from '../services/battleRunner.js'
 import { userExtractor } from '../middleware/auth.js'
 
 const router = Router()
 
-// Run one battle through the engine and persist it: one Battle doc plus one
-// Tick doc per turn (separate collection so long battles never approach the
-// 16MB document limit). The response is the summary only — the replay is
-// fetched tick-range by tick-range for scrubbing.
-// Requires a login (userExtractor) — the only protected route; replays and
-// catalog reads stay public.
+// Sandbox battle: runs the request body through the engine as-is (no campaign
+// state involved). The run-and-persist logic lives in services/battleRunner.js
+// and is shared with campaign battles. The response is the summary only — the
+// replay is fetched tick-range by tick-range for scrubbing.
+// Requires a login (userExtractor); replays and catalog reads stay public.
 router.post('/', userExtractor, async (req, res) => {
   const input = req.body ?? {}
-  const result = await runBattle(input)
+  const { error, summary } = await runAndPersistBattle(input, req.user._id)
 
   // Engine-level rejections (bad map name, empty input …) come back as
-  // {"error": ...} on stdout with exit 0 — client error, nothing to store.
-  if (result.error) return res.status(400).json({ error: result.error })
+  // {"error": ...} on stdout with exit 0 — client error, nothing stored.
+  if (error) return res.status(400).json({ error })
 
-  const replay = result.replay ?? { map: input.map ?? 'unknown', cols: 0, rows: 0, ticks: [] }
-
-  const battle = await Battle.create({
-    user: req.user._id,
-    map: replay.map,
-    input,
-    winner: result.winner,
-    blueSurvivors: result.blue_survivors ?? {},
-    redSurvivors: result.red_survivors ?? {},
-    tickCount: replay.ticks.length,
-    cols: replay.cols,
-    rows: replay.rows,
-  })
-
-  if (replay.ticks.length > 0)
-    await Tick.insertMany(
-      replay.ticks.map((t) => ({
-        battle: battle._id,
-        index: t.tick,
-        units: t.units,
-        log: t.log ?? [],
-      })),
-    )
-
-  // One line per battle so battle lengths are easy to eyeball in the server
-  // console; the same number is stored as tickCount for querying.
-  console.log(`battle ${battle.id}: ${replay.ticks.length} ticks, winner ${result.winner}`)
-
-  res.status(201).json({
-    id: battle.id,
-    winner: result.winner,
-    blue_survivors: result.blue_survivors ?? {},
-    red_survivors: result.red_survivors ?? {},
-    tickCount: replay.ticks.length,
-  })
+  res.status(201).json(summary)
 })
 
 router.get('/:id', async (req, res) => {

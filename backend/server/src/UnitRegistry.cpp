@@ -157,10 +157,19 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
         // Reject missing or impassable hexes.
         if (!h || h->impassable) continue;
 
-        // Reject hexes outside the player zone (only checked when a zone exists).
-        if (grid.hasPlayerZone()) {
+        // Reject hexes outside the placing team's deployment zone (only
+        // checked when that zone exists). BLUETEAM deploys in the player
+        // zone, REDTEAM (enemy_placement, campaign armies) in the enemy zone
+        // — before this was team-aware, every enemy_placement entry was
+        // silently dropped for being outside the PLAYER zone, leaving an
+        // empty red army.
+        if (team == BLUETEAM && grid.hasPlayerZone()) {
             int r = coord.r;
             if (r < grid.playerZoneMinRow() || r > grid.playerZoneMaxRow()) continue;
+        }
+        if (team == REDTEAM && grid.hasEnemyZone()) {
+            int r = coord.r;
+            if (r < grid.enemyZoneMinRow() || r > grid.enemyZoneMaxRow()) continue;
         }
 
         // Reject forbidden terrain for this unit category.
