@@ -39,8 +39,8 @@ FROM ubuntu:24.04
 # - libasan8/libubsan1/liblsan0: the engine is built with the dev sanitizers
 # - nodejs 22 from NodeSource (Ubuntu's own nodejs is too old)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl xvfb xauth fonts-dejavu-core \
-        libx11-6 libxrandr2 libxcursor1 libudev1 libgl1 libfreetype6 \
+        ca-certificates curl xvfb fonts-dejavu-core \
+        libx11-6 libxrandr2 libxcursor1 libudev1 libgl1 libgl1-mesa-dri libfreetype6 \
         libasan8 libubsan1 liblsan0 \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
@@ -68,5 +68,9 @@ ENV NODE_ENV=production \
 
 EXPOSE 3001
 WORKDIR /app/campaign-server
-# xvfb-run provides the DISPLAY the spawned `./game battle` windows need.
-CMD ["xvfb-run", "-a", "node", "index.js"]
+# A plain background Xvfb provides the DISPLAY the spawned `./game battle`
+# windows need. Deliberately not xvfb-run: it hides Xvfb's stderr in a temp
+# file and, if Xvfb crashloops, spins forever without ever starting node —
+# this way Xvfb errors land in the container log and the server still boots
+# (only battles would fail) if the virtual display is broken.
+CMD ["bash", "-c", "Xvfb :99 -screen 0 800x600x24 & export DISPLAY=:99; exec node index.js"]
