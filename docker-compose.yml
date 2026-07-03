@@ -1,0 +1,28 @@
+# Local test stack: the full game (engine + campaign server + frontend) plus
+# MongoDB. On any machine with Docker (Windows: Docker Desktop):
+#
+#   docker compose up --build
+#   → open http://localhost:3001 and log in as testuser / test
+#
+# Campaigns persist in the named volume; `docker compose down -v` wipes them.
+services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - gamedb:/data/db
+
+  game:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      DB_NAME: gamedb
+      # Local-only convenience login (testuser/test). Remove both this and
+      # the default SECRET before exposing the stack to anyone but yourself.
+      DEV_SEED: "1"
+    depends_on:
+      - mongo
+
+volumes:
+  gamedb:

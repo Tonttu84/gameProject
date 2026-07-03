@@ -6,9 +6,11 @@ import config from '../utils/config.js'
 // `make db-clean` / rebuild doesn't force re-registering every time. Only
 // runs against the embedded local mongod — when MONGODB_URI points at a
 // real/hosted DB this is a no-op, so the account can never leak into a
-// deployment. Returns true if the user was created this boot.
+// deployment. DEV_SEED=1 is the explicit opt-out of that guard, used by the
+// docker-compose test stack (its Mongo is external but still local-only).
+// Returns true if the user was created this boot.
 export async function seedDevUser() {
-  if (config.MONGODB_URI) return false
+  if (config.MONGODB_URI && !config.DEV_SEED) return false
   const existing = await User.findOne({ username: config.DEV_USER })
   if (existing) return false
   const passwordHash = await bcrypt.hash(config.DEV_PASSWORD, 10)

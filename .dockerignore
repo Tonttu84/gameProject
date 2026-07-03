@@ -1,0 +1,13 @@
+# Build artifacts — the image builds its own.
+BUILD/
+game
+game_clang
+run_tests
+frontend/dist/
+frontend/node_modules/
+campaign-server/node_modules/
+campaign-server/data/
+
+.git/
+.github/
+*.log

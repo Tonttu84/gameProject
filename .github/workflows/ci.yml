@@ -37,3 +37,54 @@ jobs:
       # of the parallel sharding script.
       - name: Build and run tests
         run: make test-serial
+
+  # Builds the distributable image (engine + campaign server + frontend) and
+  # smokes a real campaign turn through it — this is the only place the
+  # Docker stack is exercised, since dev machines run the stack via WSL.
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t gameproject .
+
+      - name: Boot the stack
+        run: |
+          docker network create smoke
+          docker run -d --name mongo --network smoke mongo:7
+          docker run -d --name game --network smoke -p 3001:3001 \
+            -e MONGODB_URI=mongodb://mongo:27017 -e DEV_SEED=1 gameproject
+          for i in $(seq 1 60); do
+            curl -fs http://localhost:3001/api/info > /dev/null && exit 0
+            sleep 2
+          done
+          echo "server never came up"; docker logs game; exit 1
+
+      - name: Smoke a campaign turn (login → create → forage → battle → end-day)
+        run: |
+          set -e
+          BASE=http://localhost:3001/api
+          TOKEN=$(curl -fs -X POST $BASE/login -H 'Content-Type: application/json' \
+            -d '{"username":"testuser","password":"test"}' | jq -r .token)
+          test "$TOKEN" != "null"
+          AUTH="Authorization: Bearer $TOKEN"
+          ID=$(curl -fs -X POST $BASE/campaigns -H "$AUTH" -H 'Content-Type: application/json' -d '{}' | jq -r .id)
+          test "$ID" != "null"
+          curl -fs -X POST $BASE/campaigns/$ID/forage -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"assignment":{"Soldier":100}}' | jq -e '.forage.capacityKg > 0' > /dev/null
+          # A real battle proves the xvfb + SFML path: the engine subprocess
+          # opens a window on the virtual display.
+          WINNER=$(curl -fs -X POST $BASE/campaigns/$ID/battles -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"player_placement":[{"unit_type":"Soldier","q":4,"r":4}]}' | jq -r .winner)
+          echo "battle winner: $WINNER"; test -n "$WINNER" && test "$WINNER" != "null"
+          curl -fs -X POST $BASE/campaigns/$ID/end-day -H "$AUTH" -H 'Content-Type: application/json' -d '{}' \
+            | jq -e '.report.forage.harvested.food >= 0 and .campaign.day == 2' > /dev/null
+          # The image serves the built frontend from the same origin.
+          curl -fs http://localhost:3001/ | grep -q '<div id="root">'
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: docker logs game || true
