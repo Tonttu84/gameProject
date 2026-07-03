@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { getInfo, getMap, postBattle } from './services/api'
+import { getInfo, getMap, postBattle, setToken } from './services/api'
 import HexGrid from './components/HexGrid'
 import EventCards from './components/EventCards'
 import CampaignHUD from './components/CampaignHUD'
 import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
+import LoginForm from './components/LoginForm'
 import './App.css'
 
 const EVENT_POOL = [
@@ -71,12 +72,38 @@ const App = () => {
   const [events,       setEvents]       = useState([])
   const [battleResult, setBattleResult] = useState(null)
   const [error,        setError]        = useState(null)
+  const [user,         setUser]         = useState(null) // { token, username, name }
+  const [authNotice,   setAuthNotice]   = useState(null)
 
   useEffect(() => {
     Promise.all([getInfo(), getMap()])
       .then(([infoData, mapData]) => { setInfo(infoData); setMap(mapData) })
       .catch(() => setError('Could not reach game server. Start it with: ./game server'))
   }, [])
+
+  // Rehydrate a stored session; the token may be stale (1h expiry) — the
+  // first protected call after expiry gets a 401 and logs back out.
+  useEffect(() => {
+    const stored = window.localStorage.getItem('loggedGameUser')
+    if (stored) {
+      const u = JSON.parse(stored)
+      setUser(u)
+      setToken(u.token)
+    }
+  }, [])
+
+  const handleLogin = (u) => {
+    window.localStorage.setItem('loggedGameUser', JSON.stringify(u))
+    setToken(u.token)
+    setUser(u)
+    setAuthNotice(null)
+  }
+
+  const handleLogout = () => {
+    window.localStorage.removeItem('loggedGameUser')
+    setToken(null)
+    setUser(null)
+  }
 
   const startAugury = () => {
     setEvents(drawEvents(augury))
@@ -93,7 +120,7 @@ const App = () => {
   }
 
   const startBattle = async () => {
-    if (placements.length === 0) return
+    if (placements.length === 0 || !user) return
     setPhase('battling')
 
     const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
@@ -109,7 +136,14 @@ const App = () => {
       setBattleResult(result)
       setPhase('result')
     } catch (e) {
-      setError('Battle subprocess failed. Check that ./game is built.')
+      if (e.response?.status === 401) {
+        // Token expired or revoked mid-session — drop back to logged-out
+        // placement instead of the fatal connection-error screen.
+        handleLogout()
+        setAuthNotice('Session expired — log in again.')
+      } else {
+        setError('Battle subprocess failed. Check that ./game is built.')
+      }
       setPhase('placement')
     }
   }
@@ -142,6 +176,20 @@ const App = () => {
   return (
     <div className="app">
       <CampaignHUD day={day} food={food} augury={augury} roster={roster} />
+
+      <div className="auth-bar">
+        {user ? (
+          <>
+            <span data-testid="auth-username">Logged in as {user.username}</span>
+            <button className="login-toggle" data-testid="logout-button" onClick={handleLogout}>
+              Log out
+            </button>
+          </>
+        ) : (
+          <LoginForm onLogin={handleLogin} />
+        )}
+        {authNotice && <span className="login-error" data-testid="auth-notice">{authNotice}</span>}
+      </div>
 
       {phase === 'setup' && (
         <div className="phase-setup">
@@ -176,13 +224,16 @@ const App = () => {
           <div className="placement-bar">
             <span>{placements.reduce((s, p) => s + p.count, 0)} units placed in {placements.length} hex{placements.length !== 1 ? 'es' : ''}</span>
             {phase === 'placement' && (
-              <button
-                className="btn-primary"
-                onClick={startBattle}
-                disabled={placements.length === 0}
-              >
-                Fight!
-              </button>
+              <>
+                <button
+                  className="btn-primary"
+                  onClick={startBattle}
+                  disabled={placements.length === 0 || !user}
+                >
+                  Fight!
+                </button>
+                {!user && <span className="login-hint">Log in to fight</span>}
+              </>
             )}
             {phase === 'battling' && (
               <span className="battling-label">Battle in progress...</span>

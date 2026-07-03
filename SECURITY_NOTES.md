@@ -28,21 +28,25 @@ can also cause `HexGrid::fromJson` to parse attacker-chosen file content (see fi
 **Status: Fixed** — see commit "Fix path traversal in map name lookup". Reject any `name`
 containing `/`, `\`, or `..`, or that is empty, before building the path.
 
-### 2. No authentication on any endpoint — Critical — Accepted / follow-up
-**Where**: `backend/server/src/BattleServer.cpp` (all three routes), `auth/` (empty).
+### 2. No authentication on any endpoint — Critical — Partially fixed (campaign-server)
+**Where**: `backend/server/src/BattleServer.cpp` (all three routes), `campaign-server/`.
 
-Every endpoint, including `POST /api/battle` (which spawns a subprocess per request) is open
-to anyone who can reach the port. `auth/` is an empty placeholder — there is no session,
-token, or API-key mechanism to hang a check on yet.
+Every endpoint, including battle creation (which spawns a subprocess per request) was open
+to anyone who can reach the port.
 
-**Not fixed in this pass — deliberately deferred to its own branch/session** (too large for a
-bug-fix pass; see TODO.txt). Design decided: full user accounts following the fullstackopen
-pattern (`POST /api/users` register, `POST /api/login` → JWT, password hashing, `Authorization:
-Bearer` middleware on at least `POST /api/battle`), with user storage living in the DB once the
-separately-planned per-tick DB migration lands (not a throwaway JSON-file store), and a vendored
-C++ crypto/JWT dependency (à la how the Makefile already vendors SFML) rather than hand-rolled
-crypto. Until it exists, treat this server as local/trusted-network only — do not expose the
-port publicly.
+**Status: Fixed for the campaign-server (feature/auth, 2026-07)** — fullstackopen-style
+auth in `campaign-server/`: `POST /api/users` (bcryptjs-hashed passwords), `POST /api/login`
+(JWT signed with `config.SECRET`, 1h expiry), `tokenExtractor`/`userExtractor` middleware
+(`campaign-server/middleware/auth.js`). `POST /api/battles` — the expensive,
+subprocess-spawning route — now requires a valid Bearer token and stamps the battle with
+its user; reads (replays, catalog, map, info) are deliberately public. Regression tests in
+`campaign-server/tests/auth.test.js` and `tests/battles.test.js`.
+
+**Still open**: the legacy C++ HTTP server (`./game server 8080`, `BattleServer.cpp`)
+remains unauthenticated — but the frontend no longer talks to it (the Node BFF is the only
+boundary), so treat that C++ server as a local dev tool only and do not expose its port.
+Also note the JWT secret falls back to a dev value; set `SECRET` in any real deployment,
+and consider rate-limiting `/api/login` (no lockout/backoff currently).
 
 ### 3. Uncaught exceptions from malformed JSON crash the battle subprocess — High — Fixed
 **Where**: `backend/server/src/UnitRegistry.cpp` `buildArmyFromPlacement()` (was

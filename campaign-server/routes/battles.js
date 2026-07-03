@@ -2,6 +2,7 @@ import { Router } from 'express'
 import Battle from '../models/battle.js'
 import Tick from '../models/tick.js'
 import { runBattle } from '../services/engine.js'
+import { userExtractor } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -9,7 +10,9 @@ const router = Router()
 // Tick doc per turn (separate collection so long battles never approach the
 // 16MB document limit). The response is the summary only — the replay is
 // fetched tick-range by tick-range for scrubbing.
-router.post('/', async (req, res) => {
+// Requires a login (userExtractor) — the only protected route; replays and
+// catalog reads stay public.
+router.post('/', userExtractor, async (req, res) => {
   const input = req.body ?? {}
   const result = await runBattle(input)
 
@@ -20,6 +23,7 @@ router.post('/', async (req, res) => {
   const replay = result.replay ?? { map: input.map ?? 'unknown', cols: 0, rows: 0, ticks: [] }
 
   const battle = await Battle.create({
+    user: req.user._id,
     map: replay.map,
     input,
     winner: result.winner,

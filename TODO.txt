@@ -115,21 +115,22 @@ built); the CI/scheduled variant should compare against the LIVE server's DB ins
 a fresh sync.
 
 Build a proper auth module (deferred — big task, do as its own branch/session):
-  - Design decision (2026-07): auth SHARES the campaign DB (same mongod instance,
-    same gamedb database) — just a separate users collection/Mongoose model. Battle
-    docs already carry a nullable user ref (models/battle.js) so per-user battle
-    history and campaign saves attach without a migration. The auth routes/middleware
-    go in campaign-server/ (routes/, middleware/ are laid out for a tokenExtractor).
-  - Full user accounts, following the fullstackopen pattern: POST /api/users (register),
-    POST /api/login (returns JWT), password hashing, per-user identity, Authorization:
-    Bearer middleware protecting endpoints (at minimum POST /api/battle).
-  - User storage should live in the DB once the per-tick DB migration above lands — don't
-    build a separate throwaway JSON-file user store first.
-  - Password hashing + JWT signing: OK to add a vendored/downloaded C++ dependency the same
-    way the Makefile already vendors SFML (e.g. jwt-cpp + a bcrypt/argon2 C++ port) rather
-    than hand-rolling crypto.
-  - Deliberately a bit more infrastructure than this game currently needs — this project
-    doubles as a portfolio piece, so a real C++/React auth flow is worth building properly.
+  → DONE on feature/auth (2026-07): fullstackopen pattern in campaign-server/ sharing
+    the existing gamedb (users collection; Battle.user ref was already in place).
+    POST /api/users (bcryptjs hash), POST /api/login (JWT, 1h expiry, secret from
+    config.SECRET env), global tokenExtractor + per-route userExtractor; POST
+    /api/battles is the protected route and stamps battles with their user. Frontend:
+    LoginForm (login/register), session in localStorage ('loggedGameUser'), Fight
+    button gated on login; replays/catalog stay public. The old plan of C++-side
+    jwt-cpp/bcrypt became obsolete when the Node BFF became the only API boundary.
+  Later: protect more routes (per-user battle history endpoint), rate-limit
+  /api/login, and set a real SECRET in any non-local deployment.
+
+Hexside combat score: per-hexside score that elevation, hits, damage, kills, support
+ranks etc. all add into. How it gets used is decided later — but it can at least be
+used from day one to deal damage to a fortified hexside (siege/attrition of works).
+Related-but-later: the score causing morale checks and forcing the target hex to
+retreat — hard to balance, explicitly not a priority yet.
 
 Windows-native build (deferred — currently WSL-only on Windows machines):
   The Makefile is Linux-only: it downloads a prebuilt Linux SFML .so, links with ELF

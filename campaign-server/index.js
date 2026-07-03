@@ -3,6 +3,7 @@ import config from './utils/config.js'
 import { connectDb } from './utils/db.js'
 import { dumpUnits, getInfo } from './services/engine.js'
 import { syncCatalog } from './services/catalogSync.js'
+import { seedDevUser } from './services/devSeed.js'
 
 // Boot: DB up → catalog synced from the engine (single source of truth) →
 // info cache warmed → listen. A failed catalog sync aborts the boot on
@@ -11,6 +12,8 @@ const start = async () => {
   await connectDb()
   const count = await syncCatalog(await dumpUnits())
   console.log(`unit catalog synced (${count} types)`)
+  if (await seedDevUser())
+    console.log(`dev user seeded (${config.DEV_USER}/${config.DEV_PASSWORD})`)
   await getInfo()
 
   app.listen(config.PORT, () => {

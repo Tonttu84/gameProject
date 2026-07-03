@@ -8,8 +8,20 @@ export const getInfo = () => axios.get('/api/info').then(r => r.data)
 export const getMap  = (name) => axios.get(`/api/map${name ? `?name=${encodeURIComponent(name)}` : ''}`).then(r => r.data)
 export const getUnits = () => axios.get('/api/units').then(r => r.data)
 
+// Bearer token for the one protected call (postBattle). Set on login/rehydrate,
+// cleared on logout — module state, same lifetime as the page.
+let token = null
+export const setToken = (t) => { token = t ? `Bearer ${t}` : null }
+
+// Register a new account; returns the created user (no token — log in after).
+export const register = (user) => axios.post('/api/users', user).then(r => r.data)
+// Returns { token, username, name }.
+export const login = (credentials) => axios.post('/api/login', credentials).then(r => r.data)
+
 // Runs and stores a battle; returns { id, winner, blue_survivors, red_survivors, tickCount }.
-export const postBattle = (payload) => axios.post('/api/battles', payload).then(r => r.data)
+// Requires a login — the server rejects with 401 otherwise.
+export const postBattle = (payload) =>
+  axios.post('/api/battles', payload, { headers: { Authorization: token } }).then(r => r.data)
 
 export const getBattle = (id) => axios.get(`/api/battles/${id}`).then(r => r.data)
 export const getTicks  = (id, from, to) =>
