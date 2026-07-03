@@ -9,6 +9,7 @@ import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
 import LoginForm from './components/LoginForm'
 import TutorialIntro from './components/TutorialIntro'
+import { tons } from './utils/format'
 import './App.css'
 
 // All campaign state (day, food, roster, events, enemy) lives server-side —
@@ -268,8 +269,8 @@ const App = () => {
           />
           <p>
             Your army has {totalUnits} soldiers.
-            Food stores: <strong>{campaign.resources.food} kg</strong> —
-            they will eat <strong>{campaign.resources.foodNeedPerTurn} kg</strong> this turn.
+            Food stores: <strong>{tons(campaign.resources.food)}</strong> —
+            they will eat <strong>{tons(campaign.resources.foodNeedPerTurn)}</strong> this turn.
           </p>
           {campaign.resources.food <= 0 && (
             <p className="warning">No food! Units will desert.</p>

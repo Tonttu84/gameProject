@@ -1,8 +1,9 @@
 import React from 'react'
+import { tons } from '../utils/format'
 
-// Top bar of the active campaign. One turn = two weeks; food is kg and the
-// per-turn need comes from the server view (resources.foodNeedPerTurn) — the
-// client never re-derives campaign math.
+// Top bar of the active campaign. One turn = two weeks; the server computes
+// food in kg (resources.foodNeedPerTurn comes from the view — the client
+// never re-derives campaign math), the player reads tonnes.
 const CampaignHUD = ({ day, food, foodNeed, materials, augury, roster, forage }) => {
   const landLeft = forage?.rings?.reduce((s, r) => s + r.richness, 0) ?? 0
   const landTotal = forage?.rings?.reduce((s, r) => s + r.initialRichness, 0) ?? 0
@@ -12,9 +13,9 @@ const CampaignHUD = ({ day, food, foodNeed, materials, augury, roster, forage })
     <header className="hud">
       <span className="hud-day">Turn {day}</span>
       <span className="hud-food">
-        Food: {food} kg (−{foodNeed}/turn)
+        Food: {tons(food)} (−{tons(foodNeed)}/turn)
       </span>
-      <span className="hud-materials">Materials: {materials}</span>
+      <span className="hud-materials">Materials: {tons(materials)}</span>
       <span className="hud-land" data-testid="hud-land">Land: {landPct}% left</span>
       <span className="hud-augury">Augury: {augury}%</span>
       <span className="hud-roster">

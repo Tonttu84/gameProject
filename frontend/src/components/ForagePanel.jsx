@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
+import { tons } from '../utils/format'
 
 // Forager assignment for the turn: per-type steppers against the roster,
 // a live capacity preview from the server-provided kg-per-unit values, and
@@ -51,7 +52,7 @@ const ForagePanel = ({ forage, roster, onAssign, tutorial }) => {
           <div className="forage-ring" key={r.ring} data-testid={`forage-ring-${r.ring}`}>
             <span>{RING_NAMES[r.ring] ?? `Ring ${r.ring}`}</span>
             <meter min="0" max={r.initialRichness} value={r.richness} />
-            <span>{r.richness} kg left</span>
+            <span>{tons(r.richness)} left</span>
           </div>
         ))}
       </div>
@@ -74,7 +75,7 @@ const ForagePanel = ({ forage, roster, onAssign, tutorial }) => {
       </div>
       <div className="forage-summary">
         <span data-testid="forage-capacity">
-          {assignedTotal} foragers — up to {capacity} kg this turn
+          {assignedTotal} foragers — up to {tons(capacity)} this turn
         </span>
         <button
           className="btn-primary"

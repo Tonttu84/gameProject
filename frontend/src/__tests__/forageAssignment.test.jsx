@@ -53,15 +53,15 @@ describe('forager assignment', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    expect(screen.getByTestId('forage-ring-0')).toHaveTextContent('20000 kg left')
-    expect(screen.getByTestId('forage-ring-2')).toHaveTextContent('55000 kg left')
+    expect(screen.getByTestId('forage-ring-0')).toHaveTextContent('20 t left')
+    expect(screen.getByTestId('forage-ring-2')).toHaveTextContent('55 t left')
 
     fireEvent.change(screen.getByTestId('forage-input-Soldier'), { target: { value: '100' } })
-    // 100 Soldiers × 30 kg (server-provided kgPerUnit)
-    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('100 foragers — up to 3000 kg')
+    // 100 Soldiers × 30 kg (server-provided kgPerUnit), shown in tonnes
+    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('100 foragers — up to 3 t')
 
-    fireEvent.change(screen.getByTestId('forage-input-LightCavalry'), { target: { value: '5' } })
-    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('105 foragers — up to 3450 kg')
+    fireEvent.change(screen.getByTestId('forage-input-Cavalry'), { target: { value: '10' } })
+    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('110 foragers — up to 3.6 t')
   })
 
   it('clamps the count to the roster', async () => {
@@ -69,8 +69,8 @@ describe('forager assignment', () => {
     await screen.findByText(/War Council/)
 
     fireEvent.change(screen.getByTestId('forage-input-Cavalry'), { target: { value: '999' } })
-    // Only 10 Cavalry owned → clamped, 10 × 60 kg
-    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('10 foragers — up to 600 kg')
+    // Only 10 Cavalry owned → clamped, 10 × 60 kg = 0.6 t
+    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('10 foragers — up to 0.6 t')
   })
 
   it('sends the assignment through the API and shows the saved state', async () => {
@@ -94,11 +94,11 @@ describe('forager assignment', () => {
     expect(await screen.findByText('Foragers assigned')).toBeInTheDocument()
   })
 
-  it('the HUD shows kg stores, per-turn need, and land remaining', async () => {
+  it('the HUD shows stores in tonnes, per-turn need, and land remaining', async () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    expect(screen.getByText(/Food: 50000 kg/)).toHaveTextContent('−12432/turn')
+    expect(screen.getByText(/Food: 50 t/)).toHaveTextContent('−12.4 t/turn')
     expect(screen.getByTestId('hud-land')).toHaveTextContent('Land: 100% left')
   })
 })

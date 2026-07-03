@@ -130,8 +130,10 @@ export function resolveForaging(campaign, catalog) {
   // The enemy's forage feeds its supply train (its materials are its problem).
   campaign.enemy.supplies += Math.floor(gatheredE * FORAGE_FOOD_SHARE)
 
+  // Player-facing text speaks in tonnes; the numbers stay kg everywhere else.
+  const inTons = (kg) => `${+(kg / 1000).toFixed(1)} t`
   if (total(Object.fromEntries(campaign.forage.assignment)) > 0)
-    entries.push(`Foragers brought in ${food} kg of food and ${materials} of materials.`)
+    entries.push(`Foragers brought in ${inTons(food)} of food and ${inTons(materials)} of materials.`)
 
   return {
     forage: {

@@ -4,16 +4,17 @@
 // later stage; applyEffect() stays.
 
 // Food deltas are kg on the fortnight-turn scale (the starting army eats
-// ~12,400 kg a turn, stores start at 50,000).
+// ~12,400 kg a turn, stores start at 50,000). Player-facing text speaks in
+// tonnes, the effect values stay kg.
 export const EVENT_POOL = [
-  { id: 'supply',        title: 'Supply Cache',     description: 'Scouts find an abandoned depot. +3000 kg food.',   effect: { type: 'food',       delta: +3000 } },
+  { id: 'supply',        title: 'Supply Cache',     description: 'Scouts find an abandoned depot. +3 t of food.',    effect: { type: 'food',       delta: +3000 } },
   { id: 'reinforcement', title: 'Reinforcements',   description: 'A company joins your banner. +20 Soldiers.',       effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
   { id: 'desertion',     title: 'Desertion',        description: 'Low morale: 10% of soldiers desert overnight.',    effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
   { id: 'plague',        title: 'Plague',           description: 'Disease thins the ranks by 5%.',                   effect: { type: 'all_roster', factor: 0.95 } },
   { id: 'intel',         title: 'Enemy Intel',      description: 'A defector brings battle plans.',                  effect: { type: 'augury',     delta: +15 } },
   { id: 'ambush',        title: 'Enemy Ambush',     description: 'Enemy scouts have located your camp.',             effect: { type: 'enemy_advance' } },
-  { id: 'weather',       title: 'Harsh Weather',    description: 'A hard fortnight drains rations. -1000 kg food.',  effect: { type: 'food',       delta: -1000 } },
-  { id: 'traders',       title: 'Traveling Traders', description: 'Merchants sell supplies. +1500 kg food.',         effect: { type: 'food',       delta: +1500 } },
+  { id: 'weather',       title: 'Harsh Weather',    description: 'A hard fortnight drains rations. -1 t of food.',   effect: { type: 'food',       delta: -1000 } },
+  { id: 'traders',       title: 'Traveling Traders', description: 'Merchants sell supplies. +1.5 t of food.',        effect: { type: 'food',       delta: +1500 } },
 ]
 
 // Unbiased Fisher-Yates (the old frontend sort(() => random-0.5) was biased).
@@ -49,7 +50,7 @@ export function applyEffect(campaign, effect) {
   const log = []
   if (effect.type === 'food') {
     campaign.resources.food = Math.max(0, campaign.resources.food + effect.delta)
-    log.push(`Food ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
+    log.push(`Food ${effect.delta > 0 ? '+' : ''}${+(effect.delta / 1000).toFixed(1)} t.`)
   } else if (effect.type === 'roster') {
     const cur = campaign.roster.get(effect.unit) ?? 0
     const next =
