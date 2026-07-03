@@ -29,8 +29,17 @@ const ringSchema = new mongoose.Schema(
   { _id: false },
 )
 
+// Bump this whenever the campaign document shape changes incompatibly (new
+// required fields, changed semantics). There is NO backwards compatibility:
+// a roguelite run is disposable, so any stored campaign whose version differs
+// — including pre-versioning docs that lack the field — is deleted on the
+// next listing instead of being served to campaignView, where missing fields
+// render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
+export const CAMPAIGN_SCHEMA_VERSION = 2
+
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  schemaVersion: { type: Number, default: CAMPAIGN_SCHEMA_VERSION },
   status: { type: String, enum: ['active', 'won', 'lost'], default: 'active' },
   // One `day` = one campaign turn = two weeks of campaigning (DAYS_PER_TURN).
   day: { type: Number, default: 1 },

@@ -23,7 +23,7 @@ vi.mock('../services/engine.js', () => ({
 
 const engine = await import('../services/engine.js')
 const { default: app } = await import('../app.js')
-const { default: Campaign } = await import('../models/campaign.js')
+const { default: Campaign, CAMPAIGN_SCHEMA_VERSION } = await import('../models/campaign.js')
 const { default: UnitType } = await import('../models/unitType.js')
 
 const api = supertest(app)
@@ -134,6 +134,81 @@ describe('GET /api/campaigns', () => {
   })
 })
 
+// Playtest bug 2026-07-03: a campaign doc from before the forage fields
+// rendered as nonsense (food frozen at the old starting 100 kg, "Land: 0%").
+// Policy: no migrations — version-mismatched docs are DELETED on listing and
+// invisible to every other route. The version check must hit the raw query
+// (Mongoose fills schema defaults on hydration, masking missing fields).
+describe('campaign schema versioning', () => {
+  // Simulate a doc written by an older server: strip the version field with
+  // a raw driver op so Mongoose defaulting can't repair it.
+  const makeLegacy = (id) =>
+    Campaign.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      { $unset: { schemaVersion: '' } },
+    )
+
+  test('a fresh campaign stores the current schema version', async () => {
+    const { body: c } = await createCampaign()
+    const [raw] = await Campaign.collection.find({}).toArray()
+    expect(raw.schemaVersion).toBe(CAMPAIGN_SCHEMA_VERSION)
+    expect(c.status).toBe('active')
+  })
+
+  test('pre-versioning docs are deleted on listing, never served', async () => {
+    const { body: c } = await createCampaign()
+    await makeLegacy(c.id)
+
+    const list = await auth(api.get('/api/campaigns'))
+    expect(list.status).toBe(200)
+    expect(list.body).toEqual([])
+    expect(await Campaign.collection.countDocuments({})).toBe(0)
+  })
+
+  test('version-mismatched docs are deleted on listing too', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(c.id) },
+      { $set: { schemaVersion: CAMPAIGN_SCHEMA_VERSION + 1 } },
+    )
+
+    const list = await auth(api.get('/api/campaigns'))
+    expect(list.body).toEqual([])
+    expect(await Campaign.collection.countDocuments({})).toBe(0)
+  })
+
+  test('a legacy campaign 404s on direct access and on actions', async () => {
+    const { body: c } = await createCampaign()
+    await makeLegacy(c.id)
+
+    expect((await auth(api.get(`/api/campaigns/${c.id}`))).status).toBe(404)
+    expect(
+      (await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status,
+    ).toBe(404)
+    expect(
+      (
+        await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({
+          assignment: { Soldier: 1 },
+        })
+      ).status,
+    ).toBe(404)
+  })
+
+  test("purging is per-user: a rival's legacy doc survives my listing", async () => {
+    const other = await createUserAndToken(api, 'rival', 'sekret2')
+    const otherRes = await api
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${other.token}`)
+      .send({})
+    await makeLegacy(otherRes.body.id)
+
+    await createCampaign()
+    const list = await auth(api.get('/api/campaigns'))
+    expect(list.body).toHaveLength(1)
+    expect(await Campaign.collection.countDocuments({})).toBe(2)
+  })
+})
+
 describe('POST /api/campaigns/:id/events/pick', () => {
   test('applies the picked effect once; second pick is rejected', async () => {
     const { body: c } = await createCampaign()
@@ -183,6 +258,16 @@ describe('POST /api/campaigns/:id/forage', () => {
     expect((await assign(c.id, { Soldier: -1 })).status).toBe(400)
     expect((await assign(c.id, { Soldier: 2.5 })).status).toBe(400)
     expect((await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({})).status).toBe(400)
+  })
+
+  // Playtest bug 2026-07-03: the forage menu offered troop types the player
+  // doesn't own. The view's kgPerUnit is the client's row source — pin it to
+  // exactly the roster's types so catalog-only units never get a stepper.
+  test('kgPerUnit covers exactly the roster types, nothing from the wider catalog', async () => {
+    const { body: c } = await createCampaign()
+    expect(Object.keys(c.forage.kgPerUnit).sort()).toEqual(Object.keys(c.roster).sort())
+    expect(c.forage.kgPerUnit.Zombie).toBeUndefined()
+    expect(c.forage.kgPerUnit.Necromancer).toBeUndefined()
   })
 
   test('foragers are unavailable for the battle line', async () => {

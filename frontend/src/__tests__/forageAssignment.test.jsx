@@ -69,8 +69,8 @@ describe('forager assignment', () => {
     await screen.findByText(/War Council/)
 
     fireEvent.change(screen.getByTestId('forage-input-Cavalry'), { target: { value: '999' } })
-    // Only 10 Cavalry owned → clamped, 10 × 60 kg = 0.6 t
-    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('10 foragers — up to 0.6 t')
+    // Only 10 Cavalry owned → clamped, 10 × 60 kg — sub-tonne amounts show as kg
+    expect(screen.getByTestId('forage-capacity')).toHaveTextContent('10 foragers — up to 600 kg')
   })
 
   it('sends the assignment through the API and shows the saved state', async () => {
@@ -94,11 +94,50 @@ describe('forager assignment', () => {
     expect(await screen.findByText('Foragers assigned')).toBeInTheDocument()
   })
 
+  // Playtest bug 2026-07-03: the forage menu offered troop types the player
+  // doesn't own. Steppers must only render for roster lines with units in
+  // them, even if the view sends extra kgPerUnit rows or 0-count lines.
+  it('only owned unit types get a forage stepper', async () => {
+    getCampaigns.mockResolvedValue([
+      {
+        ...campaignFixture,
+        roster: { ...campaignFixture.roster, Priest: 0 },
+        forage: {
+          ...campaignFixture.forage,
+          kgPerUnit: { ...campaignFixture.forage.kgPerUnit, Zombie: 30 },
+        },
+      },
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    expect(screen.getByTestId('forage-input-Soldier')).toBeInTheDocument()
+    expect(screen.queryByTestId('forage-input-Priest')).not.toBeInTheDocument() // 0 owned
+    expect(screen.queryByTestId('forage-input-Zombie')).not.toBeInTheDocument() // not in roster
+  })
+
   it('the HUD shows stores in tonnes, per-turn need, and land remaining', async () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
     expect(screen.getByText(/Food: 50 t/)).toHaveTextContent('−12.4 t/turn')
     expect(screen.getByTestId('hud-land')).toHaveTextContent('Land: 100% left')
+  })
+
+  // The 2026-07-03 playtest screen showed "Food: 0.1 t (−0 t/turn)" from a
+  // stale doc whose view had no foodNeedPerTurn — the `?? 0` coercion made a
+  // wiring hole look like a calm zero. A missing value must LOOK broken, and
+  // sub-tonne stores must show as kg, never "0.1 t".
+  it('a missing food need renders as broken (?? t), not as an innocent −0', async () => {
+    getCampaigns.mockResolvedValue([
+      {
+        ...campaignFixture,
+        resources: { food: 100, materials: 0 }, // no foodNeedPerTurn
+      },
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    expect(screen.getByText(/Food: 100 kg/)).toHaveTextContent('−?? t/turn')
   })
 })

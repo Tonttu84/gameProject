@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import Campaign from '../models/campaign.js'
+import Campaign, { CAMPAIGN_SCHEMA_VERSION } from '../models/campaign.js'
 import UnitType from '../models/unitType.js'
 import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
@@ -29,8 +29,15 @@ router.use(userExtractor)
 // Responses ALWAYS go through campaignView() — hidden info (enemy army,
 // planned placement, event truth flags) never leaves this file as JSON.
 
+// Version checks filter the QUERY, not the loaded document: Mongoose fills
+// schema defaults on hydration, so a pre-versioning doc would look current
+// once loaded. Legacy docs 404 here and are deleted by the listing route.
 const findOwn = async (req) =>
-  Campaign.findOne({ _id: req.params.id, user: req.user._id })
+  Campaign.findOne({
+    _id: req.params.id,
+    user: req.user._id,
+    schemaVersion: CAMPAIGN_SCHEMA_VERSION,
+  })
 
 router.post('/', async (req, res) => {
   const campaign = await Campaign.create({
@@ -56,6 +63,12 @@ router.post('/', async (req, res) => {
 })
 
 router.get('/', async (req, res) => {
+  // Campaigns from an incompatible schema version are deleted, not migrated
+  // (no backwards compatibility — the client then offers a fresh campaign).
+  await Campaign.deleteMany({
+    user: req.user._id,
+    schemaVersion: { $ne: CAMPAIGN_SCHEMA_VERSION },
+  })
   const campaigns = await Campaign.find({ user: req.user._id }).sort({ _id: -1 })
   res.json(await Promise.all(campaigns.map((c) => campaignView(c))))
 })
