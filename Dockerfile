@@ -9,10 +9,14 @@
 
 # ── Stage 1: C++ engine ──────────────────────────────────────────────────────
 # Ubuntu 24.04 matches CI (gcc 13). `make` downloads the prebuilt SFML binary
-# unless backend/SFML-2.6.0/ is already in the build context.
+# unless backend/SFML-2.6.0/ is already in the build context. The X11/freetype
+# runtime libs must be present at LINK time too — ld resolves the prebuilt
+# libsfml-*.so's own dependencies (same list the CI test job installs).
 FROM ubuntu:24.04 AS engine-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
         g++ make wget ca-certificates fonts-dejavu-core \
+        libx11-6 libxrandr2 libxcursor1 libudev1 libgl1 libfreetype6 \
+        libogg0 libvorbis0a \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY Makefile ./
