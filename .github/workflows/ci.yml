@@ -71,7 +71,11 @@ jobs:
             curl -fs http://localhost:3001/api/info > /dev/null && exit 0
             sleep 2
           done
-          echo "server never came up"; docker logs game; exit 1
+          echo "server never came up"
+          docker ps -a
+          echo "── game logs:";  docker logs game  2>&1 || true
+          echo "── mongo logs:"; docker logs mongo 2>&1 | tail -20 || true
+          exit 1
 
       - name: Smoke a campaign turn (login → create → forage → battle → end-day)
         run: |
@@ -97,4 +101,7 @@ jobs:
 
       - name: Dump server logs on failure
         if: failure()
-        run: docker logs game || true
+        run: |
+          docker ps -a
+          echo "── game logs:";  docker logs game  2>&1 || true
+          echo "── mongo logs:"; docker logs mongo 2>&1 | tail -20 || true

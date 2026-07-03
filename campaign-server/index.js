@@ -8,8 +8,12 @@ import { seedDevUser } from './services/devSeed.js'
 // Boot: DB up → catalog synced from the engine (single source of truth) →
 // info cache warmed → listen. A failed catalog sync aborts the boot on
 // purpose: serving stale/invalid unit data would be worse than being down.
+// Each phase logs BEFORE it runs so a hung boot (unreachable Mongo, wedged
+// engine subprocess) shows where it stopped instead of sitting silent.
 const start = async () => {
+  console.log(`boot: connecting to MongoDB (${config.MONGODB_URI ? 'external' : 'embedded'})...`)
   await connectDb()
+  console.log('boot: syncing unit catalog from the engine...')
   const count = await syncCatalog(await dumpUnits())
   console.log(`unit catalog synced (${count} types)`)
   if (await seedDevUser())
