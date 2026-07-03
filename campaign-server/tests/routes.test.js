@@ -33,7 +33,7 @@ describe('GET /api/units', () => {
     await syncCatalog(catalogFixture)
     const res = await api.get('/api/units')
     expect(res.status).toBe(200)
-    expect(res.body.length).toBe(3)
+    expect(res.body.length).toBe(catalogFixture.units.length)
     const soldier = res.body.find((u) => u.name === 'Soldier')
     expect(soldier).toMatchObject({
       symbol: 'X',

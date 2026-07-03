@@ -1,5 +1,6 @@
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import mongoose from 'mongoose'
+import { clearCatalogCache } from '../../utils/catalog.js'
 
 // Ephemeral in-memory mongod for tests — unrelated to the persistent dev DB
 // in utils/db.js (no dbPath: data vanishes with the process).
@@ -19,4 +20,7 @@ export async function stopTestDb() {
 export async function clearDb() {
   const collections = Object.values(mongoose.connection.collections)
   await Promise.all(collections.map((c) => c.deleteMany({})))
+  // Each test re-seeds unittypes; the campaign layer's module-level catalog
+  // cache must not leak the previous test's rows.
+  clearCatalogCache()
 }

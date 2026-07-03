@@ -85,7 +85,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean
+.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean docker-build docker-up docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -188,3 +188,31 @@ frontend-test:
 serve: $(NAME)
 	cd campaign-server && npm start &
 	cd frontend && npm run dev
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Full stack (engine + campaign server + built frontend + MongoDB) in
+# containers, for running the game on any machine with Docker (Windows:
+# Docker Desktop). NOT for the WSL dev machine (no Docker there — WSL runs
+# the stack natively via `make serve`); the CI "docker" job builds and
+# smoke-tests the image on every push.
+
+# Build just the game image (no containers started).
+docker-build:
+	docker build -t gameproject .
+
+# Build + start everything → http://localhost:3001, log in as testuser/test.
+# Campaigns persist in the `gamedb` volume across restarts.
+docker-up:
+	docker compose up --build
+
+# Stop the stack; campaign DB volume survives for the next docker-up.
+docker-down:
+	docker compose down
+
+# Stop the stack AND wipe the campaign DB volume — the Docker twin of db-clean.
+docker-clean:
+	docker compose down -v
+
+# Follow the game server's logs (battle tick counts, boot messages).
+docker-logs:
+	docker compose logs -f game

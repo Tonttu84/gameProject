@@ -20,6 +20,12 @@ const config = {
   ENGINE_BIN: process.env.ENGINE_BIN || path.join(ROOT, 'game'),
   GAME_DIR: process.env.GAME_DIR || ROOT,
   MAPS_DIR: process.env.MAPS_DIR || path.join(ROOT, 'maps'),
+  // When set (container/production), the campaign server also serves the
+  // built frontend from this directory; in dev the Vite server does it.
+  FRONTEND_DIST: process.env.FRONTEND_DIST || null,
+  // Explicit opt-in to seed the dev user even against an external MongoDB
+  // (used by docker-compose for local testing). Never set this anywhere public.
+  DEV_SEED: process.env.DEV_SEED === '1',
   // Battles render at ~200ms/tick in the SFML window, so allow long runs.
   BATTLE_TIMEOUT_MS: Number(process.env.BATTLE_TIMEOUT_MS) || 10 * 60 * 1000,
   // JWT signing secret. The fallback is for local dev only — set SECRET in any

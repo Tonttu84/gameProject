@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Linux-targeted project (the Makefile downloads a prebuilt Linux SFML binary and shells
 out to `/usr/share/fonts`). Build tooling (g++/clang++, make) is expected to be available on the
-host; there is no Windows build path.
+host; there is no native Windows build path and none is planned — Windows machines run the stack
+via Docker (see `make docker-up`) or WSL.
 
 ```sh
 make                 # builds ./game (SFML window modes + headless modes)
@@ -25,6 +26,18 @@ make server            # ./game server 8080 — starts the HTTP campaign server
 make frontend          # cd frontend && npm run dev — Vite dev server
 make serve             # both of the above together
 make frontend-test     # npm --prefix frontend test (vitest run), via the pinned nvm node
+
+make docker-up         # docker compose up --build: the WHOLE stack (engine + campaign
+                        # server + built frontend + MongoDB) in containers on
+                        # http://localhost:3001, login testuser/test. For machines with
+                        # Docker (e.g. Windows via Docker Desktop). The engine's battle
+                        # mode opens an SFML window even when spawned by the server, so
+                        # the container wraps everything in xvfb-run. CI's "docker" job
+                        # builds this image and smokes a full campaign turn through it.
+make docker-down       # stop the stack (campaign DB volume survives)
+make docker-clean      # stop AND wipe the campaign DB volume (Docker twin of db-clean)
+make docker-logs       # follow the game server's container logs
+make docker-build      # build just the image, start nothing
 
 ./game info                       # headless: print buildInfoJson() and exit
 ./game server 8080                # headless: run the HTTP server

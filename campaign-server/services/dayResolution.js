@@ -1,30 +1,42 @@
-import { UPKEEP_DIVISOR, DESERTION_FRACTION } from '../utils/campaignConfig.js'
+import { DESERTION_FRACTION } from '../utils/campaignConfig.js'
+import { getCatalog } from '../utils/catalog.js'
+import { armyFoodPerTurn } from '../utils/capabilities.js'
 import { drawEvents, rosterTotal } from './events.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
+import { resolveForaging } from './forage.js'
 
-// End-of-day pipeline. Order is load-bearing and later stages splice into it:
-//   1. forage            (foraging stage)
-//   2. forager clashes   (foraging stage)
+// End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
+// later stages splice into it:
+//   1. forage            (both hosts strip the rings)
+//   2. forager clashes   (inside the forage step — contested rings)
 //   2.5 scouting accrual (scouting stage)
 //   3. apply true event  (augury rework; v1 applies the picked card at pick time)
-//   4. enemy turn        (upkeep, stance, tomorrow's offer)
+//   4. enemy turn        (upkeep, stance, tomorrow's offer + forage plan)
 //   5. player upkeep     (food, desertion at zero)
 //   6. check end         (annihilation / enemy withdrawal)
-//   7. new day           (draw events, regenerate the enemy's planned placement)
+//   7. new turn          (draw events, clear forage assignment, regenerate
+//                         the enemy's planned placement)
 //
 // Mutates and saves the campaign; returns the day report shown to the player.
 export async function endDay(campaign) {
+  const catalog = await getCatalog()
   const entries = []
   const report = { day: campaign.day }
 
-  // 4. Enemy turn
-  entries.push(...enemyTurn(campaign))
+  // 1–2. Foraging and forager clashes
+  const foraging = resolveForaging(campaign, catalog)
+  entries.push(...foraging.entries)
+  report.forage = foraging.forage
 
-  // 5. Player upkeep
+  // 4. Enemy turn
+  entries.push(...enemyTurn(campaign, catalog))
+
+  // 5. Player upkeep — size² × kg/day × days-per-turn, from live catalog sizes.
   const units = rosterTotal(campaign.roster)
-  const foodConsumed = Math.min(campaign.resources.food, Math.ceil(units / UPKEEP_DIVISOR))
-  campaign.resources.food = Math.max(0, campaign.resources.food - Math.ceil(units / UPKEEP_DIVISOR))
+  const foodNeed = armyFoodPerTurn(campaign.roster, catalog)
+  const foodConsumed = Math.min(campaign.resources.food, foodNeed)
+  campaign.resources.food = Math.max(0, campaign.resources.food - foodNeed)
   let deserters = 0
   if (campaign.resources.food <= 0 && units > 0) {
     // Empty stores: a tenth of every line slips away in the dark.
@@ -51,10 +63,11 @@ export async function endDay(campaign) {
     entries.push('The enemy has abandoned the campaign. The country is yours.')
   }
 
-  // 7. New day
+  // 7. New turn
   if (campaign.status === 'active') {
     campaign.day += 1
     campaign.battleFoughtToday = false
+    campaign.forage.assignment = new Map()
     campaign.events = { drawn: drawEvents(campaign.auguryScore), picked: false }
     campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
   }

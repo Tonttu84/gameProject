@@ -19,6 +19,7 @@ vi.mock('../services/api', () => ({
   getCampaigns: vi.fn(),
   createCampaign: vi.fn(),
   pickCampaignEvent: vi.fn(),
+  setCampaignForage: vi.fn(),
   postCampaignBattle: vi.fn(),
   endCampaignDay: vi.fn(),
 }))
@@ -60,7 +61,7 @@ describe('campaign flow', () => {
 
     fireEvent.click(await screen.findByTestId('start-campaign'))
 
-    await screen.findByText(/Day 1 — Morning Council/)
+    await screen.findByText(/Turn 1 — War Council/)
     expect(createCampaign).toHaveBeenCalled()
   })
 
@@ -68,7 +69,7 @@ describe('campaign flow', () => {
     getCampaigns.mockResolvedValue([campaignFixture])
     pickCampaignEvent.mockResolvedValue({ ...campaignFixture, events: [] })
     const { container } = render(<App />)
-    await screen.findByText(/Morning Council/)
+    await screen.findByText(/War Council/)
 
     fireEvent.click(screen.getByText('Consult the Augur'))
     expect(screen.getByText('The Augur Speaks')).toBeInTheDocument()
@@ -87,28 +88,32 @@ describe('campaign flow', () => {
     expect(screen.getByTestId('start-campaign')).toHaveTextContent('New Campaign')
   })
 
-  it('End Day calls the API and returns to the next morning council', async () => {
+  it('End Turn calls the API and returns to the next war council', async () => {
     getCampaigns.mockResolvedValue([campaignFixture])
     pickCampaignEvent.mockResolvedValue({ ...campaignFixture, events: [] })
     endCampaignDay.mockResolvedValue({
-      report: { day: 1, entries: [], upkeep: { foodConsumed: 38, deserters: 0 } },
-      campaign: { ...campaignFixture, day: 2, resources: { food: 62, materials: 0 } },
+      report: { day: 1, entries: [], upkeep: { foodConsumed: 12432, deserters: 0 } },
+      campaign: {
+        ...campaignFixture,
+        day: 2,
+        resources: { food: 37568, materials: 0, foodNeedPerTurn: 12432 },
+      },
     })
     const { container } = render(<App />)
-    await screen.findByText(/Morning Council/)
+    await screen.findByText(/War Council/)
 
     fireEvent.click(screen.getByText('Consult the Augur'))
     fireEvent.click(container.querySelector('.event-card'))
     fireEvent.click(await screen.findByTestId('end-day'))
 
-    await screen.findByText(/Day 2 — Morning Council/)
+    await screen.findByText(/Turn 2 — War Council/)
     await waitFor(() => expect(endCampaignDay).toHaveBeenCalledWith('c1'))
   })
 
   it('tutorial intros render when enabled and hide when toggled off', async () => {
     getCampaigns.mockResolvedValue([campaignFixture])
     render(<App />)
-    await screen.findByText(/Morning Council/)
+    await screen.findByText(/War Council/)
 
     expect(screen.getByTestId('tutorial-council')).toBeInTheDocument()
 

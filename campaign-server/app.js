@@ -1,4 +1,6 @@
+import path from 'node:path'
 import express from 'express'
+import config from './utils/config.js'
 import unitsRouter from './routes/units.js'
 import infoRouter from './routes/info.js'
 import mapsRouter from './routes/maps.js'
@@ -37,6 +39,18 @@ app.use('/api/battles', battlesRouter)
 app.use('/api/campaigns', campaignsRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/login', loginRouter)
+
+// Container/production mode: serve the built React app from the same origin
+// (FRONTEND_DIST set by the Dockerfile), with an SPA fallback for non-API
+// GETs. In dev this stays off — the Vite dev server owns the frontend.
+if (config.FRONTEND_DIST) {
+  const dist = path.resolve(config.FRONTEND_DIST)
+  app.use(express.static(dist))
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api')) return next()
+    res.sendFile(path.join(dist, 'index.html'))
+  })
+}
 
 app.use(errorHandler)
 

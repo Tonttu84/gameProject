@@ -40,6 +40,9 @@ export const getCampaign = (id) =>
   axios.get(`/api/campaigns/${id}`, authed()).then(r => r.data)
 export const pickCampaignEvent = (id, eventId) =>
   axios.post(`/api/campaigns/${id}/events/pick`, { eventId }, authed()).then(r => r.data)
+// Replace the turn's forager assignment ({unitType: count}); returns the view.
+export const setCampaignForage = (id, assignment) =>
+  axios.post(`/api/campaigns/${id}/forage`, { assignment }, authed()).then(r => r.data)
 // Returns the battle summary plus the refreshed campaign view.
 export const postCampaignBattle = (id, payload) =>
   axios.post(`/api/campaigns/${id}/battles`, payload, authed()).then(r => r.data)

@@ -12,13 +12,15 @@ describe('catalog sync (dump-units → DB)', () => {
   test('imports every catalog entry', async () => {
     await syncCatalog(catalogFixture)
     const all = await UnitType.find({})
-    expect(all.map((u) => u.name).sort()).toEqual(['Cavalry', 'Soldier', 'Zombie'])
+    expect(all.map((u) => u.name).sort()).toEqual(
+      catalogFixture.units.map((u) => u.name).sort(),
+    )
   })
 
   test('is idempotent — syncing twice leaves one doc per type', async () => {
     await syncCatalog(catalogFixture)
     await syncCatalog(catalogFixture)
-    expect(await UnitType.countDocuments()).toBe(3)
+    expect(await UnitType.countDocuments()).toBe(catalogFixture.units.length)
   })
 
   test('a changed stat in the export updates the stored doc', async () => {

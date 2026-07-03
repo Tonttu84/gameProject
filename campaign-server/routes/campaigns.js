@@ -7,6 +7,8 @@ import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay } from '../services/dayResolution.js'
 import { drawEvents, applyEffect } from '../services/events.js'
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
+import { enemyForagePlanKg } from '../services/enemyAi.js'
+import { getCatalog } from '../utils/catalog.js'
 import {
   MAP_NAME,
   STARTING_ROSTER,
@@ -15,6 +17,7 @@ import {
   STARTING_AUGURY,
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
+  FORAGE_RINGS,
 } from '../utils/campaignConfig.js'
 
 const router = Router()
@@ -34,6 +37,11 @@ router.post('/', async (req, res) => {
     user: req.user._id,
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS },
     roster: STARTING_ROSTER,
+    forage: {
+      rings: FORAGE_RINGS.map((richness, ring) => ({ ring, richness, initialRichness: richness })),
+      assignment: {},
+      enemyPlan: enemyForagePlanKg(ENEMY_ARMY, await getCatalog()),
+    },
     auguryScore: STARTING_AUGURY,
     events: { drawn: drawEvents(STARTING_AUGURY), picked: false },
     enemy: {
@@ -44,18 +52,44 @@ router.post('/', async (req, res) => {
       plannedPlacement: await buildEnemyPlacement(ENEMY_ARMY),
     },
   })
-  res.status(201).json(campaignView(campaign))
+  res.status(201).json(await campaignView(campaign))
 })
 
 router.get('/', async (req, res) => {
   const campaigns = await Campaign.find({ user: req.user._id }).sort({ _id: -1 })
-  res.json(campaigns.map(campaignView))
+  res.json(await Promise.all(campaigns.map((c) => campaignView(c))))
 })
 
 router.get('/:id', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
-  res.json(campaignView(campaign))
+  res.json(await campaignView(campaign))
+})
+
+// Set (replace) today's forager assignment: {assignment: {type: count}}.
+// Assigned units sweep the rings at end-of-turn and are unavailable for the
+// turn's battle. Can be re-issued any time before end-day.
+router.post('/:id/forage', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+
+  const assignment = req.body?.assignment
+  if (assignment === null || typeof assignment !== 'object' || Array.isArray(assignment))
+    return res.status(400).json({ error: 'assignment required' })
+
+  const cleaned = {}
+  for (const [type, count] of Object.entries(assignment)) {
+    if (!Number.isInteger(count) || count < 0)
+      return res.status(400).json({ error: `bad count for ${type}` })
+    if (count > (campaign.roster.get(type) ?? 0))
+      return res.status(400).json({ error: `not enough ${type} in the roster` })
+    if (count > 0) cleaned[type] = count
+  }
+
+  campaign.forage.assignment = cleaned
+  await campaign.save()
+  res.json(await campaignView(campaign))
 })
 
 // v1 pick-a-card augury (replaced by consult/reroll in the augury rework):
@@ -73,7 +107,7 @@ router.post('/:id/events/pick', async (req, res) => {
   campaign.events.picked = true
   campaign.log.push({ day: campaign.day, entries: [`Omen: ${event.title}.`, ...entries] })
   await campaign.save()
-  res.json(campaignView(campaign))
+  res.json(await campaignView(campaign))
 })
 
 // Fight today's battle. The server owns the map and the enemy: the client
@@ -102,8 +136,14 @@ router.post('/:id/battles', async (req, res) => {
   for (const [type, count] of placed) {
     if (!placeableTypes.has(type))
       return res.status(400).json({ error: `not a placeable unit type: ${type}` })
-    if (count > (campaign.roster.get(type) ?? 0))
-      return res.status(400).json({ error: `not enough ${type} in the roster` })
+    // Units out foraging are unavailable for today's battle.
+    const foraging = campaign.forage.assignment.get(type) ?? 0
+    if (count > (campaign.roster.get(type) ?? 0) - foraging)
+      return res.status(400).json({
+        error: foraging > 0
+          ? `not enough ${type} in camp (${foraging} out foraging)`
+          : `not enough ${type} in the roster`,
+      })
   }
 
   const input = {
@@ -129,7 +169,7 @@ router.post('/:id/battles', async (req, res) => {
   })
   await campaign.save()
 
-  res.status(201).json({ ...summary, campaign: campaignView(campaign) })
+  res.status(201).json({ ...summary, campaign: await campaignView(campaign) })
 })
 
 router.post('/:id/end-day', async (req, res) => {
@@ -138,7 +178,7 @@ router.post('/:id/end-day', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
   const report = await endDay(campaign)
-  res.json({ report, campaign: campaignView(campaign) })
+  res.json({ report, campaign: await campaignView(campaign) })
 })
 
 export default router

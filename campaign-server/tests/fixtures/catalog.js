@@ -1,4 +1,8 @@
 // Shaped exactly like `./game dump-units` output (see backend UnitCatalog.hpp).
+// Covers every type in STARTING_ROSTER + ENEMY_ARMY so campaign math (food
+// needs, forage values, clash strengths) has real sizes/speeds to work with.
+// Speeds, ballistic skills and sizes match the engine-pinned values in
+// backend/engine/tests/test_unit_catalog.cpp; the rest is shape-realistic.
 export const catalogFixture = {
   units: [
     {
@@ -12,6 +16,36 @@ export const catalogFixture = {
       stats: { maxHP: 10, attack: 11, defence: 12, armour: 2, speed: 1, ballisticSkill: 4, preferredRange: 0 },
     },
     {
+      name: 'Archer',
+      symbol: 'A',
+      size: 10,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      placeable: true,
+      spawnable: true,
+      stats: { maxHP: 10, attack: 10, defence: 12, armour: 2, speed: 1, ballisticSkill: 10, preferredRange: 8 },
+    },
+    {
+      name: 'Mage',
+      symbol: 'M',
+      size: 10,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      placeable: true,
+      spawnable: true,
+      stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 1, ballisticSkill: 12, preferredRange: 6 },
+    },
+    {
+      name: 'Priest',
+      symbol: 'P',
+      size: 10,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      placeable: true,
+      spawnable: true,
+      stats: { maxHP: 8, attack: 8, defence: 10, armour: 0, speed: 1, ballisticSkill: 4, preferredRange: 0 },
+    },
+    {
       name: 'Cavalry',
       symbol: 'C',
       size: 20,
@@ -19,7 +53,27 @@ export const catalogFixture = {
       forbiddenTerrain: ['Forest', 'Marsh'],
       placeable: true,
       spawnable: true,
-      stats: { maxHP: 18, attack: 11, defence: 12, armour: 2, speed: 3, ballisticSkill: 4, preferredRange: 0 },
+      stats: { maxHP: 18, attack: 11, defence: 12, armour: 5, speed: 2, ballisticSkill: 4, preferredRange: 0 },
+    },
+    {
+      name: 'LightCavalry',
+      symbol: 'l',
+      size: 20,
+      category: 'Mounted',
+      forbiddenTerrain: ['Forest', 'Marsh'],
+      placeable: true,
+      spawnable: true,
+      stats: { maxHP: 16, attack: 10, defence: 11, armour: 2, speed: 3, ballisticSkill: 8, preferredRange: 0 },
+    },
+    {
+      name: 'Necromancer',
+      symbol: 'N',
+      size: 10,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      placeable: false,
+      spawnable: true,
+      stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 1, ballisticSkill: 3, preferredRange: 6 },
     },
     {
       name: 'Zombie',

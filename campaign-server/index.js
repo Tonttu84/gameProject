@@ -8,8 +8,12 @@ import { seedDevUser } from './services/devSeed.js'
 // Boot: DB up → catalog synced from the engine (single source of truth) →
 // info cache warmed → listen. A failed catalog sync aborts the boot on
 // purpose: serving stale/invalid unit data would be worse than being down.
+// Each phase logs BEFORE it runs so a hung boot (unreachable Mongo, wedged
+// engine subprocess) shows where it stopped instead of sitting silent.
 const start = async () => {
+  console.log(`boot: connecting to MongoDB (${config.MONGODB_URI ? 'external' : 'embedded'})...`)
   await connectDb()
+  console.log('boot: syncing unit catalog from the engine...')
   const count = await syncCatalog(await dumpUnits())
   console.log(`unit catalog synced (${count} types)`)
   if (await seedDevUser())
@@ -26,9 +30,10 @@ const start = async () => {
     console.log('  GET  /api/battles/:id/ticks — replay tick range')
     console.log('  POST /api/campaigns              — start a campaign')
     console.log('  GET  /api/campaigns[/:id]        — my campaigns / one view')
-    console.log('  POST /api/campaigns/:id/events/pick — pick the day\'s omen')
-    console.log('  POST /api/campaigns/:id/battles  — fight today\'s battle')
-    console.log('  POST /api/campaigns/:id/end-day  — resolve the day')
+    console.log('  POST /api/campaigns/:id/events/pick — pick the turn\'s omen')
+    console.log('  POST /api/campaigns/:id/forage   — assign foragers for the turn')
+    console.log('  POST /api/campaigns/:id/battles  — fight the turn\'s battle')
+    console.log('  POST /api/campaigns/:id/end-day  — resolve the turn (two weeks)')
   })
 }
 
