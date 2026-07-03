@@ -19,6 +19,7 @@ Necromancer::Necromancer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapo
     setSpellcaster(true);
     printSymbol    = 'N';
     preferredRange = 3;
+    setBallisticSkill(4);
     size = SIZE;
 }
 

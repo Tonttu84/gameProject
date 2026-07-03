@@ -11,6 +11,9 @@ const statsSchema = new mongoose.Schema(
     defence: { type: Number, required: true },
     armour: { type: Number, required: true },
     speed: { type: Number, required: true, min: 0 },
+    // Ranged competence on the melee-attack scale (10 = trained archer);
+    // campaign scouting/foraging values are derived from speed + this.
+    ballisticSkill: { type: Number, required: true, min: 0 },
     preferredRange: { type: Number, required: true, min: 0 },
   },
   { _id: false },

@@ -259,6 +259,18 @@ public:
     int  getPreferredRange()  const  { return preferredRange; }
     void setPreferredRange(int r)    { preferredRange = r; }
     int  getMovementSpeed()  const  { return movementSpeed; }
+    int  getBallisticSkill() const  { return ballisticSkill; }
+
+    // ── Squad movement points ─────────────────────────────────────────────────
+    // Signed bank used only by squad movement (Battlefield::moveUnits): each
+    // tick a member regains movementSpeed, never banking above that base;
+    // every member pays each hex's terrain cost; zero-or-negative blocks the
+    // whole squad (richer members can aid — see moveUnits). Lone units use
+    // spentMove debt instead; Squad::removeMember/disband convert a negative
+    // bank back into spentMove so a straggler can't shed debt by losing its
+    // squad.
+    int  getMovePoints() const { return _movePoints; }
+    void setMovePoints(int p)  { _movePoints = p; }
     int  getAmmunition()     const  { return ammunition; }
     int  getSortKey()        const  { return sortKey; }
     bool biggerThan(const AUnit* other) const;   // size descending; sortKey tiebreaker baked in
@@ -291,6 +303,14 @@ public:
 
 
 protected:
+    // Ranged competence on the same scale as melee attackPWR: 10 = average
+    // trained human (an Archer), 2 = untrained. The legacy 0-100 `accuracy`
+    // percentage the ranged pipeline consumes is DERIVED as ballisticSkill*5
+    // — this setter is the single seam; when accuracy semantics get reworked,
+    // only this derivation changes. Ctors set ballistic skill through here,
+    // never `accuracy` directly.
+    void setBallisticSkill(int bs) { ballisticSkill = bs; accuracy = bs * 5; }
+
     int team = 0;
     Hex* currentHex = nullptr;
     int hitpoints = 10;
@@ -301,7 +321,8 @@ protected:
     int maxHP = 10;
     int cast = 0;
     int armour = 0;
-    int accuracy = 10;
+    int ballisticSkill = 2; // see setBallisticSkill(); default matches accuracy = 10
+    int accuracy = 10;      // derived: ballisticSkill * 5; do not set directly
     int ammunition = 0;
     int shield = 0;               // physical shield from weapons; degrades under hits
     std::vector<int> _extraShields; // stacked temporary shields (force fields etc.)
@@ -330,6 +351,7 @@ protected:
     bool undead = false;
     bool battleSummon = false;
     size_t spentMove = 0;
+    int _movePoints = 0; // squad movement bank — see getMovePoints()
 
     int _attacksReceivedThisTurn = 0;
     int repelMalus = 0;

@@ -10,6 +10,8 @@ Scorpion::Scorpion(int setTeam): AUnit::AUnit(setTeam)
     defence   = 8;            // armored but not especially evasive
     attackPWR = 8;
     unitValue = 6;
+    movementSpeed = 2;
+    setBallisticSkill(1);
     addWeapon(MeleeWeapons::Stinger);
     size      = SIZE;
 }

@@ -7,9 +7,9 @@ Archer::Archer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Shorts
     printSymbol = 'A';
     ammunition  = BOWAMMO;
     armour      = LIGHTARMOUR;
-    // accuracy is a 0-100 percentage: aimed-shot success chance and
-    // aimed range (accuracy/10 hexes). 50 → 50% chance, 5-hex aimed range.
-    accuracy       = 50;
+    // Ballistic skill 10 = the trained-archer baseline (same scale as melee
+    // attackPWR). Derives accuracy 50: 50% aimed chance, 5-hex aimed range.
+    setBallisticSkill(10);
     preferredRange = 3; // hold bow range; drops to 1 when ammo runs out
     size = SIZE;
 }

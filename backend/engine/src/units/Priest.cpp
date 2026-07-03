@@ -8,6 +8,7 @@ Priest::Priest(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::MaceAn
     setSpellcaster(true);
     printSymbol    = 'P';
     preferredRange = 3;
+    setBallisticSkill(4);
     size = SIZE;
 } 
 

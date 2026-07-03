@@ -9,6 +9,7 @@
 #include <climits>
 #include "units/Soldier.hpp"
 #include "units/Cavalry.hpp"
+#include "units/LightCavalry.hpp"
 #include "hex/HexGrid.hpp"
 #include "Utility.hpp"
 #include "BattleSetup.hpp"
@@ -749,6 +750,206 @@ TEST_CASE("moveSquad: squad routes around impassable wall to reach the other sid
     REQUIRE(anyCrossed);
 
     for (Hex* h : wall) h->impassable = false;
+    field.extractResult();
+}
+
+// ── Per-unit movement speed ──────────────────────────────────────────────────
+// movementSpeed N = up to N one-hex steps per tick, re-evaluating target and
+// engagement between steps. Terrain move-cost debt is paid one step at a time;
+// fresh enemy contact ends the tick's movement.
+
+namespace {
+// Soldier with an overridden movement speed — for testing the step loop
+// without depending on any particular unit type's stats.
+struct FastSoldier : Soldier {
+    FastSoldier(int t, int speed) : Soldier(t) { movementSpeed = speed; }
+};
+}
+
+TEST_CASE("moveTeam: speed-3 LightCavalry covers three hexes in one tick", "[movement][speed]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto cav = std::make_unique<LightCavalry>(REDTEAM);
+    cav->setHex(field.hexGrid.getHex({0, 5}));
+    auto enemy = std::make_unique<Soldier>(BLUETEAM);
+    enemy->setHex(field.hexGrid.getHex({8, 5})); // distance 8 — no contact this tick
+
+    Army red, blue;
+    red.push_back(std::move(cav));
+    blue.push_back(std::move(enemy));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    field.moveTeam(field.getTeamData(REDTEAM)); // blue never moves
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {8, 5}) == 5);
+
+    field.extractResult();
+}
+
+TEST_CASE("moveTeam: heavy Cavalry moves at the mount's pace of two", "[movement][speed]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto cav = std::make_unique<Cavalry>(REDTEAM); // Soldier on a plain Horse — speed 2
+    cav->setHex(field.hexGrid.getHex({0, 10}));
+    auto enemy = std::make_unique<Soldier>(BLUETEAM);
+    enemy->setHex(field.hexGrid.getHex({8, 10}));
+
+    Army red, blue;
+    red.push_back(std::move(cav));
+    blue.push_back(std::move(enemy));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    field.moveTeam(field.getTeamData(REDTEAM));
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {8, 10}) == 6);
+
+    field.extractResult();
+}
+
+TEST_CASE("moveTeam: a fast unit stops stepping on fresh enemy contact", "[movement][speed]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Distance 3 with speed 3: two steps reach adjacency; the third step must
+    // NOT happen (no sliding along the front in the tick contact was made).
+    auto cav = std::make_unique<LightCavalry>(REDTEAM);
+    cav->setHex(field.hexGrid.getHex({0, 5}));
+    auto enemy = std::make_unique<Soldier>(BLUETEAM);
+    enemy->setHex(field.hexGrid.getHex({3, 5}));
+
+    Army red, blue;
+    red.push_back(std::move(cav));
+    blue.push_back(std::move(enemy));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    field.moveTeam(field.getTeamData(REDTEAM));
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {3, 5}) == 1);
+    REQUIRE(unit->getHex()->coord == HexCoord{2, 5}); // straight approach, no lateral slide
+
+    field.extractResult();
+}
+
+TEST_CASE("moveTeam: speed-2 unit pays forest move-cost debt within its own tick", "[movement][speed]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Red at {0,5}, Blue at {3,2}: NE into forest {1,4} (cost 2) is the
+    // decreasing move. Step 1 enters the forest and takes 1 debt; step 2 pays
+    // it off — so next tick the unit moves immediately instead of stalling.
+    Hex* forestHex = field.hexGrid.getHex({1, 4});
+    forestHex->terrain = TerrainType::Forest;
+
+    auto redPtr = std::make_unique<FastSoldier>(REDTEAM, 2);
+    auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
+    redPtr->setHex(field.hexGrid.getHex({0, 5}));
+    bluePtr->setHex(field.hexGrid.getHex({3, 2}));
+
+    Army red, blue;
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(bluePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    field.moveTeam(field.getTeamData(REDTEAM));
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+    REQUIRE(unit->getHex()->coord == HexCoord{1, 4});
+    REQUIRE(unit->getSpentMove() == 0);
+
+    forestHex->terrain = TerrainType::Open;
+    field.extractResult();
+}
+
+TEST_CASE("moveUnits: a squad advances at its slowest member's speed", "[movement][speed][squad]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Squads must be declared before the unit objects so they outlive them.
+    auto fastOwned  = std::make_unique<Squad>("FastSquad", false);
+    auto mixedOwned = std::make_unique<Squad>("MixedSquad", false);
+    Squad* fastSq  = fastOwned.get();
+    Squad* mixedSq = mixedOwned.get();
+
+    Army red, blue;
+
+    // Pure cavalry squad (all speed 2) at row 10.
+    for (int i = 0; i < 2; ++i) {
+        auto u = std::make_unique<Cavalry>(REDTEAM);
+        u->setHex(field.hexGrid.getHex({0, 10}));
+        fastSq->addMember(u.get());
+        red.push_back(std::move(u));
+    }
+    // Mixed squad at row 18: a Cavalry slowed to a Soldier's walking pace.
+    // Its target sits at distance 6, strictly nearer than the row-10 enemy
+    // (distance 8 from {0,18}) so target choice can't tie on RNG.
+    {
+        auto c = std::make_unique<Cavalry>(REDTEAM);
+        c->setHex(field.hexGrid.getHex({0, 18}));
+        mixedSq->addMember(c.get());
+        red.push_back(std::move(c));
+        auto s = std::make_unique<Soldier>(REDTEAM);
+        s->setHex(field.hexGrid.getHex({0, 18}));
+        mixedSq->addMember(s.get());
+        red.push_back(std::move(s));
+    }
+    // Static blue targets: hold forever so moveUnits() doesn't move them.
+    for (HexCoord c : {HexCoord{8, 10}, HexCoord{6, 18}}) {
+        auto u = std::make_unique<Soldier>(BLUETEAM);
+        u->setHex(field.hexGrid.getHex(c));
+        u->setHoldTurns(INT_MAX);
+        blue.push_back(std::move(u));
+    }
+
+    field.loadArmies(std::move(red), std::move(blue));
+    field.getTeamData(REDTEAM).squads.push_back(std::move(fastOwned));
+    field.getTeamData(REDTEAM).squads.push_back(std::move(mixedOwned));
+
+    field.moveUnits();
+
+    REQUIRE(HexGrid::distance(fastSq->getFlagBearer()->getHex()->coord,  {8, 10}) == 6); // 2 steps
+    REQUIRE(HexGrid::distance(mixedSq->getFlagBearer()->getHex()->coord, {6, 18}) == 5); // 1 step
+
+    field.extractResult();
+}
+
+TEST_CASE("moveUnits: richer squad members aid a drained straggler at 3:1", "[movement][speed][squad]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto sqOwned = std::make_unique<Squad>("EscortSquad", false);
+    Squad* sq = sqOwned.get();
+
+    Army red, blue;
+    std::vector<AUnit*> cavs;
+    for (int i = 0; i < 2; ++i) {
+        auto u = std::make_unique<LightCavalry>(REDTEAM); // base 3 — can afford aid
+        u->setHex(field.hexGrid.getHex({0, 10}));
+        cavs.push_back(u.get());
+        sq->addMember(u.get());
+        red.push_back(std::move(u));
+    }
+    auto slowPtr = std::make_unique<Soldier>(REDTEAM); // base 1
+    AUnit* slow = slowPtr.get();
+    slow->setHex(field.hexGrid.getHex({0, 10}));
+    slow->setMovePoints(-3); // deep in debt, e.g. after a marsh crossing
+    sq->addMember(slow);
+    red.push_back(std::move(slowPtr));
+
+    auto enemy = std::make_unique<Soldier>(BLUETEAM);
+    enemy->setHex(field.hexGrid.getHex({8, 10}));
+    enemy->setHoldTurns(INT_MAX);
+    blue.push_back(std::move(enemy));
+
+    field.loadArmies(std::move(red), std::move(blue));
+    field.getTeamData(REDTEAM).squads.push_back(std::move(sqOwned));
+
+    // Tick 1: regain → cavs 3/3, straggler -2. Aid fires once (richest pays
+    // 1 point three times → straggler +1 = -1), then nobody has 3 left, so
+    // the squad waits in place.
+    field.moveUnits();
+    REQUIRE(HexGrid::distance(slow->getHex()->coord, {8, 10}) == 8);
+    REQUIRE(slow->getMovePoints() == -1);
+
+    // Tick 2: regain → cavs 3/3, straggler 0. Aid lifts him to +1 and the
+    // squad finally advances a hex. Without aid he'd still be at 0, blocking.
+    field.moveUnits();
+    REQUIRE(HexGrid::distance(slow->getHex()->coord, {8, 10}) == 7);
+
     field.extractResult();
 }
 

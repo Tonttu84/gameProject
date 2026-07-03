@@ -602,6 +602,22 @@ TEST_CASE("archer exhausts ammo against unkillable target and switches to melee 
 // mount/rider death transitions at full unit-count scale, not just the
 // isolated unit tests above.
 
+// setupSampleBattle() paints terrain/elevation/impassable onto the SHARED
+// battlefield grid. Without restoring it, every test that runs after this one
+// plays on the sample map's leftovers — the rocky-outcrop impassable hexes at
+// rows 9-10 silently blocked later row-10 movement tests for real.
+static void resetSharedGridTerrain(Battlefield& field) {
+    for (int r = 0; r < field.height; ++r)
+        for (int col = 0; col < field.width; ++col) {
+            Hex* h = field.hexGrid.getHex({col - r / 2, r});
+            if (!h) continue;
+            h->terrain    = TerrainType::Open;
+            h->elevation  = 0;
+            h->impassable = false;
+        }
+    field.recomputeDistances();
+}
+
 TEST_CASE("setupSampleBattle: runs several ticks without crashing, including cavalry") {
     Battlefield& field = Utility::getBattlefield();
     setupSampleBattle(field);
@@ -610,6 +626,7 @@ TEST_CASE("setupSampleBattle: runs several ticks without crashing, including cav
     while (field.tick() && --guard > 0) {}
 
     field.extractResult();
+    resetSharedGridTerrain(field);
     REQUIRE(true);
 }
 

@@ -34,7 +34,7 @@ TEST_CASE("unit catalog: lists every unit type in the engine") {
         names.insert(u["name"].get<std::string>());
 
     for (const char* expected : {"Soldier", "Pikeman", "Archer", "Mage", "Priest",
-                                 "Necromancer", "Cavalry", "Zombie",
+                                 "Necromancer", "Cavalry", "LightCavalry", "Zombie",
                                  "Skeleton", "Scorpion", "Horse", "Warhorse"}) {
         INFO("missing type: " << expected);
         REQUIRE(names.count(expected) == 1);
@@ -62,7 +62,7 @@ TEST_CASE("unit catalog: every entry has the full field set") {
         REQUIRE(u.contains("stats"));
         const auto& s = u["stats"];
         for (const char* k : {"maxHP", "attack", "defence", "armour",
-                              "speed", "preferredRange"}) {
+                              "speed", "ballisticSkill", "preferredRange"}) {
             INFO("stat: " << k);
             REQUIRE(s.contains(k));
             REQUIRE(s[k].is_number_integer());
@@ -96,6 +96,7 @@ TEST_CASE("unit catalog: exported values match a live instance of each type") {
             REQUIRE(cat["stats"]["armour"].get<int>()  == u->getArmour());
         }
         REQUIRE(cat["stats"]["speed"].get<int>()          == u->getMovementSpeed());
+        REQUIRE(cat["stats"]["ballisticSkill"].get<int>() == u->getBallisticSkill());
         REQUIRE(cat["stats"]["preferredRange"].get<int>() == u->getPreferredRange());
 
         // forbiddenTerrain mirrors forbiddenTerrainForCategory()
@@ -104,14 +105,31 @@ TEST_CASE("unit catalog: exported values match a live instance of each type") {
     }
 }
 
-TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable six") {
+TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable seven") {
     auto j = json::parse(unitCatalogJson());
     std::set<std::string> placeable;
     for (const auto& u : j["units"])
         if (u["placeable"].get<bool>())
             placeable.insert(u["name"].get<std::string>());
     REQUIRE(placeable == std::set<std::string>{
-        "Soldier", "Pikeman", "Archer", "Mage", "Priest", "Cavalry"});
+        "Soldier", "Pikeman", "Archer", "Mage", "Priest", "Cavalry", "LightCavalry"});
+}
+
+// Campaign-relevant stats: the campaign layer derives scouting/foraging value
+// from speed + ballisticSkill, so pin the values that give each type its role.
+TEST_CASE("unit catalog: movement speed and ballistic skill pinned per type") {
+    auto j = json::parse(unitCatalogJson());
+    REQUIRE(findUnit(j, "Soldier")["stats"]["speed"].get<int>()        == 1);
+    REQUIRE(findUnit(j, "Cavalry")["stats"]["speed"].get<int>()        == 2);
+    REQUIRE(findUnit(j, "LightCavalry")["stats"]["speed"].get<int>()   == 3);
+    REQUIRE(findUnit(j, "Horse")["stats"]["speed"].get<int>()          == 2);
+    REQUIRE(findUnit(j, "Scorpion")["stats"]["speed"].get<int>()       == 2);
+
+    REQUIRE(findUnit(j, "Archer")["stats"]["ballisticSkill"].get<int>()       == 10);
+    REQUIRE(findUnit(j, "Mage")["stats"]["ballisticSkill"].get<int>()         == 12);
+    REQUIRE(findUnit(j, "LightCavalry")["stats"]["ballisticSkill"].get<int>() == 8);
+    // Fast but ranged-blind — the flag that keeps quick animals from scouting.
+    REQUIRE(findUnit(j, "Horse")["stats"]["ballisticSkill"].get<int>()        == 1);
 }
 
 TEST_CASE("unit catalog: pinned sizes stay consistent with SIZE constexprs") {
@@ -123,7 +141,7 @@ TEST_CASE("unit catalog: pinned sizes stay consistent with SIZE constexprs") {
 
 TEST_CASE("unit catalog: mounted units export Forest and Marsh as forbidden") {
     auto j = json::parse(unitCatalogJson());
-    for (const char* name : {"Cavalry", "Scorpion"}) {
+    for (const char* name : {"Cavalry", "LightCavalry", "Scorpion"}) {
         const json u = findUnit(j, name);
         INFO("unit: " << name);
         REQUIRE(u["category"] == "Mounted");
@@ -163,6 +181,7 @@ TEST_CASE("unitNameForSymbol: maps engine print symbols back to type names") {
     REQUIRE(unitNameForSymbol('M') == "Mage");
     REQUIRE(unitNameForSymbol('P') == "Priest");
     REQUIRE(unitNameForSymbol('C') == "Cavalry");
+    REQUIRE(unitNameForSymbol('l') == "LightCavalry");
     REQUIRE(unitNameForSymbol('N') == "Necromancer");
     REQUIRE(unitNameForSymbol('S') == "Skeleton");
     REQUIRE(unitNameForSymbol('Z') == "Zombie");

@@ -14,6 +14,7 @@ Skeleton::Skeleton(int setTeam) : AUnit(setTeam)
     attackPWR = 9;
     defence   = 7;  // base before weapon modifier
     strength  = 6;
+    setBallisticSkill(2);
     maxHP     = 4;
     hitpoints = 4;
 
