@@ -1,7 +1,9 @@
 import { beforeAll, afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import supertest from 'supertest'
 import mongoose from 'mongoose'
+import jwt from 'jsonwebtoken'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
+import { createUserAndToken } from './helpers/auth.js'
 import { battleResultFixture } from './fixtures/battleResult.js'
 
 // Stub the engine service — these tests cover the HTTP + persistence layer,
@@ -22,20 +24,28 @@ const engine = await import('../services/engine.js')
 const { default: app } = await import('../app.js')
 const { default: Battle } = await import('../models/battle.js')
 const { default: Tick } = await import('../models/tick.js')
+const { default: User } = await import('../models/user.js')
+const { default: config } = await import('../utils/config.js')
 
 const api = supertest(app)
+
+// POST /api/battles requires a login; recreated per test because clearDb()
+// wipes the users collection too.
+let token, userId
 
 beforeAll(startTestDb)
 afterAll(stopTestDb)
 beforeEach(async () => {
   await clearDb()
   vi.clearAllMocks()
+  ;({ token, userId } = await createUserAndToken(api))
 })
 
 const runFixtureBattle = async () => {
   engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
   return api
     .post('/api/battles')
+    .set('Authorization', `Bearer ${token}`)
     .send({ map: 'sample_battle', player_placement: [{ unit_type: 'Soldier', q: 4, r: 4 }] })
 }
 
@@ -67,7 +77,10 @@ describe('POST /api/battles', () => {
 
   test('an engine-level error becomes 400 and stores nothing', async () => {
     engine.runBattle.mockResolvedValue({ error: 'invalid map name' })
-    const res = await api.post('/api/battles').send({ map: 'bad' })
+    const res = await api
+      .post('/api/battles')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ map: 'bad' })
     expect(res.status).toBe(400)
     expect(res.body.error).toBe('invalid map name')
     expect(await Battle.countDocuments()).toBe(0)
@@ -75,14 +88,77 @@ describe('POST /api/battles', () => {
 
   test('an engine process failure becomes 502', async () => {
     engine.runBattle.mockRejectedValue(new engine.EngineProcessError('spawn failed'))
-    const res = await api.post('/api/battles').send({})
+    const res = await api
+      .post('/api/battles')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
     expect(res.status).toBe(502)
   })
 
   test('malformed engine output becomes 500', async () => {
     engine.runBattle.mockRejectedValue(new engine.EngineOutputError('not json'))
-    const res = await api.post('/api/battles').send({})
+    const res = await api
+      .post('/api/battles')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
     expect(res.status).toBe(500)
+  })
+})
+
+describe('POST /api/battles auth', () => {
+  test('401 without a token; engine never runs, nothing stored', async () => {
+    const res = await api.post('/api/battles').send({ map: 'sample_battle' })
+    expect(res.status).toBe(401)
+    expect(res.body.error).toBe('token missing')
+    expect(engine.runBattle).not.toHaveBeenCalled()
+    expect(await Battle.countDocuments()).toBe(0)
+  })
+
+  test('401 for a garbage token', async () => {
+    const res = await api
+      .post('/api/battles')
+      .set('Authorization', 'Bearer nonsense')
+      .send({ map: 'sample_battle' })
+    expect(res.status).toBe(401)
+    expect(res.body.error).toBe('token invalid')
+  })
+
+  test('401 for a token signed with the wrong secret', async () => {
+    const forged = jwt.sign({ username: 'tester', id: userId }, 'not-the-secret')
+    const res = await api
+      .post('/api/battles')
+      .set('Authorization', `Bearer ${forged}`)
+      .send({ map: 'sample_battle' })
+    expect(res.status).toBe(401)
+    expect(res.body.error).toBe('token invalid')
+  })
+
+  test('401 for an expired token', async () => {
+    const expired = jwt.sign({ username: 'tester', id: userId }, config.SECRET, {
+      expiresIn: '0s',
+    })
+    const res = await api
+      .post('/api/battles')
+      .set('Authorization', `Bearer ${expired}`)
+      .send({ map: 'sample_battle' })
+    expect(res.status).toBe(401)
+    expect(res.body.error).toBe('token expired')
+  })
+
+  test('401 when the token is valid but the user was deleted', async () => {
+    await User.deleteMany({})
+    const res = await api
+      .post('/api/battles')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ map: 'sample_battle' })
+    expect(res.status).toBe(401)
+    expect(res.body.error).toBe('user not found')
+  })
+
+  test('a stored battle is stamped with the authenticated user', async () => {
+    const { body } = await runFixtureBattle()
+    const stored = await Battle.findById(body.id)
+    expect(stored.user.toString()).toBe(userId)
   })
 })
 

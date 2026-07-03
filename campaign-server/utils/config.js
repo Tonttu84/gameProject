@@ -22,6 +22,13 @@ const config = {
   MAPS_DIR: process.env.MAPS_DIR || path.join(ROOT, 'maps'),
   // Battles render at ~200ms/tick in the SFML window, so allow long runs.
   BATTLE_TIMEOUT_MS: Number(process.env.BATTLE_TIMEOUT_MS) || 10 * 60 * 1000,
+  // JWT signing secret. The fallback is for local dev only — set SECRET in any
+  // deployment that is reachable by anyone but you.
+  SECRET: process.env.SECRET || 'dev-only-secret-change-me',
+  // Seeded at boot by services/devSeed.js — embedded local DB only (skipped
+  // whenever MONGODB_URI is set), so it survives make db-clean/rebuilds.
+  DEV_USER: process.env.DEV_USER || 'testuser',
+  DEV_PASSWORD: process.env.DEV_PASSWORD || 'test',
 }
 
 export default config

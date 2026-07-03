@@ -23,6 +23,7 @@ namespace MeleeWeapons
     constexpr Weapon Greataxe{       "Greataxe",          0, 11,  3,  2, 0, 2};
     constexpr Weapon Greatsword{     "Greatsword",        0, 10,  3,  2, 0, 2};
     constexpr Weapon Spear{          "Spear",             1,  7,  2,  2, 0, 3};
+    constexpr Weapon Pike{           "Pike",              1,  6,  1,  2, 0, 4}; // trades power for reach
     constexpr Weapon Warhammer{      "Warhammer",         2,  9,  3,  2, 0, 2};
     constexpr Weapon Staff{          "Staff",             2,  3,  1,  2, 0, 2};
     constexpr Weapon UnarmedBrawl{   "Unarmed (Brawl)",   0,  2,  1,  3, 0, 0};

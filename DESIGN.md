@@ -92,27 +92,49 @@ front. Easy to tune later.
 
 ### Support ranks and weapon reach
 
-Support rank fighters stand behind the front rank. Whether they contribute damage depends
-entirely on whether their weapon is long enough to reach past the man in front.
+Support rank fighters stand behind the front rank (always 100%, regardless of weapon —
+reach only gates *support* ranks). Whether a support-rank fighter contributes damage
+depends on comparing their weapon's reach directly against how many ranks back they stand
+(support rank 1 = immediately behind the front rank, support rank 2 = two ranks back, ...):
 
-| Weapon class | Front rank | Support rank 1 | Support rank 2 | Support rank 3+ |
-|---|---|---|---|---|
-| Short (dagger, axe, shortsword) | 100% | morale/push only | — | — |
-| Medium (longsword, 1h spear) | 100% | ~30% | — | — |
-| Long (pike, halberd, 2h spear) | 100% | ~60% | ~40% | ~20% |
-| Ranged (bow, crossbow) | — | 100% (loose only) | reduced | — |
+- **reach > support rank**: full (100%) contribution.
+- **reach == support rank**: half (50%) contribution — just long enough to land glancing
+  blows past the ranks in front.
+- **reach < support rank**: no direct damage contribution — too short to reach the fight.
+  Still provides a push/morale benefit to the front rank (fatigue resistance in prolonged
+  grinds), same idea as the old short-weapon case, just no longer a special case: it's
+  what "reach < rank" always means.
 
-**Push** (short weapons in support): no direct damage contribution but improves front rank
-morale and fatigue resistance. Matters in prolonged grinds.
+This applies the same reach-vs-rank comparison as repel (see `AUnit::resolveRepel()`),
+just without repel's stricter "strictly longer" requirement — support attacks allow the
+boundary case at half strength instead of excluding it outright.
 
-**Example — pike block (4 front rank + 3 support ranks of pikes):**
-100% + 60% + 40% + 20% = 220% of a single rank.
-4 front rank positions × 2.2 = effectively ~9 fighters worth of damage output.
+Ranged weapons (bow, crossbow) don't use this table at all — a loose formation's support
+rank fires freely over the front rank at full effect; a tight formation blocks missile fire
+through its own ranks entirely (see Loose/Tight below).
 
-**Example — swordsmen (4 front rank + swordsmen behind):**
+**By weapon reach** (reach scale per `WeaponList.hpp`: 0 natural, 1 short/one-handed,
+2 two-handed, 3 spears, 4 pikes, 5 special/magical):
+
+| Weapon reach | Front rank | Support 1 | Support 2 | Support 3 | Support 4 |
+|---|---|---|---|---|---|
+| 0 (natural) | 100% | — | — | — | — |
+| 1 (short/one-handed) | 100% | 50% | — | — | — |
+| 2 (two-handed) | 100% | 100% | 50% | — | — |
+| 3 (spear) | 100% | 100% | 100% | 50% | — |
+| 4 (pike) | 100% | 100% | 100% | 100% | 50% |
+| 5 (special/magical) | 100% | 100% | 100% | 100% | 100% |
+
+**Example — pike block (4 front rank + 3 support ranks of pikes, reach 4):**
+100% + 100% + 100% + 100% = 400% of a single rank (no tapering within 3 ranks — a pike
+reaches past all of them).
+4 front rank positions × 4.0 = effectively ~16 fighters worth of damage output.
+
+**Example — swordsmen (4 front rank + shortswords behind, reach 1):**
 100% + 0% = 100%.
-4 positions, no multiplier. But swordsmen have better individual defence and armour,
-so they hold the line better against the pike block's output.
+4 positions, no multiplier — support rank is push-only. But swordsmen have better
+individual defence and armour, so they hold the line better against the pike block's
+output.
 
 ### Effect of multiple engaged hexsides
 

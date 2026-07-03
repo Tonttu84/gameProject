@@ -280,14 +280,28 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	}
 
 	// Repel: a defender with a strictly longer weapon than this attack's reach
-	// gets an opposed roll to interrupt it before damage lands. The original
-	// target always gets first try (regardless of its own repelMalus); if it
-	// doesn't win, any other alive, non-broken enemy sharing the same engaged
-	// hexside (or, if the target itself was undefended, anyone else in its
-	// hex) with repelMalus==0 and a longer weapon gets pulled in next, in
-	// sortKey order. The first defender to win the opposed roll decides the
-	// outcome for this attack; everyone who attempted (win or lose) pays a
-	// stacking -1 malus to their own future repels this turn.
+	// (after accounting for rank — see below) gets an opposed roll to
+	// interrupt it before damage lands. The original target always gets first
+	// try (regardless of its own repelMalus); if it doesn't win, any other
+	// alive, non-broken enemy sharing the same formation side (or, if the
+	// target itself was undefended, anyone else in its hex) with
+	// repelMalus==0 and enough reach gets pulled in next, in sortKey order.
+	// The first defender to win the opposed roll decides the outcome for this
+	// attack; everyone who attempted (win or lose) pays a stacking -1 malus
+	// to their own future repels this turn.
+	//
+	// Support ranks: a defender standing in rank 2/3 (behind the man actually
+	// holding the boundary) fights from further back, so its weapon's reach
+	// is reduced by (rank - 1) for repel purposes — both for qualifying at
+	// all and for the reach bonus added to its own roll. A reach-3 spear can
+	// still repel from rank 1, but only a reach-4 pike reaches far enough to
+	// repel from rank 2. Unseated units (rank 0 — a loner not yet seated in
+	// any formation, e.g. a hand-built test defender) are treated as rank 1:
+	// no reduction. This same rank check applies to originalTarget as much as
+	// to cascade candidates — before this, a rank-2/3 unit that became the
+	// primary target via find_target()'s undefended-hex fallback could repel
+	// at its full, un-reduced weapon reach, the one way the front-rank-only
+	// repel ability could leak onto support ranks.
 	//
 	// MountedUnit composites contribute up to two independent candidates
 	// (rider, then mount) via repelParts() — each gets its own single
@@ -303,31 +317,47 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		Hex*     hex  = originalTarget->getHex();
 		HexSide* side = originalTarget->getEngagedSide();
 
-		// A broken primary target doesn't fight back, but the cascade to other
-		// eligible defenders sharing its side (or hex, if undefended) is still
-		// open — see the "others" loop below, which already excludes broken
-		// candidates the same way. getBroken() is read at the composite level
-		// so a MountedUnit reports correctly: it defers to the rider while
-		// mounted, so a panicking mount under a calm rider's control is NOT
-		// considered broken here, and a calm mount under a broken rider IS —
-		// see MountedUnit::getBroken()/effectTarget().
-		std::vector<AUnit*> candidates;
-		if (!originalTarget->getBroken())
-			candidates = originalTarget->repelParts();
+		// Pairs a repel-eligible sub-unit with the *composite's* engaged rank
+		// (MountedUnit's syncTacticalState() doesn't copy rank onto rider/mount,
+		// so it's carried alongside rather than read back off the part).
+		struct RepelCandidate { AUnit* unit; int rank; };
 
-		std::vector<AUnit*> others;
+		// A broken primary target doesn't fight back, but the cascade to other
+		// eligible defenders sharing its formation side (or hex, if undefended)
+		// is still open — see the "others" loop below, which already excludes
+		// broken candidates the same way. getBroken() is read at the composite
+		// level so a MountedUnit reports correctly: it defers to the rider
+		// while mounted, so a panicking mount under a calm rider's control is
+		// NOT considered broken here, and a calm mount under a broken rider IS
+		// — see MountedUnit::getBroken()/effectTarget().
+		std::vector<RepelCandidate> candidates;
+		if (!originalTarget->getBroken()) {
+			int rank = originalTarget->getEngagedRank();
+			for (AUnit* part : originalTarget->repelParts())
+				candidates.push_back({part, rank});
+		}
+
+		std::vector<RepelCandidate> others;
 		for (AUnit* u : hex->units) {
 			if (!u || u == originalTarget || !u->getAlive() || u->getBroken()) continue;
 			if (u->getTeam() == team) continue;
-			if (side && u->getEngagedSide() != side) continue;
+			// formationSide (set for every ranked unit) rather than
+			// engagedSide (rank 1 only) — so a rank 2/3 teammate sharing the
+			// same boundary is a valid cascade candidate too, not just
+			// whoever is actually holding it. engagedSide is also checked so
+			// a hand-built defender with only engagedSide set (no formation
+			// at all) still matches, same as before this change.
+			if (side && u->getEngagedSide() != side && u->getFormationSide() != side) continue;
+			int rank = u->getEngagedRank();
 			for (AUnit* part : u->repelParts())
-				if (part->getRepelMalus() == 0) others.push_back(part);
+				if (part->getRepelMalus() == 0) others.push_back({part, rank});
 		}
 		std::sort(others.begin(), others.end(),
-		          [](AUnit* a, AUnit* b) { return a->sortsBefore(b); });
+		          [](const RepelCandidate& a, const RepelCandidate& b) { return a.unit->sortsBefore(b.unit); });
 		candidates.insert(candidates.end(), others.begin(), others.end());
 
-		for (AUnit* def : candidates) {
+		for (RepelCandidate& cand : candidates) {
+			AUnit* def = cand.unit;
 			if (def->_attacks.empty()) continue;
 			// A defender with several weapons of differing reach repels with
 			// whichever one reaches furthest, not just its first weapon — but
@@ -336,11 +366,14 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			for (const Weapon& w : def->_attacks)
 				if (w.getReach() > defWeaponPtr->getReach()) defWeaponPtr = &w;
 			const Weapon& defWeapon = *defWeaponPtr;
-			if (defWeapon.getReach() <= attackerReach) continue;
+
+			int rankDepth = std::max(cand.rank, 1) - 1; // rank 1 (or unseated) -> 0, rank 2 -> 1, rank 3 -> 2
+			int effReach  = defWeapon.getReach() - rankDepth;
+			if (effReach <= attackerReach) continue;
 
 			int attackerRoll = attackPWR - fatigue + attackerHitBonus + attackerReach + Utility::throwDice();
 			int defenderRoll = def->attackPWR - def->fatigue + def->computeMeleeAttackBonus()
-			                  + defWeapon.getReach() + Utility::throwDice() - def->repelMalus;
+			                  + effReach + Utility::throwDice() - def->repelMalus;
 			++def->repelMalus;
 
 			if (defenderRoll <= attackerRoll) continue; // attacker wins this round; try the next defender
