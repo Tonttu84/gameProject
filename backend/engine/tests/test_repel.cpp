@@ -2,6 +2,7 @@
 #include "Battlefield.hpp"
 #include "units/Soldier.hpp"
 #include "units/Human.hpp"
+#include "units/Pikeman.hpp"
 #include "units/Cavalry.hpp"
 #include "units/Warhorse.hpp"
 #include "units/Scorpion.hpp"
@@ -885,4 +886,155 @@ TEST_CASE("resolveRepel: when the primary target has no engagedSide, every other
                                        // (none) — proves the side==nullptr branch truly
                                        // skips the side filter rather than coincidentally
                                        // matching
+}
+
+// ── support ranks: weapon reach reduced by (rank - 1) ────────────────────────
+//
+// Rank 1 (or an unseated rank-0 loner, treated the same) repels with a weapon's
+// full raw reach — unchanged from every test above. Rank 2/3 defenders fight
+// from further back, so their effective reach for repel purposes is reduced by
+// one point per rank behind the front: a reach-3 spear that repels fine from
+// rank 1 no longer reaches far enough from rank 2; only a reach-4 pike does.
+//
+// This also closes the gap the rank check used to leave open: before this,
+// resolveRepel() never looked at originalTarget's rank at all, so a rank-2/3
+// unit that became the primary target via find_target()'s undefended-hex
+// fallback could repel at its full, un-reduced weapon reach — the one way the
+// front-rank-only ability could leak onto support ranks. The "rank 2 spear
+// fails" and "rank 3 pike fails" tests below are that gap, closed.
+
+TEST_CASE("resolveRepel: rank 1 baseline — a reach-3 spear repels a reach-2 attack") {
+    Battlefield bf;
+    Hex* hex = repelHex(bf);
+
+    Soldier attacker(REDTEAM);
+    Human defender(BLUETEAM, MeleeWeapons::Spear); // reach 3
+    defender.setHex(hex);
+    defender.setEngagedRank(1);
+
+    Utility::clearDiceRolls();
+    // effReach = 3 - (rank1 -> depth 0) = 3, strictly greater than attackerReach(2) -> qualifies.
+    // attackerRoll = 11-0+0+2+1 = 14
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    // defenderRoll = 10-0+0+3+6-0 = 19 -> wonBy = 5
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    // testMorale(5) on attacker: 10+0+1-6=5, 5 > 5 is false -> FAILS
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+
+    bool blocked = false;
+    attacker.resolveRepel(&defender, blocked, /*attackerHitBonus*/0, /*attackerReach*/2);
+    Utility::clearDiceRolls();
+
+    CHECK(blocked == true);
+    CHECK(attacker.getBroken() == true);
+    CHECK(defender.getRepelMalus() == 1);
+}
+
+TEST_CASE("resolveRepel: rank 2 — the same reach-3 spear no longer qualifies against a reach-2 attack") {
+    Battlefield bf;
+    Hex* hex = repelHex(bf);
+
+    Soldier attacker(REDTEAM);
+    Human defender(BLUETEAM, MeleeWeapons::Spear); // reach 3
+    defender.setHex(hex);
+    defender.setEngagedRank(2); // support rank — matches production: rank 2/3 get no engagedSide
+
+    Utility::clearDiceRolls(); // effReach = 3-1 = 2, not > attackerReach(2) -> must not even attempt
+
+    bool blocked = false;
+    attacker.resolveRepel(&defender, blocked, /*attackerHitBonus*/0, /*attackerReach*/2);
+
+    CHECK(blocked == false);
+    CHECK(defender.getRepelMalus() == 0);
+    CHECK(defender.getHp() == 10);
+}
+
+TEST_CASE("resolveRepel: rank 2 — a Pikeman's reach-4 pike compensates for the rank penalty and still repels") {
+    Battlefield bf;
+    Hex* hex = repelHex(bf);
+
+    Soldier attacker(REDTEAM);
+    Pikeman defender(BLUETEAM); // Pike, reach 4
+    defender.setHex(hex);
+    defender.setEngagedRank(2);
+
+    Utility::clearDiceRolls();
+    // effReach = 4 - (rank2 -> depth 1) = 3, strictly greater than attackerReach(2) -> qualifies.
+    // attackerRoll = 11-0+0+2+1 = 14
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    // defenderRoll = 10(Human default attackPWR)-0+0+3+6-0 = 19 -> wonBy = 5
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    // testMorale(5) on attacker: 10+0+1-6=5, 5 > 5 is false -> FAILS
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+
+    bool blocked = false;
+    attacker.resolveRepel(&defender, blocked, /*attackerHitBonus*/0, /*attackerReach*/2);
+    Utility::clearDiceRolls();
+
+    CHECK(blocked == true);
+    CHECK(attacker.getBroken() == true);
+    CHECK(defender.getRepelMalus() == 1);
+    CHECK(defender.getHp() == 10); // untouched — the attack never landed
+}
+
+TEST_CASE("resolveRepel: rank 3 — the same Pikeman's reach-4 pike no longer qualifies against a reach-2 attack") {
+    Battlefield bf;
+    Hex* hex = repelHex(bf);
+
+    Soldier attacker(REDTEAM);
+    Pikeman defender(BLUETEAM); // Pike, reach 4
+    defender.setHex(hex);
+    defender.setEngagedRank(3);
+
+    Utility::clearDiceRolls(); // effReach = 4-2 = 2, not > attackerReach(2) -> must not even attempt
+
+    bool blocked = false;
+    attacker.resolveRepel(&defender, blocked, /*attackerHitBonus*/0, /*attackerReach*/2);
+
+    CHECK(blocked == false);
+    CHECK(defender.getRepelMalus() == 0);
+}
+
+TEST_CASE("resolveRepel: a rank-2 backup sharing the formation side can cascade in once the rank-1 "
+          "defender loses, even though it has no engagedSide of its own") {
+    Battlefield bf;
+    Hex* hex = repelHex(bf);
+    HexSide side;
+
+    Soldier attacker(REDTEAM);
+
+    Human primary(BLUETEAM, MeleeWeapons::Halberd); // reach 2 — loses outright to this attack
+    primary.setHex(hex);
+    primary.setEngagedSide(&side);
+    primary.setFormationSide(&side);
+    primary.setEngagedRank(1);
+
+    Pikeman backup(BLUETEAM); // Pike, reach 4 — rank 2, same formation side, no engagedSide
+    backup.setHex(hex);
+    backup.setFormationSide(&side);
+    backup.setEngagedRank(2);
+
+    Utility::clearDiceRolls();
+    // primary (Halberd, effReach=2-0=2) qualifies against attackerReach(1) and loses:
+    // attackerRoll = 11-0+0+1+6=18, primaryRoll = 10-0+0+2+1-0=13
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    // backup (Pike, effReach=4-1=3) qualifies against attackerReach(1) and wins:
+    // attackerRoll = 11-0+0+1+1=13, backupRoll = 10-0+0+3+6-0=19 -> wonBy = 6
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+    // testMorale(6) on attacker: 10+0+1-6=5, 5 > 6 is false -> FAILS
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);
+
+    bool blocked = false;
+    attacker.resolveRepel(&primary, blocked, /*attackerHitBonus*/0, /*attackerReach*/1);
+    Utility::clearDiceRolls();
+
+    CHECK(blocked == true);
+    CHECK(attacker.getBroken() == true);
+    CHECK(primary.getRepelMalus() == 1);
+    CHECK(backup.getRepelMalus() == 1); // pulled in via formationSide despite having no engagedSide
 }

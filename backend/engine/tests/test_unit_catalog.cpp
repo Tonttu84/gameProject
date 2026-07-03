@@ -33,7 +33,7 @@ TEST_CASE("unit catalog: lists every unit type in the engine") {
     for (const auto& u : j["units"])
         names.insert(u["name"].get<std::string>());
 
-    for (const char* expected : {"Soldier", "Archer", "Mage", "Priest",
+    for (const char* expected : {"Soldier", "Pikeman", "Archer", "Mage", "Priest",
                                  "Necromancer", "Cavalry", "Zombie",
                                  "Skeleton", "Scorpion", "Horse", "Warhorse"}) {
         INFO("missing type: " << expected);
@@ -104,14 +104,14 @@ TEST_CASE("unit catalog: exported values match a live instance of each type") {
     }
 }
 
-TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable five") {
+TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable six") {
     auto j = json::parse(unitCatalogJson());
     std::set<std::string> placeable;
     for (const auto& u : j["units"])
         if (u["placeable"].get<bool>())
             placeable.insert(u["name"].get<std::string>());
     REQUIRE(placeable == std::set<std::string>{
-        "Soldier", "Archer", "Mage", "Priest", "Cavalry"});
+        "Soldier", "Pikeman", "Archer", "Mage", "Priest", "Cavalry"});
 }
 
 TEST_CASE("unit catalog: pinned sizes stay consistent with SIZE constexprs") {

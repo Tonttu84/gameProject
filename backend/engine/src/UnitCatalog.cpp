@@ -1,6 +1,7 @@
 #include "UnitCatalog.hpp"
 #include "hex/HexGrid.hpp"
 #include "units/Soldier.hpp"
+#include "units/Pikeman.hpp"
 #include "units/Archer.hpp"
 #include "units/Mage.hpp"
 #include "units/Priest.hpp"
@@ -33,6 +34,7 @@ const std::vector<UnitCatalogEntry>& unitCatalog()
     // typeName          placeable spawnable factory
     static const std::vector<UnitCatalogEntry> catalog = {
         {"Soldier",     true,  true,  makeT<Soldier>},
+        {"Pikeman",     true,  true,  makeT<Pikeman>},
         {"Archer",      true,  true,  makeT<Archer>},
         {"Mage",        true,  true,  makeT<Mage>},
         {"Priest",      true,  true,  makeT<Priest>},
