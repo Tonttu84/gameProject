@@ -48,6 +48,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Same cache the test job maintains. With backend/SFML-2.6.0/ present in
+      # the build context, the Makefile inside the image skips the sfml-dev.org
+      # download — which is both faster and immune to that site flaking (it
+      # has failed builds with network timeouts before).
+      - name: Cache SFML
+        uses: actions/cache@v4
+        with:
+          path: backend/SFML-2.6.0
+          key: sfml-2.6.0-linux-gcc-64
+
       - name: Build image
         run: docker build -t gameproject .
 
