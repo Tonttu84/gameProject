@@ -24,7 +24,8 @@ the stat sheet:
 | size                | `size = SIZE;` with `static constexpr int SIZE = …;` in the header |
 | category / forbidden terrain | `setCategory(UnitCategory::…)`; forbidden terrain derives from the category via `forbiddenTerrainForCategory()` in `AUnit.hpp` — do **not** list terrain per unit |
 | maxHP / attack / defence / armour | `maxHP`, `hitpoints`, `attackPWR`, `defence`, `armour` |
-| speed / preferred range | `movementSpeed`, `preferredRange`                      |
+| speed / preferred range | `movementSpeed` (hexes per tick — implemented, not cosmetic), `preferredRange` |
+| ballistic skill     | `setBallisticSkill(n)` — melee-attack scale (10 = trained archer); derives the legacy 0-100 `accuracy` as n×5. Campaign scouting/foraging values derive from speed + this (`campaign-server/utils/capabilities.js`) |
 | weapons             | `addWeapon(MeleeWeapons::…)` (may modify defence/shield)   |
 
 Change a stat here later and it propagates everywhere on rebuild + server restart — that is

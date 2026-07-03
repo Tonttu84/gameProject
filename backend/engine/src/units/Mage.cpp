@@ -5,7 +5,7 @@ Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
     setSpellcaster(true);
     printSymbol    = 'M';
-    accuracy       = 60; // 60% aimed chance, 6-hex aimed range
+    setBallisticSkill(12); // derives accuracy 60: 60% aimed chance, 6-hex aimed range
     preferredRange = 3;
     size = SIZE;
 }

@@ -7,6 +7,7 @@
 #include "units/Priest.hpp"
 #include "units/Necromancer.hpp"
 #include "units/Cavalry.hpp"
+#include "units/LightCavalry.hpp"
 #include "units/Zombie.hpp"
 #include "units/Skeleton.hpp"
 #include "units/Scorpion.hpp"
@@ -39,6 +40,7 @@ const std::vector<UnitCatalogEntry>& unitCatalog()
         {"Mage",        true,  true,  makeT<Mage>},
         {"Priest",      true,  true,  makeT<Priest>},
         {"Cavalry",     true,  true,  makeT<Cavalry>},
+        {"LightCavalry", true, true,  makeT<LightCavalry>},
         {"Necromancer", false, true,  makeT<Necromancer>},
         {"Zombie",      false, false, makeT<Zombie>},
         {"Skeleton",    false, false, makeT<Skeleton>},
@@ -106,6 +108,7 @@ std::string unitCatalogJson()
                 {"defence",        u->getDefence()},
                 {"armour",         u->getArmour()},
                 {"speed",          u->getMovementSpeed()},
+                {"ballisticSkill", u->getBallisticSkill()},
                 {"preferredRange", u->getPreferredRange()},
             }},
         });

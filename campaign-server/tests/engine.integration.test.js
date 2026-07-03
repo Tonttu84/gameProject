@@ -37,7 +37,12 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
   test('info output has the grid/units shape the frontend relies on', async () => {
     const info = await getInfo()
     expect(info.grid.width).toBeGreaterThan(0)
-    expect(info.units.length).toBe(5)
+    // info.units is exactly the placeable subset of the catalog — pin it to
+    // dump-units instead of a count so adding a unit type can't silently
+    // desync the two engine exports.
+    const catalog = await dumpUnits()
+    const placeable = catalog.units.filter((u) => u.placeable).map((u) => u.name).sort()
+    expect(info.units.map((u) => u.type).sort()).toEqual(placeable)
     for (const u of info.units)
       expect(u).toMatchObject({ type: expect.any(String), placementSize: expect.any(Number) })
   }, 30000)

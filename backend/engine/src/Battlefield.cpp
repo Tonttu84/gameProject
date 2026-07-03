@@ -429,8 +429,69 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
 void Battlefield::moveUnits()
 {
     // Squad pre-pass: squads claim their target hex before lone units move.
-    for (auto& sq : _red.squads)  if (sq) moveSquad(*sq);
-    for (auto& sq : _blue.squads) if (sq) moveSquad(*sq);
+    //
+    // Squads run on pooled movement points (AUnit::getMovePoints()): each
+    // member regains its movementSpeed per tick — never banking above that
+    // base — and every member pays each entered hex's terrain cost, going
+    // negative if it must. A member at zero or below blocks the whole squad.
+    // A blocked squad pools help: the currently-richest member pays 1 point,
+    // re-evaluated after each payment, until 3 points are spent — buying the
+    // most-drained straggler +1. That repeats until everyone is positive or
+    // nobody has 3 points left — faster members finding the path for a slow
+    // one and carrying his gear. Squads therefore follow their slowest
+    // member, minus whatever the fast ones can carry.
+    constexpr int SQUAD_AID_COST = 3;
+    auto advanceSquad = [&](Squad& sq) {
+        if (sq.tickHold()) return;
+
+        std::vector<AUnit*> members;
+        for (AUnit* m : sq.getMembers())
+            if (m && m->getAlive() && !m->getBroken())
+                members.push_back(m);
+        if (members.empty()) return;
+
+        for (AUnit* m : members) {
+            // Fold lone-unit debt (e.g. an archer's firing recovery) into the
+            // bank, then regain — capped at base so nothing accrues above a
+            // unit's normal speed.
+            int pts = m->getMovePoints() - static_cast<int>(m->getSpentMove());
+            m->setSpentMove(0);
+            m->setMovePoints(std::min(pts + m->getMovementSpeed(),
+                                      m->getMovementSpeed()));
+        }
+
+        auto byPoints = [](AUnit* a, AUnit* b) {
+            return a->getMovePoints() < b->getMovePoints();
+        };
+        auto poorest = [&]() { return *std::min_element(members.begin(), members.end(), byPoints); };
+        auto richest = [&]() { return *std::max_element(members.begin(), members.end(), byPoints); };
+
+        while (true) {
+            // Aid phase — see the block comment above.
+            while (poorest()->getMovePoints() <= 0
+                   && richest()->getMovePoints() >= SQUAD_AID_COST) {
+                AUnit* straggler = poorest();
+                for (int paid = 0; paid < SQUAD_AID_COST; ++paid) {
+                    AUnit* donor = richest();
+                    donor->setMovePoints(donor->getMovePoints() - 1);
+                }
+                straggler->setMovePoints(straggler->getMovePoints() + 1);
+            }
+            if (poorest()->getMovePoints() <= 0) return; // still blocked — squad waits
+
+            int cost = moveSquad(sq);
+            if (cost <= 0) return;
+            for (AUnit* m : members)
+                m->setMovePoints(m->getMovePoints() - cost);
+
+            // Fresh contact ends the tick's movement — the squad fights from
+            // where it met the enemy instead of sliding along the front.
+            AUnit* ref = sq.getFlagBearer();
+            if (ref && ref->getEngaged(*this)) return;
+        }
+    };
+    for (auto& sq : _red.squads)  if (sq) advanceSquad(*sq);
+    for (auto& sq : _blue.squads) if (sq) advanceSquad(*sq);
     moveTeam(_red);
     moveTeam(_blue);
 }
@@ -471,10 +532,8 @@ void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
     // If no retreat hex is available the unit holds its position.
 }
 
-void Battlefield::moveSquad(Squad& squad)
+int Battlefield::moveSquad(Squad& squad)
 {
-    if (squad.tickHold()) return;
-
     // Navigate and track the per-tick lateral-move flag via the flag bearer
     // rather than the leader: the bearer auto-transfers to the next eligible
     // member on death (Squad::onFlagBearerDeath), so it stays a single stable
@@ -483,11 +542,11 @@ void Battlefield::moveSquad(Squad& squad)
     AUnit* ref = squad.getFlagBearer();
     if (!ref || !ref->getAlive() || ref->getBroken())
         ref = squad.onFlagBearerDeath();
-    if (!ref || !ref->getHex()) return;
+    if (!ref || !ref->getHex()) return 0;
 
     // Find enemy target and the best forward hex using BFS — same logic as moveToward.
     Hex* enemyTarget = findTarget(*ref);
-    if (!enemyTarget) return;
+    if (!enemyTarget) return 0;
 
     HexCoord from    = ref->getHex()->coord;
     bool     mounted = (ref->getCategory() == UnitCategory::Mounted);
@@ -495,7 +554,7 @@ void Battlefield::moveSquad(Squad& squad)
 
     int curDist = flyer ? HexGrid::distance(from, enemyTarget->coord)
                         : hexGrid.bfsDistance(ref->getHex(), enemyTarget, mounted);
-    if (curDist <= 0 || curDist == HexGrid::UNREACHABLE) return;
+    if (curDist <= 0 || curDist == HexGrid::UNREACHABLE) return 0;
 
     bool mustDecrease = ref->getTookLateral();
 
@@ -534,7 +593,7 @@ void Battlefield::moveSquad(Squad& squad)
     // members are still counted toward hexReserveSize() for loners
     // redistributing around them, but a squad itself never leaves via
     // reinforcement; it moves as a block only when actually advancing.
-    if (!nextHex) return;
+    if (!nextHex) return 0;
 
     // Space already occupied in nextHex by squad members that happen to be there already
     // (they will "leave and re-enter" so we add them back to available space).
@@ -571,20 +630,21 @@ void Battlefield::moveSquad(Squad& squad)
             }
         }
 
-        if (available < squadSize) return; // still not enough room — squad holds position
+        if (available < squadSize) return 0; // still not enough room — squad holds position
     }
 
     // Move all alive non-broken members to nextHex. Each member's old hex is vacated
     // via setHex (which calls removeFromHex internally). Fatigue cost mirrors moveAUnit.
-    size_t debt = (moveCost > 1) ? static_cast<size_t>(moveCost - 1) : 0;
+    // Terrain cost is NOT tracked here — moveUnits() charges every member's
+    // movement-points bank with the returned cost.
     for (AUnit* m : squad.getMembers()) {
         if (!m || !m->getAlive() || m->getBroken()) continue;
         if (m->getHex() == nextHex) continue; // already there
         m->addFatigue(m->getFatigueCost() / 2);
         m->setHex(nextHex);
-        if (debt > 0) m->setSpentMove(debt);
     }
     ref->setTookLateral(tookLateral);
+    return moveCost;
 }
 
 void Battlefield::moveTeam(Team& team)
@@ -593,47 +653,85 @@ void Battlefield::moveTeam(Team& team)
         if (!unit || !unit->getAlive()) continue;
         AUnit& u = *unit;
 
-        if (u.getMovementSpeed() == 0) continue; // immobile unit — never moves
+        int speed = u.getMovementSpeed();
+        if (speed == 0) continue; // immobile unit — never moves
 
         if (u.getBroken()) {
-            flee(unit);
+            // Broken units flee at full speed — each step re-checks the
+            // map-edge escape and rally outcomes inside flee(). Stop when
+            // the unit escaped, rallied, or made no progress (blocked or
+            // recovering from exhaustion — never more than one recover()).
+            for (int step = 0; step < speed; ++step) {
+                if (!u.getAlive() || !u.getBroken() || !u.getHex()) break;
+                Hex* before = u.getHex();
+                flee(unit);
+                if (!u.getAlive() || u.getHex() == before) break;
+            }
             continue;
         }
         // Non-broken squad members already moved in the squad pre-pass.
         if (u.getSquad()) continue;
-        if (u.tickHold()) continue; // holding position
-        if (u.getFatigue() >= 100 || u.getCast() > 0) continue; // exhausted or casting
+        if (u.tickHold()) continue; // holding position (ticks once per tick, not per hex)
 
-        // Ranged units (archers, mages, necromancers) maintain a preferred
-        // distance. preferredRange > 1 means they back away when enemies
-        // close in and hold position once at the right distance, rather than
-        // advancing into melee. Falls through to normal melee logic when
-        // preferredRange drops to 0 or 1 (e.g. archer out of ammo).
-        int pref = u.getPreferredRange();
-        if (pref > 1) {
-            Hex* enemyHex = findTarget(u);
-            if (enemyHex) {
-                int dist = HexGrid::distance(u.getHex()->coord, enemyHex->coord);
-                if (dist < pref)
-                    retreatToRange(unit);   // too close — back away
-                else if (dist > pref)
-                    moveToward(unit, enemyHex); // too far — close to preferred range
-                // dist == pref: hold position
-            }
-            continue;
-        }
-
-        // Fatigued units adjacent to enemies hold position as reserves — assignment
-        // handles rotation within the hex each tick (fresh units fight, fatigued ones
-        // step back to support without leaving the hex).
-        if (u.getEngaged(*this) && u.getFatigue() > FATIGUE_VERY_TIRED) {
-            continue;
-        }
-
-        Hex* target = findTarget(u);
-        if (!target) continue;
-        moveToward(unit, target);
+        // Speed >1 units take several one-hex steps, re-evaluating target and
+        // engagement between steps so they can't charge past a contact made
+        // mid-tick. A step that pays off terrain move-cost debt counts as a
+        // step; stop as soon as a step makes no progress.
+        for (int step = 0; step < speed; ++step)
+            if (!moveUnitStep(unit)) break;
     }
+}
+
+bool Battlefield::moveUnitStep(std::unique_ptr<AUnit>& unit)
+{
+    AUnit& u = *unit;
+    if (!u.getAlive() || !u.getHex()) return false;
+    if (u.getFatigue() >= 100 || u.getCast() > 0) return false; // exhausted or casting
+
+    Hex*   before     = u.getHex();
+    size_t debtBefore = u.getSpentMove();
+    // Progress = changed hex or paid down move-cost debt; anything else means
+    // this unit is done moving for the tick.
+    auto progressed = [&]() {
+        return u.getHex() != before || u.getSpentMove() < debtBefore;
+    };
+    // Fresh contact ends the tick's movement: the unit fights from where it
+    // met the enemy instead of sliding along the front it just reached.
+    auto stopAtContact = [&]() { return progressed() && !u.getEngaged(*this); };
+
+    // Ranged units (archers, mages, necromancers) maintain a preferred
+    // distance. preferredRange > 1 means they back away when enemies
+    // close in and hold position once at the right distance, rather than
+    // advancing into melee. Falls through to normal melee logic when
+    // preferredRange drops to 0 or 1 (e.g. archer out of ammo).
+    int pref = u.getPreferredRange();
+    if (pref > 1) {
+        Hex* enemyHex = findTarget(u);
+        if (!enemyHex) return false;
+        int dist = HexGrid::distance(u.getHex()->coord, enemyHex->coord);
+        if (dist < pref)
+            retreatToRange(unit);       // too close — back away
+        else if (dist > pref)
+            moveToward(unit, enemyHex); // too far — close to preferred range
+        else
+            return false;               // at preferred range — hold
+        return progressed();
+    }
+
+    if (u.getEngaged(*this)) {
+        // Engaged units never multi-step: seated ranks hold inside
+        // moveToward(), a fatigued unit rests as a reserve, and an unseated
+        // reserve's reinforcement shuffle is a once-per-tick decision.
+        if (u.getFatigue() > FATIGUE_VERY_TIRED) return false;
+        Hex* target = findTarget(u);
+        if (target) moveToward(unit, target);
+        return false;
+    }
+
+    Hex* target = findTarget(u);
+    if (!target) return false;
+    moveToward(unit, target);
+    return stopAtContact();
 }
 
 void Battlefield::makeBattle()

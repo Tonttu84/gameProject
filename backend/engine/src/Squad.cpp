@@ -16,11 +16,22 @@ void Squad::addMember(AUnit* unit) {
     unit->setSquad(this);
 }
 
+// A negative squad movement bank is real accumulated debt — convert it to the
+// lone-unit spentMove form on exit so a straggler can't shed it by leaving the
+// squad. Positive leftovers just vanish (no banking outside a formation).
+static void settleMovePoints(AUnit* unit) {
+    if (unit->getMovePoints() < 0)
+        unit->setSpentMove(unit->getSpentMove()
+                           + static_cast<size_t>(-unit->getMovePoints()));
+    unit->setMovePoints(0);
+}
+
 void Squad::removeMember(AUnit* unit) {
     if (!unit) return;
     auto it = std::find(_members.begin(), _members.end(), unit);
     if (it != _members.end()) {
         _members.erase(it);
+        settleMovePoints(unit);
         unit->setSquad(nullptr);
     }
     if (_leader     == unit) _leader     = nullptr;
@@ -29,7 +40,7 @@ void Squad::removeMember(AUnit* unit) {
 
 void Squad::disband() {
     for (AUnit* m : _members)
-        if (m) m->setSquad(nullptr);
+        if (m) { settleMovePoints(m); m->setSquad(nullptr); }
     _members.clear();
     _leader     = nullptr;
     _flagBearer = nullptr;

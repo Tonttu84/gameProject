@@ -641,6 +641,7 @@ void AUnit::restoreForNextBattle()
 	_formationSide   = nullptr;
 	_engagedRank     = 0;
 	spentMove        = 0;
+	_movePoints      = 0;
 }
 
 	void AUnit::addFatigue(int amount)

@@ -13,6 +13,12 @@ MountedUnit::MountedUnit(int setTeam, std::unique_ptr<AUnit> rider, std::unique_
     // weighs both _rider->getSize() and _mount->getSize() independently —
     // that's a separate, more detailed roll, not affected by this.
     size = _mount->getSize();
+
+    // The composite moves at the mount's pace and shoots with the rider's
+    // hands. Copied once at construction (neither changes mid-battle);
+    // onMountDeath()/onRiderDeath() re-derive movementSpeed when a part dies.
+    movementSpeed = _mount->getMovementSpeed();
+    setBallisticSkill(_rider->getBallisticSkill());
 }
 
 AUnit* MountedUnit::effectTarget()

@@ -21,9 +21,14 @@ const start = async () => {
     console.log('  GET  /api/units             — unit catalog (from DB)')
     console.log('  GET  /api/info              — grid/placeable-unit info')
     console.log('  GET  /api/map[?name=]       — map JSON')
-    console.log('  POST /api/battles           — run + store a battle')
+    console.log('  POST /api/battles           — run + store a sandbox battle')
     console.log('  GET  /api/battles/:id       — battle summary')
     console.log('  GET  /api/battles/:id/ticks — replay tick range')
+    console.log('  POST /api/campaigns              — start a campaign')
+    console.log('  GET  /api/campaigns[/:id]        — my campaigns / one view')
+    console.log('  POST /api/campaigns/:id/events/pick — pick the day\'s omen')
+    console.log('  POST /api/campaigns/:id/battles  — fight today\'s battle')
+    console.log('  POST /api/campaigns/:id/end-day  — resolve the day')
   })
 }
 

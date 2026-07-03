@@ -325,6 +325,34 @@ TEST_CASE("buildArmyFromPlacement: unknown unit type is skipped") {
     REQUIRE(army[0]->getTeam() == REDTEAM);
 }
 
+// Regression: the zone check must be per-team. It used to test every entry
+// against the PLAYER zone, which silently dropped every enemy_placement
+// entry (they are in the enemy zone by construction) and produced an empty
+// red army — battles "won" in two ticks against nobody.
+TEST_CASE("buildArmyFromPlacement: each team is confined to its own deployment zone") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    g.fromJson(makeMapWithZones()); // player rows 18-19, enemy rows 0-1
+
+    json blue = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3 - 9}, {"r", 18}},  // in player zone → kept
+        json{{"unit_type", "Soldier"}, {"q", 3},     {"r", 0}},   // enemy zone → rejected
+        json{{"unit_type", "Soldier"}, {"q", 3},     {"r", 10}},  // no-man's land → rejected
+    });
+    auto blueArmy = buildArmyFromPlacement(blue.dump(), BLUETEAM, g);
+    REQUIRE(blueArmy.size() == 1);
+    REQUIRE(blueArmy[0]->getHex()->coord.r == 18);
+
+    json red = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3},     {"r", 0}},   // in enemy zone → kept
+        json{{"unit_type", "Soldier"}, {"q", 3 - 9}, {"r", 18}},  // player zone → rejected
+        json{{"unit_type", "Soldier"}, {"q", 3},     {"r", 10}},  // no-man's land → rejected
+    });
+    auto redArmy = buildArmyFromPlacement(red.dump(), REDTEAM, g);
+    REQUIRE(redArmy.size() == 1);
+    REQUIRE(redArmy[0]->getHex()->coord.r == 0);
+}
+
 TEST_CASE("buildArmyFromPlacement: out-of-grid coord → unit is skipped") {
     HexGrid g;
     g.buildRect(16, 20);

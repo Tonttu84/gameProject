@@ -1,79 +1,33 @@
 import React, { useState, useEffect } from 'react'
-import { getInfo, getMap, postBattle, setToken } from './services/api'
+import { getInfo, getMap, setToken } from './services/api'
+import useCampaign from './hooks/useCampaign'
 import HexGrid from './components/HexGrid'
 import EventCards from './components/EventCards'
 import CampaignHUD from './components/CampaignHUD'
 import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
 import LoginForm from './components/LoginForm'
+import TutorialIntro from './components/TutorialIntro'
 import './App.css'
 
-const EVENT_POOL = [
-  { id: 'supply',         title: 'Supply Cache',        description: 'Scouts find an abandoned depot.',               effect: { type: 'food',       delta: +30 } },
-  { id: 'reinforcement',  title: 'Reinforcements',       description: 'A company joins your banner. +20 Soldiers.',    effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
-  { id: 'desertion',      title: 'Desertion',            description: 'Low morale: 10% of soldiers desert overnight.', effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
-  { id: 'plague',         title: 'Plague',               description: 'Disease thins the ranks by 5%.',               effect: { type: 'all_roster', factor: 0.95 } },
-  { id: 'intel',          title: 'Enemy Intel',          description: 'A defector brings battle plans.',               effect: { type: 'augury',     delta: +15 } },
-  { id: 'ambush',         title: 'Enemy Ambush',         description: 'Enemy scouts have located your camp.',          effect: { type: 'enemy_advance' } },
-  { id: 'weather',        title: 'Harsh Weather',        description: 'Cold snap drains rations. -10 food.',           effect: { type: 'food',       delta: -10 } },
-  { id: 'traders',        title: 'Traveling Traders',    description: 'Merchants sell supplies. +15 food.',            effect: { type: 'food',       delta: +15 } },
-]
-
-const drawEvents = (auguryScore) => {
-  const shuffled = [...EVENT_POOL].sort(() => Math.random() - 0.5)
-  const real   = shuffled[0]
-  const decoy1 = shuffled[1]
-  const decoy2 = shuffled[2]
-
-  const realPct  = auguryScore
-  const half     = Math.round((100 - auguryScore) / 2)
-  const other    = 100 - realPct - half
-
-  return [
-    { ...real,   probability: realPct, isReal: true  },
-    { ...decoy1, probability: half,    isReal: false },
-    { ...decoy2, probability: other,   isReal: false },
-  ].sort(() => Math.random() - 0.5)
-}
-
-const applyEffect = (effect, roster, food, augury) => {
-  let r = { ...roster }
-  let f = food
-  let a = augury
-
-  if (effect.type === 'food') {
-    f = Math.max(0, food + effect.delta)
-  } else if (effect.type === 'roster') {
-    if (effect.delta !== undefined)
-      r[effect.unit] = Math.max(0, (r[effect.unit] ?? 0) + effect.delta)
-    else if (effect.factor !== undefined)
-      r[effect.unit] = Math.floor((r[effect.unit] ?? 0) * effect.factor)
-  } else if (effect.type === 'all_roster') {
-    Object.keys(r).forEach(k => { r[k] = Math.floor(r[k] * effect.factor) })
-  } else if (effect.type === 'augury') {
-    a = Math.min(100, Math.max(0, augury + effect.delta))
-  }
-  // 'enemy_advance' has no immediate roster effect; handled at battle time (TODO)
-
-  return { roster: r, food: f, augury: a }
-}
-
-const STARTING_ROSTER = { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10 }
+// All campaign state (day, food, roster, events, enemy) lives server-side —
+// this component is a client of the campaign view and only owns UI state:
+// which screen is showing, in-progress placements, and the auth session.
 
 const App = () => {
   const [info,         setInfo]         = useState(null)
   const [map,          setMap]          = useState(null)
   const [phase,        setPhase]        = useState('setup')
-  const [day,          setDay]          = useState(1)
-  const [food,         setFood]         = useState(100)
-  const [augury,       setAugury]       = useState(50)
-  const [roster,       setRoster]       = useState(STARTING_ROSTER)
   const [placements,   setPlacements]   = useState([])
-  const [events,       setEvents]       = useState([])
   const [battleResult, setBattleResult] = useState(null)
   const [error,        setError]        = useState(null)
   const [user,         setUser]         = useState(null) // { token, username, name }
   const [authNotice,   setAuthNotice]   = useState(null)
+  const [tutorial,     setTutorial]     = useState(
+    () => window.localStorage.getItem('tutorialEnabled') !== 'off',
+  )
+
+  const { campaign, loading, create, pickEvent, fight, endDay } = useCampaign(user)
 
   useEffect(() => {
     Promise.all([getInfo(), getMap()])
@@ -87,8 +41,8 @@ const App = () => {
     const stored = window.localStorage.getItem('loggedGameUser')
     if (stored) {
       const u = JSON.parse(stored)
-      setUser(u)
       setToken(u.token)
+      setUser(u)
     }
   }, [])
 
@@ -103,62 +57,72 @@ const App = () => {
     window.localStorage.removeItem('loggedGameUser')
     setToken(null)
     setUser(null)
+    setPhase('setup')
   }
 
-  const startAugury = () => {
-    setEvents(drawEvents(augury))
-    setPhase('augury')
+  const toggleTutorial = () => {
+    const next = !tutorial
+    window.localStorage.setItem('tutorialEnabled', next ? 'on' : 'off')
+    setTutorial(next)
   }
 
-  const pickEvent = (event) => {
-    const updated = applyEffect(event.effect, roster, food, augury)
-    setRoster(updated.roster)
-    setFood(updated.food)
-    setAugury(updated.augury)
+  // Campaign calls share one error path: an expired token drops back to the
+  // login screen instead of the fatal connection-error screen.
+  const guarded = (fn) => async (...args) => {
+    try {
+      return await fn(...args)
+    } catch (e) {
+      if (e.response?.status === 401) {
+        handleLogout()
+        setAuthNotice('Session expired — log in again.')
+      } else if (e.response?.data?.error) {
+        setAuthNotice(e.response.data.error)
+      } else {
+        setError('Campaign server call failed. Check that it is running.')
+      }
+      return undefined
+    }
+  }
+
+  const startCampaign = guarded(async () => {
+    await create()
+    setPhase('setup')
+  })
+
+  const startAugury = () => setPhase('augury')
+
+  const handlePickEvent = guarded(async (event) => {
+    await pickEvent(event.id)
     setPlacements([])
     setPhase('placement')
-  }
+  })
 
-  const startBattle = async () => {
-    if (placements.length === 0 || !user) return
+  const startBattle = guarded(async () => {
+    if (placements.length === 0) return
     setPhase('battling')
 
     const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
-
     const playerPlacement = placements.flatMap(p => {
       const { q, r } = toAxial(p.col, p.row)
       const holdTurns = p.holdTurns ?? 0
       return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r, hold_turns: holdTurns }))
     })
 
-    try {
-      const result = await postBattle({ map: 'sample_battle', player_placement: playerPlacement, enemy_preset: 'default' })
-      setBattleResult(result)
-      setPhase('result')
-    } catch (e) {
-      if (e.response?.status === 401) {
-        // Token expired or revoked mid-session — drop back to logged-out
-        // placement instead of the fatal connection-error screen.
-        handleLogout()
-        setAuthNotice('Session expired — log in again.')
-      } else {
-        setError('Battle subprocess failed. Check that ./game is built.')
-      }
-      setPhase('placement')
+    const result = await fight(playerPlacement)
+    if (!result) {
+      setPhase('placement') // guarded() already surfaced the error
+      return
     }
-  }
+    setBattleResult(result)
+    setPhase('result')
+  })
 
-  const nextDay = () => {
-    if (battleResult?.blue_survivors) {
-      setRoster({ ...battleResult.blue_survivors })
-    }
-    const totalUnits = Object.values(roster).reduce((a, b) => a + b, 0)
-    setFood(f => Math.max(0, f - Math.ceil(totalUnits / 10)))
-    setDay(d => d + 1)
+  const nextDay = guarded(async () => {
+    await endDay()
     setPlacements([])
     setBattleResult(null)
     setPhase('setup')
-  }
+  })
 
   if (error) {
     return (
@@ -173,46 +137,175 @@ const App = () => {
     return <div className="loading">Connecting to game server...</div>
   }
 
+  const authBar = (
+    <div className="auth-bar">
+      {user ? (
+        <>
+          <span data-testid="auth-username">Logged in as {user.username}</span>
+          <button className="login-toggle" data-testid="logout-button" onClick={handleLogout}>
+            Log out
+          </button>
+        </>
+      ) : (
+        <LoginForm onLogin={handleLogin} />
+      )}
+      <button className="login-toggle" data-testid="tutorial-toggle" onClick={toggleTutorial}>
+        Tutorial: {tutorial ? 'on' : 'off'}
+      </button>
+      {authNotice && <span className="login-error" data-testid="auth-notice">{authNotice}</span>}
+    </div>
+  )
+
+  // ── Pre-campaign screens ──────────────────────────────────────────────────
+  if (!user) {
+    return (
+      <div className="app">
+        {authBar}
+        <div className="phase-setup">
+          <h2>The Campaign Awaits</h2>
+          <TutorialIntro
+            id="login"
+            enabled={tutorial}
+            title="Welcome, commander"
+            lines={[
+              'Log in (or register) to take command of your army.',
+              'Each day you read the omens, deploy, and fight — or rest and regroup.',
+              'Your campaign is saved on the server; you can return any time.',
+            ]}
+          />
+          <p>Log in to begin your campaign.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading && !campaign) {
+    return (
+      <div className="app">
+        {authBar}
+        <div className="loading">Loading campaign...</div>
+      </div>
+    )
+  }
+
+  if (!campaign) {
+    return (
+      <div className="app">
+        {authBar}
+        <div className="phase-setup">
+          <h2>No Campaign In Progress</h2>
+          <TutorialIntro
+            id="start"
+            enabled={tutorial}
+            title="Starting a campaign"
+            lines={[
+              'You lead an army shadowed by an enemy host.',
+              'Keep your soldiers fed, learn what you can, and break the enemy before the land is picked clean.',
+            ]}
+          />
+          <button className="btn-primary" data-testid="start-campaign" onClick={startCampaign}>
+            Start Campaign
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (campaign.status !== 'active') {
+    return (
+      <div className="app">
+        {authBar}
+        <div className="phase-setup">
+          <h2>{campaign.status === 'won' ? 'Victory!' : 'Defeat'}</h2>
+          <p>
+            {campaign.status === 'won'
+              ? `The enemy is broken after ${campaign.day} days. The country is yours.`
+              : `Your army is destroyed on day ${campaign.day}.`}
+          </p>
+          <button className="btn-primary" data-testid="start-campaign" onClick={startCampaign}>
+            New Campaign
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Active campaign ───────────────────────────────────────────────────────
+  const roster = campaign.roster
+  const totalUnits = Object.values(roster).reduce((a, b) => a + b, 0)
+
   return (
     <div className="app">
-      <CampaignHUD day={day} food={food} augury={augury} roster={roster} />
-
-      <div className="auth-bar">
-        {user ? (
-          <>
-            <span data-testid="auth-username">Logged in as {user.username}</span>
-            <button className="login-toggle" data-testid="logout-button" onClick={handleLogout}>
-              Log out
-            </button>
-          </>
-        ) : (
-          <LoginForm onLogin={handleLogin} />
-        )}
-        {authNotice && <span className="login-error" data-testid="auth-notice">{authNotice}</span>}
-      </div>
+      <CampaignHUD
+        day={campaign.day}
+        food={campaign.resources.food}
+        augury={campaign.auguryScore}
+        roster={roster}
+      />
+      {authBar}
 
       {phase === 'setup' && (
         <div className="phase-setup">
-          <h2>Day {day} — Morning Council</h2>
+          <h2>Day {campaign.day} — Morning Council</h2>
+          <TutorialIntro
+            id="council"
+            enabled={tutorial}
+            title="The morning council"
+            lines={[
+              'Each day starts here: your army eats, the augur reads the signs.',
+              'Consult the augur to see the day’s omens, then deploy your line.',
+              `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'offering battle' : 'shadowing your army'}.`,
+            ]}
+          />
           <p>
-            Your army has {Object.values(roster).reduce((a, b) => a + b, 0)} soldiers.
-            Food stores: <strong>{food}</strong>.
+            Your army has {totalUnits} soldiers.
+            Food stores: <strong>{campaign.resources.food}</strong>.
           </p>
-          {food <= 0 && (
+          {campaign.resources.food <= 0 && (
             <p className="warning">No food! Units will desert.</p>
           )}
-          <button className="btn-primary" onClick={startAugury}>
-            Consult the Augur
-          </button>
+          {campaign.enemy.battleOffer && (
+            <p className="warning">Enemy banners are formed up — they offer battle today.</p>
+          )}
+          {campaign.events.length > 0 ? (
+            <button className="btn-primary" onClick={startAugury}>
+              Consult the Augur
+            </button>
+          ) : (
+            <button className="btn-primary" onClick={() => setPhase('placement')}>
+              Muster for Battle
+            </button>
+          )}
         </div>
       )}
 
       {phase === 'augury' && (
-        <EventCards events={events} onPick={pickEvent} />
+        <>
+          <TutorialIntro
+            id="augury"
+            enabled={tutorial}
+            title="The augur speaks"
+            lines={[
+              'Three omens are shown; choose one and its fate befalls the camp.',
+              'The percentages hint at how much you trust the augur today.',
+            ]}
+          />
+          <EventCards events={campaign.events} onPick={handlePickEvent} />
+        </>
       )}
 
       {(phase === 'placement' || phase === 'battling') && (
         <div className="phase-placement">
+          <TutorialIntro
+            id="placement"
+            enabled={tutorial}
+            title="Deployment"
+            lines={[
+              'Click a highlighted hex in your half to place troops; the enemy waits beyond the red line.',
+              'Units left unplaced stay safe in camp.',
+              'Fight when ready — or end the day without battle.',
+            ]}
+          />
           <HexGrid
             info={info}
             map={map}
@@ -228,11 +321,13 @@ const App = () => {
                 <button
                   className="btn-primary"
                   onClick={startBattle}
-                  disabled={placements.length === 0 || !user}
+                  disabled={placements.length === 0 || campaign.battleFoughtToday}
                 >
                   Fight!
                 </button>
-                {!user && <span className="login-hint">Log in to fight</span>}
+                <button className="login-toggle" data-testid="end-day" onClick={nextDay}>
+                  End Day{campaign.battleFoughtToday ? '' : ' (no battle)'}
+                </button>
               </>
             )}
             {phase === 'battling' && (
