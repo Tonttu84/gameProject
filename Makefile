@@ -85,7 +85,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean
+.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean docker-build docker-up
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -188,3 +188,16 @@ frontend-test:
 serve: $(NAME)
 	cd campaign-server && npm start &
 	cd frontend && npm run dev
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Full stack (engine + campaign server + built frontend) in one image, for
+# running the game on any machine with Docker (Windows: Docker Desktop).
+# NOT for this dev machine (no Docker here — WSL runs the stack natively);
+# the CI "docker" job builds and smoke-tests the image on every push.
+docker-build:
+	docker build -t gameproject .
+
+# → http://localhost:3001, log in as testuser/test. `docker compose down -v`
+# wipes the campaign DB volume.
+docker-up:
+	docker compose up --build
