@@ -338,6 +338,7 @@ const App = () => {
             title="Deployment"
             lines={[
               'Click a highlighted hex in your half to place troops; the enemy waits beyond the red line.',
+              'Give standing orders in the Orders section — set Hold (turns) to make a stack hold position instead of advancing; a ⌛ badge marks held hexes.',
               'Units left unplaced stay safe in camp; foragers are out sweeping the rings.',
               'Fight when ready — or end the turn without battle.',
             ]}

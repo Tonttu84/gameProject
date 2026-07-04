@@ -60,6 +60,10 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
     onClose()
   }
 
+  // Orders are per-placement: only units actually going onto this hex have
+  // anything to be ordered. An unplaced roster type shows no order controls.
+  const orderedUnits = units.filter(u => !isForbidden(u) && (counts[u.type] ?? 0) > 0)
+
   return (
     <div className="reach-menu">
       <div className="reach-menu-header">
@@ -69,6 +73,8 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
       <div className="reach-capacity">
         {totalSizeUsed} / {hexCapacity}
       </div>
+
+      <div className="reach-section-title">Troops</div>
       {units.map(u => {
         const forbidden = isForbidden(u)
         return (
@@ -86,19 +92,37 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
               data-testid={`count-${u.type}`}
               disabled={forbidden}
             />
-            <input
-              type="number"
-              min={0}
-              value={holdTurns[u.type] ?? 0}
-              onChange={e => handleHoldChange(u.type, e.target.value)}
-              className="reach-hold-input"
-              data-testid={`hold-turns-${u.type}`}
-              disabled={forbidden}
-              title="Hold turns (0 = advance immediately)"
-            />
           </div>
         )
       })}
+
+      <div className="reach-section-title">Orders</div>
+      {orderedUnits.length === 0 ? (
+        <div className="reach-orders-empty" data-testid="orders-empty">
+          Place troops above to give them orders.
+        </div>
+      ) : (
+        orderedUnits.map(u => (
+          <div key={u.type} className="reach-order-row">
+            <span className="reach-symbol">{u.symbol}</span>
+            <span className="reach-type">{u.type}</span>
+            {/* Hold is the only order today. Future order types (stance,
+                target priority) add more labeled fields to this row. */}
+            <label className="reach-order-field">
+              Hold (turns)
+              <input
+                type="number"
+                min={0}
+                value={holdTurns[u.type] ?? 0}
+                onChange={e => handleHoldChange(u.type, e.target.value)}
+                className="reach-hold-input"
+                data-testid={`hold-turns-${u.type}`}
+              />
+            </label>
+          </div>
+        ))
+      )}
+
       <button className="reach-commit" onClick={commit}>Place</button>
       <button className="reach-clear" onClick={clear}>Clear</button>
     </div>

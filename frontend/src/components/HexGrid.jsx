@@ -122,19 +122,36 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
           style={{ cursor: inPlayer && !disabled && !hexData.impassable ? 'pointer' : 'default' }}
         >
           <polygon points={hexPoints(x, y)} fill={fill} stroke="#222" strokeWidth="0.8" />
-          {stack.map((p, i) => (
-            <text
-              key={p.type}
-              x={x}
-              y={y + (i - (stack.length - 1) / 2) * 9}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize="8"
-              fill="#88aaff"
-            >
-              {p.type[0]}{p.count}
-            </text>
-          ))}
+          {stack.map((p, i) => {
+            const rowY = y + (i - (stack.length - 1) / 2) * 9
+            return (
+              <React.Fragment key={p.type}>
+                <text
+                  x={x}
+                  y={rowY}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize="8"
+                  fill="#88aaff"
+                >
+                  {p.type[0]}{p.count}
+                </text>
+                {p.holdTurns > 0 && (
+                  <text
+                    data-testid={`hold-badge-${col}-${row}-${p.type}`}
+                    x={x + HEX_SIZE * 0.55}
+                    y={rowY}
+                    textAnchor="start"
+                    dominantBaseline="middle"
+                    fontSize="7"
+                    fill="#ffcc66"
+                  >
+                    ⌛{p.holdTurns}
+                  </text>
+                )}
+              </React.Fragment>
+            )
+          })}
           {isSelected && (
             <polygon points={hexPoints(x, y)} fill="none" stroke="#6688ff" strokeWidth="1.5" />
           )}
