@@ -178,11 +178,9 @@ server-node: $(NAME)
 frontend:
 	cd frontend && npm run dev
 
-# Run React/Vitest tests via the nvm node installation (no sudo / PATH changes needed).
-NVM_NODE = $(HOME)/.nvm/versions/node/v24.11.1/bin/node
-NVM_NPM  = $(HOME)/.nvm/versions/node/v24.11.1/bin/npm
+# Run React/Vitest tests. Uses whatever node/npm is on PATH (/usr/bin node v22 here).
 frontend-test:
-	PATH="$(HOME)/.nvm/versions/node/v24.11.1/bin:$$PATH" $(NVM_NODE) $(NVM_NPM) --prefix frontend test
+	npm --prefix frontend test
 
 # Launch campaign server (Node BFF) + Vite dev server side-by-side.
 serve: $(NAME)
