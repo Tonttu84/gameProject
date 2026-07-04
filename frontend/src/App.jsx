@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { getInfo, getMap, setToken } from './services/api'
 import useCampaign from './hooks/useCampaign'
 import HexGrid from './components/HexGrid'
-import EventCards from './components/EventCards'
+import AuguryPanel from './components/AuguryPanel'
+import DayReport from './components/DayReport'
 import ForagePanel from './components/ForagePanel'
 import CampaignHUD from './components/CampaignHUD'
 import BattleResult from './components/BattleResult'
@@ -22,6 +23,7 @@ const App = () => {
   const [phase,        setPhase]        = useState('setup')
   const [placements,   setPlacements]   = useState([])
   const [battleResult, setBattleResult] = useState(null)
+  const [dayReport,    setDayReport]    = useState(null)
   const [error,        setError]        = useState(null)
   const [user,         setUser]         = useState(null) // { token, username, name }
   const [authNotice,   setAuthNotice]   = useState(null)
@@ -29,7 +31,7 @@ const App = () => {
     () => window.localStorage.getItem('tutorialEnabled') !== 'off',
   )
 
-  const { campaign, loading, create, pickEvent, assignForagers, fight, endDay } = useCampaign(user)
+  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fight, endDay } = useCampaign(user)
 
   useEffect(() => {
     Promise.all([getInfo(), getMap()])
@@ -93,11 +95,10 @@ const App = () => {
 
   const startAugury = () => setPhase('augury')
 
-  const handlePickEvent = guarded(async (event) => {
-    await pickEvent(event.id)
+  const musterForBattle = () => {
     setPlacements([])
     setPhase('placement')
-  })
+  }
 
   const startBattle = guarded(async () => {
     if (placements.length === 0) return
@@ -119,11 +120,14 @@ const App = () => {
     setPhase('result')
   })
 
+  // End the turn and show the fortnight's report — the augury reveal lives
+  // there, so the report gets its own beat before the next council.
   const nextDay = guarded(async () => {
-    await endDay()
+    const report = await endDay()
     setPlacements([])
     setBattleResult(null)
-    setPhase('setup')
+    setDayReport(report)
+    setPhase('report')
   })
 
   if (error) {
@@ -248,7 +252,6 @@ const App = () => {
         food={campaign.resources.food}
         foodNeed={campaign.resources.foodNeedPerTurn}
         materials={campaign.resources.materials}
-        augury={campaign.auguryScore}
         roster={roster}
         forage={campaign.forage}
       />
@@ -287,12 +290,12 @@ const App = () => {
               tutorial={tutorial}
             />
           )}
-          {campaign.events.length > 0 ? (
+          {!campaign.augury.consulted ? (
             <button className="btn-primary" onClick={startAugury}>
-              Consult the Augur
+              Visit the Augur
             </button>
           ) : (
-            <button className="btn-primary" onClick={() => setPhase('placement')}>
+            <button className="btn-primary" onClick={musterForBattle}>
               Muster for Battle
             </button>
           )}
@@ -304,14 +307,27 @@ const App = () => {
           <TutorialIntro
             id="augury"
             enabled={tutorial}
-            title="The augur speaks"
+            title="The augur's vision"
             lines={[
-              'Three omens are shown; choose one and its fate befalls the camp.',
-              'The percentages hint at how much you trust the augur today.',
+              'The augur reads the coming fortnight and shows you one vision of what fate holds.',
+              'The augur may lie: severe omens are the hardest to read, and only the end of the turn tells truth from shadow.',
+              'A reroll does not re-read the same fate — it changes fate itself, for better or worse.',
             ]}
           />
-          <EventCards events={campaign.events} onPick={handlePickEvent} />
+          <AuguryPanel
+            augury={campaign.augury}
+            onConsult={guarded(consultAugur)}
+            onReroll={guarded(rerollAugur)}
+            onContinue={musterForBattle}
+          />
         </>
+      )}
+
+      {phase === 'report' && dayReport && (
+        <DayReport
+          report={dayReport}
+          onContinue={() => { setDayReport(null); setPhase('setup') }}
+        />
       )}
 
       {(phase === 'placement' || phase === 'battling') && (

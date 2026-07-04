@@ -143,7 +143,7 @@ along with the winner and corpse count. Called once `tick()` returns `false`.
 
 Consumers:
 - `App.jsx` fetches `info`+`map` on mount, drives the setup → augury → placement → battle →
-  result phase machine, and is the only place `postBattle` is called (with a
+  result → report phase machine, and is the only place `postBattle` is called (with a
   client-constructed `player_placement` array built from the placement UI's local state).
 - `HexGrid.jsx` renders the map (terrain colors from `info.terrain` + `map.hexes`) and the
   placement UI; delegates per-hex unit counts to `ReachMenu.jsx`.

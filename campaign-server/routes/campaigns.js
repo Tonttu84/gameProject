@@ -5,7 +5,7 @@ import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay } from '../services/dayResolution.js'
-import { drawEvents, applyEffect } from '../services/events.js'
+import { drawAugury, consultAugury, rerollAugury } from '../services/augury.js'
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { getCatalog } from '../utils/catalog.js'
@@ -14,7 +14,6 @@ import {
   STARTING_ROSTER,
   STARTING_FOOD,
   STARTING_MATERIALS,
-  STARTING_AUGURY,
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
   FORAGE_RINGS,
@@ -49,8 +48,7 @@ router.post('/', async (req, res) => {
       assignment: {},
       enemyPlan: enemyForagePlanKg(ENEMY_ARMY, await getCatalog()),
     },
-    auguryScore: STARTING_AUGURY,
-    events: { drawn: drawEvents(STARTING_AUGURY), picked: false },
+    augury: drawAugury(),
     enemy: {
       army: ENEMY_ARMY,
       initialStrength: Object.values(ENEMY_ARMY).reduce((a, b) => a + b, 0),
@@ -105,20 +103,42 @@ router.post('/:id/forage', async (req, res) => {
   res.json(await campaignView(campaign))
 })
 
-// v1 pick-a-card augury (replaced by consult/reroll in the augury rework):
-// the picked card's effect applies immediately, once per day.
-router.post('/:id/events/pick', async (req, res) => {
+// Consult the augur: one reading per turn. The response's campaign view
+// carries the prophecy card + raw roll; whether it was TRUE stays hidden
+// until end-of-turn.
+router.post('/:id/augury/consult', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
-  if (campaign.events.picked) return res.status(400).json({ error: 'event already picked today' })
+  if (campaign.augury.consulted)
+    return res.status(400).json({ error: 'the augur has already spoken today' })
 
-  const event = campaign.events.drawn.find((e) => e.id === req.body?.eventId)
-  if (!event) return res.status(400).json({ error: 'unknown event' })
+  const shown = consultAugury(campaign)
+  campaign.log.push({
+    day: campaign.day,
+    entries: [`The augur speaks: ${shown.title}.`],
+  })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
 
-  const entries = applyEffect(campaign, event.effect)
-  campaign.events.picked = true
-  campaign.log.push({ day: campaign.day, entries: [`Omen: ${event.title}.`, ...entries] })
+// Reroll the bones: REPLACES fate — both events are redrawn (the old true
+// event will never fire) and read fresh. Requires a prior consult and a
+// remaining reroll.
+router.post('/:id/augury/reroll', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (!campaign.augury.consulted)
+    return res.status(400).json({ error: 'consult the augur before rerolling' })
+  if (campaign.augury.rerollsRemaining <= 0)
+    return res.status(400).json({ error: 'no rerolls remaining' })
+
+  const shown = rerollAugury(campaign)
+  campaign.log.push({
+    day: campaign.day,
+    entries: [`The bones are cast anew: ${shown.title}.`],
+  })
   await campaign.save()
   res.json(await campaignView(campaign))
 })

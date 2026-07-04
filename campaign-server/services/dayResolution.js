@@ -1,7 +1,8 @@
 import { DESERTION_FRACTION } from '../utils/campaignConfig.js'
 import { getCatalog } from '../utils/catalog.js'
 import { armyFoodPerTurn } from '../utils/capabilities.js'
-import { drawEvents, rosterTotal } from './events.js'
+import { applyEffect, rosterTotal } from './events.js'
+import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { resolveForaging } from './forage.js'
@@ -11,7 +12,7 @@ import { resolveForaging } from './forage.js'
 //   1. forage            (both hosts strip the rings)
 //   2. forager clashes   (inside the forage step — contested rings)
 //   2.5 scouting accrual (scouting stage)
-//   3. apply true event  (augury rework; v1 applies the picked card at pick time)
+//   3. apply true event  (regardless of what the augur foretold — the reveal)
 //   4. enemy turn        (upkeep, stance, tomorrow's offer + forage plan)
 //   5. player upkeep     (food, desertion at zero)
 //   6. check end         (annihilation / enemy withdrawal)
@@ -28,6 +29,14 @@ export async function endDay(campaign) {
   const foraging = resolveForaging(campaign, catalog)
   entries.push(...foraging.entries)
   report.forage = foraging.forage
+
+  // 3. The true event comes to pass — foretold or not. The report carries
+  // the reveal (predicted vs actual); the log records what actually happened.
+  report.augury = auguryReveal(campaign)
+  entries.push(
+    `Came to pass: ${campaign.augury.trueEvent.title}.`,
+    ...applyEffect(campaign, campaign.augury.trueEvent.effect),
+  )
 
   // 4. Enemy turn
   entries.push(...enemyTurn(campaign, catalog))
@@ -68,7 +77,7 @@ export async function endDay(campaign) {
     campaign.day += 1
     campaign.battleFoughtToday = false
     campaign.forage.assignment = new Map()
-    campaign.events = { drawn: drawEvents(campaign.auguryScore), picked: false }
+    campaign.augury = drawAugury()
     campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
   }
 

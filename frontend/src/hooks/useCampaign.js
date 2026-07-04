@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   getCampaigns,
   createCampaign,
-  pickCampaignEvent,
+  consultCampaignAugury,
+  rerollCampaignAugury,
   setCampaignForage,
   postCampaignBattle,
   endCampaignDay,
@@ -39,8 +40,12 @@ export default function useCampaign(user) {
     return created
   }
 
-  const pickEvent = async (eventId) => {
-    setCampaign(await pickCampaignEvent(campaign.id, eventId))
+  const consultAugur = async () => {
+    setCampaign(await consultCampaignAugury(campaign.id))
+  }
+
+  const rerollAugur = async () => {
+    setCampaign(await rerollCampaignAugury(campaign.id))
   }
 
   const assignForagers = async (assignment) => {
@@ -59,5 +64,5 @@ export default function useCampaign(user) {
     return res.report
   }
 
-  return { campaign, loading, create, pickEvent, assignForagers, fight, endDay, reload }
+  return { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fight, endDay, reload }
 }

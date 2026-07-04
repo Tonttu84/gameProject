@@ -24,7 +24,15 @@ export const STARTING_ROSTER = {
 // ~4 turns for the starting army (which needs 12,432 kg per turn).
 export const STARTING_FOOD = 50000
 export const STARTING_MATERIALS = 0
-export const STARTING_AUGURY = 50
+
+// ── Augury ──────────────────────────────────────────────────────────────────
+// Consulting the augur rolls exploding dice + the true event's baseAccuracy
+// bonus + a mage bonus + a character bonus; at or above the threshold the
+// prophecy shows the true event, below it it may show the decoy. These
+// numbers are server-side only — the UI never states odds.
+export const AUGURY_THRESHOLD = 7
+export const AUGURY_REROLLS_PER_DAY = 1 // a reroll REPLACES fate: both events redrawn
+export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)))
 
 // The shadowing enemy host (hidden from the player; scouting reveals it).
 export const ENEMY_ARMY = {

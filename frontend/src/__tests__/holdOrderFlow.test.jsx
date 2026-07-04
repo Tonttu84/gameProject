@@ -22,7 +22,8 @@ vi.mock('../services/api', () => ({
   setToken: vi.fn(),
   getCampaigns: vi.fn(),
   createCampaign: vi.fn(),
-  pickCampaignEvent: vi.fn(),
+  consultCampaignAugury: vi.fn(),
+  rerollCampaignAugury: vi.fn(),
   setCampaignForage: vi.fn(),
   postCampaignBattle: vi.fn(),
   endCampaignDay: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock('../services/api', () => ({
 
 import { getInfo, getMap, getCampaigns, postCampaignBattle } from '../services/api'
 import App from '../App'
-import { campaignFixture } from './fixtures/campaign'
+import { campaignFixture, consultedAugury } from './fixtures/campaign'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -40,8 +41,8 @@ const info = {
   units: [{ type: 'Soldier', symbol: 'S', placementSize: 1 }],
 }
 
-// events: [] → the council goes straight to "Muster for Battle", no augur.
-const campaign = { ...campaignFixture, events: [] }
+// Augur already consulted → the council goes straight to "Muster for Battle".
+const campaign = { ...campaignFixture, augury: consultedAugury }
 
 beforeEach(() => {
   vi.clearAllMocks()

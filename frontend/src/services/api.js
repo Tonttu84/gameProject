@@ -38,8 +38,13 @@ export const getCampaigns = () =>
   axios.get('/api/campaigns', authed()).then(r => r.data)
 export const getCampaign = (id) =>
   axios.get(`/api/campaigns/${id}`, authed()).then(r => r.data)
-export const pickCampaignEvent = (id, eventId) =>
-  axios.post(`/api/campaigns/${id}/events/pick`, { eventId }, authed()).then(r => r.data)
+// Consult the augur (one reading per turn); the returned view carries the
+// prophecy card + raw dice roll — whether it is TRUE is revealed at end-day.
+export const consultCampaignAugury = (id) =>
+  axios.post(`/api/campaigns/${id}/augury/consult`, {}, authed()).then(r => r.data)
+// Reroll the bones: redraws BOTH hidden events (the old fate never fires).
+export const rerollCampaignAugury = (id) =>
+  axios.post(`/api/campaigns/${id}/augury/reroll`, {}, authed()).then(r => r.data)
 // Replace the turn's forager assignment ({unitType: count}); returns the view.
 export const setCampaignForage = (id, assignment) =>
   axios.post(`/api/campaigns/${id}/forage`, { assignment }, authed()).then(r => r.data)

@@ -4,13 +4,40 @@ import { FORAGE_KG_PER_POINT } from '../utils/campaignConfig.js'
 import { forageCapacityKg } from './forage.js'
 
 // THE single serializer between campaign documents and the client. Hidden
-// information — enemy.army, enemy.plannedPlacement, event isReal flags,
+// information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
+// events and prediction internals (total/threshold/accurate — the raw dice
+// roll alone can't reconstruct accuracy without the hidden bonuses),
 // forage.enemyPlan — exists only server-side; every route responds with
 // campaignView(campaign), never a raw document. tests/campaigns.test.js
 // asserts the discipline.
 //
 // Async because it derives display values (food need, forage capacity) from
 // the cached unit catalog — the client never re-implements campaign math.
+
+// The prophecy as the player sees it: which card the vision showed and the
+// raw dice roll (the flourish). NEVER the true/decoy pair, the total, the
+// threshold, or the accuracy — those stay hidden until the end-of-turn reveal.
+const auguryView = (augury) => ({
+  consulted: augury.consulted,
+  rerollsRemaining: augury.rerollsRemaining,
+  prediction: augury.prediction
+    ? {
+        roll: augury.prediction.roll,
+        event: predictedCard(augury),
+      }
+    : null,
+})
+
+const predictedCard = ({ trueEvent, decoyEvent, prediction }) => {
+  const shown = prediction.eventId === trueEvent.id ? trueEvent : decoyEvent
+  return {
+    id: shown.id,
+    title: shown.title,
+    description: shown.description,
+    severity: shown.severity,
+    effect: shown.effect, // what WOULD happen if the vision is true — not a leak
+  }
+}
 
 export async function campaignView(campaign) {
   const catalog = await getCatalog()
@@ -44,16 +71,7 @@ export async function campaignView(campaign) {
         ]),
       ),
     },
-    auguryScore: campaign.auguryScore,
-    events: campaign.events.picked
-      ? []
-      : campaign.events.drawn.map(({ id, title, description, effect, probability }) => ({
-          id,
-          title,
-          description,
-          effect, // visible: with pick-a-card semantics the effect IS the choice
-          probability,
-        })),
+    augury: auguryView(campaign.augury),
     enemy: {
       stance: campaign.enemy.stance,
       battleOffer: campaign.enemy.stance === 'offering_battle',

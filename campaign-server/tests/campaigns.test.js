@@ -54,17 +54,51 @@ const createCampaign = () => auth(api.post('/api/campaigns')).send({})
 afterEach(clearRolls)
 
 // The hidden-information discipline: NO campaign response may ever contain
-// the enemy army composition, the planned enemy placement, event truth
-// flags, or the enemy's forage plan. Checked on every response the tests
-// receive.
+// the enemy army composition, the planned enemy placement, the augury's
+// true/decoy pair or prediction internals (accuracy, total, threshold,
+// legibility bonus), or the enemy's forage plan. Checked on every response
+// the tests receive. Keys are matched quoted so e.g. the day report's public
+// `wasAccurate` reveal doesn't trip the hidden `accurate` check.
 const expectNoHiddenInfo = (body) => {
   const raw = JSON.stringify(body)
-  expect(raw).not.toContain('isReal')
   expect(raw).not.toContain('plannedPlacement')
   expect(raw).not.toContain('initialStrength')
   expect(raw).not.toContain('enemyPlan')
+  expect(raw).not.toContain('"trueEvent"')
+  expect(raw).not.toContain('"decoyEvent"')
+  expect(raw).not.toContain('"accurate"')
+  expect(raw).not.toContain('"total"')
+  expect(raw).not.toContain('"threshold"')
+  expect(raw).not.toContain('"baseAccuracy"')
   if (body.campaign?.enemy) expect(body.campaign.enemy.army).toBeUndefined()
   if (body.enemy) expect(body.enemy.army).toBeUndefined()
+}
+
+// Pinned augury states for deterministic assertions. QUIET is a no-op truth
+// (±0 food) so end-day resource math stays exact; DOOMED is NOT in
+// EVENT_POOL, so after a reroll its reappearance is impossible — which is
+// what makes "the old fate never fires" testable.
+const QUIET = {
+  id: 'quiet',
+  title: 'Quiet Fortnight',
+  description: 'Nothing stirs.',
+  severity: 1,
+  baseAccuracy: 3,
+  effect: { type: 'food', delta: 0 },
+}
+const DOOMED = {
+  id: 'doomed_omen',
+  title: 'Doom',
+  description: 'A fate that must never come to pass.',
+  severity: 3,
+  baseAccuracy: 0,
+  effect: { type: 'food', delta: -999 },
+}
+const pinAugury = async (id, trueEvent = QUIET, decoyEvent = DOOMED) => {
+  const doc = await Campaign.findById(id)
+  doc.augury.trueEvent = trueEvent
+  doc.augury.decoyEvent = decoyEvent
+  await doc.save()
 }
 
 // Fixture-catalog campaign math, used by the expectations below:
@@ -82,7 +116,8 @@ describe('POST /api/campaigns', () => {
     expect(res.body.resources.foodNeedPerTurn).toBe(12432)
     expect(res.body.roster.Soldier).toBe(300)
     expect(res.body.roster.LightCavalry).toBe(12)
-    expect(res.body.events).toHaveLength(3)
+    // A fresh, unread augury: no prophecy yet, the reroll unspent.
+    expect(res.body.augury).toEqual({ consulted: false, rerollsRemaining: 1, prediction: null })
     expect(res.body.enemy.stance).toBe('camp')
     // Fresh land: three untouched rings, nobody assigned to forage yet.
     expect(res.body.forage.rings).toEqual([
@@ -101,7 +136,10 @@ describe('POST /api/campaigns', () => {
     const res = await createCampaign()
     const doc = await Campaign.findById(res.body.id)
     expect(doc.enemy.army.get('Soldier')).toBe(540)
-    expect(doc.events.drawn.some((e) => e.isReal)).toBe(true)
+    // The turn's fate is already sealed server-side: distinct true + decoy.
+    expect(doc.augury.trueEvent.id).toBeTruthy()
+    expect(doc.augury.decoyEvent.id).toBeTruthy()
+    expect(doc.augury.trueEvent.id).not.toBe(doc.augury.decoyEvent.id)
     expect(doc.forage.enemyPlan).toBe(9132)
     // Placement only covers types present in the (test) catalog, but it must
     // exist and be axial-shaped.
@@ -209,28 +247,86 @@ describe('campaign schema versioning', () => {
   })
 })
 
-describe('POST /api/campaigns/:id/events/pick', () => {
-  test('applies the picked effect once; second pick is rejected', async () => {
-    const { body: c } = await createCampaign()
-    const pick = await auth(api.post(`/api/campaigns/${c.id}/events/pick`)).send({
-      eventId: c.events[0].id,
-    })
-    expect(pick.status).toBe(200)
-    expect(pick.body.events).toEqual([]) // consumed for today
-    expectNoHiddenInfo(pick.body)
+describe('POST /api/campaigns/:id/augury/consult', () => {
+  const consult = (id) => auth(api.post(`/api/campaigns/${id}/augury/consult`)).send({})
 
-    const again = await auth(api.post(`/api/campaigns/${c.id}/events/pick`)).send({
-      eventId: c.events[0].id,
+  test('an accurate reading shows the truth; the response carries card + raw roll only', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, DOOMED, QUIET)
+
+    // DOOMED baseAccuracy 0, 3 Mages in the starting roster → +1.
+    // Queued exploding chain [4,6,3,2] → roll 7; total 8 ≥ 7 → accurate.
+    pushRoll(4); pushRoll(6); pushRoll(3); pushRoll(2)
+    const res = await consult(c.id)
+    expect(res.status).toBe(200)
+    expect(res.body.augury.consulted).toBe(true)
+    expect(res.body.augury.rerollsRemaining).toBe(1)
+    expect(res.body.augury.prediction.roll).toBe(7)
+    expect(res.body.augury.prediction.event).toEqual({
+      id: 'doomed_omen',
+      title: 'Doom',
+      description: DOOMED.description,
+      severity: 3,
+      effect: DOOMED.effect,
     })
-    expect(again.status).toBe(400)
+    expectNoHiddenInfo(res.body)
+
+    // The DB knows whether the vision was true; no response ever does.
+    const doc = await Campaign.findById(c.id)
+    expect(doc.augury.prediction.total).toBe(8)
+    expect(doc.augury.prediction.accurate).toBe(true)
   })
 
-  test('unknown event id is rejected', async () => {
+  test('a failed reading can show the decoy', async () => {
     const { body: c } = await createCampaign()
-    const res = await auth(api.post(`/api/campaigns/${c.id}/events/pick`)).send({
-      eventId: 'nonsense',
-    })
-    expect(res.status).toBe(400)
+    await pinAugury(c.id, DOOMED, QUIET)
+
+    pushRoll(1); pushRoll(1) // roll 1, total 2 < 7 → inaccurate
+    pushRoll(2) // the false vision picks the decoy
+    const res = await consult(c.id)
+    expect(res.body.augury.prediction.event.id).toBe('quiet')
+    expect(res.body.augury.prediction.roll).toBe(1)
+    expectNoHiddenInfo(res.body)
+  })
+
+  test('the augur speaks once per turn', async () => {
+    const { body: c } = await createCampaign()
+    expect((await consult(c.id)).status).toBe(200)
+    expect((await consult(c.id)).status).toBe(400)
+  })
+})
+
+describe('POST /api/campaigns/:id/augury/reroll', () => {
+  const consult = (id) => auth(api.post(`/api/campaigns/${id}/augury/consult`)).send({})
+  const reroll = (id) => auth(api.post(`/api/campaigns/${id}/augury/reroll`)).send({})
+
+  test('rejected before the augur has spoken', async () => {
+    const { body: c } = await createCampaign()
+    expect((await reroll(c.id)).status).toBe(400)
+  })
+
+  test('replaces fate: the old truth never fires, the reroll is spent', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, DOOMED, QUIET)
+    await consult(c.id)
+
+    const res = await reroll(c.id)
+    expect(res.status).toBe(200)
+    expect(res.body.augury.rerollsRemaining).toBe(0)
+    expect(res.body.augury.consulted).toBe(true)
+    expect(res.body.augury.prediction).not.toBeNull()
+    expectNoHiddenInfo(res.body)
+
+    // DOOMED is not in EVENT_POOL: after a redraw it cannot exist anywhere.
+    const doc = await Campaign.findById(c.id)
+    expect(doc.augury.trueEvent.id).not.toBe('doomed_omen')
+    expect(doc.augury.decoyEvent.id).not.toBe('doomed_omen')
+
+    // ...and end-of-turn confirms the old fate never comes to pass.
+    const end = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(end.body.report.augury.actual.id).not.toBe('doomed_omen')
+
+    expect((await reroll(c.id)).status).toBe(400) // none left (and a new turn began)
   })
 })
 
@@ -343,8 +439,9 @@ describe('POST /api/campaigns/:id/battles', () => {
 })
 
 describe('POST /api/campaigns/:id/end-day', () => {
-  test('advances the turn: upkeep, enemy foraging, fresh events, report', async () => {
+  test('advances the turn: upkeep, enemy foraging, fresh augury, report', async () => {
     const { body: c } = await createCampaign()
+    await pinAugury(c.id) // ±0-food truth keeps the resource math exact
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
@@ -353,8 +450,20 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.report.upkeep.foodConsumed).toBe(12432)
     expect(res.body.campaign.day).toBe(2)
     expect(res.body.campaign.resources.food).toBe(50000 - 12432)
-    expect(res.body.campaign.events).toHaveLength(3)
     expect(res.body.campaign.battleFoughtToday).toBe(false)
+
+    // The truth came to pass unconsulted; the reveal says so, and the new
+    // turn starts with a fresh, unread augury.
+    expect(res.body.report.augury).toEqual({
+      predicted: null,
+      actual: { id: 'quiet', title: 'Quiet Fortnight', description: 'Nothing stirs.', severity: 1 },
+      wasAccurate: null,
+    })
+    expect(res.body.campaign.augury).toEqual({
+      consulted: false,
+      rerollsRemaining: 1,
+      prediction: null,
+    })
 
     // The enemy foraged the near ring even though we sent nobody out.
     expect(res.body.report.forage.harvested).toEqual({ food: 0, materials: 0 })
@@ -364,6 +473,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
 
   test('foragers harvest at end of turn; the assignment clears for the new turn', async () => {
     const { body: c } = await createCampaign()
+    await pinAugury(c.id) // keep the food math free of event noise
     await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({
       assignment: { Soldier: 100 }, // capacity 3000 kg
     })
@@ -380,8 +490,24 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.campaign.forage.assignment).toEqual({})
   })
 
+  test('the day report reveals predicted vs actual — the augur can lie', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, DOOMED, QUIET)
+    pushRoll(1); pushRoll(1); pushRoll(2) // failed reading, false vision shows the decoy
+    await auth(api.post(`/api/campaigns/${c.id}/augury/consult`)).send({})
+
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expectNoHiddenInfo(res.body)
+    expect(res.body.report.augury.predicted.id).toBe('quiet')
+    expect(res.body.report.augury.actual.id).toBe('doomed_omen')
+    expect(res.body.report.augury.wasAccurate).toBe(false)
+    // The unforetold doom really applied: -999 kg on top of upkeep.
+    expect(res.body.campaign.resources.food).toBe(50000 - 999 - 12432)
+  })
+
   test('starvation causes desertion', async () => {
     const { body: c } = await createCampaign()
+    await pinAugury(c.id) // a roster/food event would skew the desertion math
     const doc = await Campaign.findById(c.id)
     doc.resources.food = 5 // upkeep will floor it to 0 → 10% desert
     await doc.save()

@@ -1,19 +1,20 @@
 import mongoose from 'mongoose'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
-// plain fields — enemy.army, enemy.plannedPlacement, events[].isReal,
-// forage.enemyPlan — and must NEVER reach a client through Mongoose toJSON. Every response goes
+// plain fields — enemy.army, enemy.plannedPlacement, augury.trueEvent/
+// decoyEvent/prediction internals, forage.enemyPlan — and must NEVER reach a
+// client through Mongoose toJSON. Every response goes
 // through services/campaignView.js, the single serializer that decides what
 // the player may see. Do not add routes that res.json() a campaign document.
 
-const eventSchema = new mongoose.Schema(
+const auguryEventSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
     title: { type: String, required: true },
     description: { type: String, default: '' },
+    severity: { type: Number, required: true }, // 1 mild … 3 catastrophe
+    baseAccuracy: { type: Number, required: true }, // consult-roll bonus — HIDDEN
     effect: { type: mongoose.Schema.Types.Mixed, required: true },
-    probability: { type: Number, default: 0 }, // display-only
-    isReal: { type: Boolean, required: true }, // HIDDEN
   },
   { _id: false },
 )
@@ -35,7 +36,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 2
+export const CAMPAIGN_SCHEMA_VERSION = 3 // v3: augury rework (events/auguryScore → augury subdoc)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -53,12 +54,27 @@ const campaignSchema = new mongoose.Schema({
   // at the routes that mutate it.
   roster: { type: Map, of: Number, required: true },
 
-  // Legacy 0-100 augury bias (v1 pick-a-card port); replaced by the
-  // true-event/decoy prediction rework in a later stage.
-  auguryScore: { type: Number, default: 50 },
-  events: {
-    drawn: { type: [eventSchema], default: [] },
-    picked: { type: Boolean, default: false },
+  // The turn's prophecy. trueEvent applies at end-of-turn regardless of the
+  // reading; the client sees only the predicted card + raw dice roll.
+  augury: {
+    trueEvent: { type: auguryEventSchema, required: true }, // HIDDEN
+    decoyEvent: { type: auguryEventSchema, required: true }, // HIDDEN
+    prediction: {
+      // null until the augur is consulted this turn.
+      type: new mongoose.Schema(
+        {
+          eventId: { type: String, required: true },
+          roll: { type: Number, required: true }, // raw exploding dice — the visible flourish
+          total: { type: Number, required: true }, // roll + hidden bonuses — HIDDEN
+          threshold: { type: Number, required: true }, // HIDDEN
+          accurate: { type: Boolean, required: true }, // HIDDEN
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+    consulted: { type: Boolean, default: false },
+    rerollsRemaining: { type: Number, required: true },
   },
 
   forage: {
