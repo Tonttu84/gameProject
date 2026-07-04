@@ -59,7 +59,11 @@ RUN cd campaign-server && npm ci --omit=dev
 COPY campaign-server/ ./campaign-server/
 COPY --from=frontend-build /src/frontend/dist ./frontend/dist
 
+# Build tag stamped onto bug reports (config.APP_VERSION). Pass the git sha at
+# build time: `docker build --build-arg APP_VERSION=$(git rev-parse --short HEAD)`.
+ARG APP_VERSION=docker
 ENV NODE_ENV=production \
+    APP_VERSION=${APP_VERSION} \
     ENGINE_BIN=/app/game \
     GAME_DIR=/app \
     MAPS_DIR=/app/maps \

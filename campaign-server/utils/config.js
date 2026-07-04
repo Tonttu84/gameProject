@@ -1,4 +1,5 @@
 import os from 'node:os'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -6,10 +7,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Repo root: campaign-server/utils/ → two levels up.
 const ROOT = path.resolve(__dirname, '..', '..')
 
+// package.json version is the committed baseline build tag; a deployment sets
+// APP_VERSION (e.g. the git sha, passed as a Docker build arg) to pin the exact
+// build a player — and their bug reports — were running.
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
+
 // MONGODB_URI is the later escape hatch to a real/hosted MongoDB: when set,
 // the embedded persistent mongod is skipped entirely and nothing else changes.
 const config = {
   PORT: Number(process.env.PORT) || 3001,
+  // Build tag stamped onto bug reports so a report pins the exact build it came
+  // from. Falls back to the committed package version in dev.
+  APP_VERSION: process.env.APP_VERSION || pkg.version,
   MONGODB_URI: process.env.MONGODB_URI || null,
   DB_NAME: process.env.DB_NAME || 'gamedb',
   // NOT inside the repo: on Windows the repo lives on /mnt/c (drvfs), where

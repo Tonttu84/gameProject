@@ -6,6 +6,7 @@ import infoRouter from './routes/info.js'
 import mapsRouter from './routes/maps.js'
 import battlesRouter from './routes/battles.js'
 import campaignsRouter from './routes/campaigns.js'
+import bugReportsRouter from './routes/bugReports.js'
 import usersRouter from './routes/users.js'
 import loginRouter from './routes/login.js'
 import { tokenExtractor } from './middleware/auth.js'
@@ -37,6 +38,7 @@ app.use('/api/info', infoRouter)
 app.use('/api/map', mapsRouter)
 app.use('/api/battles', battlesRouter)
 app.use('/api/campaigns', campaignsRouter)
+app.use('/api/bug-reports', bugReportsRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/login', loginRouter)
 

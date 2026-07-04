@@ -10,6 +10,7 @@ import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
 import LoginForm from './components/LoginForm'
 import TutorialIntro from './components/TutorialIntro'
+import BugReportButton from './components/BugReportButton'
 import { tons } from './utils/format'
 import './App.css'
 
@@ -143,6 +144,16 @@ const App = () => {
     return <div className="loading">Connecting to game server...</div>
   }
 
+  // The screen the player is on, stamped onto any bug report they file. The
+  // server validates this against a fixed enum, so unknown values are harmless.
+  const currentScreen = !user
+    ? 'login'
+    : !campaign
+      ? 'start'
+      : campaign.status !== 'active'
+        ? 'gameover'
+        : phase
+
   const authBar = (
     <div className="auth-bar">
       {user ? (
@@ -158,6 +169,8 @@ const App = () => {
       <button className="login-toggle" data-testid="tutorial-toggle" onClick={toggleTutorial}>
         Tutorial: {tutorial ? 'on' : 'off'}
       </button>
+      {/* Reporting posts to a login-only route, so only offer it once logged in. */}
+      {user && <BugReportButton screen={currentScreen} />}
       {authNotice && <span className="login-error" data-testid="auth-notice">{authNotice}</span>}
     </div>
   )

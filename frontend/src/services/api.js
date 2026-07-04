@@ -54,3 +54,9 @@ export const postCampaignBattle = (id, payload) =>
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)
+
+// Submit a player bug report. The server stamps the trusted reproduction
+// context (active campaign, day, build) itself; the client only claims which
+// screen it was on. Requires a login. Returns { id, createdAt }.
+export const submitBugReport = (message, screen) =>
+  axios.post('/api/bug-reports', { message, screen }, authed()).then(r => r.data)
