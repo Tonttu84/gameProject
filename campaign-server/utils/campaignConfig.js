@@ -49,6 +49,11 @@ export const AUGURY_ODDS_PER_POINT = 0.05 // 5% per point
 export const AUGURY_ODDS_MIN = 0.05
 export const AUGURY_ODDS_MAX = 0.9
 export const AUGURY_REROLLS_PER_DAY = 1 // rerolling a slot REPLACES that fate: new pair, new roll, new odds
+// The tent reveals each slot's TRUE card once the turn's reroll is spent
+// (user: "I need to see the true cards when the reroll has been resolved").
+// TEMP DEBUG: true = reveal immediately on consult while the augury is
+// playtested; flip to false for the reroll-gated final behavior.
+export const AUGURY_DEBUG_SHOW_TRUTH = true
 export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)))
 
 // The shadowing enemy host (hidden from the player; scouting reveals it).

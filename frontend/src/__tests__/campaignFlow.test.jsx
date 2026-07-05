@@ -88,6 +88,12 @@ describe('campaign flow', () => {
     expect(screen.getByTestId('augury-odds-0')).toHaveTextContent('75% true')
     expect(screen.getByTestId('augury-odds-1')).toHaveTextContent('30% true')
     expect(screen.getByTestId('augury-odds-2')).toHaveTextContent('90% true')
+    // When the server reveals a slot's truth (reroll resolved, or the debug
+    // flag), the card says whether the vision held and what really comes.
+    expect(screen.getByTestId('augury-truth-0')).toHaveTextContent('The vision holds true.')
+    expect(screen.getByTestId('augury-truth-1')).toHaveTextContent('In truth: Desertion')
+    // Slot 2's truth is not revealed in this fixture — no truth line.
+    expect(screen.queryByTestId('augury-truth-2')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('augury-continue'))
     await screen.findByText('Fight!')

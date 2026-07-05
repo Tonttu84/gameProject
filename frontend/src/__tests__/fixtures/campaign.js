@@ -40,6 +40,8 @@ export const consultedAugury = {
       severity: 1,
       effect: { type: 'food', delta: 3000 },
       odds: 0.75,
+      // Truth revealed (debug flag / reroll spent): this vision holds.
+      truth: { id: 'supply', title: 'Supply Cache', severity: 1 },
     },
     {
       id: 'weather',
@@ -48,6 +50,8 @@ export const consultedAugury = {
       severity: 2,
       effect: { type: 'food', delta: -1000 },
       odds: 0.3,
+      // ...and this vision lied: the truth is a different same-pool event.
+      truth: { id: 'desertion', title: 'Desertion', severity: 2 },
     },
     {
       id: 'plague',

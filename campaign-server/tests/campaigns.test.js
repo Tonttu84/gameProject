@@ -288,6 +288,12 @@ describe('POST /api/campaigns/:id/augury/consult', () => {
       severity: 3,
       effect: DOOMED.effect,
     })
+    // Truth reveal: with AUGURY_DEBUG_SHOW_TRUTH on (playtest debug) the
+    // slot's true card rides along immediately; the final rule gates it on
+    // the reroll being spent. Flipping the flag flips this expectation.
+    expect(res.body.augury.visions.map((v) => v.truth.id)).toEqual(
+      Array(3).fill('doomed_omen'),
+    )
     expectNoHiddenInfo(res.body)
 
     // The DB knows which visions were true; no response ever does.
@@ -331,6 +337,9 @@ describe('POST /api/campaigns/:id/augury/reroll', () => {
     expect(res.body.augury.rerollsRemaining).toBe(0)
     expect(res.body.augury.consulted).toBe(true)
     expect(res.body.augury.visions).toHaveLength(3)
+    // The reroll is resolved → every vision now carries its slot's true card
+    // (holds with or without the debug flag).
+    expect(res.body.augury.visions.every((v) => v.truth?.id)).toBe(true)
     expectNoHiddenInfo(res.body)
 
     // DOOMED (the pinned false event) is not in EVENT_POOL: the rerolled

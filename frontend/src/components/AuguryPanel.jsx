@@ -50,6 +50,18 @@ const AuguryPanel = ({ augury, onConsult, onReroll, onContinue }) => {
                 <div className="augury-odds" data-testid={`augury-odds-${i}`}>
                   {Math.round(vision.odds * 100)}% true
                 </div>
+                {/* The truth, revealed once the reroll is resolved (or
+                    immediately while the server's debug flag is on). */}
+                {vision.truth && (
+                  <div
+                    className={`augury-truth ${vision.truth.id === vision.id ? 'augury-true' : 'augury-false'}`}
+                    data-testid={`augury-truth-${i}`}
+                  >
+                    {vision.truth.id === vision.id
+                      ? 'The vision holds true.'
+                      : `In truth: ${vision.truth.title}`}
+                  </div>
+                )}
                 {canReroll && <div className="augury-reroll-hint">Recast these bones</div>}
               </button>
             ))}
