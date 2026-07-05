@@ -38,18 +38,39 @@ notes below over the git history if they ever disagree — the commits win.
   reports (`71ac20f`), 2026-07-05 playtest fixes (placement roster filter, immediate
   battle-annihilation defeat, **augury v4** — see below).
 - **First playtest happened 2026-07-05** (Docker stack on the Windows/Docker-Desktop
-  machine). It produced the fixes above plus the augury v4 redesign, and one open UX task:
-  **replay/after-action visual parity with the SFML renderer** (per-unit markers with
-  hex-side engagement positions instead of `56A`-style aggregated stacks) — next in queue,
-  scoped but not started. Scoping (2026-07-05): the SFML `BattleRenderer` positions units
-  from per-unit engine state — `getFormationSide()` (engaged hex side), `getEngagedRank()`
-  (rank within that engagement), march formation toward the attack direction when
-  unengaged — none of which is in the replay ticks (only `id/type/team/q/r/hp`). Parity
-  therefore needs (1) `ReplayRecorder.cpp` to emit per-unit `side` (0–5 or null) and
-  `rank`, (2) a `tickCount`-compatible tick-doc schema addition (old replays: fields
-  absent → fall back to current stacked view), (3) `ReplayView.jsx` to mirror the
-  renderer's layout passes (engaged files along each engaged side by rank, support/march
-  block otherwise). Engine rebuild via Docker on the playtest machine works.
+  machine) and drove a full day of fixes/features, ALL landed and deployed same day:
+  - **Replay/SFML parity shipped**: `ReplayRecorder` emits per-unit `squad` (name),
+    `side` (HexDirection 0–5) and `rank` when engaged (omitted otherwise);
+    `ReplayView.jsx` renders one glyph per unit (5 Mages = MMMMM), colors by squad
+    (SFML `SQUAD_PALETTE` mirror, name-hashed), lays engaged units along their hex side
+    by rank, and has geometry tests (side direction, rank depth, squad coloring) — the
+    React replay is the assertable window into engine formation behavior.
+  - **Campaign squads**: `buildSquadsFromArmy` (UnitRegistry) groups same-hex same-type
+    placement stacks into engine `Squad`s in `./game battle` — formation movement +
+    SFML squad colors now apply to campaign battles.
+  - **Full-deployment rule**: Fight requires the whole non-foraging army on the field
+    (client gate + "N still in camp" counter + server-side 400).
+  - **Build-stamp save wiping**: the Docker image stamps `/app/BUILD_VERSION` after all
+    content COPYs (fresh on any changed build, no manual bump); campaigns record
+    `buildVersion` and the listing route purges saves from other builds. Client
+    recovers from the resulting mid-session 404s by reloading to the start screen.
+  - **Battle window hold**: `BATTLE_HOLD_WINDOW=1` (set only by
+    `docker-compose.display.yml`) keeps the SFML window open at battle end until the
+    player closes it; result JSON prints after close. Headless/CI unchanged.
+    In-window REWIND is still open — needs rendering from recorded ticks, not live
+    `Battlefield` state; the web replay covers scrubbing meanwhile.
+  - Open augury debug flag: `AUGURY_DEBUG_SHOW_TRUTH=true` shows truths at consult;
+    flip to false for the final reroll-gated reveal. Duplicate visions across slots
+    (two Traders) are possible and accepted for now.
+  - **Known duplication (user flagged, accepted for now)**: engagement FACTS
+    (side/rank/squad) are single-sourced from the engine recorder, but the cosmetic
+    pixel projection exists twice — `BattleRenderer.cpp` and `ReplayView.jsx` each map
+    "rank-1 file on side 0" to positions with their own geometry (the two views are
+    also transposed relative to each other). Candidate fix for an engine session:
+    extract the C++ layout into a function emitting normalized in-hex offsets per
+    unit, consumed by both renderers. Reminder while playtesting: every redeploy
+    needs a hard browser refresh — a stale bundle is the usual "feature missing"
+    culprit.
 - **Next up after that:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
   militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
   (fully designed below — coverage → cavalry-superiority gauge).
