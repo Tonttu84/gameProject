@@ -1,91 +1,121 @@
-import { throwDice, getRandom } from '../utils/dice.js'
+import { throwDice, chanceRoll } from '../utils/dice.js'
 import {
-  AUGURY_THRESHOLD,
+  AUGURY_SLOTS,
+  AUGURY_BASE_POINTS,
+  AUGURY_ODDS_PER_POINT,
+  AUGURY_ODDS_MIN,
+  AUGURY_ODDS_MAX,
   AUGURY_REROLLS_PER_DAY,
   AUGURY_MAGE_BONUS_CAP,
 } from '../utils/campaignConfig.js'
-import { EVENT_POOL } from './events.js'
+import { EVENT_POOL, POOL_LEGIBILITY } from './events.js'
 
-// The augur's prophecy. Each turn TWO distinct events are drawn: the TRUE
-// event (applies at end-of-turn no matter what) and a DECOY. Consulting rolls
-// exploding dice; on a good roll the vision shows the truth, on a bad one it
-// shows either event at even odds — so even a failed reading can happen to be
-// right, and the player can never tell which from the outside. A reroll does
-// not re-read the same fate, it REPLACES it: both events are redrawn (the old
-// truth will never fire) and the new pair is read fresh.
+// The augur's visions. Each turn holds AUGURY_SLOTS independent fates; a slot
+// is a hidden {trueEvent, falseEvent} pair drawn from ONE pool (severity
+// tier). Every slot's TRUE event applies at end-of-turn no matter what was
+// shown. Consulting reads each slot:
 //
-// campaign.augury.trueEvent / decoyEvent / prediction.{total,threshold,accurate}
-// are HIDDEN — campaignView serves only the predicted card and the raw dice
-// roll (exploding rolls are fun to show, and without the hidden bonuses the
-// total can't be reconstructed from it).
+//   points = throwDice() + base + mageBonus + characterBonus
+//          + POOL_LEGIBILITY[pool]   (the pool's modifier, never the event's)
+//   odds   = clamp(points × per-point, min, max)   ← SHOWN on the card
+//   vision = chanceRoll(odds) ? trueEvent : falseEvent
+//
+// The displayed odds are exactly the number the vision was rolled against —
+// the minigame is judging a dire omen at 30% (probably noise) against one at
+// 90% (all but certain), then spending the turn's reroll on ONE slot, which
+// REPLACES that fate: fresh pair, fresh reading; the others stay sealed.
+//
+// slots[i].{trueEvent,falseEvent,shownTrue} stay HIDDEN; slots[i].odds is
+// public once consulted (null before). Because the pair shares a pool and
+// the modifier belongs to the pool, the odds reveal the reading's murkiness
+// and nothing about which card is true; pools mix good and bad events, so
+// even the (visible) pool leaks magnitude, never direction.
+
+export const mageBonus = (roster) =>
+  Math.min(AUGURY_MAGE_BONUS_CAP, Math.floor(Math.sqrt(roster.get('Mage') ?? 0)))
+
+// One open-ended reading: exploding d6 + flat base + reading skill + the
+// POOL's legibility (identical for both pair members — the odds can never
+// out the truth), mapped to a clamped probability. Consumes dice-queue
+// draws (the throwDice chain), so tests pin it exactly.
+export const rollAuguryOdds = (campaign, trueEvent) => {
+  const points =
+    throwDice() +
+    AUGURY_BASE_POINTS +
+    mageBonus(campaign.roster) +
+    (campaign.character?.auguryBonus ?? 0) +
+    (POOL_LEGIBILITY[trueEvent.severity] ?? 0)
+  // Rounded to whole percent: the number IS the display, and chanceRoll's
+  // d1000 threshold must match it exactly.
+  const odds = Math.min(AUGURY_ODDS_MAX, Math.max(AUGURY_ODDS_MIN, points * AUGURY_ODDS_PER_POINT))
+  return Math.round(odds * 100) / 100
+}
 
 // Event draws use Math.random, not the dice queue: tests queue exact consult
 // rolls, and a newDay redraw must not eat their values.
-export function drawAugury() {
-  const trueIdx = Math.floor(Math.random() * EVENT_POOL.length)
-  let decoyIdx = Math.floor(Math.random() * (EVENT_POOL.length - 1))
-  if (decoyIdx >= trueIdx) decoyIdx += 1
+//
+// The false event comes from the SAME severity tier as the truth (user,
+// 2026-07-05): tier members share a legibility modifier, so the displayed
+// odds are identical whichever of the pair is true — the odds tell the
+// player how murky the reading was, never which card to believe.
+const drawSlot = () => {
+  const trueEvent = EVENT_POOL[Math.floor(Math.random() * EVENT_POOL.length)]
+  const peers = EVENT_POOL.filter(
+    (e) => e.severity === trueEvent.severity && e.id !== trueEvent.id,
+  )
+  const falseEvent = peers[Math.floor(Math.random() * peers.length)]
   return {
-    trueEvent: { ...EVENT_POOL[trueIdx] },
-    decoyEvent: { ...EVENT_POOL[decoyIdx] },
-    prediction: null,
+    trueEvent: { ...trueEvent },
+    falseEvent: { ...falseEvent },
+    odds: null, // rolled at consult, public from then on
+    shownTrue: null, // unresolved until the augur is consulted — HIDDEN
+  }
+}
+
+export function drawAugury() {
+  return {
+    slots: Array.from({ length: AUGURY_SLOTS }, drawSlot),
     consulted: false,
     rerollsRemaining: AUGURY_REROLLS_PER_DAY,
   }
 }
 
-export const mageBonus = (roster) =>
-  Math.min(AUGURY_MAGE_BONUS_CAP, Math.floor(Math.sqrt(roster.get('Mage') ?? 0)))
+export const shownEvent = (slot) => (slot.shownTrue ? slot.trueEvent : slot.falseEvent)
 
-// Roll the reading and record the prediction; returns the SHOWN event.
-// Queue-deterministic: one throwDice() chain, then — only when the reading
-// fails — one getRandom(1,2) draw picking which event the false vision shows
-// (1 = true, 2 = decoy).
+// Read one slot. Queue order per slot: the throwDice chain (value die,
+// explosion die, recursing on explosion), then one d1000 chanceRoll.
+const readSlot = (campaign, slot) => {
+  slot.odds = rollAuguryOdds(campaign, slot.trueEvent)
+  slot.shownTrue = chanceRoll(slot.odds)
+}
+
+// Resolve every slot's vision, in slot order. Returns the shown events.
 export function consultAugury(campaign) {
-  const augury = campaign.augury
-  const roll = throwDice()
-  const total =
-    roll +
-    augury.trueEvent.baseAccuracy +
-    mageBonus(campaign.roster) +
-    (campaign.character?.auguryBonus ?? 0)
-  const accurate = total >= AUGURY_THRESHOLD
-  const shown = accurate
-    ? augury.trueEvent
-    : getRandom(1, 2) === 1
-      ? augury.trueEvent
-      : augury.decoyEvent
-  augury.prediction = {
-    eventId: shown.id,
-    roll,
-    total,
-    threshold: AUGURY_THRESHOLD,
-    accurate,
-  }
-  augury.consulted = true
-  return shown
+  for (const slot of campaign.augury.slots) readSlot(campaign, slot)
+  campaign.augury.consulted = true
+  return campaign.augury.slots.map(shownEvent)
 }
 
-// Replace fate: fresh pair of events, fresh reading, one reroll spent.
-// Returns the newly shown event.
-export function rerollAugury(campaign) {
-  const rerollsRemaining = campaign.augury.rerollsRemaining - 1
-  campaign.augury = { ...drawAugury(), rerollsRemaining }
-  return consultAugury(campaign)
+// Replace ONE fate: the slot gets a fresh pair and a fresh reading (new
+// roll, new odds); one reroll is spent. Returns the slot's newly shown event.
+export function rerollAugurySlot(campaign, index) {
+  const slot = drawSlot()
+  readSlot(campaign, slot)
+  campaign.augury.slots.splice(index, 1, slot) // splice keeps Mongoose array change tracking
+  campaign.augury.rerollsRemaining -= 1
+  return shownEvent(slot)
 }
 
-// The end-of-turn reveal for the day report: what was foretold vs what came.
-// `wasAccurate` compares the SHOWN card to the truth (a lucky wrong reading
-// that happened to show the true event counts as true), null if never read.
+// The end-of-turn reveal for the day report, one entry per slot: what was
+// foretold at which odds vs what came to pass. `wasAccurate` is whether the
+// shown card was the truth, null if the augur was never consulted.
 export function auguryReveal(campaign) {
-  const { trueEvent, decoyEvent, prediction } = campaign.augury
   const card = ({ id, title, description, severity }) => ({ id, title, description, severity })
-  const predicted = prediction
-    ? card(prediction.eventId === trueEvent.id ? trueEvent : decoyEvent)
-    : null
-  return {
-    predicted,
-    actual: card(trueEvent),
-    wasAccurate: prediction ? prediction.eventId === trueEvent.id : null,
-  }
+  const { consulted, slots } = campaign.augury
+  return slots.map((slot) => ({
+    predicted: consulted ? card(shownEvent(slot)) : null,
+    odds: consulted ? slot.odds : null,
+    actual: card(slot.trueEvent),
+    wasAccurate: consulted ? slot.shownTrue === true : null,
+  }))
 }

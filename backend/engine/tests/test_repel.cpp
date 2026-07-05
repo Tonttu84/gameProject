@@ -235,7 +235,10 @@ TEST_CASE("resolveRepel: a Normal-pen counter-hit can be fully absorbed by the a
     CHECK(blocked == false);
 }
 
-TEST_CASE("resolveRepel: a Bypass (\"magical\") counter-hit ignores the attacker's shield entirely") {
+// NOTE: no quote characters in test names — Catch2's -f test-spec parser treats
+// a literal '"' as quoting syntax and the name becomes unresolvable, which
+// run_parallel.sh's round-trip tripwire rejects (it aborts the whole run).
+TEST_CASE("resolveRepel: a Bypass (magical) counter-hit ignores the attacker's shield entirely") {
     Battlefield bf;
     Hex* hex = repelHex(bf);
 

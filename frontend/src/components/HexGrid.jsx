@@ -65,6 +65,13 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
 
   const placementsAt = (col, row) => placements.filter(p => p.col === col && p.row === row)
 
+  // Catalog types the player has none of are not placement options. A type with
+  // placements but a zero roster (e.g. after reassigning to forage) stays visible
+  // so those placements can still be edited or cleared.
+  const ownedUnits = info.units.filter(u =>
+    (roster[u.type] ?? 0) > 0 || placements.some(p => p.type === u.type)
+  )
+
   // Roster remaining after subtracting units placed on every hex OTHER than (col,row).
   const rosterForHex = (col, row) => {
     const remaining = { ...roster }
@@ -185,7 +192,7 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
           hex={selectedHex}
           placements={placementsAt(selectedHex.col, selectedHex.row)}
           roster={rosterForHex(selectedHex.col, selectedHex.row)}
-          units={info.units}
+          units={ownedUnits}
           hexTerrain={selectedHexData?.terrain ?? 'Open'}
           hexCapacity={grid.hexCapacity}
           onPlace={handlePlace}

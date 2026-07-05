@@ -8,6 +8,12 @@ const unitStateSchema = new mongoose.Schema(
     q: { type: Number, required: true },
     r: { type: Number, required: true },
     hp: { type: Number, required: true },
+    // Formation state (absent when not applicable): squad name for squad
+    // coloring; engaged hex side 0-5 (engine HexDirection: NE E SE SW W NW)
+    // + rank within that engagement for SFML-parity replay layout.
+    squad: { type: String, default: undefined },
+    side: { type: Number, min: 0, max: 5, default: undefined },
+    rank: { type: Number, min: 0, default: undefined },
   },
   { _id: false },
 )

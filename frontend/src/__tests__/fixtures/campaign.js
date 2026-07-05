@@ -19,28 +19,47 @@ export const campaignFixture = {
     capacityKg: 0,
     kgPerUnit: { Soldier: 30, Archer: 30, Mage: 30, Priest: 30, Cavalry: 60, LightCavalry: 90 },
   },
-  augury: { consulted: false, rerollsRemaining: 1, prediction: null },
+  augury: { consulted: false, rerollsRemaining: 1, visions: null },
   enemy: { stance: 'camp', battleOffer: false },
   battles: [],
   log: [],
 }
 
-// The view's augury after consulting: one prophecy card + the raw dice roll.
-// Whether the vision is TRUE never appears — that's the end-of-turn reveal.
-// The prophecy here has no '%' of its own, so the "no stated odds" test can
-// blanket-assert the augury UI adds none (real event descriptions may still
-// contain incidental percentages — that's effect flavor, not confidence).
+// The view's augury after consulting: one shown vision card per fate slot,
+// each with the slot's odds of being true (the server's own roll target —
+// the reroll minigame runs on these). Whether a vision actually WAS true
+// never appears — that's the end-of-turn reveal.
 export const consultedAugury = {
   consulted: true,
   rerollsRemaining: 1,
-  prediction: {
-    roll: 9,
-    event: {
+  visions: [
+    {
       id: 'supply',
       title: 'Supply Cache',
       description: 'Scouts find an abandoned depot. +3 t of food.',
       severity: 1,
       effect: { type: 'food', delta: 3000 },
+      odds: 0.75,
+      // Truth revealed (debug flag / reroll spent): this vision holds.
+      truth: { id: 'supply', title: 'Supply Cache', severity: 1 },
     },
-  },
+    {
+      id: 'weather',
+      title: 'Harsh Weather',
+      description: 'A hard fortnight drains rations. -1 t of food.',
+      severity: 2,
+      effect: { type: 'food', delta: -1000 },
+      odds: 0.3,
+      // ...and this vision lied: the truth is a different same-pool event.
+      truth: { id: 'desertion', title: 'Desertion', severity: 2 },
+    },
+    {
+      id: 'plague',
+      title: 'Plague',
+      description: 'Disease thins the ranks.',
+      severity: 3,
+      effect: { type: 'all_roster', factor: 0.95 },
+      odds: 0.9,
+    },
+  ],
 }

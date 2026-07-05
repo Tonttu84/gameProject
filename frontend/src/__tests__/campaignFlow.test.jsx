@@ -67,29 +67,39 @@ describe('campaign flow', () => {
     expect(createCampaign).toHaveBeenCalled()
   })
 
-  it('consulting shows one prophecy with the raw roll — and never any odds', async () => {
+  it("consulting shows all three visions, each with the server's odds", async () => {
     getCampaigns.mockResolvedValue([campaignFixture])
     consultCampaignAugury.mockResolvedValue({ ...campaignFixture, augury: consultedAugury })
-    const { container } = render(<App />)
+    render(<App />)
     await screen.findByText(/War Council/)
 
     fireEvent.click(screen.getByText('Visit the Augur'))
     fireEvent.click(await screen.findByTestId('consult-augur'))
 
-    const card = await screen.findByTestId('augury-prophecy')
+    const first = await screen.findByTestId('augury-vision-0')
     expect(consultCampaignAugury).toHaveBeenCalledWith('c1')
-    expect(card).toHaveTextContent('Supply Cache')
-    expect(card).toHaveTextContent('A gentle omen')
-    expect(screen.getByTestId('augury-roll')).toHaveTextContent('The bones rolled 9')
-    // The user is firm: the augury UI states NO odds of its own — the only
-    // hints are the omen's gravity and the height of the roll.
-    expect(container.querySelector('.augury-phase').textContent).not.toMatch(/%/)
+    expect(first).toHaveTextContent('Supply Cache')
+    expect(first).toHaveTextContent('A gentle omen')
+    expect(screen.getByTestId('augury-vision-1')).toHaveTextContent('Harsh Weather')
+    expect(screen.getByTestId('augury-vision-2')).toHaveTextContent('Plague')
+    // The odds ARE the minigame (user, 2026-07-05): each card states the
+    // server's roll target verbatim — a 30% dire omen is probably noise, a
+    // 90% one is all but certain.
+    expect(screen.getByTestId('augury-odds-0')).toHaveTextContent('75% true')
+    expect(screen.getByTestId('augury-odds-1')).toHaveTextContent('30% true')
+    expect(screen.getByTestId('augury-odds-2')).toHaveTextContent('90% true')
+    // When the server reveals a slot's truth (reroll resolved, or the debug
+    // flag), the card says whether the vision held and what really comes.
+    expect(screen.getByTestId('augury-truth-0')).toHaveTextContent('The vision holds true.')
+    expect(screen.getByTestId('augury-truth-1')).toHaveTextContent('In truth: Desertion')
+    // Slot 2's truth is not revealed in this fixture — no truth line.
+    expect(screen.queryByTestId('augury-truth-2')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('augury-continue'))
     await screen.findByText('Fight!')
   })
 
-  it('rerolling the bones replaces the prophecy and spends the reroll', async () => {
+  it('clicking a vision rerolls that slot only and spends the reroll', async () => {
     getCampaigns.mockResolvedValue([campaignFixture])
     consultCampaignAugury.mockResolvedValue({ ...campaignFixture, augury: consultedAugury })
     rerollCampaignAugury.mockResolvedValue({
@@ -97,10 +107,11 @@ describe('campaign flow', () => {
       augury: {
         consulted: true,
         rerollsRemaining: 0,
-        prediction: {
-          roll: 4,
-          event: { id: 'weather', title: 'Harsh Weather', description: 'A hard fortnight.', severity: 2 },
-        },
+        visions: [
+          consultedAugury.visions[0],
+          { id: 'traders', title: 'Traveling Traders', description: 'Merchants sell supplies.', severity: 1 },
+          consultedAugury.visions[2],
+        ],
       },
     })
     render(<App />)
@@ -108,15 +119,19 @@ describe('campaign flow', () => {
 
     fireEvent.click(screen.getByText('Visit the Augur'))
     fireEvent.click(await screen.findByTestId('consult-augur'))
-    await screen.findByText('Supply Cache') // the first vision
-    fireEvent.click(await screen.findByTestId('reroll-augury'))
+    await screen.findByText('Harsh Weather') // slot 1's first vision
+    fireEvent.click(screen.getByTestId('augury-vision-1'))
 
-    // Fate is replaced, not re-read: a wholly different omen now.
-    await screen.findByText('Harsh Weather')
-    expect(screen.queryByText('Supply Cache')).not.toBeInTheDocument()
-    expect(rerollCampaignAugury).toHaveBeenCalledWith('c1')
-    // The single reroll is spent: fate is sealed now.
-    expect(screen.queryByTestId('reroll-augury')).not.toBeInTheDocument()
+    // That fate is replaced, not re-read: a wholly different omen in slot 1,
+    // the neighbours untouched.
+    await screen.findByText('Traveling Traders')
+    expect(screen.queryByText('Harsh Weather')).not.toBeInTheDocument()
+    expect(screen.getByTestId('augury-vision-0')).toHaveTextContent('Supply Cache')
+    expect(rerollCampaignAugury).toHaveBeenCalledWith('c1', 1)
+    // The single reroll is spent: fate is sealed, the cards no longer act.
+    expect(screen.getByTestId('augury-vision-1')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('augury-vision-0'))
+    expect(rerollCampaignAugury).toHaveBeenCalledTimes(1)
   })
 
   it('an already-consulted campaign goes straight to mustering', async () => {
@@ -144,11 +159,18 @@ describe('campaign flow', () => {
         day: 1,
         entries: ['Came to pass: Supply Cache.'],
         upkeep: { foodConsumed: 12432, deserters: 0 },
-        augury: {
-          predicted: { id: 'plague', title: 'Plague' },
-          actual: { id: 'supply', title: 'Supply Cache', description: 'An abandoned depot.' },
-          wasAccurate: false,
-        },
+        augury: [
+          {
+            predicted: { id: 'plague', title: 'Plague' },
+            actual: { id: 'supply', title: 'Supply Cache', description: 'An abandoned depot.' },
+            wasAccurate: false,
+          },
+          {
+            predicted: { id: 'quiet', title: 'Quiet Fortnight' },
+            actual: { id: 'quiet', title: 'Quiet Fortnight', description: 'Nothing stirs.' },
+            wasAccurate: true,
+          },
+        ],
       },
       campaign: {
         ...campaignFixture,
@@ -162,15 +184,36 @@ describe('campaign flow', () => {
     fireEvent.click(screen.getByText('Muster for Battle'))
     fireEvent.click(await screen.findByTestId('end-day'))
 
-    // The reveal beat: the augur foretold Plague, Supply Cache came instead.
+    // The reveal beat, per fate: the augur foretold Plague but Supply Cache
+    // came instead; the quiet fortnight was read true.
     const report = await screen.findByTestId('report-augury')
     expect(report).toHaveTextContent('Plague')
     expect(report).toHaveTextContent('Supply Cache')
     expect(report).toHaveTextContent('The augur was wrong.')
+    expect(report).toHaveTextContent('The augur spoke true.')
     await waitFor(() => expect(endCampaignDay).toHaveBeenCalledWith('c1'))
 
     fireEvent.click(screen.getByTestId('report-continue'))
     await screen.findByText(/Turn 2 — War Council/)
+  })
+
+  it('a 404 on a campaign action (stale save wiped by a new build) recovers to the start screen', async () => {
+    // First load still sees the old campaign; after the 404 the reload
+    // returns nothing (the server purged it).
+    getCampaigns.mockResolvedValueOnce([campaignFixture]).mockResolvedValue([])
+    consultCampaignAugury.mockRejectedValue({
+      response: { status: 404, data: { error: 'campaign not found' } },
+    })
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    fireEvent.click(screen.getByText('Visit the Augur'))
+    fireEvent.click(await screen.findByTestId('consult-augur'))
+
+    // No zombie UI: the app reloads campaigns and offers a fresh start.
+    await screen.findByText('No Campaign In Progress')
+    expect(screen.getByTestId('auth-notice')).toHaveTextContent(/new build wiped old saves/)
+    expect(getCampaigns).toHaveBeenCalledTimes(2)
   })
 
   it('tutorial intros render when enabled and hide when toggled off', async () => {

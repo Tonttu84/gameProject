@@ -19,6 +19,21 @@ import { resolveForaging } from './forage.js'
 //   7. new turn          (draw events, clear forage assignment, regenerate
 //                         the enemy's planned placement)
 //
+// Annihilation ends the campaign the moment it happens — after a battle as
+// well as at end-of-turn. A wiped player roster loses even when the enemy
+// died too: with no army left there is nothing to claim the country with.
+export function checkAnnihilation(campaign) {
+  const entries = []
+  if (rosterTotal(campaign.roster) === 0) {
+    campaign.status = 'lost'
+    entries.push('Your army is no more.')
+  } else if (armyTotal(campaign.enemy.army) === 0) {
+    campaign.status = 'won'
+    entries.push('The enemy host is destroyed. The country is yours.')
+  }
+  return entries
+}
+
 // Mutates and saves the campaign; returns the day report shown to the player.
 export async function endDay(campaign) {
   const catalog = await getCatalog()
@@ -30,13 +45,15 @@ export async function endDay(campaign) {
   entries.push(...foraging.entries)
   report.forage = foraging.forage
 
-  // 3. The true event comes to pass — foretold or not. The report carries
-  // the reveal (predicted vs actual); the log records what actually happened.
+  // 3. Every slot's true event comes to pass — foretold or not. The report
+  // carries the reveal (per slot: predicted vs actual); the log records what
+  // actually happened.
   report.augury = auguryReveal(campaign)
-  entries.push(
-    `Came to pass: ${campaign.augury.trueEvent.title}.`,
-    ...applyEffect(campaign, campaign.augury.trueEvent.effect),
-  )
+  for (const slot of campaign.augury.slots)
+    entries.push(
+      `Came to pass: ${slot.trueEvent.title}.`,
+      ...applyEffect(campaign, slot.trueEvent.effect),
+    )
 
   // 4. Enemy turn
   entries.push(...enemyTurn(campaign, catalog))
@@ -61,13 +78,8 @@ export async function endDay(campaign) {
   report.upkeep = { foodConsumed, deserters }
 
   // 6. End conditions
-  if (rosterTotal(campaign.roster) === 0) {
-    campaign.status = 'lost'
-    entries.push('Your army is no more.')
-  } else if (armyTotal(campaign.enemy.army) === 0) {
-    campaign.status = 'won'
-    entries.push('The enemy host is destroyed. The country is yours.')
-  } else if (campaign.enemy.stance === 'withdrawing') {
+  entries.push(...checkAnnihilation(campaign))
+  if (campaign.status === 'active' && campaign.enemy.stance === 'withdrawing') {
     campaign.status = 'won'
     entries.push('The enemy has abandoned the campaign. The country is yours.')
   }

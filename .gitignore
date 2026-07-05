@@ -5,3 +5,4 @@ game
 run_tests
 .claude/
 game_clang
+node_modules/

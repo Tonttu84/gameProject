@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Planning & session continuity (multi-machine)
+
+This project is developed across **multiple computers**. Keep plans, TODOs, staged designs, and
+session-handoff notes **in the repo so they travel with git** — never leave durable project state
+only in Claude's per-machine auto-memory (`~/.claude/…`, which does NOT move between machines).
+
+- **`docs/CAMPAIGN_PLAN.md`** is the living campaign-mode plan + session handoff (what's done,
+  what's next, working conventions). Read it at the start of a campaign-mode session; **update and
+  commit it** whenever a stage lands or the plan changes.
+- Put new plans/design docs under `docs/` (precedent: `docs/RENDERING_PLAN.md`,
+  `docs/CAMPAIGN_PLAN.md`) rather than in machine-local memory.
+- Auto-memory may still be used for cross-project user preferences, but anything another machine
+  needs to continue the work belongs in a committed file.
+
 ## Build & test commands
 
 This is a Linux-targeted project (the Makefile downloads a prebuilt Linux SFML binary and shells
@@ -34,6 +48,9 @@ make docker-up         # docker compose up --build: the WHOLE stack (engine + ca
                         # mode opens an SFML window even when spawned by the server, so
                         # the container wraps everything in xvfb-run. CI's "docker" job
                         # builds this image and smokes a full campaign turn through it.
+make docker-up-display # docker-up, but battle windows appear on the host desktop
+                        # (Windows Docker Desktop + WSLg socket mount; falls back to
+                        # Xvfb automatically when the host X socket isn't there)
 make docker-down       # stop the stack (campaign DB volume survives)
 make docker-clean      # stop AND wipe the campaign DB volume (Docker twin of db-clean)
 make docker-logs       # follow the game server's container logs

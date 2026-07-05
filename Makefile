@@ -85,7 +85,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean docker-build docker-up docker-down docker-clean docker-logs
+.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean docker-build docker-up docker-up-display docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(FONT_DIR)/$(FONT_FILE) $(SFML_DIR)/include/SFML/Config.hpp $(NAME)
@@ -202,6 +202,12 @@ docker-build:
 # Campaigns persist in the `gamedb` volume across restarts.
 docker-up:
 	docker compose up --build
+
+# docker-up, but battle windows appear on the host desktop instead of the
+# hidden Xvfb (Windows Docker Desktop + WSLg; see docker-compose.display.yml).
+# Falls back to Xvfb automatically if the host X socket isn't available.
+docker-up-display:
+	docker compose -f docker-compose.yml -f docker-compose.display.yml up --build
 
 # Stop the stack; campaign DB volume survives for the next docker-up.
 docker-down:

@@ -23,3 +23,10 @@ std::string buildInfoJson();
 // against any campaign-level roster/budget — only per-hex capacity and terrain rules are
 // enforced.
 Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid& grid);
+
+// Groups same-type units stacked on one hex into squads — campaign stacks
+// fight as formations (they move and resolve engagements together) and the
+// renderer/replay give each squad a distinct color. Loners stay squadless.
+// Call after placement (units must have hexes); attach the returned squads to
+// field.getTeamData(team).squads once loadArmies has run.
+std::vector<std::unique_ptr<Squad>> buildSquadsFromArmy(const Army& army);

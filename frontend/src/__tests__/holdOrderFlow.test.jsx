@@ -65,6 +65,9 @@ beforeEach(() => {
 })
 
 const placeSoldiers = async ({ count, holdTurns }) => {
+  // Fight requires the whole army on the field, so the roster is exactly
+  // what this test places.
+  getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: count } }])
   render(<App />)
   await screen.findByText(/War Council/)
   fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
@@ -80,6 +83,24 @@ const placeSoldiers = async ({ count, holdTurns }) => {
   await waitFor(() => expect(postCampaignBattle).toHaveBeenCalled())
   return postCampaignBattle.mock.calls[0]
 }
+
+describe('full-deployment gate', () => {
+  it('Fight stays disabled while units remain in camp', async () => {
+    getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: 3 } }])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
+
+    fireEvent.click(screen.getByTestId('hex-0-4'))
+    fireEvent.change(screen.getByTestId('count-Soldier'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: /place/i }))
+
+    expect(screen.getByTestId('placement-in-camp')).toHaveTextContent('1 still in camp')
+    expect(screen.getByRole('button', { name: /fight!/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /fight!/i }))
+    expect(postCampaignBattle).not.toHaveBeenCalled()
+  })
+})
 
 describe('hold orders in the campaign placement flow', () => {
   it('the hold turns set in the placement menu reach the battle payload', async () => {

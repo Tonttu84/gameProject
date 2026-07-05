@@ -4,11 +4,12 @@ import UnitType from '../models/unitType.js'
 import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
-import { endDay } from '../services/dayResolution.js'
-import { drawAugury, consultAugury, rerollAugury } from '../services/augury.js'
+import { endDay, checkAnnihilation } from '../services/dayResolution.js'
+import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { getCatalog } from '../utils/catalog.js'
+import config from '../utils/config.js'
 import {
   MAP_NAME,
   STARTING_ROSTER,
@@ -31,11 +32,13 @@ router.use(userExtractor)
 // Version checks filter the QUERY, not the loaded document: Mongoose fills
 // schema defaults on hydration, so a pre-versioning doc would look current
 // once loaded. Legacy docs 404 here and are deleted by the listing route.
+// buildVersion works the same way: a save from any other build is invisible.
 const findOwn = async (req) =>
   Campaign.findOne({
     _id: req.params.id,
     user: req.user._id,
     schemaVersion: CAMPAIGN_SCHEMA_VERSION,
+    buildVersion: config.APP_VERSION,
   })
 
 router.post('/', async (req, res) => {
@@ -61,11 +64,16 @@ router.post('/', async (req, res) => {
 })
 
 router.get('/', async (req, res) => {
-  // Campaigns from an incompatible schema version are deleted, not migrated
-  // (no backwards compatibility — the client then offers a fresh campaign).
+  // Campaigns from an incompatible schema version OR another build are
+  // deleted, not migrated (no backwards compatibility — the client then
+  // offers a fresh campaign). Every Docker build stamps a fresh version, so
+  // redeploying wipes old saves without anyone remembering to bump anything.
   await Campaign.deleteMany({
     user: req.user._id,
-    schemaVersion: { $ne: CAMPAIGN_SCHEMA_VERSION },
+    $or: [
+      { schemaVersion: { $ne: CAMPAIGN_SCHEMA_VERSION } },
+      { buildVersion: { $ne: config.APP_VERSION } },
+    ],
   })
   const campaigns = await Campaign.find({ user: req.user._id }).sort({ _id: -1 })
   res.json(await Promise.all(campaigns.map((c) => campaignView(c))))
@@ -103,9 +111,9 @@ router.post('/:id/forage', async (req, res) => {
   res.json(await campaignView(campaign))
 })
 
-// Consult the augur: one reading per turn. The response's campaign view
-// carries the prophecy card + raw roll; whether it was TRUE stays hidden
-// until end-of-turn.
+// Consult the augur: one reading per turn resolves every slot's vision. The
+// response's campaign view carries the shown cards; which are TRUE stays
+// hidden until end-of-turn.
 router.post('/:id/augury/consult', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
@@ -116,15 +124,15 @@ router.post('/:id/augury/consult', async (req, res) => {
   const shown = consultAugury(campaign)
   campaign.log.push({
     day: campaign.day,
-    entries: [`The augur speaks: ${shown.title}.`],
+    entries: [`The augur speaks: ${shown.map((e) => e.title).join(', ')}.`],
   })
   await campaign.save()
   res.json(await campaignView(campaign))
 })
 
-// Reroll the bones: REPLACES fate — both events are redrawn (the old true
-// event will never fire) and read fresh. Requires a prior consult and a
-// remaining reroll.
+// Reroll ONE slot ({slot: 0-based index}): REPLACES that fate — a fresh pair
+// is drawn (the old truth will never fire) and read fresh; the other slots
+// keep their sealed fates. Requires a prior consult and a remaining reroll.
 router.post('/:id/augury/reroll', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
@@ -134,7 +142,11 @@ router.post('/:id/augury/reroll', async (req, res) => {
   if (campaign.augury.rerollsRemaining <= 0)
     return res.status(400).json({ error: 'no rerolls remaining' })
 
-  const shown = rerollAugury(campaign)
+  const slot = req.body?.slot
+  if (!Number.isInteger(slot) || slot < 0 || slot >= campaign.augury.slots.length)
+    return res.status(400).json({ error: 'slot index required' })
+
+  const shown = rerollAugurySlot(campaign, slot)
   campaign.log.push({
     day: campaign.day,
     entries: [`The bones are cast anew: ${shown.title}.`],
@@ -179,6 +191,16 @@ router.post('/:id/battles', async (req, res) => {
       })
   }
 
+  // Battle commits the WHOLE army (user, 2026-07-05): every unit not out
+  // foraging must take the field — no reserves skulking in camp.
+  let inCamp = 0
+  for (const [type, n] of campaign.roster)
+    inCamp += n - (campaign.forage.assignment.get(type) ?? 0) - (placed.get(type) ?? 0)
+  if (inCamp > 0)
+    return res.status(400).json({
+      error: `the whole army must take the field — ${inCamp} units still in camp`,
+    })
+
   const input = {
     map: MAP_NAME,
     player_placement: placement,
@@ -198,7 +220,10 @@ router.post('/:id/battles', async (req, res) => {
   campaign.battles.push(battle._id)
   campaign.log.push({
     day: campaign.day,
-    entries: [`Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`],
+    entries: [
+      `Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`,
+      ...checkAnnihilation(campaign),
+    ],
   })
   await campaign.save()
 

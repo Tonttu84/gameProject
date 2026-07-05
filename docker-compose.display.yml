@@ -1,0 +1,24 @@
+# Opt-in overlay: show the engine's SFML battle windows on the host desktop
+# instead of hiding them in the container's headless Xvfb.
+#
+#   make docker-up-display
+#   (= docker compose -f docker-compose.yml -f docker-compose.display.yml up --build)
+#
+# The bind path is Docker Desktop's view of the Windows host's WSLg X server
+# (Docker Desktop with the WSL2 backend). If the socket isn't there — older
+# Docker Desktop, WSLg disabled — the entrypoint finds no /tmp/.X11-unix/X0
+# and falls back to Xvfb: same behavior as plain `make docker-up`, battles
+# still run, just invisibly.
+#
+# On a native Linux host use `- /tmp/.X11-unix:/tmp/.X11-unix` instead (and
+# `xhost +local:` if the X server refuses the container's connection).
+services:
+  game:
+    volumes:
+      - /run/desktop/mnt/host/wslg/.X11-unix:/tmp/.X11-unix
+    environment:
+      DISPLAY: ":0"
+      # Battle windows stay open at battle end (pan/zoom the final field)
+      # until closed — the campaign turn waits for the window. Display-mode
+      # only: headless/CI battles must stay fire-and-forget.
+      BATTLE_HOLD_WINDOW: "1"

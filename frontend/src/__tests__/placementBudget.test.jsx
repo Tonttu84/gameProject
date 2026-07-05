@@ -124,6 +124,51 @@ describe('P1: roster shown in ReachMenu subtracts units placed on other hexes', 
 })
 
 // ---------------------------------------------------------------------------
+// P7 — Catalog types with an empty roster are not placement options
+// ---------------------------------------------------------------------------
+
+describe('P7: unit types the player has zero of are hidden from ReachMenu', () => {
+  const infoWithPikeman = makeInfo({
+    units: [
+      { type: 'Soldier', symbol: 'S', placementSize: 1 },
+      { type: 'Mage',    symbol: 'M', placementSize: 2 },
+      { type: 'Pikeman', symbol: 'p', placementSize: 1 },
+    ],
+  })
+
+  it('a type with roster 0 gets no row', () => {
+    renderGrid({
+      info: infoWithPikeman,
+      roster: { Soldier: 10, Mage: 5, Pikeman: 0 },
+    })
+    fireEvent.click(screen.getByTestId('hex-1-4'))
+    expect(screen.queryByTestId('count-Pikeman')).not.toBeInTheDocument()
+    expect(screen.getByTestId('count-Soldier')).toBeInTheDocument()
+  })
+
+  it('a type still shows /0 when owned units are all placed on another hex', () => {
+    renderGrid({
+      info: infoWithPikeman,
+      roster: { Soldier: 5, Mage: 2, Pikeman: 0 },
+      placements: [{ type: 'Soldier', col: 0, row: 4, count: 5 }],
+    })
+    fireEvent.click(screen.getByTestId('hex-1-4'))
+    expect(screen.getByTestId('count-Soldier')).toBeInTheDocument()
+    expect(screen.getByText('/0')).toBeInTheDocument()
+  })
+
+  it('a zero-roster type with an existing placement stays visible for editing', () => {
+    renderGrid({
+      info: infoWithPikeman,
+      roster: { Soldier: 10, Mage: 5, Pikeman: 0 },
+      placements: [{ type: 'Pikeman', col: 0, row: 4, count: 2 }],
+    })
+    fireEvent.click(screen.getByTestId('hex-0-4'))
+    expect(screen.getByTestId('count-Pikeman')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // P2 — console.warn on over-budget placement
 // ---------------------------------------------------------------------------
 
