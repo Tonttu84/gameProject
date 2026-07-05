@@ -3,20 +3,25 @@ import { pushRoll, clearRolls } from '../utils/dice.js'
 import {
   drawAugury,
   consultAugury,
-  rerollAugury,
+  rerollAugurySlot,
   auguryReveal,
+  auguryOdds,
   mageBonus,
 } from '../services/augury.js'
 import { EVENT_POOL } from '../services/events.js'
 import {
-  AUGURY_THRESHOLD,
+  AUGURY_SLOTS,
+  AUGURY_BASE_ODDS,
+  AUGURY_ODDS_PER_POINT,
+  AUGURY_MAX_ODDS,
   AUGURY_REROLLS_PER_DAY,
 } from '../utils/campaignConfig.js'
 
 // Pure-service tests on a plain campaign-shaped object (the service only
 // touches augury/roster/character, all mutated in place like the Mongoose
-// doc). Dice are queue-driven for exact determinism, including the exploding
-// chain the JS dice port pins against the C++ engine ([4,6,3,2] → 7).
+// doc). Vision rolls are queue-driven: consult resolves the slots in order,
+// one chanceRoll (a single d1000 draw) each — a queued value at or below
+// odds×1000 forces a true vision, above it a false one.
 
 afterEach(clearRolls)
 
@@ -32,13 +37,17 @@ const DOOMED = {
 }
 const DECOY = { ...EVENT_POOL.find((e) => e.id === 'supply') }
 
+// All slots pinned to the same DOOMED/DECOY pair; no mages, no character →
+// odds per slot = AUGURY_BASE_ODDS (0.4) → d1000 threshold 400.
 const makeCampaign = ({ mages = 0, character = null } = {}) => ({
   roster: new Map(mages > 0 ? [['Mage', mages]] : []),
   character,
   augury: {
-    trueEvent: { ...DOOMED },
-    decoyEvent: { ...DECOY },
-    prediction: null,
+    slots: Array.from({ length: AUGURY_SLOTS }, () => ({
+      trueEvent: { ...DOOMED },
+      falseEvent: { ...DECOY },
+      shownTrue: null,
+    })),
     consulted: false,
     rerollsRemaining: AUGURY_REROLLS_PER_DAY,
   },
@@ -53,126 +62,118 @@ describe('mageBonus', () => {
   })
 })
 
-describe('drawAugury', () => {
-  test('true and decoy events are always distinct pool entries', () => {
-    for (let i = 0; i < 200; i++) {
-      const a = drawAugury()
-      expect(a.trueEvent.id).not.toBe(a.decoyEvent.id)
-      expect(EVENT_POOL.some((e) => e.id === a.trueEvent.id)).toBe(true)
-      expect(EVENT_POOL.some((e) => e.id === a.decoyEvent.id)).toBe(true)
-    }
+describe('auguryOdds', () => {
+  test('base odds for an illegible omen with no help', () => {
+    expect(auguryOdds(makeCampaign(), DOOMED)).toBe(AUGURY_BASE_ODDS)
   })
 
-  test('starts unconsulted with the configured rerolls', () => {
+  test('legibility, mages and character each add per-point odds', () => {
+    const legible = { ...DOOMED, baseAccuracy: 3 }
+    expect(auguryOdds(makeCampaign(), legible)).toBeCloseTo(
+      AUGURY_BASE_ODDS + 3 * AUGURY_ODDS_PER_POINT,
+    )
+    expect(auguryOdds(makeCampaign({ mages: 9 }), DOOMED)).toBeCloseTo(
+      AUGURY_BASE_ODDS + 3 * AUGURY_ODDS_PER_POINT,
+    )
+    expect(auguryOdds(makeCampaign({ character: { auguryBonus: 2 } }), DOOMED)).toBeCloseTo(
+      AUGURY_BASE_ODDS + 2 * AUGURY_ODDS_PER_POINT,
+    )
+  })
+
+  test('odds are capped', () => {
+    const c = makeCampaign({ mages: 100, character: { auguryBonus: 50 } })
+    expect(auguryOdds(c, { ...DOOMED, baseAccuracy: 3 })).toBe(AUGURY_MAX_ODDS)
+  })
+})
+
+describe('drawAugury', () => {
+  test('draws the configured number of unresolved slots', () => {
     const a = drawAugury()
-    expect(a).toMatchObject({
-      prediction: null,
-      consulted: false,
-      rerollsRemaining: AUGURY_REROLLS_PER_DAY,
-    })
+    expect(a.slots).toHaveLength(AUGURY_SLOTS)
+    for (const slot of a.slots) expect(slot.shownTrue).toBeNull()
+    expect(a).toMatchObject({ consulted: false, rerollsRemaining: AUGURY_REROLLS_PER_DAY })
+  })
+
+  test("every slot's true and false events are distinct pool entries", () => {
+    for (let i = 0; i < 100; i++) {
+      for (const slot of drawAugury().slots) {
+        expect(slot.trueEvent.id).not.toBe(slot.falseEvent.id)
+        expect(EVENT_POOL.some((e) => e.id === slot.trueEvent.id)).toBe(true)
+        expect(EVENT_POOL.some((e) => e.id === slot.falseEvent.id)).toBe(true)
+      }
+    }
   })
 })
 
 describe('consultAugury', () => {
-  test('exploding chain [4,6,3,2] → roll 7; bonuses push it to accurate', () => {
-    // DOOMED baseAccuracy 0, 3 mages → +1: total 8 ≥ 7 → the truth is shown.
-    const c = makeCampaign({ mages: 3 })
-    pushRoll(4); pushRoll(6); pushRoll(3); pushRoll(2)
+  test('resolves each slot in order: random ≤ odds×1000 shows the truth', () => {
+    const c = makeCampaign() // odds 0.4 → threshold 400 per slot
+    pushRoll(400) // slot 0: exactly at the line → true
+    pushRoll(401) // slot 1: just over → false
+    pushRoll(1000) // slot 2: false
     const shown = consultAugury(c)
-    expect(shown.id).toBe('doomed_omen')
-    expect(c.augury.prediction).toEqual({
-      eventId: 'doomed_omen',
-      roll: 7,
-      total: 8,
-      threshold: AUGURY_THRESHOLD,
-      accurate: true,
-    })
+    expect(c.augury.slots.map((s) => s.shownTrue)).toEqual([true, false, false])
+    expect(shown.map((e) => e.id)).toEqual(['doomed_omen', 'supply', 'supply'])
     expect(c.augury.consulted).toBe(true)
   })
 
-  test('a total exactly at the threshold reads true', () => {
-    // Roll 6 (no explosion: second draw 1) + baseAccuracy 0 + mage 1 = 7.
-    const c = makeCampaign({ mages: 3 })
-    pushRoll(6); pushRoll(1)
+  test('mages raise every slot\'s odds', () => {
+    const c = makeCampaign({ mages: 9 }) // +3 points → odds 0.64 → threshold 640
+    pushRoll(640); pushRoll(640); pushRoll(640)
     consultAugury(c)
-    expect(c.augury.prediction.accurate).toBe(true)
-  })
-
-  test('character auguryBonus counts', () => {
-    // Roll 4 + base 0 + mages 0 + character 3 = 7 → accurate.
-    const c = makeCampaign({ character: { auguryBonus: 3 } })
-    pushRoll(4); pushRoll(1)
-    consultAugury(c)
-    expect(c.augury.prediction).toMatchObject({ total: 7, accurate: true })
-  })
-
-  test('a failed reading shows either event at even odds — forced to the decoy', () => {
-    const c = makeCampaign()
-    pushRoll(1); pushRoll(1) // roll 1, total 1 < 7 → inaccurate
-    pushRoll(2) // the false vision picks the decoy
-    const shown = consultAugury(c)
-    expect(shown.id).toBe('supply')
-    expect(c.augury.prediction).toMatchObject({ eventId: 'supply', roll: 1, accurate: false })
-  })
-
-  test('a failed reading can STILL happen to show the truth (the lucky liar)', () => {
-    const c = makeCampaign()
-    pushRoll(1); pushRoll(1) // inaccurate
-    pushRoll(1) // ...but the false vision lands on the true event anyway
-    const shown = consultAugury(c)
-    expect(shown.id).toBe('doomed_omen')
-    expect(c.augury.prediction.accurate).toBe(false)
+    expect(c.augury.slots.every((s) => s.shownTrue)).toBe(true)
   })
 })
 
-describe('rerollAugury', () => {
-  test('replaces fate: both events redrawn, the old truth can never fire', () => {
+describe('rerollAugurySlot', () => {
+  test('replaces exactly one fate; the other slots stay sealed', () => {
     const c = makeCampaign()
-    pushRoll(1); pushRoll(1); pushRoll(1)
+    pushRoll(1); pushRoll(1000); pushRoll(1) // visions: true, false, true
     consultAugury(c)
-    expect(c.augury.trueEvent.id).toBe('doomed_omen')
 
-    pushRoll(6); pushRoll(1) // fresh reading for the fresh pair
-    rerollAugury(c)
-    // DOOMED is not a pool event, so a redraw cannot reproduce it: the old
-    // fate is gone for good, not merely re-rolled.
-    expect(c.augury.trueEvent.id).not.toBe('doomed_omen')
-    expect(c.augury.decoyEvent.id).not.toBe('doomed_omen')
+    pushRoll(1) // the fresh slot's reading
+    const shown = rerollAugurySlot(c, 1)
+
+    // Slot 1 is a fresh pool pair — DOOMED is not in the pool, so the old
+    // fate is gone for good; slots 0 and 2 still hold their doom.
+    expect(c.augury.slots[1].trueEvent.id).not.toBe('doomed_omen')
+    expect(c.augury.slots[1].shownTrue).toBe(true)
+    expect(shown.id).toBe(c.augury.slots[1].trueEvent.id)
+    expect(c.augury.slots[0].trueEvent.id).toBe('doomed_omen')
+    expect(c.augury.slots[2].trueEvent.id).toBe('doomed_omen')
+    expect(c.augury.slots[0].shownTrue).toBe(true) // earlier readings untouched
     expect(c.augury.rerollsRemaining).toBe(AUGURY_REROLLS_PER_DAY - 1)
-    expect(c.augury.consulted).toBe(true)
-    expect(c.augury.prediction.eventId).not.toBe('doomed_omen')
   })
 })
 
 describe('auguryReveal', () => {
-  test('unconsulted: no prediction, the truth still revealed', () => {
-    const c = makeCampaign()
-    expect(auguryReveal(c)).toEqual({
-      predicted: null,
-      actual: { id: 'doomed_omen', title: 'Doom', description: DOOMED.description, severity: 3 },
-      wasAccurate: null,
-    })
+  test('unconsulted: no predictions, every truth still revealed', () => {
+    const reveal = auguryReveal(makeCampaign())
+    expect(reveal).toHaveLength(AUGURY_SLOTS)
+    for (const r of reveal) {
+      expect(r.predicted).toBeNull()
+      expect(r.wasAccurate).toBeNull()
+      expect(r.actual).toEqual({
+        id: 'doomed_omen',
+        title: 'Doom',
+        description: DOOMED.description,
+        severity: 3,
+      })
+    }
   })
 
-  test('wasAccurate compares the SHOWN card to the truth, not the roll', () => {
+  test('per slot: predicted card vs the truth, wasAccurate per vision', () => {
     const c = makeCampaign()
-    pushRoll(1); pushRoll(1); pushRoll(1) // failed reading that shows the truth
+    pushRoll(1); pushRoll(1000); pushRoll(1) // true, false, true
     consultAugury(c)
     const reveal = auguryReveal(c)
-    expect(reveal.predicted.id).toBe('doomed_omen')
-    expect(reveal.wasAccurate).toBe(true) // lucky, but right is right
+    expect(reveal.map((r) => r.wasAccurate)).toEqual([true, false, true])
+    expect(reveal[0].predicted.id).toBe('doomed_omen')
+    expect(reveal[1].predicted.id).toBe('supply') // the lie the player saw
+    expect(reveal[1].actual.id).toBe('doomed_omen') // ...and what really came
     // The reveal card never carries the hidden legibility bonus or the effect
     // machinery — display fields only.
-    expect(reveal.actual.baseAccuracy).toBeUndefined()
-  })
-
-  test('a wrong prophecy is revealed as wrong', () => {
-    const c = makeCampaign()
-    pushRoll(1); pushRoll(1); pushRoll(2) // failed reading showing the decoy
-    consultAugury(c)
-    const reveal = auguryReveal(c)
-    expect(reveal.predicted.id).toBe('supply')
-    expect(reveal.actual.id).toBe('doomed_omen')
-    expect(reveal.wasAccurate).toBe(false)
+    expect(reveal[0].actual.baseAccuracy).toBeUndefined()
+    expect(reveal[0].actual.effect).toBeUndefined()
   })
 })

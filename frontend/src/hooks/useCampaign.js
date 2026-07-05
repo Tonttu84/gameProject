@@ -44,8 +44,8 @@ export default function useCampaign(user) {
     setCampaign(await consultCampaignAugury(campaign.id))
   }
 
-  const rerollAugur = async () => {
-    setCampaign(await rerollCampaignAugury(campaign.id))
+  const rerollAugur = async (slot) => {
+    setCampaign(await rerollCampaignAugury(campaign.id, slot))
   }
 
   const assignForagers = async (assignment) => {

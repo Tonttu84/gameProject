@@ -91,6 +91,12 @@ body {
 }
 .augury-phase h2 { color: var(--gold); font-size: 1.4rem; }
 .augury-hint     { color: #7777aa; font-size: 13px; }
+.augury-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+}
 .augury-card {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -99,11 +105,16 @@ body {
   width: 260px;
   text-align: center;
   color: var(--text);
+  font: inherit;
 }
+.augury-card:disabled { color: var(--text); opacity: 1; } /* sealed ≠ grayed out */
+.augury-card-rerollable { cursor: pointer; }
+.augury-card-rerollable:hover { border-color: var(--gold); }
 .augury-severity { font-size: 12px; color: #7777aa; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
 .augury-title    { font-size: 1.1rem; color: var(--gold); margin-bottom: 0.3rem; }
 .augury-desc     { font-size: 12px; color: #8888aa; margin-bottom: 0.6rem; }
-.augury-roll     { font-size: 1rem; color: var(--accent2); font-weight: bold; }
+.augury-reroll-hint { font-size: 11px; color: var(--accent2); text-transform: uppercase; letter-spacing: 0.06em; }
+.report-augury-slot + .report-augury-slot { border-top: 1px solid var(--border); margin-top: 0.8rem; padding-top: 0.8rem; }
 
 .day-report {
   display: flex;

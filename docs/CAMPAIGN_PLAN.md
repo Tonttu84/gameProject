@@ -29,25 +29,35 @@ notes below over the git history if they ever disagree — the commits win.
 ### Project state (as of 2026-07-05)
 
 - **Branch:** `feature/campaign-mode`. Turn length = **two weeks** (`DAYS_PER_TURN = 14`,
-  final). Campaign schema version is **3** — bump `CAMPAIGN_SCHEMA_VERSION` on every
+  final). Campaign schema version is **4** — bump `CAMPAIGN_SCHEMA_VERSION` on every
   incompatible campaign-model change (there is no back-compat; mismatched docs are deleted).
 - **Merged to `main`:** Stages 0–1 (merge `5fbbb9d`), Stage 2 foraging + Docker stack
   (merge `b6d2a40`).
 - **Done & committed on `feature/campaign-mode`:** Stage 5 augury rework (`77ee3ef`),
   deployment orders panel (`002fb73`), `make frontend-test` fix (`395bc34`), in-game bug
-  reports (`71ac20f`).
-- **Next up (one feature per session):** **Stage 3 — materials** (spend routes: fortify
-  `50×(level+1)`, militia; materials already accrue at 0.2 forage share), then **Stage 4 —
-  scouting** (now fully designed below — coverage → cavalry-superiority gauge).
-- **NO feature changes until the user has playtested the current build** (user, 2026-07-05).
-  Unscheduled ideas live in "Deferred design backlog" below.
+  reports (`71ac20f`), 2026-07-05 playtest fixes (placement roster filter, immediate
+  battle-annihilation defeat, **augury v4** — see below).
+- **First playtest happened 2026-07-05** (Docker stack on the Windows/Docker-Desktop
+  machine). It produced the fixes above plus the augury v4 redesign, and one open UX task:
+  **replay/after-action visual parity with the SFML renderer** (per-unit markers with
+  hex-side engagement positions instead of `56A`-style aggregated stacks) — design not
+  started, next in queue.
+- **Next up after that:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
+  militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
+  (fully designed below — coverage → cavalry-superiority gauge).
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
 ### Working conventions (carry these to the new machine)
 
-- **Build is Linux-only.** On Windows use **WSL (Ubuntu)** or Docker. The current dev machine
-  has WSL working but **no Docker**.
+- **Build is Linux-only.** On Windows use **WSL (Ubuntu)** or Docker. One dev machine has WSL
+  but no Docker; the other (2026-07-05 playtest machine) runs the stack via **Docker Desktop**
+  (`make docker-up-display` puts SFML battle windows on the Windows desktop via WSLg; GNU make
+  installed via `winget install ezwinports.make`).
+- **Node 25 gotcha:** its built-in `localStorage` shadows jsdom's and breaks the frontend
+  tests (`window.localStorage.clear is not a function`). Run them with
+  `NODE_OPTIONS=--no-experimental-webstorage` (the pinned nvm node in `make frontend-test`
+  doesn't need it).
 - **Engine:** build/test via WSL. Use `make test` (parallel) locally; `make test-serial` is
   CI's job. `./game dump-units` prints the unit catalog (SSOT lives in the C++ constructors).
 - **campaign-server / frontend:** Node via the pinned nvm (`v24.11.1`) or plain `npm` (node is
@@ -327,6 +337,21 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 
 > **Status note:** Stage 5 shipped early (commit `77ee3ef`, schema v3) ahead of Stages 3–4.
 > The augur now foretells the Stage-4 "Blind rung" of recon-sensitive events (see Stage 4).
+
+> **Superseded by augury v4 (2026-07-05 playtest, schema v4).** The user redesigned the
+> mechanic: each turn holds **three independent fate slots**, each a hidden
+> `{trueEvent, falseEvent}` pair. Consulting resolves every slot with one d1000
+> `chanceRoll`: `random < odds` shows the slot's true event, else its false one, where
+> `odds = AUGURY_BASE_ODDS (0.4) + AUGURY_ODDS_PER_POINT (0.08) × (trueEvent.baseAccuracy
+> + mageBonus + characterBonus)`, capped at 0.9 — the old exploding-dice threshold roll is
+> gone, but the legibility/mage/character knobs survive inside the odds. **All three true
+> events apply at end-of-turn**; the day-report reveal is per-slot. Clicking a shown vision
+> rerolls **that slot only** (fresh pair + fresh reading, `POST .../augury/reroll {slot}`),
+> spending the turn's single reroll. No raw roll is shown to the player anymore (with fixed
+> odds it would leak accuracy); severity flavor is the only hint, and the UI still never
+> states odds. `services/augury.js`, model subdoc (`augury.slots[]`), `campaignView`
+> (`visions` array), `AuguryPanel` (three clickable cards), `DayReport` (per-slot reveal)
+> all reworked; tests updated at every layer.
 
 ---
 

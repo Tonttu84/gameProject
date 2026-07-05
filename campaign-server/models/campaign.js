@@ -36,7 +36,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 3 // v3: augury rework (events/auguryScore → augury subdoc)
+export const CAMPAIGN_SCHEMA_VERSION = 4 // v4: augury slots (3 independent true/false fates, per-slot reroll)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -54,24 +54,23 @@ const campaignSchema = new mongoose.Schema({
   // at the routes that mutate it.
   roster: { type: Map, of: Number, required: true },
 
-  // The turn's prophecy. trueEvent applies at end-of-turn regardless of the
-  // reading; the client sees only the predicted card + raw dice roll.
+  // The turn's fates: AUGURY_SLOTS independent true/false event pairs. Every
+  // slot's trueEvent applies at end-of-turn regardless of the reading; the
+  // client sees only the shown card per slot, never the pair or the outcome.
   augury: {
-    trueEvent: { type: auguryEventSchema, required: true }, // HIDDEN
-    decoyEvent: { type: auguryEventSchema, required: true }, // HIDDEN
-    prediction: {
-      // null until the augur is consulted this turn.
-      type: new mongoose.Schema(
-        {
-          eventId: { type: String, required: true },
-          roll: { type: Number, required: true }, // raw exploding dice — the visible flourish
-          total: { type: Number, required: true }, // roll + hidden bonuses — HIDDEN
-          threshold: { type: Number, required: true }, // HIDDEN
-          accurate: { type: Boolean, required: true }, // HIDDEN
-        },
-        { _id: false },
-      ),
-      default: null,
+    slots: {
+      type: [
+        new mongoose.Schema(
+          {
+            trueEvent: { type: auguryEventSchema, required: true }, // HIDDEN
+            falseEvent: { type: auguryEventSchema, required: true }, // HIDDEN
+            // null until consulted; then whether the vision showed the truth — HIDDEN
+            shownTrue: { type: Boolean, default: null },
+          },
+          { _id: false },
+        ),
+      ],
+      required: true,
     },
     consulted: { type: Boolean, default: false },
     rerollsRemaining: { type: Number, required: true },

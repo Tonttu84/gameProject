@@ -4,8 +4,8 @@ import UnitType from '../models/unitType.js'
 import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
-import { endDay } from '../services/dayResolution.js'
-import { drawAugury, consultAugury, rerollAugury } from '../services/augury.js'
+import { endDay, checkAnnihilation } from '../services/dayResolution.js'
+import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { getCatalog } from '../utils/catalog.js'
@@ -103,9 +103,9 @@ router.post('/:id/forage', async (req, res) => {
   res.json(await campaignView(campaign))
 })
 
-// Consult the augur: one reading per turn. The response's campaign view
-// carries the prophecy card + raw roll; whether it was TRUE stays hidden
-// until end-of-turn.
+// Consult the augur: one reading per turn resolves every slot's vision. The
+// response's campaign view carries the shown cards; which are TRUE stays
+// hidden until end-of-turn.
 router.post('/:id/augury/consult', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
@@ -116,15 +116,15 @@ router.post('/:id/augury/consult', async (req, res) => {
   const shown = consultAugury(campaign)
   campaign.log.push({
     day: campaign.day,
-    entries: [`The augur speaks: ${shown.title}.`],
+    entries: [`The augur speaks: ${shown.map((e) => e.title).join(', ')}.`],
   })
   await campaign.save()
   res.json(await campaignView(campaign))
 })
 
-// Reroll the bones: REPLACES fate — both events are redrawn (the old true
-// event will never fire) and read fresh. Requires a prior consult and a
-// remaining reroll.
+// Reroll ONE slot ({slot: 0-based index}): REPLACES that fate — a fresh pair
+// is drawn (the old truth will never fire) and read fresh; the other slots
+// keep their sealed fates. Requires a prior consult and a remaining reroll.
 router.post('/:id/augury/reroll', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
@@ -134,7 +134,11 @@ router.post('/:id/augury/reroll', async (req, res) => {
   if (campaign.augury.rerollsRemaining <= 0)
     return res.status(400).json({ error: 'no rerolls remaining' })
 
-  const shown = rerollAugury(campaign)
+  const slot = req.body?.slot
+  if (!Number.isInteger(slot) || slot < 0 || slot >= campaign.augury.slots.length)
+    return res.status(400).json({ error: 'slot index required' })
+
+  const shown = rerollAugurySlot(campaign, slot)
   campaign.log.push({
     day: campaign.day,
     entries: [`The bones are cast anew: ${shown.title}.`],
@@ -198,7 +202,10 @@ router.post('/:id/battles', async (req, res) => {
   campaign.battles.push(battle._id)
   campaign.log.push({
     day: campaign.day,
-    entries: [`Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`],
+    entries: [
+      `Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`,
+      ...checkAnnihilation(campaign),
+    ],
   })
   await campaign.save()
 

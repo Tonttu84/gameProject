@@ -230,7 +230,9 @@ const App = () => {
     )
   }
 
-  if (campaign.status !== 'active') {
+  // A finished campaign shows the game-over screen — but not before the player
+  // has seen the battle result/replay or the day report that ended it.
+  if (campaign.status !== 'active' && !['result', 'replay', 'report'].includes(phase)) {
     return (
       <div className="app">
         {authBar}
@@ -322,9 +324,9 @@ const App = () => {
             enabled={tutorial}
             title="The augur's vision"
             lines={[
-              'The augur reads the coming fortnight and shows you one vision of what fate holds.',
+              'The augur reads the coming fortnight and shows one vision for each of its three fates.',
               'The augur may lie: severe omens are the hardest to read, and only the end of the turn tells truth from shadow.',
-              'A reroll does not re-read the same fate — it changes fate itself, for better or worse.',
+              'Click a vision to recast its bones — that does not re-read the same fate, it changes that fate itself, for better or worse.',
             ]}
           />
           <AuguryPanel
@@ -390,7 +392,12 @@ const App = () => {
       {phase === 'result' && battleResult && (
         <BattleResult
           result={battleResult}
-          onNextDay={nextDay}
+          onNextDay={
+            campaign.status === 'active'
+              ? nextDay
+              // The battle ended the campaign: end-day would 400, go to game over.
+              : () => { setBattleResult(null); setPhase('setup') }
+          }
           onWatchReplay={
             battleResult.id && battleResult.tickCount > 0
               ? () => setPhase('replay')

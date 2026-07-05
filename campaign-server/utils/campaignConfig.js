@@ -26,12 +26,17 @@ export const STARTING_FOOD = 50000
 export const STARTING_MATERIALS = 0
 
 // ── Augury ──────────────────────────────────────────────────────────────────
-// Consulting the augur rolls exploding dice + the true event's baseAccuracy
-// bonus + a mage bonus + a character bonus; at or above the threshold the
-// prophecy shows the true event, below it it may show the decoy. These
-// numbers are server-side only — the UI never states odds.
-export const AUGURY_THRESHOLD = 7
-export const AUGURY_REROLLS_PER_DAY = 1 // a reroll REPLACES fate: both events redrawn
+// Each turn holds AUGURY_SLOTS independent fates, each a hidden true/false
+// event pair. Consulting rolls each slot once: random < odds shows the true
+// event, otherwise the false one. Odds per slot = BASE + PER_POINT × (the
+// true event's legibility baseAccuracy + mage bonus + character bonus),
+// capped — mild everyday omens read reliably, catastrophes stay murky.
+// These numbers are server-side only — the UI never states odds.
+export const AUGURY_SLOTS = 3
+export const AUGURY_BASE_ODDS = 0.4
+export const AUGURY_ODDS_PER_POINT = 0.08
+export const AUGURY_MAX_ODDS = 0.9
+export const AUGURY_REROLLS_PER_DAY = 1 // rerolling a slot REPLACES that fate: new pair, new roll
 export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)))
 
 // The shadowing enemy host (hidden from the player; scouting reveals it).

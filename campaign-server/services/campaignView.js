@@ -14,30 +14,24 @@ import { forageCapacityKg } from './forage.js'
 // Async because it derives display values (food need, forage capacity) from
 // the cached unit catalog — the client never re-implements campaign math.
 
-// The prophecy as the player sees it: which card the vision showed and the
-// raw dice roll (the flourish). NEVER the true/decoy pair, the total, the
-// threshold, or the accuracy — those stay hidden until the end-of-turn reveal.
+// The fates as the player sees them: after consulting, one shown card per
+// slot. NEVER the true/false pair, shownTrue, the odds, or an event's hidden
+// legibility (baseAccuracy) — those stay hidden until the end-of-turn reveal.
 const auguryView = (augury) => ({
   consulted: augury.consulted,
   rerollsRemaining: augury.rerollsRemaining,
-  prediction: augury.prediction
-    ? {
-        roll: augury.prediction.roll,
-        event: predictedCard(augury),
-      }
+  visions: augury.consulted
+    ? augury.slots.map((slot) => visionCard(slot.shownTrue ? slot.trueEvent : slot.falseEvent))
     : null,
 })
 
-const predictedCard = ({ trueEvent, decoyEvent, prediction }) => {
-  const shown = prediction.eventId === trueEvent.id ? trueEvent : decoyEvent
-  return {
-    id: shown.id,
-    title: shown.title,
-    description: shown.description,
-    severity: shown.severity,
-    effect: shown.effect, // what WOULD happen if the vision is true — not a leak
-  }
-}
+const visionCard = ({ id, title, description, severity, effect }) => ({
+  id,
+  title,
+  description,
+  severity,
+  effect, // what WOULD happen if the vision is true — not a leak
+})
 
 export async function campaignView(campaign) {
   const catalog = await getCatalog()
