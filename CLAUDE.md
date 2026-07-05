@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Planning & session continuity (multi-machine)
+
+This project is developed across **multiple computers**. Keep plans, TODOs, staged designs, and
+session-handoff notes **in the repo so they travel with git** — never leave durable project state
+only in Claude's per-machine auto-memory (`~/.claude/…`, which does NOT move between machines).
+
+- **`docs/CAMPAIGN_PLAN.md`** is the living campaign-mode plan + session handoff (what's done,
+  what's next, working conventions). Read it at the start of a campaign-mode session; **update and
+  commit it** whenever a stage lands or the plan changes.
+- Put new plans/design docs under `docs/` (precedent: `docs/RENDERING_PLAN.md`,
+  `docs/CAMPAIGN_PLAN.md`) rather than in machine-local memory.
+- Auto-memory may still be used for cross-project user preferences, but anything another machine
+  needs to continue the work belongs in a committed file.
+
 ## Build & test commands
 
 This is a Linux-targeted project (the Makefile downloads a prebuilt Linux SFML binary and shells
