@@ -39,6 +39,8 @@ notes below over the git history if they ever disagree — the commits win.
 - **Next up (one feature per session):** **Stage 3 — materials** (spend routes: fortify
   `50×(level+1)`, militia; materials already accrue at 0.2 forage share), then **Stage 4 —
   scouting** (now fully designed below — coverage → cavalry-superiority gauge).
+- **NO feature changes until the user has playtested the current build** (user, 2026-07-05).
+  Unscheduled ideas live in "Deferred design backlog" below.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
@@ -327,6 +329,31 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 > The augur now foretells the Stage-4 "Blind rung" of recon-sensitive events (see Stage 4).
 
 ---
+
+## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
+
+**Morale overhaul (battle↔campaign).** Two morale tracks per army on a 1–1000 scale: a
+**starting/max** value and a **current** value. Unit deaths damage the max a little and the
+current more, so armies grind down over a campaign even between battles. If both armies are
+still in decent shape when the battle turn limit hits, offer a **"fight another day"** option:
+the battle ends, max resets — but takes a penalty for having been fought. (Note when designing:
+the engine already has squad-level morale *states* — Confident/Normal/Scared/Broken with
+casualty-triggered tests — this layers a persistent numeric army-level track on top; decide the
+interaction, don't duplicate.)
+
+**Battle events as cards (orders/leadership interactivity).** Make in-battle orders/leadership
+interactive via event cards drawn/played during a battle. Examples: troops out foraging are
+absent at battle start but can *arrive mid-battle* from an event card; rally cards; stronger
+cards gated on a leader being present. Ties into the character system; also a natural consumer
+of the engine's mid-battle-reinforcement support (the replay recorder already handles units
+appearing mid-battle).
+
+**Function-level architecture documentation (for Claude's own future work).** A reference doc
+(docs/, committed) mapping the architecture at function level: key functions per module, their
+inputs/outputs, and the *intent* — what they're meant to do, not just signatures. Scope
+sensibly to the load-bearing seams (engine public surface: Battlefield tick pipeline,
+UnitRegistry/UnitCatalog, HexGrid JSON; campaign-server services + routes; frontend
+api.js/hooks) rather than an exhaustive dump that rots. Cross-link from CLAUDE.md when written.
 
 ## Follow-ups (out of scope now)
 Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; `Militia` unit; fortification combat effects; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
