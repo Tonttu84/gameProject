@@ -48,6 +48,9 @@ make docker-up         # docker compose up --build: the WHOLE stack (engine + ca
                         # mode opens an SFML window even when spawned by the server, so
                         # the container wraps everything in xvfb-run. CI's "docker" job
                         # builds this image and smokes a full campaign turn through it.
+make docker-up-display # docker-up, but battle windows appear on the host desktop
+                        # (Windows Docker Desktop + WSLg socket mount; falls back to
+                        # Xvfb automatically when the host X socket isn't there)
 make docker-down       # stop the stack (campaign DB volume survives)
 make docker-clean      # stop AND wipe the campaign DB volume (Docker twin of db-clean)
 make docker-logs       # follow the game server's container logs
