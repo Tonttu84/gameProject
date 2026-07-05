@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import config from '../utils/config.js'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
 // plain fields — enemy.army, enemy.plannedPlacement, augury.trueEvent/
@@ -43,6 +44,10 @@ export const CAMPAIGN_SCHEMA_VERSION = 6 // v6: augury odds from the open-ended 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   schemaVersion: { type: Number, default: CAMPAIGN_SCHEMA_VERSION },
+  // The build that created this campaign. Saves from any OTHER build are
+  // deleted on listing, exactly like a schema mismatch — even a compatible
+  // save isn't worth the risk while the game changes daily (user, 2026-07-05).
+  buildVersion: { type: String, default: () => config.APP_VERSION },
   status: { type: String, enum: ['active', 'won', 'lost'], default: 'active' },
   // One `day` = one campaign turn = two weeks of campaigning (DAYS_PER_TURN).
   day: { type: Number, default: 1 },

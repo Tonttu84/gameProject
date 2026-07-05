@@ -227,6 +227,22 @@ describe('campaign schema versioning', () => {
     expect(await Campaign.collection.countDocuments({})).toBe(0)
   })
 
+  test('a save from another BUILD is deleted on listing and 404s directly', async () => {
+    // Docker stamps a fresh build version on every changed image, so a
+    // redeploy invalidates old saves even when the schema still matches —
+    // a stale save is never worth the risk (user, 2026-07-05).
+    const { body: c } = await createCampaign()
+    await Campaign.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(c.id) },
+      { $set: { buildVersion: 'some-older-build' } },
+    )
+
+    expect((await auth(api.get(`/api/campaigns/${c.id}`))).status).toBe(404)
+    const list = await auth(api.get('/api/campaigns'))
+    expect(list.body).toEqual([])
+    expect(await Campaign.collection.countDocuments({})).toBe(0)
+  })
+
   test('a legacy campaign 404s on direct access and on actions', async () => {
     const { body: c } = await createCampaign()
     await makeLegacy(c.id)

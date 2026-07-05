@@ -59,9 +59,14 @@ RUN cd campaign-server && npm ci --omit=dev
 COPY campaign-server/ ./campaign-server/
 COPY --from=frontend-build /src/frontend/dist ./frontend/dist
 
-# Build tag stamped onto bug reports (config.APP_VERSION). Pass the git sha at
-# build time: `docker build --build-arg APP_VERSION=$(git rev-parse --short HEAD)`.
-ARG APP_VERSION=docker
+# Automatic build stamp (config.APP_VERSION reads this file). Placed AFTER
+# every content COPY so Docker's layer cache re-runs it exactly when any code
+# changed: every new build gets a fresh version, identical rebuilds keep
+# theirs. The campaign server deletes saves from other builds at login
+# (user, 2026-07-05: a stale save is never worth the risk), so no manual
+# version bump can be forgotten. APP_VERSION build-arg still overrides.
+RUN date -u +build-%Y%m%dT%H%M%SZ > /app/BUILD_VERSION
+ARG APP_VERSION=
 ENV NODE_ENV=production \
     APP_VERSION=${APP_VERSION} \
     ENGINE_BIN=/app/game \

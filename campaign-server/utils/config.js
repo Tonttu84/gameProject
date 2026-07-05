@@ -7,18 +7,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Repo root: campaign-server/utils/ → two levels up.
 const ROOT = path.resolve(__dirname, '..', '..')
 
-// package.json version is the committed baseline build tag; a deployment sets
-// APP_VERSION (e.g. the git sha, passed as a Docker build arg) to pin the exact
-// build a player — and their bug reports — were running.
+// Build tag resolution: explicit APP_VERSION env → the BUILD_VERSION file the
+// Docker image stamps automatically at build time (fresh on every changed
+// build) → the committed package version (plain dev). Bug reports pin it, and
+// campaigns from any OTHER build are deleted at login — a stale save is never
+// worth the risk while the game changes daily (user, 2026-07-05).
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
+const buildStampPath = path.join(ROOT, 'BUILD_VERSION')
+const buildStamp = fs.existsSync(buildStampPath)
+  ? fs.readFileSync(buildStampPath, 'utf8').trim()
+  : null
 
 // MONGODB_URI is the later escape hatch to a real/hosted MongoDB: when set,
 // the embedded persistent mongod is skipped entirely and nothing else changes.
 const config = {
   PORT: Number(process.env.PORT) || 3001,
-  // Build tag stamped onto bug reports so a report pins the exact build it came
-  // from. Falls back to the committed package version in dev.
-  APP_VERSION: process.env.APP_VERSION || pkg.version,
+  // Build tag stamped onto bug reports and campaign saves (see above).
+  APP_VERSION: process.env.APP_VERSION || buildStamp || pkg.version,
   MONGODB_URI: process.env.MONGODB_URI || null,
   DB_NAME: process.env.DB_NAME || 'gamedb',
   // NOT inside the repo: on Windows the repo lives on /mnt/c (drvfs), where

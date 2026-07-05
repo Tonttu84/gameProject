@@ -9,6 +9,7 @@ import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { getCatalog } from '../utils/catalog.js'
+import config from '../utils/config.js'
 import {
   MAP_NAME,
   STARTING_ROSTER,
@@ -31,11 +32,13 @@ router.use(userExtractor)
 // Version checks filter the QUERY, not the loaded document: Mongoose fills
 // schema defaults on hydration, so a pre-versioning doc would look current
 // once loaded. Legacy docs 404 here and are deleted by the listing route.
+// buildVersion works the same way: a save from any other build is invisible.
 const findOwn = async (req) =>
   Campaign.findOne({
     _id: req.params.id,
     user: req.user._id,
     schemaVersion: CAMPAIGN_SCHEMA_VERSION,
+    buildVersion: config.APP_VERSION,
   })
 
 router.post('/', async (req, res) => {
@@ -61,11 +64,16 @@ router.post('/', async (req, res) => {
 })
 
 router.get('/', async (req, res) => {
-  // Campaigns from an incompatible schema version are deleted, not migrated
-  // (no backwards compatibility — the client then offers a fresh campaign).
+  // Campaigns from an incompatible schema version OR another build are
+  // deleted, not migrated (no backwards compatibility — the client then
+  // offers a fresh campaign). Every Docker build stamps a fresh version, so
+  // redeploying wipes old saves without anyone remembering to bump anything.
   await Campaign.deleteMany({
     user: req.user._id,
-    schemaVersion: { $ne: CAMPAIGN_SCHEMA_VERSION },
+    $or: [
+      { schemaVersion: { $ne: CAMPAIGN_SCHEMA_VERSION } },
+      { buildVersion: { $ne: config.APP_VERSION } },
+    ],
   })
   const campaigns = await Campaign.find({ user: req.user._id }).sort({ _id: -1 })
   res.json(await Promise.all(campaigns.map((c) => campaignView(c))))
