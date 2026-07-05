@@ -1,0 +1,5 @@
+# Shell scripts always check out with LF: they execute on Linux (WSL, the
+# Docker image, CI) even when the repo is cloned on Windows, where
+# core.autocrlf=true would otherwise stamp them with CRLF and break the
+# interpreter line ("/bin/bash^M: bad interpreter").
+*.sh text eol=lf
