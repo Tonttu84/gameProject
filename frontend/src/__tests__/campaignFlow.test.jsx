@@ -197,6 +197,25 @@ describe('campaign flow', () => {
     await screen.findByText(/Turn 2 — War Council/)
   })
 
+  it('a 404 on a campaign action (stale save wiped by a new build) recovers to the start screen', async () => {
+    // First load still sees the old campaign; after the 404 the reload
+    // returns nothing (the server purged it).
+    getCampaigns.mockResolvedValueOnce([campaignFixture]).mockResolvedValue([])
+    consultCampaignAugury.mockRejectedValue({
+      response: { status: 404, data: { error: 'campaign not found' } },
+    })
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    fireEvent.click(screen.getByText('Visit the Augur'))
+    fireEvent.click(await screen.findByTestId('consult-augur'))
+
+    // No zombie UI: the app reloads campaigns and offers a fresh start.
+    await screen.findByText('No Campaign In Progress')
+    expect(screen.getByTestId('auth-notice')).toHaveTextContent(/new build wiped old saves/)
+    expect(getCampaigns).toHaveBeenCalledTimes(2)
+  })
+
   it('tutorial intros render when enabled and hide when toggled off', async () => {
     getCampaigns.mockResolvedValue([campaignFixture])
     render(<App />)
