@@ -18,3 +18,7 @@ services:
       - /run/desktop/mnt/host/wslg/.X11-unix:/tmp/.X11-unix
     environment:
       DISPLAY: ":0"
+      # Battle windows stay open at battle end (pan/zoom the final field)
+      # until closed — the campaign turn waits for the window. Display-mode
+      # only: headless/CI battles must stay fire-and-forget.
+      BATTLE_HOLD_WINDOW: "1"

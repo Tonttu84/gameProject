@@ -259,6 +259,12 @@ const App = () => {
   const availableRoster = Object.fromEntries(
     Object.entries(roster).map(([type, n]) => [type, n - (forageAssignment[type] ?? 0)]),
   )
+  // Battle commits the WHOLE army (user, 2026-07-05): only foragers stay
+  // behind. Fight unlocks when every available unit is on the field; the
+  // server enforces the same rule.
+  const placedCount = placements.reduce((s, p) => s + p.count, 0)
+  const availableCount = Object.values(availableRoster).reduce((a, b) => a + b, 0)
+  const inCamp = availableCount - placedCount
 
   return (
     <div className="app">
@@ -354,7 +360,7 @@ const App = () => {
             lines={[
               'Click a highlighted hex in your half to place troops; the enemy waits beyond the red line.',
               'Give standing orders in the Orders section — set Hold (turns) to make a stack hold position instead of advancing; a ⌛ badge marks held hexes.',
-              'Units left unplaced stay safe in camp; foragers are out sweeping the rings.',
+              'Battle commits the whole army: Fight unlocks once every unit is on the field. Only foragers, out sweeping the rings, stay behind.',
               'Fight when ready — or end the turn without battle.',
             ]}
           />
@@ -367,13 +373,21 @@ const App = () => {
             disabled={phase === 'battling'}
           />
           <div className="placement-bar">
-            <span>{placements.reduce((s, p) => s + p.count, 0)} units placed in {placements.length} hex{placements.length !== 1 ? 'es' : ''}</span>
+            <span>
+              {placedCount} units placed in {placements.length} hex{placements.length !== 1 ? 'es' : ''}
+              {inCamp > 0 && (
+                <span className="placement-in-camp" data-testid="placement-in-camp">
+                  {' '}— {inCamp} still in camp
+                </span>
+              )}
+            </span>
             {phase === 'placement' && (
               <>
                 <button
                   className="btn-primary"
                   onClick={startBattle}
-                  disabled={placements.length === 0 || campaign.battleFoughtToday}
+                  disabled={placedCount === 0 || inCamp > 0 || campaign.battleFoughtToday}
+                  title={inCamp > 0 ? `Deploy your whole army — ${inCamp} still in camp` : undefined}
                 >
                   Fight!
                 </button>

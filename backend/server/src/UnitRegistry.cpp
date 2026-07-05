@@ -1,6 +1,7 @@
 #include "server/UnitRegistry.hpp"
 #include "AUnit.hpp"
 #include "UnitCatalog.hpp"
+#include "Squad.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -11,8 +12,12 @@
 #pragma GCC diagnostic pop
 
 #include <cstdio>
+#include <map>
+#include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 using json = nlohmann::json;
 
@@ -195,4 +200,35 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
         army.push_back(std::move(u));
     }
     return army;
+}
+
+// ── buildSquadsFromArmy ───────────────────────────────────────────────────────
+
+std::vector<std::unique_ptr<Squad>> buildSquadsFromArmy(const Army& army)
+{
+    // std::map (ordered) so squad creation order — and therefore the debug
+    // palette colors — is deterministic for a given placement.
+    std::map<std::pair<const Hex*, char>, std::vector<AUnit*>> groups;
+    for (const auto& u : army)
+        if (u && u->getHex())
+            groups[{u->getHex(), u->getPrintSymbol()}].push_back(u.get());
+
+    std::vector<std::unique_ptr<Squad>> squads;
+    for (auto& [key, members] : groups) {
+        if (members.size() < 2) continue; // a loner is not a squad
+
+        std::string type = unitNameForSymbol(key.second);
+        if (type.empty()) type = std::string(1, key.second);
+        char name[64];
+        std::snprintf(name, sizeof(name), "%s (%d,%d)",
+                      type.c_str(), key.first->coord.q, key.first->coord.r);
+
+        auto sq = std::make_unique<Squad>(name, false);
+        if (members.front()->getCategory() == UnitCategory::Mounted)
+            sq->setType(SquadType::Cavalry);
+        for (AUnit* m : members)
+            sq->addMember(m);
+        squads.push_back(std::move(sq));
+    }
+    return squads;
 }

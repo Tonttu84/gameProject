@@ -191,6 +191,16 @@ router.post('/:id/battles', async (req, res) => {
       })
   }
 
+  // Battle commits the WHOLE army (user, 2026-07-05): every unit not out
+  // foraging must take the field — no reserves skulking in camp.
+  let inCamp = 0
+  for (const [type, n] of campaign.roster)
+    inCamp += n - (campaign.forage.assignment.get(type) ?? 0) - (placed.get(type) ?? 0)
+  if (inCamp > 0)
+    return res.status(400).json({
+      error: `the whole army must take the field — ${inCamp} units still in camp`,
+    })
+
   const input = {
     map: MAP_NAME,
     player_placement: placement,

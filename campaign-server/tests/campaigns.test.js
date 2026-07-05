@@ -426,10 +426,19 @@ describe('POST /api/campaigns/:id/battles', () => {
       player_placement: Array.from({ length: n }, () => ({ unit_type: 'Soldier', q: 4, r: 4 })),
     })
 
+  // Battle commits the whole army, so these tests shrink the roster to
+  // exactly what they field.
+  const shrinkRoster = async (id, roster) => {
+    const doc = await Campaign.findById(id)
+    doc.roster = roster
+    await doc.save()
+    return doc
+  }
+
   test('injects the hidden enemy placement, updates rosters from survivors', async () => {
     engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
     const { body: c } = await createCampaign()
-    const doc = await Campaign.findById(c.id)
+    const doc = await shrinkRoster(c.id, { Soldier: 1 })
 
     const res = await fightSoldiers(c.id)
     expect(res.status).toBe(201)
@@ -443,8 +452,8 @@ describe('POST /api/campaigns/:id/battles', () => {
       doc.enemy.plannedPlacement.map((p) => expect.objectContaining(p)),
     )
 
-    // 1 of 300 Soldiers fielded, 2 came back (fixture): 299 in camp + 2.
-    expect(res.body.campaign.roster.Soldier).toBe(301)
+    // The whole 1-Soldier host fielded, 2 came back (fixture).
+    expect(res.body.campaign.roster.Soldier).toBe(2)
     expect(res.body.campaign.battleFoughtToday).toBe(true)
 
     // Enemy host is now exactly the red survivors.
@@ -457,8 +466,19 @@ describe('POST /api/campaigns/:id/battles', () => {
   test('one battle per day', async () => {
     engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
     const { body: c } = await createCampaign()
+    await shrinkRoster(c.id, { Soldier: 1 })
     await fightSoldiers(c.id)
     expect((await fightSoldiers(c.id)).status).toBe(400)
+  })
+
+  test('a partial deployment is rejected — the whole army takes the field', async () => {
+    // Playtest 2026-07-05: 212 of 378 placed still offered Fight. The server
+    // now rejects any placement that leaves non-foraging units in camp.
+    const { body: c } = await createCampaign()
+    const res = await fightSoldiers(c.id, 1) // 377 units still in camp
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/whole army/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
   })
 
   test('cannot field more units than the roster owns', async () => {
@@ -494,6 +514,7 @@ describe('POST /api/campaigns/:id/battles', () => {
     // The fixture's red_survivors is {} — total enemy annihilation.
     engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
     const { body: c } = await createCampaign()
+    await shrinkRoster(c.id, { Soldier: 1 })
     const res = await fightSoldiers(c.id)
     expect(res.body.campaign.status).toBe('won')
   })

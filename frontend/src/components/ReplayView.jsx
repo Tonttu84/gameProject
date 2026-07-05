@@ -24,6 +24,23 @@ const toOffset = (q, r) => ({ col: q + Math.floor(r / 2), row: r })
 
 const TEAM_COLOR = { blue: '#88aaff', red: '#ff8888' }
 
+// Mirror of the SFML renderer's SQUAD_PALETTE (BattleRenderer.cpp): one
+// distinct color per squad, hashed from the squad name.
+const SQUAD_PALETTE = [
+  '#ffd700', '#00ffb4', '#ff50dc', '#00c8ff', '#b4ff00',
+  '#ff7800', '#c850ff', '#50ff78', '#ffff78', '#78c8ff',
+]
+const squadColor = (name) => {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return SQUAD_PALETTE[h % SQUAD_PALETTE.length]
+}
+
+// Axial neighbor offsets per engine HexDirection (NE E SE SW W NW) — mirror
+// of HexGrid.cpp's DQ/DR; a unit's `side` indexes these.
+const DQ = [1, 1, 0, -1, -1, 0]
+const DR = [-1, 0, 1, 1, 0, -1]
+
 // Replays a stored battle: terrain grid + per-tick unit stacks, scrub slider,
 // step/play controls, and the tick's log lines. All data comes from the DB
 // via useReplay — no re-simulation, so scrubbing backward is exact.
@@ -50,15 +67,13 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
     return m
   }, [info.terrain])
 
-  // Group this tick's units into per-hex stacks of {type, team → count}.
-  const stacksByHex = useMemo(() => {
+  // Group this tick's units per hex; layout happens per hex below.
+  const unitsByHex = useMemo(() => {
     const m = new Map()
     tick?.units?.forEach((u) => {
       const key = `${u.q},${u.r}`
-      if (!m.has(key)) m.set(key, { q: u.q, r: u.r, counts: new Map() })
-      const stack = m.get(key).counts
-      const stackKey = `${u.type}|${u.team}`
-      stack.set(stackKey, (stack.get(stackKey) ?? 0) + 1)
+      if (!m.has(key)) m.set(key, { q: u.q, r: u.r, units: [] })
+      m.get(key).units.push(u)
     })
     return [...m.values()]
   }, [tick])
@@ -85,35 +100,71 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
   }
 
   // One glyph per unit — 5 Mages render as MMMMM, not "M5" (user,
-  // 2026-07-05), matching the SFML renderer's unit-per-marker look. Glyphs
-  // pack into a near-square grid that shrinks to stay inside the hex. True
-  // SFML parity (files along engaged hex sides by rank) needs side/rank data
-  // from the engine's ReplayRecorder — see CAMPAIGN_PLAN.md.
-  const unitElements = stacksByHex.flatMap(({ q, r, counts }) => {
+  // 2026-07-05), matching the SFML renderer's unit-per-marker look. Units in
+  // a squad take the squad's palette color; loners keep their team color.
+  // Engaged units file along their engaged hex side by rank (side/rank come
+  // from the engine's ReplayRecorder — same layout idea as BattleRenderer);
+  // everyone else packs into a small central block.
+  const glyph = (u, gx, gy, size, key) => (
+    <text
+      key={key}
+      x={gx}
+      y={gy}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fontSize={size}
+      fontWeight="bold"
+      fill={u.squad ? squadColor(u.squad) : (TEAM_COLOR[u.team] ?? '#ffffff')}
+    >
+      {u.type[0]}
+    </text>
+  )
+
+  const unitElements = unitsByHex.flatMap(({ q, r, units }) => {
     const { col, row } = toOffset(q, r)
     const { x, y } = hexCenter(col, row)
-    const glyphs = []
-    for (const [key, count] of counts) {
-      const [type, team] = key.split('|')
-      for (let n = 0; n < count; n++) glyphs.push({ symbol: type[0], team })
+    const els = []
+
+    // Engaged files: group by (side, rank), place toward the side's edge,
+    // deeper ranks stepping back toward the hex center.
+    const engaged = units.filter((u) => u.side !== undefined && u.side !== null)
+    const files = new Map()
+    engaged.forEach((u) => {
+      const key = `${u.side}|${u.rank ?? 0}`
+      if (!files.has(key)) files.set(key, [])
+      files.get(key).push(u)
+    })
+    for (const [key, file] of files) {
+      const [side, rank] = key.split('|').map(Number)
+      const n = toOffset(q + DQ[side], r + DR[side])
+      const nc = hexCenter(n.col, n.row)
+      const len = Math.hypot(nc.x - x, nc.y - y) || 1
+      const dx = (nc.x - x) / len
+      const dy = (nc.y - y) / len
+      const dist = HEX_SIZE * 0.68 - rank * 6
+      file.forEach((u, i) => {
+        const spread = (i - (file.length - 1) / 2) * 5.5
+        els.push(glyph(u, x + dx * dist - dy * spread, y + dy * dist + dx * spread, 6, `${q},${r},e${key},${u.id}`))
+      })
     }
-    const perRow = Math.ceil(Math.sqrt(glyphs.length))
-    const rows = Math.ceil(glyphs.length / perRow)
-    const cell = Math.min(9, (HEX_SIZE * 1.7) / Math.max(perRow, rows))
-    return glyphs.map((g, i) => (
-      <text
-        key={`${q},${r},${i}`}
-        x={x + ((i % perRow) - (perRow - 1) / 2) * cell}
-        y={y + (Math.floor(i / perRow) - (rows - 1) / 2) * cell}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fontSize={Math.max(4, cell - 1)}
-        fontWeight="bold"
-        fill={TEAM_COLOR[g.team] ?? '#ffffff'}
-      >
-        {g.symbol}
-      </text>
-    ))
+
+    // Unengaged block: near-square grid that shrinks to stay inside the hex.
+    const rest = units.filter((u) => u.side === undefined || u.side === null)
+    if (rest.length > 0) {
+      const perRow = Math.ceil(Math.sqrt(rest.length))
+      const rows = Math.ceil(rest.length / perRow)
+      const cell = Math.min(9, (HEX_SIZE * 1.4) / Math.max(perRow, rows))
+      rest.forEach((u, i) => {
+        els.push(glyph(
+          u,
+          x + ((i % perRow) - (perRow - 1) / 2) * cell,
+          y + (Math.floor(i / perRow) - (rows - 1) / 2) * cell,
+          Math.max(4, cell - 1),
+          `${q},${r},u${u.id}`,
+        ))
+      })
+    }
+    return els
   })
 
   return (

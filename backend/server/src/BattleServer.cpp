@@ -29,12 +29,16 @@
 #include "extern/httplib.h"
 #pragma GCC diagnostic pop
 
+#include <SFML/Window/Event.hpp>
+
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <sstream>
 #include <fstream>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 #include <unistd.h>
 
 using json = nlohmann::json;
@@ -203,6 +207,13 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
 
     field.loadArmies(std::move(enemy), std::move(player));
 
+    // Same-hex same-type stacks fight as squads (user, 2026-07-05): they move
+    // and resolve engagements as formations, and the SFML renderer + web
+    // replay give each squad its own color.
+    for (int team : {REDTEAM, BLUETEAM})
+        for (auto& sq : buildSquadsFromArmy(field.getTeam(team)))
+            field.getTeamData(team).squads.push_back(std::move(sq));
+
     // Optional per-battle turn limit ("the day is over"). Attacker-controlled,
     // so type-checked and clamped; anything invalid falls back to the default.
     int maxTicks = DEFAULT_MAX_BATTLE_TICKS;
@@ -217,6 +228,30 @@ void runBattleFromJson(Battlefield& field, BattleRenderer& renderer)
     BattleResult result = runBattleLoop(field, renderer, "BATTLE",
                                         [&] { recorder.recordTick(field); },
                                         maxTicks);
+
+    // Opt-in (BATTLE_HOLD_WINDOW=1, set by the display-mode compose overlay):
+    // the window stays open at battle end for inspection — pan/zoom the final
+    // field until the player closes it (user, 2026-07-05). The result JSON
+    // prints only after close, so the campaign turn waits for the window;
+    // headless/CI runs never set the flag and stay fire-and-forget.
+    const char* hold = std::getenv("BATTLE_HOLD_WINDOW");
+    if (hold && std::string(hold) == "1") {
+        sf::RenderWindow& window = renderer.getWindow();
+        if (window.isOpen())
+            std::cerr << "battle over — close the window to continue the campaign\n";
+        while (window.isOpen()) {
+            sf::Event event;
+            while (window.pollEvent(event)) {
+                if (event.type == sf::Event::Closed)
+                    window.close();
+                else
+                    renderer.handleEvent(event);
+            }
+            if (!window.isOpen()) break;
+            renderer.render(field.hexGrid);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
 
     json out = resultToJson(result);
     out["replay"] = recorder.toJson(mapName);

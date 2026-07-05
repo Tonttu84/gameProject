@@ -40,7 +40,9 @@ const info = {
   units: [{ type: 'Soldier', symbol: 'S', placementSize: 1 }],
 }
 
-const campaign = { ...campaignFixture, augury: consultedAugury }
+// Fight requires the whole army on the field; this campaign owns exactly the
+// 3 Soldiers the test places.
+const campaign = { ...campaignFixture, augury: consultedAugury, roster: { Soldier: 3 } }
 
 const lostCampaign = {
   ...campaign,
