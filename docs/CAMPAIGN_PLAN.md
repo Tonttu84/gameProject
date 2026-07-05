@@ -66,11 +66,16 @@ notes below over the git history if they ever disagree — the commits win.
     (side/rank/squad) are single-sourced from the engine recorder, but the cosmetic
     pixel projection exists twice — `BattleRenderer.cpp` and `ReplayView.jsx` each map
     "rank-1 file on side 0" to positions with their own geometry (the two views are
-    also transposed relative to each other). Candidate fix for an engine session:
-    extract the C++ layout into a function emitting normalized in-hex offsets per
-    unit, consumed by both renderers. Reminder while playtesting: every redeploy
-    needs a hard browser refresh — a stale bundle is the usual "feature missing"
-    culprit.
+    also transposed relative to each other). **Agreed direction (user, 2026-07-05):
+    the DB is the single interface — the browser must need NOTHING from the C++ at
+    render time.** Engine-session plan: factor `BattleRenderer`'s formation layout
+    into a pure function producing normalized in-hex offsets (ox, oy ∈ hex-radius
+    units) per unit; `BattleRenderer` consumes it live, `ReplayRecorder` writes the
+    offsets into every tick. `ReplayView` then just draws `center + offset × size`
+    (one axis transpose for the web orientation) and its side/rank geometry is
+    DELETED — side/rank stay in the tick docs as facts (queryable, testable), no
+    longer used for layout. Reminder while playtesting: every redeploy needs a hard
+    browser refresh — a stale bundle is the usual "feature missing" culprit.
 - **Next up after that:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
   militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
   (fully designed below — coverage → cavalry-superiority gauge).
