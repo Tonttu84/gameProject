@@ -40,8 +40,16 @@ notes below over the git history if they ever disagree — the commits win.
 - **First playtest happened 2026-07-05** (Docker stack on the Windows/Docker-Desktop
   machine). It produced the fixes above plus the augury v4 redesign, and one open UX task:
   **replay/after-action visual parity with the SFML renderer** (per-unit markers with
-  hex-side engagement positions instead of `56A`-style aggregated stacks) — design not
-  started, next in queue.
+  hex-side engagement positions instead of `56A`-style aggregated stacks) — next in queue,
+  scoped but not started. Scoping (2026-07-05): the SFML `BattleRenderer` positions units
+  from per-unit engine state — `getFormationSide()` (engaged hex side), `getEngagedRank()`
+  (rank within that engagement), march formation toward the attack direction when
+  unengaged — none of which is in the replay ticks (only `id/type/team/q/r/hp`). Parity
+  therefore needs (1) `ReplayRecorder.cpp` to emit per-unit `side` (0–5 or null) and
+  `rank`, (2) a `tickCount`-compatible tick-doc schema addition (old replays: fields
+  absent → fall back to current stacked view), (3) `ReplayView.jsx` to mirror the
+  renderer's layout passes (engaged files along each engaged side by rank, support/march
+  block otherwise). Engine rebuild via Docker on the playtest machine works.
 - **Next up after that:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
   militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
   (fully designed below — coverage → cavalry-superiority gauge).
