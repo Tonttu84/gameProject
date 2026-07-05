@@ -348,6 +348,12 @@ cards gated on a leader being present. Ties into the character system; also a na
 of the engine's mid-battle-reinforcement support (the replay recorder already handles units
 appearing mid-battle).
 
+**Units-as-data restructure (user design 2026-07-05, planned in `docs/UNITS_AS_DATA_PLAN.md`).**
+Units become pure stat rows: all attacks delivered by the unit's weapon vector (melee
+already works this way), spells from a requirement-gated roster (paths later), boolean
+capability tags (flying) on AUnit, and finally a UnitSpec table replacing the subclass
+zoo. Staged R0–R4 in that doc; first candidate for a post-playtest engine session.
+
 **Restructuring candidates (assessed 2026-07-05; none scheduled — all post-playtest).**
 1. *Split `Battlefield.cpp` by tick phase* — movement / engagements / combat into separate
    translation units with `Battlefield` staying the owner/coordinator. Mechanical and fully
