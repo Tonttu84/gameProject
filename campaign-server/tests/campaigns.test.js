@@ -81,7 +81,6 @@ const QUIET = {
   title: 'Quiet Fortnight',
   description: 'Nothing stirs.',
   severity: 1,
-  baseAccuracy: 3,
   effect: { type: 'food', delta: 0 },
 }
 const DOOMED = {
@@ -89,15 +88,14 @@ const DOOMED = {
   title: 'Doom',
   description: 'A fate that must never come to pass.',
   severity: 3,
-  baseAccuracy: 0,
   effect: { type: 'food', delta: -999 },
 }
 // Pin EVERY slot to the same unread pair. Consulting reads each slot: the
 // queued throwDice chain, then a d1000 vision roll against odds×1000, where
 // odds = (roll + base 2 + mage 1 (starting roster has 3 Mages) +
-// trueEvent.baseAccuracy) × 0.05. A queued [4,1] reading (roll 4) gives:
-// QUIET truth (legibility 3) → odds 0.50 → threshold 500; DOOMED truth
-// (legibility 0) → odds 0.35 → threshold 350.
+// POOL_LEGIBILITY[severity]) × 0.05. A queued [4,1] reading (roll 4) gives:
+// QUIET truth (minor pool, +2) → odds 0.45 → threshold 450; DOOMED truth
+// (major pool, +0) → odds 0.35 → threshold 350.
 const pinAugury = async (id, trueEvent = QUIET, falseEvent = DOOMED) => {
   const doc = await Campaign.findById(id)
   doc.augury.slots = doc.augury.slots.map(() => ({
@@ -145,12 +143,13 @@ describe('POST /api/campaigns', () => {
     const doc = await Campaign.findById(res.body.id)
     expect(doc.enemy.army.get('Soldier')).toBe(540)
     // The turn's fates are already sealed server-side: three unresolved slots,
-    // each a distinct true/false pair.
+    // each a distinct same-pool true/false pair.
     expect(doc.augury.slots).toHaveLength(3)
     for (const slot of doc.augury.slots) {
       expect(slot.trueEvent.id).toBeTruthy()
       expect(slot.falseEvent.id).toBeTruthy()
       expect(slot.trueEvent.id).not.toBe(slot.falseEvent.id)
+      expect(slot.falseEvent.severity).toBe(slot.trueEvent.severity)
       expect(slot.shownTrue).toBeNull()
     }
     expect(doc.forage.enemyPlan).toBe(9132)

@@ -8,7 +8,7 @@ import {
   rollAuguryOdds,
   mageBonus,
 } from '../services/augury.js'
-import { EVENT_POOL } from '../services/events.js'
+import { EVENT_POOL, POOL_LEGIBILITY } from '../services/events.js'
 import {
   AUGURY_SLOTS,
   AUGURY_ODDS_MAX,
@@ -23,19 +23,18 @@ import {
 // chanceRoll deciding the vision against odds×1000.
 //
 // Odds math (campaignConfig): odds = clamp((roll + 2 base + mageBonus +
-// characterBonus + trueEvent.baseAccuracy) × 0.05, 0.1, 0.9).
+// characterBonus + POOL_LEGIBILITY[severity]) × 0.05, 0.05, 0.9).
 
 afterEach(clearRolls)
 
 // A truth that is NOT in EVENT_POOL, so a redraw can never reproduce it —
-// that's what makes "the old fate never fires" assertable. baseAccuracy 0:
-// a dire fate is illegible.
+// that's what makes "the old fate never fires" assertable. Severity 3:
+// the major pool, whose readings get no legibility bonus.
 const DOOMED = {
   id: 'doomed_omen',
   title: 'Doom',
   description: 'A fate that must never come to pass.',
   severity: 3,
-  baseAccuracy: 0,
   effect: { type: 'food', delta: -999 },
 }
 const DECOY = { ...EVENT_POOL.find((e) => e.id === 'supply') }
@@ -73,11 +72,11 @@ describe('rollAuguryOdds', () => {
     expect(rollAuguryOdds(makeCampaign(), DOOMED)).toBeCloseTo(0.45)
   })
 
-  test('legibility, mages and character all add points', () => {
-    // roll 4 + base 2 + mage 3 + character 2 + legibility 3 = 14 → 0.70
+  test('pool legibility, mages and character all add points', () => {
+    // roll 4 + base 2 + mage 3 + character 2 + minor pool 2 = 13 → 0.65
     const c = makeCampaign({ mages: 9, character: { auguryBonus: 2 } })
     pushRoll(4); pushRoll(1)
-    expect(rollAuguryOdds(c, { ...DOOMED, baseAccuracy: 3 })).toBeCloseTo(0.7)
+    expect(rollAuguryOdds(c, { ...DOOMED, severity: 1 })).toBeCloseTo(0.65)
   })
 
   test('a monster roll is capped at the maximum', () => {
@@ -103,14 +102,53 @@ describe('drawAugury', () => {
     expect(a).toMatchObject({ consulted: false, rerollsRemaining: AUGURY_REROLLS_PER_DAY })
   })
 
-  test("every slot's true and false events are distinct pool entries", () => {
+  test("every slot's pair: distinct events from the SAME pool", () => {
     for (let i = 0; i < 100; i++) {
       for (const slot of drawAugury().slots) {
         expect(slot.trueEvent.id).not.toBe(slot.falseEvent.id)
+        expect(slot.falseEvent.severity).toBe(slot.trueEvent.severity) // no cross-pool pairs
         expect(EVENT_POOL.some((e) => e.id === slot.trueEvent.id)).toBe(true)
         expect(EVENT_POOL.some((e) => e.id === slot.falseEvent.id)).toBe(true)
       }
     }
+  })
+})
+
+// The leak guards the pool structure exists for (user, 2026-07-05): the odds
+// modifier belongs to the pool, every pool can form a pair, and knowing the
+// pool must not reveal the direction of the fate — magnitude leaks, valence
+// never. These tripwires keep future pool edits honest.
+describe('EVENT_POOL structure', () => {
+  const pools = [...new Set(EVENT_POOL.map((e) => e.severity))]
+
+  const isGood = ({ effect }) =>
+    (effect.type === 'food' && effect.delta > 0) ||
+    (effect.type === 'roster' && (effect.delta ?? 0) > 0)
+  const isBad = ({ effect }) =>
+    (effect.type === 'food' && effect.delta < 0) ||
+    (effect.type === 'roster' && effect.factor !== undefined && effect.factor < 1) ||
+    (effect.type === 'all_roster' && effect.factor < 1) ||
+    effect.type === 'enemy_advance'
+
+  test('every pool has a legibility modifier', () => {
+    for (const pool of pools) expect(POOL_LEGIBILITY[pool]).toBeTypeOf('number')
+  })
+
+  test('every pool can form a true/false pair (≥2 events)', () => {
+    for (const pool of pools)
+      expect(EVENT_POOL.filter((e) => e.severity === pool).length).toBeGreaterThanOrEqual(2)
+  })
+
+  test('every pool mixes good and bad events — the pool never tells direction', () => {
+    for (const pool of pools) {
+      const members = EVENT_POOL.filter((e) => e.severity === pool)
+      expect(members.some(isGood)).toBe(true)
+      expect(members.some(isBad)).toBe(true)
+    }
+  })
+
+  test('every event has a recognized valence (keeps the classifier honest)', () => {
+    for (const e of EVENT_POOL) expect(isGood(e) || isBad(e)).toBe(true)
   })
 })
 

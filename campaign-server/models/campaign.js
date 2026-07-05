@@ -12,8 +12,10 @@ const auguryEventSchema = new mongoose.Schema(
     id: { type: String, required: true },
     title: { type: String, required: true },
     description: { type: String, default: '' },
-    severity: { type: Number, required: true }, // 1 mild … 3 catastrophe
-    baseAccuracy: { type: Number, required: true }, // consult-roll bonus — HIDDEN
+    // 1 minor … 3 major — the event's POOL. A slot's true/false pair shares
+    // one pool, and the reading modifier comes from the pool
+    // (events.js POOL_LEGIBILITY), so the shown odds can't out the truth.
+    severity: { type: Number, required: true },
     effect: { type: mongoose.Schema.Types.Mixed, required: true },
   },
   { _id: false },

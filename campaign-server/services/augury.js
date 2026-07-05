@@ -8,14 +8,15 @@ import {
   AUGURY_REROLLS_PER_DAY,
   AUGURY_MAGE_BONUS_CAP,
 } from '../utils/campaignConfig.js'
-import { EVENT_POOL } from './events.js'
+import { EVENT_POOL, POOL_LEGIBILITY } from './events.js'
 
 // The augur's visions. Each turn holds AUGURY_SLOTS independent fates; a slot
-// is a hidden {trueEvent, falseEvent} pair. Every slot's TRUE event applies
-// at end-of-turn no matter what was shown. Consulting reads each slot:
+// is a hidden {trueEvent, falseEvent} pair drawn from ONE pool (severity
+// tier). Every slot's TRUE event applies at end-of-turn no matter what was
+// shown. Consulting reads each slot:
 //
 //   points = throwDice() + base + mageBonus + characterBonus
-//          + trueEvent.baseAccuracy (the event's legibility modifier)
+//          + POOL_LEGIBILITY[pool]   (the pool's modifier, never the event's)
 //   odds   = clamp(points × per-point, min, max)   ← SHOWN on the card
 //   vision = chanceRoll(odds) ? trueEvent : falseEvent
 //
@@ -25,15 +26,17 @@ import { EVENT_POOL } from './events.js'
 // REPLACES that fate: fresh pair, fresh reading; the others stay sealed.
 //
 // slots[i].{trueEvent,falseEvent,shownTrue} stay HIDDEN; slots[i].odds is
-// public once consulted (null before). The odds carry a whiff of the hidden
-// truth (an illegible severe event drags them down) — that is flavor, not a
-// leak the player can invert: the exploding roll dominates the variance.
+// public once consulted (null before). Because the pair shares a pool and
+// the modifier belongs to the pool, the odds reveal the reading's murkiness
+// and nothing about which card is true; pools mix good and bad events, so
+// even the (visible) pool leaks magnitude, never direction.
 
 export const mageBonus = (roster) =>
   Math.min(AUGURY_MAGE_BONUS_CAP, Math.floor(Math.sqrt(roster.get('Mage') ?? 0)))
 
 // One open-ended reading: exploding d6 + flat base + reading skill + the
-// event's legibility, mapped to a clamped probability. Consumes dice-queue
+// POOL's legibility (identical for both pair members — the odds can never
+// out the truth), mapped to a clamped probability. Consumes dice-queue
 // draws (the throwDice chain), so tests pin it exactly.
 export const rollAuguryOdds = (campaign, trueEvent) => {
   const points =
@@ -41,7 +44,7 @@ export const rollAuguryOdds = (campaign, trueEvent) => {
     AUGURY_BASE_POINTS +
     mageBonus(campaign.roster) +
     (campaign.character?.auguryBonus ?? 0) +
-    trueEvent.baseAccuracy
+    (POOL_LEGIBILITY[trueEvent.severity] ?? 0)
   // Rounded to whole percent: the number IS the display, and chanceRoll's
   // d1000 threshold must match it exactly.
   const odds = Math.min(AUGURY_ODDS_MAX, Math.max(AUGURY_ODDS_MIN, points * AUGURY_ODDS_PER_POINT))
@@ -50,13 +53,20 @@ export const rollAuguryOdds = (campaign, trueEvent) => {
 
 // Event draws use Math.random, not the dice queue: tests queue exact consult
 // rolls, and a newDay redraw must not eat their values.
+//
+// The false event comes from the SAME severity tier as the truth (user,
+// 2026-07-05): tier members share a legibility modifier, so the displayed
+// odds are identical whichever of the pair is true — the odds tell the
+// player how murky the reading was, never which card to believe.
 const drawSlot = () => {
-  const trueIdx = Math.floor(Math.random() * EVENT_POOL.length)
-  let falseIdx = Math.floor(Math.random() * (EVENT_POOL.length - 1))
-  if (falseIdx >= trueIdx) falseIdx += 1
+  const trueEvent = EVENT_POOL[Math.floor(Math.random() * EVENT_POOL.length)]
+  const peers = EVENT_POOL.filter(
+    (e) => e.severity === trueEvent.severity && e.id !== trueEvent.id,
+  )
+  const falseEvent = peers[Math.floor(Math.random() * peers.length)]
   return {
-    trueEvent: { ...EVENT_POOL[trueIdx] },
-    falseEvent: { ...EVENT_POOL[falseIdx] },
+    trueEvent: { ...trueEvent },
+    falseEvent: { ...falseEvent },
     odds: null, // rolled at consult, public from then on
     shownTrue: null, // unresolved until the augur is consulted — HIDDEN
   }

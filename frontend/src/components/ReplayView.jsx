@@ -84,27 +84,36 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
     }
   }
 
+  // One glyph per unit — 5 Mages render as MMMMM, not "M5" (user,
+  // 2026-07-05), matching the SFML renderer's unit-per-marker look. Glyphs
+  // pack into a near-square grid that shrinks to stay inside the hex. True
+  // SFML parity (files along engaged hex sides by rank) needs side/rank data
+  // from the engine's ReplayRecorder — see CAMPAIGN_PLAN.md.
   const unitElements = stacksByHex.flatMap(({ q, r, counts }) => {
     const { col, row } = toOffset(q, r)
     const { x, y } = hexCenter(col, row)
-    const entries = [...counts.entries()]
-    return entries.map(([key, count], i) => {
+    const glyphs = []
+    for (const [key, count] of counts) {
       const [type, team] = key.split('|')
-      return (
-        <text
-          key={`${q},${r},${key}`}
-          x={x}
-          y={y + (i - (entries.length - 1) / 2) * 9}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize="8"
-          fontWeight="bold"
-          fill={TEAM_COLOR[team] ?? '#ffffff'}
-        >
-          {type[0]}{count}
-        </text>
-      )
-    })
+      for (let n = 0; n < count; n++) glyphs.push({ symbol: type[0], team })
+    }
+    const perRow = Math.ceil(Math.sqrt(glyphs.length))
+    const rows = Math.ceil(glyphs.length / perRow)
+    const cell = Math.min(9, (HEX_SIZE * 1.7) / Math.max(perRow, rows))
+    return glyphs.map((g, i) => (
+      <text
+        key={`${q},${r},${i}`}
+        x={x + ((i % perRow) - (perRow - 1) / 2) * cell}
+        y={y + (Math.floor(i / perRow) - (rows - 1) / 2) * cell}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fontSize={Math.max(4, cell - 1)}
+        fontWeight="bold"
+        fill={TEAM_COLOR[g.team] ?? '#ffffff'}
+      >
+        {g.symbol}
+      </text>
+    ))
   })
 
   return (

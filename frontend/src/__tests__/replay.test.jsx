@@ -131,25 +131,49 @@ const renderView = () =>
   )
 
 describe('ReplayView', () => {
-  it('renders tick 0 units as stacks on the grid', async () => {
+  it('renders tick 0 units as one glyph per unit on the grid', async () => {
     renderView()
-    expect(await screen.findByText('Z1')).toBeInTheDocument()
-    expect(screen.getByText('S1')).toBeInTheDocument()
+    expect(await screen.findByText('Z')).toBeInTheDocument()
+    expect(screen.getByText('S')).toBeInTheDocument()
     expect(screen.getByTestId('replay-slider')).toHaveValue('0')
+  })
+
+  it('a stack renders its symbol once per unit — 3 Soldiers are SSS, not S3', async () => {
+    // Override tick 0: three Soldiers on one hex.
+    getTicks.mockImplementation((_id, from, to) =>
+      Promise.resolve(
+        [
+          {
+            index: 0,
+            units: [
+              { id: 1, type: 'Soldier', team: 'blue', q: 4, r: 4, hp: 10 },
+              { id: 2, type: 'Soldier', team: 'blue', q: 4, r: 4, hp: 10 },
+              { id: 3, type: 'Soldier', team: 'blue', q: 4, r: 4, hp: 9 },
+            ],
+            log: [],
+          },
+        ].filter((t) => t.index >= from && t.index <= to),
+      ),
+    )
+    render(
+      <ReplayView battleId="battle1" tickCount={1} info={info} map={{ hexes: [] }} onBack={vi.fn()} />,
+    )
+    expect(await screen.findAllByText('S')).toHaveLength(3)
+    expect(screen.queryByText('S3')).not.toBeInTheDocument()
   })
 
   it('scrubbing the slider shows that tick and its log lines', async () => {
     renderView()
-    await screen.findByText('Z1')
+    await screen.findByText('Z')
     fireEvent.change(screen.getByTestId('replay-slider'), { target: { value: '2' } })
-    await waitFor(() => expect(screen.queryByText('Z1')).not.toBeInTheDocument())
-    expect(screen.getByText('S1')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Z')).not.toBeInTheDocument())
+    expect(screen.getByText('S')).toBeInTheDocument()
     expect(screen.getByText('Zombie (red) fell')).toBeInTheDocument()
   })
 
   it('step buttons move one tick at a time', async () => {
     renderView()
-    await screen.findByText('Z1')
+    await screen.findByText('Z')
     fireEvent.click(screen.getByTestId('replay-next'))
     expect(screen.getByTestId('replay-slider')).toHaveValue('1')
     expect(await screen.findByText('One coward valued his life more than his honor')).toBeInTheDocument()
