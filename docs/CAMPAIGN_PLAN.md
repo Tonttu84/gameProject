@@ -348,12 +348,21 @@ cards gated on a leader being present. Ties into the character system; also a na
 of the engine's mid-battle-reinforcement support (the replay recorder already handles units
 appearing mid-battle).
 
-**Function-level architecture documentation (for Claude's own future work).** A reference doc
-(docs/, committed) mapping the architecture at function level: key functions per module, their
-inputs/outputs, and the *intent* — what they're meant to do, not just signatures. Scope
-sensibly to the load-bearing seams (engine public surface: Battlefield tick pipeline,
-UnitRegistry/UnitCatalog, HexGrid JSON; campaign-server services + routes; frontend
-api.js/hooks) rather than an exhaustive dump that rots. Cross-link from CLAUDE.md when written.
+**Restructuring candidates (assessed 2026-07-05; none scheduled — all post-playtest).**
+1. *Split `Battlefield.cpp` by tick phase* — movement / engagements / combat into separate
+   translation units with `Battlefield` staying the owner/coordinator. Mechanical and fully
+   pinned by the engine suite + `make clang`; do it BEFORE the DESIGN.md frontage/formation
+   system lands there, since that work will otherwise bloat one already-large file.
+2. *Retire the `Utility::getBattlefield()` process-global* (pass `Battlefield&`/context
+   explicitly; same for the RNG queue). This global is why tests shard across processes
+   instead of threads and why a process can only ever host one battle. Sizeable, engine-wide —
+   schedule it together with the engine-backed-skirmish follow-up, which is exactly the
+   feature that wants many cheap in-process mini-battles.
+3. *`capabilities.js` consolidation* (forage/screen/recon values → one mobile-arm + one
+   combat-screen value) — already part of Stage 4 Phase C, no separate action.
+Design steer as the roster grows: prefer stat/tag-driven unit variation (the `reconTag`
+pattern) over new subclasses; the catalog+tripwire SSOT is the thing to preserve, not the
+class count.
 
 ## Follow-ups (out of scope now)
 Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; `Militia` unit; fortification combat effects; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
