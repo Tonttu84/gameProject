@@ -1,11 +1,12 @@
 import React from 'react'
 
 // The augur's tent. Each turn holds three independent fates; consulting shows
-// one vision per fate (which may or may not be true — the truth is revealed
-// at end of turn). While a reroll remains, clicking a vision REPLACES that
-// fate itself rather than re-reading it: a new hidden pair, read fresh.
-// Everything shown comes from the server view; no odds are ever stated — the
-// only hint is each omen's gravity.
+// one vision per fate with the odds that it is true — the minigame is judging
+// a dire omen at 30% (probably noise) against one at 90% (all but certain).
+// While a reroll remains, clicking a vision REPLACES that fate itself rather
+// than re-reading it: a new hidden pair, new odds, read fresh. Everything
+// shown comes from the server view — the odds are the server's own roll
+// target, never recomputed here.
 
 const SEVERITY_LABEL = { 1: 'A gentle omen', 2: 'A troubling omen', 3: 'A dire omen' }
 
@@ -46,6 +47,9 @@ const AuguryPanel = ({ augury, onConsult, onReroll, onContinue }) => {
                 </div>
                 <div className="augury-title">{vision.title}</div>
                 <div className="augury-desc">{vision.description}</div>
+                <div className="augury-odds" data-testid={`augury-odds-${i}`}>
+                  {Math.round(vision.odds * 100)}% true
+                </div>
                 {canReroll && <div className="augury-reroll-hint">Recast these bones</div>}
               </button>
             ))}

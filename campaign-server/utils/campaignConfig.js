@@ -27,16 +27,28 @@ export const STARTING_MATERIALS = 0
 
 // ── Augury ──────────────────────────────────────────────────────────────────
 // Each turn holds AUGURY_SLOTS independent fates, each a hidden true/false
-// event pair. Consulting rolls each slot once: random < odds shows the true
-// event, otherwise the false one. Odds per slot = BASE + PER_POINT × (the
-// true event's legibility baseAccuracy + mage bonus + character bonus),
-// capped — mild everyday omens read reliably, catastrophes stay murky.
-// These numbers are server-side only — the UI never states odds.
+// event pair. Consulting a slot computes its odds of showing the truth from
+// an open-ended reading roll (user formula, 2026-07-05):
+//
+//   points = throwDice()            exploding d6, avg 4.2, unbounded upside
+//          + AUGURY_BASE_POINTS     flat base
+//          + mageBonus              min(3, floor(sqrt(mages)))
+//          + character?.auguryBonus placeholder, 0 today
+//          + trueEvent.baseAccuracy the event's legibility modifier (0–3)
+//   odds   = clamp(points × AUGURY_ODDS_PER_POINT, MIN, MAX)
+//
+// The odds are SHOWN on the vision card — the minigame is judging a dire
+// omen at 30% (probably noise) against one at 90% (all but certain) — and
+// the vision itself is one chanceRoll against exactly that number.
 export const AUGURY_SLOTS = 3
-export const AUGURY_BASE_ODDS = 0.4
-export const AUGURY_ODDS_PER_POINT = 0.08
-export const AUGURY_MAX_ODDS = 0.9
-export const AUGURY_REROLLS_PER_DAY = 1 // rerolling a slot REPLACES that fate: new pair, new roll
+export const AUGURY_BASE_POINTS = 2
+export const AUGURY_ODDS_PER_POINT = 0.05 // 5% per point
+// Floor per the user (2026-07-05): even a bungled reading keeps a little
+// value. (With base 2 the formula bottoms out at 15%; the floor is the
+// guarantee that survives future maluses.)
+export const AUGURY_ODDS_MIN = 0.05
+export const AUGURY_ODDS_MAX = 0.9
+export const AUGURY_REROLLS_PER_DAY = 1 // rerolling a slot REPLACES that fate: new pair, new roll, new odds
 export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)))
 
 // The shadowing enemy host (hidden from the player; scouting reveals it).

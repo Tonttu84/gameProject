@@ -67,10 +67,10 @@ describe('campaign flow', () => {
     expect(createCampaign).toHaveBeenCalled()
   })
 
-  it('consulting shows all three visions — and never any odds', async () => {
+  it("consulting shows all three visions, each with the server's odds", async () => {
     getCampaigns.mockResolvedValue([campaignFixture])
     consultCampaignAugury.mockResolvedValue({ ...campaignFixture, augury: consultedAugury })
-    const { container } = render(<App />)
+    render(<App />)
     await screen.findByText(/War Council/)
 
     fireEvent.click(screen.getByText('Visit the Augur'))
@@ -82,9 +82,12 @@ describe('campaign flow', () => {
     expect(first).toHaveTextContent('A gentle omen')
     expect(screen.getByTestId('augury-vision-1')).toHaveTextContent('Harsh Weather')
     expect(screen.getByTestId('augury-vision-2')).toHaveTextContent('Plague')
-    // The user is firm: the augury UI states NO odds of its own — the only
-    // hint is each omen's gravity.
-    expect(container.querySelector('.augury-phase').textContent).not.toMatch(/%/)
+    // The odds ARE the minigame (user, 2026-07-05): each card states the
+    // server's roll target verbatim — a 30% dire omen is probably noise, a
+    // 90% one is all but certain.
+    expect(screen.getByTestId('augury-odds-0')).toHaveTextContent('75% true')
+    expect(screen.getByTestId('augury-odds-1')).toHaveTextContent('30% true')
+    expect(screen.getByTestId('augury-odds-2')).toHaveTextContent('90% true')
 
     fireEvent.click(screen.getByTestId('augury-continue'))
     await screen.findByText('Fight!')

@@ -15,13 +15,18 @@ import { forageCapacityKg } from './forage.js'
 // the cached unit catalog — the client never re-implements campaign math.
 
 // The fates as the player sees them: after consulting, one shown card per
-// slot. NEVER the true/false pair, shownTrue, the odds, or an event's hidden
-// legibility (baseAccuracy) — those stay hidden until the end-of-turn reveal.
+// slot WITH that slot's odds (the number the vision was rolled against — the
+// reroll minigame needs it). NEVER the true/false pair, shownTrue, or an
+// event's hidden legibility (baseAccuracy) — those stay hidden until the
+// end-of-turn reveal.
 const auguryView = (augury) => ({
   consulted: augury.consulted,
   rerollsRemaining: augury.rerollsRemaining,
   visions: augury.consulted
-    ? augury.slots.map((slot) => visionCard(slot.shownTrue ? slot.trueEvent : slot.falseEvent))
+    ? augury.slots.map((slot) => ({
+        ...visionCard(slot.shownTrue ? slot.trueEvent : slot.falseEvent),
+        odds: slot.odds,
+      }))
     : null,
 })
 

@@ -36,7 +36,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 4 // v4: augury slots (3 independent true/false fates, per-slot reroll)
+export const CAMPAIGN_SCHEMA_VERSION = 6 // v6: augury odds from the open-ended reading roll (rolled at consult)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -54,9 +54,10 @@ const campaignSchema = new mongoose.Schema({
   // at the routes that mutate it.
   roster: { type: Map, of: Number, required: true },
 
-  // The turn's fates: AUGURY_SLOTS independent true/false event pairs. Every
-  // slot's trueEvent applies at end-of-turn regardless of the reading; the
-  // client sees only the shown card per slot, never the pair or the outcome.
+  // The turn's fates: AUGURY_SLOTS independent true/false event pairs, each
+  // with its own odds. Every slot's trueEvent applies at end-of-turn
+  // regardless of the reading; the client sees the shown card + odds per
+  // slot once consulted, never the pair or the outcome.
   augury: {
     slots: {
       type: [
@@ -64,6 +65,12 @@ const campaignSchema = new mongoose.Schema({
           {
             trueEvent: { type: auguryEventSchema, required: true }, // HIDDEN
             falseEvent: { type: auguryEventSchema, required: true }, // HIDDEN
+            // Chance the vision shows the truth: rolled at consult from the
+            // open-ended reading (throwDice + base + mage/character +
+            // trueEvent.baseAccuracy, × 5%, clamped). Null until consulted;
+            // public from then on — exactly the number the vision was
+            // rolled against.
+            odds: { type: Number, default: null },
             // null until consulted; then whether the vision showed the truth — HIDDEN
             shownTrue: { type: Boolean, default: null },
           },

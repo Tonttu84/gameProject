@@ -346,20 +346,25 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 > **Status note:** Stage 5 shipped early (commit `77ee3ef`, schema v3) ahead of Stages 3–4.
 > The augur now foretells the Stage-4 "Blind rung" of recon-sensitive events (see Stage 4).
 
-> **Superseded by augury v4 (2026-07-05 playtest, schema v4).** The user redesigned the
-> mechanic: each turn holds **three independent fate slots**, each a hidden
-> `{trueEvent, falseEvent}` pair. Consulting resolves every slot with one d1000
-> `chanceRoll`: `random < odds` shows the slot's true event, else its false one, where
-> `odds = AUGURY_BASE_ODDS (0.4) + AUGURY_ODDS_PER_POINT (0.08) × (trueEvent.baseAccuracy
-> + mageBonus + characterBonus)`, capped at 0.9 — the old exploding-dice threshold roll is
-> gone, but the legibility/mage/character knobs survive inside the odds. **All three true
-> events apply at end-of-turn**; the day-report reveal is per-slot. Clicking a shown vision
-> rerolls **that slot only** (fresh pair + fresh reading, `POST .../augury/reroll {slot}`),
-> spending the turn's single reroll. No raw roll is shown to the player anymore (with fixed
-> odds it would leak accuracy); severity flavor is the only hint, and the UI still never
-> states odds. `services/augury.js`, model subdoc (`augury.slots[]`), `campaignView`
-> (`visions` array), `AuguryPanel` (three clickable cards), `DayReport` (per-slot reveal)
-> all reworked; tests updated at every layer.
+> **Superseded by augury v6 (2026-07-05 playtest; schema v4 → v5 → v6 in one session).**
+> User redesign: each turn holds **three independent fate slots**, each a hidden
+> `{trueEvent, falseEvent}` pair. Consulting reads each slot with the user's formula:
+> `points = throwDice() (exploding d6) + AUGURY_BASE_POINTS (2) + mageBonus +
+> character?.auguryBonus (placeholder 0) + trueEvent.baseAccuracy (legibility 0–3)`;
+> `odds = clamp(points × 0.05, 0.05, 0.9)` rounded to whole percent. **The odds are SHOWN
+> on the vision card** — the reroll minigame is judging a dire omen at 30% (probably
+> noise) against one at 90% (near-certain doom) — and the vision is one d1000 `chanceRoll`
+> against exactly that number (≤ odds×1000 → true event shown, else the false one). The
+> 5% floor keeps a bungled reading worth something. **All three true events apply at
+> end-of-turn**; the day-report reveal is per-slot (predicted card + odds vs actual).
+> Clicking a shown vision rerolls **that slot only** (fresh pair, fresh reading,
+> `POST .../augury/reroll {slot}`), spending the turn's single reroll (config
+> `AUGURY_REROLLS_PER_DAY`). The old "UI never states odds" rule is deliberately
+> reversed. `services/augury.js`, model subdoc (`augury.slots[]`, `odds` null until
+> consulted), `campaignView` (`visions` array with `odds`), `AuguryPanel` (three
+> clickable cards showing "% true"), `DayReport` (per-slot reveal) all reworked; tests
+> pin the math at every layer (queue order per slot: throwDice chain, then the d1000
+> vision roll).
 
 ---
 

@@ -25,11 +25,10 @@ export const campaignFixture = {
   log: [],
 }
 
-// The view's augury after consulting: one shown vision card per fate slot.
-// Whether a vision is TRUE never appears — that's the end-of-turn reveal.
-// No vision here has a '%' of its own, so the "no stated odds" test can
-// blanket-assert the augury UI adds none (real event descriptions may still
-// contain incidental percentages — that's effect flavor, not confidence).
+// The view's augury after consulting: one shown vision card per fate slot,
+// each with the slot's odds of being true (the server's own roll target —
+// the reroll minigame runs on these). Whether a vision actually WAS true
+// never appears — that's the end-of-turn reveal.
 export const consultedAugury = {
   consulted: true,
   rerollsRemaining: 1,
@@ -40,6 +39,7 @@ export const consultedAugury = {
       description: 'Scouts find an abandoned depot. +3 t of food.',
       severity: 1,
       effect: { type: 'food', delta: 3000 },
+      odds: 0.75,
     },
     {
       id: 'weather',
@@ -47,6 +47,7 @@ export const consultedAugury = {
       description: 'A hard fortnight drains rations. -1 t of food.',
       severity: 2,
       effect: { type: 'food', delta: -1000 },
+      odds: 0.3,
     },
     {
       id: 'plague',
@@ -54,6 +55,7 @@ export const consultedAugury = {
       description: 'Disease thins the ranks.',
       severity: 3,
       effect: { type: 'all_roster', factor: 0.95 },
+      odds: 0.9,
     },
   ],
 }

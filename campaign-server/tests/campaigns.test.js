@@ -92,14 +92,18 @@ const DOOMED = {
   baseAccuracy: 0,
   effect: { type: 'food', delta: -999 },
 }
-// Pin EVERY slot to the same unresolved pair. Consult thresholds on the slot
-// d1000 roll (starting roster has 3 Mages → +1 point, odds = 0.4 + 0.08 ×
-// (baseAccuracy + 1)): QUIET truth → 720, DOOMED truth → 480.
+// Pin EVERY slot to the same unread pair. Consulting reads each slot: the
+// queued throwDice chain, then a d1000 vision roll against odds×1000, where
+// odds = (roll + base 2 + mage 1 (starting roster has 3 Mages) +
+// trueEvent.baseAccuracy) × 0.05. A queued [4,1] reading (roll 4) gives:
+// QUIET truth (legibility 3) → odds 0.50 → threshold 500; DOOMED truth
+// (legibility 0) → odds 0.35 → threshold 350.
 const pinAugury = async (id, trueEvent = QUIET, falseEvent = DOOMED) => {
   const doc = await Campaign.findById(id)
   doc.augury.slots = doc.augury.slots.map(() => ({
     trueEvent,
     falseEvent,
+    odds: null,
     shownTrue: null,
   }))
   await doc.save()
@@ -259,13 +263,13 @@ describe('campaign schema versioning', () => {
 describe('POST /api/campaigns/:id/augury/consult', () => {
   const consult = (id) => auth(api.post(`/api/campaigns/${id}/augury/consult`)).send({})
 
-  test('resolves every slot; the response carries the shown cards only', async () => {
+  test('resolves every slot; the response carries the shown cards + odds only', async () => {
     const { body: c } = await createCampaign()
-    await pinAugury(c.id, DOOMED, QUIET) // DOOMED truth → d1000 threshold 480
+    await pinAugury(c.id, DOOMED, QUIET) // [4,1] reading → odds 0.35 → threshold 350
 
-    pushRoll(480) // slot 0: at the line → the truth
-    pushRoll(481) // slot 1: just over → the lie
-    pushRoll(1000) // slot 2: the lie
+    pushRoll(4); pushRoll(1); pushRoll(350) // slot 0: at the line → the truth
+    pushRoll(4); pushRoll(1); pushRoll(351) // slot 1: just over → the lie
+    pushRoll(4); pushRoll(1); pushRoll(1000) // slot 2: the lie
     const res = await consult(c.id)
     expect(res.status).toBe(200)
     expect(res.body.augury.consulted).toBe(true)
@@ -275,7 +279,10 @@ describe('POST /api/campaigns/:id/augury/consult', () => {
       'quiet',
       'quiet',
     ])
-    expect(res.body.augury.visions[0]).toEqual({
+    // The displayed odds are exactly what the vision was rolled against:
+    // (roll 4 + base 2 + mage 1 + legibility 0) × 0.05.
+    for (const v of res.body.augury.visions) expect(v.odds).toBeCloseTo(0.35)
+    expect(res.body.augury.visions[0]).toMatchObject({
       id: 'doomed_omen',
       title: 'Doom',
       description: DOOMED.description,
@@ -512,6 +519,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.report.augury).toEqual(
       Array.from({ length: 3 }, () => ({
         predicted: null,
+        odds: null,
         actual: { id: 'quiet', title: 'Quiet Fortnight', description: 'Nothing stirs.', severity: 1 },
         wasAccurate: null,
       })),
@@ -549,8 +557,10 @@ describe('POST /api/campaigns/:id/end-day', () => {
 
   test('the day report reveals predicted vs actual per slot — the augur can lie', async () => {
     const { body: c } = await createCampaign()
-    await pinAugury(c.id, DOOMED, QUIET) // DOOMED truth → d1000 threshold 480
-    pushRoll(1000); pushRoll(1000); pushRoll(1) // lie, lie, truth
+    await pinAugury(c.id, DOOMED, QUIET) // [4,1] reading → odds 0.35 → threshold 350
+    pushRoll(4); pushRoll(1); pushRoll(1000) // slot 0: lie
+    pushRoll(4); pushRoll(1); pushRoll(1000) // slot 1: lie
+    pushRoll(4); pushRoll(1); pushRoll(1) // slot 2: truth
     await auth(api.post(`/api/campaigns/${c.id}/augury/consult`)).send({})
 
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
