@@ -1,10 +1,20 @@
 #include "server/ReplayRecorder.hpp"
+#include "FormationLayout.hpp"
 #include "UnitCatalog.hpp"
 #include "Squad.hpp"
 
 using json = nlohmann::json;
 
-void ReplayRecorder::recordTeam(json& units, Battlefield& field, int team)
+namespace {
+
+// Layout offsets rounded to 3 decimals — plenty for sub-hex positioning,
+// keeps tick documents lean.
+double round3(float v) { return std::round(v * 1000.f) / 1000.0; }
+
+} // namespace
+
+void ReplayRecorder::recordTeam(json& units, Battlefield& field, int team,
+                                LayoutCache& layouts)
 {
     const char* teamName = (team == REDTEAM) ? "red" : "blue";
     for (auto& u : field.getTeam(team)) {
@@ -23,10 +33,27 @@ void ReplayRecorder::recordTeam(json& units, Battlefield& field, int team)
             {"hp",   u->getHp()},
         };
 
-        // Formation state for the web replay's SFML-parity rendering: squad
-        // identity (squad coloring) and, when engaged, which hex side the
-        // unit fights on (HexDirection 0-5) at which rank. Omitted when
-        // absent to keep replay documents lean.
+        // In-hex layout from the shared FormationLayout — the same call the
+        // SFML renderer draws from, so the web replay reproduces formations
+        // exactly by drawing center + offset * hexSize. ox/oy are offsets
+        // from the hex centre and sz the glyph size, all in hex-radius units.
+        const Hex* hex = u->getHex();
+        auto cached = layouts.find(hex);
+        if (cached == layouts.end())
+            cached = layouts.emplace(hex, layoutHexFormation(*hex)).first;
+        for (const UnitPlacement& p : cached->second) {
+            if (p.unit != u.get()) continue;
+            ju["ox"] = round3(p.ox);
+            ju["oy"] = round3(p.oy);
+            ju["sz"] = round3(p.scale);
+            break;
+        }
+
+        // Formation FACTS (not layout): squad identity for coloring and,
+        // when engaged, which hex side the unit fights on (HexDirection 0-5)
+        // at which rank — queryable/testable state; the web replay styles by
+        // rank but no longer derives positions from it. Omitted when absent
+        // to keep replay documents lean.
         if (Squad* sq = u->getSquad()) ju["squad"] = sq->getName();
         if (HexSide* fs = u->getFormationSide()) {
             for (int d = 0; d < 6; ++d) {
@@ -45,8 +72,9 @@ void ReplayRecorder::recordTeam(json& units, Battlefield& field, int team)
 void ReplayRecorder::recordTick(Battlefield& field)
 {
     json units = json::array();
-    recordTeam(units, field, REDTEAM);
-    recordTeam(units, field, BLUETEAM);
+    LayoutCache layouts; // one layout per occupied hex per tick
+    recordTeam(units, field, REDTEAM, layouts);
+    recordTeam(units, field, BLUETEAM, layouts);
 
     _ticks.push_back({
         {"tick",  _ticks.size()},

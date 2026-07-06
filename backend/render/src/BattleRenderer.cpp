@@ -1,7 +1,10 @@
 #include "render/BattleRenderer.hpp"
 #include "AUnit.hpp"
+#include "FormationLayout.hpp"
+#include "Squad.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -66,7 +69,11 @@ static sf::Color terrainColor(const Hex* hex) {
     );
 }
 
-// Debug palette: one distinct colour per squad. Indexed by hashing the squad pointer.
+// Debug palette: one distinct colour per squad, indexed by hashing the squad
+// NAME with the same function as ReplayView.jsx's squadColor() — a squad
+// wears one colour in the SFML window, the web replay, and across runs.
+// (Team identity reads from the hex tint; squad colours override unit team
+// colour on purpose, for visual debugging until sprites land.)
 static const sf::Color SQUAD_PALETTE[] = {
     sf::Color(255, 215,   0),  // gold
     sf::Color(  0, 255, 180),  // mint
@@ -180,162 +187,53 @@ void BattleRenderer::handleEvent(const sf::Event& e) {
 }
 
 void BattleRenderer::renderUnitsInHex(const Hex& hex, sf::Vector2f flatCenter) {
-    std::vector<AUnit*> alive;
-    for (AUnit* u : hex.units)
-        if (u && u->getAlive()) alive.push_back(u);
-    if (alive.empty()) return;
-    std::sort(alive.begin(), alive.end(),
-              [](AUnit* a, AUnit* b) { return a->getSortKey() < b->getSortKey(); });
+    // Positions/sizes come from the shared layout (FormationLayout.cpp) — the
+    // same function whose offsets ReplayRecorder persists, so the SFML window
+    // and the web replay always show identical formations.
+    std::vector<UnitPlacement> placements = layoutHexFormation(hex);
+    if (placements.empty()) return;
 
-    // Edge midpoint angles (flat space, degrees) for HexDirection: NE=0,E=1,SE=2,SW=3,W=4,NW=5
-    static const float EDGE_ANGLE[6] = { -60.f, 0.f, 60.f, 120.f, 180.f, -120.f };
+    bool engaged = false;
+    for (int d = 0; d < 6; ++d)
+        if (hex.sides[d] && hex.sides[d]->engaged) engaged = true;
 
-    // Symbol size proportional to unit's physical size — larger creatures appear larger.
-    // scale lets fighters render bigger than support troops.
-    auto symF = [&](AUnit* u, float scale = 1.f) -> unsigned int {
-        float s = _hexSize * 1.6f * std::sqrt(static_cast<float>(u->getSize())
-                                              / static_cast<float>(Hex::CAPACITY)) * scale;
-        return static_cast<unsigned int>(std::max(4.f, std::min(s, _hexSize * 1.5f)));
+    // Alpha layers combat depth: frontline solid, reserves dimmed, the
+    // unseated support pool faintest. Unengaged hexes draw solid.
+    static const sf::Uint8 RANK_ALPHA[4] = { 140, 255, 200, 160 };
+    auto alphaFor = [&](const AUnit* u) -> sf::Uint8 {
+        if (!engaged) return 255;
+        int rank = u->getEngagedRank();
+        return (u->getFormationSide() && rank >= 1 && rank <= 3)
+                   ? RANK_ALPHA[rank] : RANK_ALPHA[0];
     };
-
-    float avgSym = 0.f;
-    for (AUnit* u : alive)
-        avgSym += _hexSize * 1.6f * std::sqrt(static_cast<float>(u->getSize())
-                                              / static_cast<float>(Hex::CAPACITY));
-    float nf = static_cast<float>(alive.size());
-    avgSym   = std::max(4.f, std::min(avgSym / nf, _hexSize * 1.5f));
 
     sf::Text sym;
     sym.setFont(_font);
     sym.setRotation(90.f);
 
     // SPRITE SWAP POINT: replace setCharacterSize/setString/setFillColor/draw with sf::Sprite draw
-    auto drawUnit = [&](AUnit* u, sf::Vector2f flatPos, unsigned int px, sf::Uint8 alpha = 255) {
+    for (const UnitPlacement& p : placements) {
+        AUnit* u = p.unit;
         sf::Color col;
         if (Squad* sq = u->getSquad()) {
-            size_t idx = (reinterpret_cast<uintptr_t>(sq) >> 4) % SQUAD_PALETTE_SIZE;
-            col = SQUAD_PALETTE[idx];
+            uint32_t h = 0;
+            for (unsigned char c : sq->getName()) h = h * 31u + c;
+            col = SQUAD_PALETTE[h % SQUAD_PALETTE_SIZE];
         } else {
             col = (u->getTeam() == 1) ? sf::Color(220, 60, 60) : sf::Color(60, 100, 220);
         }
         if (u->getCast() != 0) col = sf::Color::Yellow;
         if (u->getBroken())    col = sf::Color(255, 140, 0);
-        col.a = alpha;
-        sym.setCharacterSize(px);
+        col.a = alphaFor(u);
+        sym.setCharacterSize(static_cast<unsigned int>(p.scale * _hexSize));
         sym.setString(std::string(1, u->getPrintSymbol()));
         sym.setFillColor(col);
         sf::FloatRect b = sym.getLocalBounds();
         sym.setOrigin(b.left + b.width * 0.5f, b.top + b.height * 0.5f);
-        sym.setPosition(toIso(flatPos));
+        sym.setPosition(toIso({ flatCenter.x + p.ox * _hexSize,
+                                flatCenter.y + p.oy * _hexSize }));
         _window.draw(sym);
-    };
-
-    // Find engaged sides
-    std::vector<int> engagedDirs;
-    for (int d = 0; d < 6; ++d)
-        if (hex.sides[d] && hex.sides[d]->engaged)
-            engagedDirs.push_back(d);
-
-    int N = static_cast<int>(alive.size());
-
-    if (engagedDirs.empty()) {
-        // Unengaged: march formation, front rank toward attack direction.
-        // Red (team 1) at bottom rows, attacks north (low Y); Blue at top rows, attacks south.
-        int   team   = alive[0]->getTeam();
-        float step   = avgSym * 0.80f;
-        int   perRow = std::max(1, static_cast<int>(_hexSize * 1.7f / step));
-        float frontY = flatCenter.y + (team == 1 ? -1.f : +1.f) * _hexSize * 0.75f;
-        float yDir   = (team == 1 ? +1.f : -1.f);
-        for (int row = 0, idx = 0; idx < N; ++row) {
-            int   rowCnt = std::min(perRow, N - idx);
-            float rowY   = frontY + yDir * static_cast<float>(row) * step;
-            float rowX0  = flatCenter.x - (rowCnt - 1) * step * 0.5f;
-            for (int i = 0; i < rowCnt; ++i, ++idx)
-                drawUnit(alive[idx], { rowX0 + static_cast<float>(i) * step, rowY }, symF(alive[idx]));
-        }
-        return;
     }
-
-    // Engaged: draw units layered by combat rank.
-    // Rank 1 (frontline) — at the edge, 1.3× size, full alpha.
-    // Rank 2 (backup)    — 1 step inward, 1.0× size, slightly dimmed.
-    // Rank 3 (reserve)   — 2 steps inward, 0.85× size, dimmed.
-    // Unseated (rank 0)  — hex centre, 0.7× size, 140 alpha (support pool).
-    float fStep = avgSym * 0.85f;
-    int edgeWidth = std::max(1, static_cast<int>(_hexSize * 1.5f / fStep));
-
-    struct Placement { AUnit* unit; sf::Vector2f pos; float sizeMul; sf::Uint8 alpha; };
-    std::vector<Placement> formation;
-    std::vector<AUnit*>    support;
-
-    static const float   RANK_SIZE_MUL[4] = { 0.f, 1.3f, 1.0f, 0.85f };
-    static const sf::Uint8 RANK_ALPHA[4]  = {   0,  255,   200,   160  };
-
-    for (int d : engagedDirs) {
-        HexSide* side = hex.sides[d];
-        if (!side) continue;
-        float angle = EDGE_ANGLE[d] * PI / 180.f;
-        sf::Vector2f eDir  = { std::cos(angle), std::sin(angle) };
-        sf::Vector2f pDir  = { -eDir.y, eDir.x };
-        sf::Vector2f inDir = { -eDir.x, -eDir.y };
-        sf::Vector2f eMid  = { flatCenter.x + eDir.x * _hexSize * 0.78f,
-                               flatCenter.y + eDir.y * _hexSize * 0.78f };
-
-        for (int ri = 1; ri <= 3; ++ri) {
-            std::vector<AUnit*> rankUnits;
-            for (AUnit* u : alive)
-                if (u->getFormationSide() == side && u->getEngagedRank() == ri)
-                    rankUnits.push_back(u);
-            if (rankUnits.empty()) continue;
-
-            int   cnt     = std::min(edgeWidth, static_cast<int>(rankUnits.size()));
-            float rankOff = static_cast<float>(ri - 1) * fStep;
-            float t0      = -(cnt - 1) * fStep * 0.5f;
-            for (int i = 0; i < cnt; ++i)
-                formation.push_back({ rankUnits[i], {
-                    eMid.x + pDir.x * (t0 + static_cast<float>(i) * fStep) + inDir.x * rankOff,
-                    eMid.y + pDir.y * (t0 + static_cast<float>(i) * fStep) + inDir.y * rankOff },
-                    RANK_SIZE_MUL[ri], RANK_ALPHA[ri] });
-        }
-    }
-
-    // Unseated units (rank 0) go to the support pool in the hex centre.
-    for (AUnit* u : alive)
-        if (u->getEngagedRank() == 0) support.push_back(u);
-
-    // Group support by squad so same-squad members draw together; loners last.
-    std::sort(support.begin(), support.end(), [](AUnit* a, AUnit* b) {
-        Squad* sa = a->getSquad();
-        Squad* sb = b->getSquad();
-        if (sa != sb) {
-            if (!sa) return false;
-            if (!sb) return true;
-            return reinterpret_cast<uintptr_t>(sa) < reinterpret_cast<uintptr_t>(sb);
-        }
-        return a->getSortKey() < b->getSortKey();
-    });
-
-    // Draw deepest ranks first so frontline renders on top.
-    if (!support.empty()) {
-        float sStep   = avgSym * 0.70f;
-        int   sPerRow = std::max(1, static_cast<int>(_hexSize * 1.3f / sStep));
-        int   numS    = static_cast<int>(support.size());
-        int   numRows = (numS + sPerRow - 1) / sPerRow;
-        for (int row = 0, si = 0; si < numS; ++row) {
-            int   rowCnt = std::min(sPerRow, numS - si);
-            float rowX   = flatCenter.x + (static_cast<float>(row)
-                           - static_cast<float>(numRows - 1) * 0.5f) * sStep;
-            float rowY0  = flatCenter.y - (rowCnt - 1) * sStep * 0.5f;
-            for (int i = 0; i < rowCnt; ++i, ++si)
-                drawUnit(support[si], { rowX, rowY0 + static_cast<float>(i) * sStep },
-                         symF(support[si], 0.7f), 140);
-        }
-    }
-    // Draw formation back-to-front so rank 1 appears over rank 2/3.
-    std::sort(formation.begin(), formation.end(),
-              [](const Placement& a, const Placement& b){ return a.sizeMul < b.sizeMul; });
-    for (auto& [u, pos, sm, al] : formation)
-        drawUnit(u, pos, symF(u, sm), al);
 }
 
 void BattleRenderer::render(const HexGrid& grid) {

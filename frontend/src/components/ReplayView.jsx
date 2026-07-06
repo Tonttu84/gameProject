@@ -36,10 +36,10 @@ const squadColor = (name) => {
   return SQUAD_PALETTE[h % SQUAD_PALETTE.length]
 }
 
-// Axial neighbor offsets per engine HexDirection (NE E SE SW W NW) — mirror
-// of HexGrid.cpp's DQ/DR; a unit's `side` indexes these.
-const DQ = [1, 1, 0, -1, -1, 0]
-const DR = [-1, 0, 1, 1, 0, -1]
+// Web glyphs draw a bit larger than strict SFML-pixel parity (uniform factor,
+// layout untouched) — at 20px hexes a 1:1 mapping is unreadably small.
+const GLYPH_SCALE = 1.5
+const MIN_GLYPH_PX = 4
 
 // Replays a stored battle: terrain grid + per-tick unit stacks, scrub slider,
 // step/play controls, and the tick's log lines. All data comes from the DB
@@ -67,17 +67,6 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
     return m
   }, [info.terrain])
 
-  // Group this tick's units per hex; layout happens per hex below.
-  const unitsByHex = useMemo(() => {
-    const m = new Map()
-    tick?.units?.forEach((u) => {
-      const key = `${u.q},${u.r}`
-      if (!m.has(key)) m.set(key, { q: u.q, r: u.r, units: [] })
-      m.get(key).units.push(u)
-    })
-    return [...m.values()]
-  }, [tick])
-
   const hexElements = []
   for (let row = 0; row < grid.height; row++) {
     for (let col = 0; col < grid.width; col++) {
@@ -102,9 +91,6 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
   // One glyph per unit — 5 Mages render as MMMMM, not "M5" (user,
   // 2026-07-05), matching the SFML renderer's unit-per-marker look. Units in
   // a squad take the squad's palette color; loners keep their team color.
-  // Engaged units file along their engaged hex side by rank (side/rank come
-  // from the engine's ReplayRecorder — same layout idea as BattleRenderer);
-  // everyone else packs into a small central block.
   const glyph = (u, gx, gy, size, key) => (
     <text
       key={key}
@@ -120,51 +106,21 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
     </text>
   )
 
-  const unitElements = unitsByHex.flatMap(({ q, r, units }) => {
-    const { col, row } = toOffset(q, r)
+  // In-hex layout comes from the DB: ox/oy/sz are the engine FormationLayout
+  // offsets ReplayRecorder stored on every unit (hex-radius units). This view
+  // owns no formation geometry — it draws center + offset × size, with one
+  // axis transpose (engine flat x runs along this view's y). side/rank remain
+  // available on the unit as facts, never as layout inputs.
+  const unitElements = (tick?.units ?? []).map((u) => {
+    const { col, row } = toOffset(u.q, u.r)
     const { x, y } = hexCenter(col, row)
-    const els = []
-
-    // Engaged files: group by (side, rank), place toward the side's edge,
-    // deeper ranks stepping back toward the hex center.
-    const engaged = units.filter((u) => u.side !== undefined && u.side !== null)
-    const files = new Map()
-    engaged.forEach((u) => {
-      const key = `${u.side}|${u.rank ?? 0}`
-      if (!files.has(key)) files.set(key, [])
-      files.get(key).push(u)
-    })
-    for (const [key, file] of files) {
-      const [side, rank] = key.split('|').map(Number)
-      const n = toOffset(q + DQ[side], r + DR[side])
-      const nc = hexCenter(n.col, n.row)
-      const len = Math.hypot(nc.x - x, nc.y - y) || 1
-      const dx = (nc.x - x) / len
-      const dy = (nc.y - y) / len
-      const dist = HEX_SIZE * 0.68 - rank * 6
-      file.forEach((u, i) => {
-        const spread = (i - (file.length - 1) / 2) * 5.5
-        els.push(glyph(u, x + dx * dist - dy * spread, y + dy * dist + dx * spread, 6, `${q},${r},e${key},${u.id}`))
-      })
-    }
-
-    // Unengaged block: near-square grid that shrinks to stay inside the hex.
-    const rest = units.filter((u) => u.side === undefined || u.side === null)
-    if (rest.length > 0) {
-      const perRow = Math.ceil(Math.sqrt(rest.length))
-      const rows = Math.ceil(rest.length / perRow)
-      const cell = Math.min(9, (HEX_SIZE * 1.4) / Math.max(perRow, rows))
-      rest.forEach((u, i) => {
-        els.push(glyph(
-          u,
-          x + ((i % perRow) - (perRow - 1) / 2) * cell,
-          y + (Math.floor(i / perRow) - (rows - 1) / 2) * cell,
-          Math.max(4, cell - 1),
-          `${q},${r},u${u.id}`,
-        ))
-      })
-    }
-    return els
+    return glyph(
+      u,
+      x + (u.oy ?? 0) * HEX_SIZE,
+      y + (u.ox ?? 0) * HEX_SIZE,
+      Math.max(MIN_GLYPH_PX, (u.sz ?? 0.2) * HEX_SIZE * GLYPH_SCALE),
+      `u${u.id}`,
+    )
   })
 
   return (

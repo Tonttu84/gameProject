@@ -3,6 +3,7 @@
 #include "server/BattleServer.hpp"
 #include "Battlefield.hpp"
 #include "BattleSetup.hpp"
+#include "FormationLayout.hpp"
 #include "Utility.hpp"
 #include "units/Soldier.hpp"
 #include "units/Zombie.hpp"
@@ -172,6 +173,66 @@ TEST_CASE("replay recorder: a unit appearing mid-battle gets a fresh id") {
         if (!ids0.count(u["id"].get<int>())) freshIds++;
     REQUIRE(freshIds == 1);
     REQUIRE(replay["ticks"][1]["units"].size() == 6);
+
+    field.extractResult();
+}
+
+// ── Layout offsets (renderer/replay parity) ──────────────────────────────────
+// Every recorded unit carries the shared FormationLayout offsets so the web
+// replay draws formations from the DB alone — no geometry of its own.
+
+TEST_CASE("replay recorder: every unit carries in-hex layout offsets") {
+    Battlefield& field = setupSmallBattle();
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+
+    int guard = 0;
+    while (field.tick() && ++guard < 60)
+        recorder.recordTick(field);
+
+    json replay = recorder.toJson("sample_battle");
+    for (const auto& t : replay["ticks"]) {
+        for (const auto& u : t["units"]) {
+            REQUIRE(u.contains("ox"));
+            REQUIRE(u.contains("oy"));
+            REQUIRE(u.contains("sz"));
+            // Offsets are normalized to hex-radius units.
+            REQUIRE(std::abs(u["ox"].get<double>()) <= 1.0);
+            REQUIRE(std::abs(u["oy"].get<double>()) <= 1.0);
+            REQUIRE(u["sz"].get<double>() > 0.0);
+            REQUIRE(u["sz"].get<double>() <= 1.5);
+        }
+    }
+
+    field.extractResult();
+}
+
+TEST_CASE("replay recorder: recorded offsets match the shared layout function") {
+    Battlefield& field = setupSmallBattle();
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+
+    json replay = recorder.toJson("sample_battle");
+    // Map replay id → the live unit, then compare against layoutHexFormation
+    // on that unit's hex — the SFML renderer draws from the same call, so
+    // this is the SFML↔web parity guarantee.
+    std::map<int, AUnit*> byId;
+    for (int team : {REDTEAM, BLUETEAM})
+        for (auto& u : field.getTeam(team))
+            if (u && u->getReplayId() >= 0) byId[u->getReplayId()] = u.get();
+
+    for (const auto& ju : replay["ticks"][0]["units"]) {
+        AUnit* unit = byId.at(ju["id"].get<int>());
+        auto placements = layoutHexFormation(*unit->getHex());
+        const UnitPlacement* p = nullptr;
+        for (const auto& cand : placements)
+            if (cand.unit == unit) p = &cand;
+        REQUIRE(p != nullptr);
+        // Stored values are rounded to 3 decimals to keep tick docs lean.
+        REQUIRE(ju["ox"].get<double>() == Approx(p->ox).margin(0.0006));
+        REQUIRE(ju["oy"].get<double>() == Approx(p->oy).margin(0.0006));
+        REQUIRE(ju["sz"].get<double>() == Approx(p->scale).margin(0.0006));
+    }
 
     field.extractResult();
 }
