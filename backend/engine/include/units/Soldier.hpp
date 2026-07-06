@@ -26,6 +26,4 @@ class Soldier : public Human
         Soldier(int setTeam) noexcept;
         ~Soldier() noexcept = default ;
 
-        void special() override;
-
 };

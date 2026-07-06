@@ -23,6 +23,7 @@
 #include "Utility.hpp"
 
 class Squad; // forward declare — Squad.hpp includes AUnit.hpp so we can't include it here
+struct Spell; // see Spell.hpp/SpellList.hpp — only pointers stored here
 
 // Movement and terrain-restriction category for a unit.
 // All existing human units are Foot. New unit classes set their category;
@@ -117,6 +118,24 @@ public:
     virtual void setBroken(bool value);
     virtual void heal(int value);
     virtual void special() {};
+
+    // ── Spellcasting (Stage R0, docs/UNITS_AS_DATA_PLAN.md) ──────────────────
+    // Non-virtual: called by triggerSpecialPhase for every unit; a unit whose
+    // roster query matched no spells returns immediately. Handles the common
+    // gating (cooldown tick, alive/broken/hex, mana spend, setCast) so spell
+    // effect bodies in SpellList.cpp only target and apply.
+    void castSpells();
+    // Cast-selection policy, kept separate from castSpells() so the policy can
+    // grow without touching the gating. Today every spellcaster type knows
+    // exactly ONE spell (tripwire-tested), so "first affordable spell" is
+    // trivially correct. When spell paths (Stage R4) give casters real spell
+    // arrays, THIS is where a real algorithm — priority, mana budgeting,
+    // situational scoring — replaces pick-first. Requirements are already
+    // resolved at assignment time: _spells only holds spells this unit may cast.
+    const Spell* chooseSpellToCast() const;
+    int  getMana() const { return mana; }
+    void setMana(int m)  { mana = m; }
+
     int getCast() const;
     void setCast(int setCast);
     bool testMorale(int damage);
@@ -260,6 +279,7 @@ public:
     void setPreferredRange(int r)    { preferredRange = r; }
     int  getMovementSpeed()  const  { return movementSpeed; }
     int  getBallisticSkill() const  { return ballisticSkill; }
+    int  getAccuracy()       const  { return accuracy; }
 
     // ── Squad movement points ─────────────────────────────────────────────────
     // Signed bank used only by squad movement (Battlefield::moveUnits): each
@@ -311,6 +331,11 @@ protected:
     // never `accuracy` directly.
     void setBallisticSkill(int bs) { ballisticSkill = bs; accuracy = bs * 5; }
 
+    // Query the spell roster with this unit's catalog type name. Called by
+    // caster constructors; Stage R3 will move the call to the generic
+    // spec-built Unit constructor.
+    void assignSpells(std::string_view unitTypeName);
+
     int team = 0;
     Hex* currentHex = nullptr;
     int hitpoints = 10;
@@ -320,6 +345,7 @@ protected:
     int strength = 10;
     int maxHP = 10;
     int cast = 0;
+    int mana = 0; // only meaningful for units whose roster query matched spells
     int armour = 0;
     int ballisticSkill = 2; // see setBallisticSkill(); default matches accuracy = 10
     int accuracy = 10;      // derived: ballisticSkill * 5; do not set directly
@@ -361,6 +387,7 @@ protected:
     int _cohesionBonus = 0;  // per-tick tier (0-3), set by resolveEngagements, reset each tick
     UnitCategory _category = UnitCategory::Foot;
     std::vector<Weapon> _attacks;
+    std::vector<const Spell*> _spells; // roster entries this unit may cast; see assignSpells()
     int _holdTurns = 0;
     int _replayId = -1;
 

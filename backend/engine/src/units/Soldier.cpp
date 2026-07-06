@@ -23,11 +23,4 @@ Soldier::Soldier(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Swor
     setBallisticSkill(4); // drilled javelin throws, nothing more
     fatigueCost++; // Ekstra +1 fatigue from heavy armor
     size = SIZE;
-} 
-
-
-
-
-void Soldier::special()
-{
 }

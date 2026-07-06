@@ -3,7 +3,7 @@
 Working plan for hollowing unit subclasses into pure stat rows: **spells come from a
 requirement-gated spell roster, ranged attacks come from the weapon, boolean capability
 tags live on AUnit — units themselves carry stats, not functionality.** (User design,
-2026-07-05.) Planning only until the current build is playtested; no stage is scheduled.
+2026-07-05.) The playtest gate has passed; Stage R0 landed 2026-07-06, R1 is next up.
 
 **The division of labor (user design):**
 - **Unit = who**: stats only (hp, attack skill, BS, speed, armour, size, mana) + tags.
@@ -50,9 +50,45 @@ tags live on AUnit — units themselves carry stats, not functionality.** (User 
 
 ---
 
-## Stage R0 — Spell roster (name-gated stopgap requirements)
+## Stage R0 — Spell roster (name-gated stopgap requirements) ✅ DONE (2026-07-06)
 
 The pivotal stage; everything else follows its pattern.
+
+**Landed as planned, with these implementation decisions (session 2026-07-06):**
+- `Spell::cast` returns **bool** (fired / didn't) rather than void: `castSpells()` only
+  spends mana and starts the cooldown on `true`, preserving the old "no target, no cost"
+  behavior of fireball and bless. `raise_dead` returns true whenever its gates pass
+  (the old body paid mana/cooldown even when every summon placement failed).
+- **One spell per caster type for now** (user decision): casters will eventually hold
+  all path-matching spells as an array, needing a real cast-selection algorithm.
+  Until then `AUnit::chooseSpellToCast()` is the dedicated seam — pick-first placeholder,
+  documented so the design intent survives the simplification. A roster tripwire test
+  enforces ≤1 spell per catalog type and says when to delete it.
+- The **hex requirement is per-spell**, not common gating: old `castBless` worked
+  without the caster standing on a hex (pinned by the existing Priest tests) —
+  fireball/raise_dead check `caster.getHex()` in their own bodies.
+- `mana` was NOT a shared primitive (it was a per-subclass field on Mage/Priest/
+  Necromancer); it is now `AUnit::mana` (+ `getMana`/`setMana`), default 0, casters
+  set 99 in their ctors. Not exported — catalog JSON unchanged, campaign server untouched.
+- The `special()` audit found **Soldier** (empty override — deleted), not Scorpion.
+  `special()` remains virtual for Archer only, as planned.
+- **Latent UB found & fixed:** `triggerSpecialPhase` range-looped the team vector while
+  raise-dead `push_back`ed summons into it (iterator invalidation; pre-existing, ASan
+  caught it once castSpells re-ordered the phase). The phase now acts on a phase-start
+  snapshot of raw unit pointers — also pins the rule that units summoned this phase
+  don't act this phase.
+- Deliberate behavior change (uniform gate): a **broken** mage no longer casts
+  (old Mage::special never checked `broken`; Priest/Necromancer did). Pinned by a
+  new test. Also: a broken caster's cooldown now ticks uniformly (old Priest froze
+  it while broken, old Necromancer didn't — unpinned either way).
+- New tests in `backend/engine/tests/test_spells.cpp`: characterization tests for
+  fireball + raise-dead written BEFORE the migration (green against the old code),
+  then roster tripwires. The three Priest tests in test_combat.cpp needed exactly one
+  mechanical edit (`priest->special()` → `priest->castSpells()`); assertions untouched.
+- Known oddity, NOT fixed (pre-existing): with corpses ≥ 4 raise-dead double-spends
+  (up-front `setCorpses(corpses-3)` AND per-placement decrement in placeZombie).
+  corpses ≤ 3 behaves as designed and is what the tests pin. Decide intended corpse
+  economy before touching it.
 
 - `include/Spell.hpp` + `src/SpellList.cpp` (mirror Weapon/WeaponList naming):
   ```cpp

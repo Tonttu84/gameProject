@@ -1250,13 +1250,28 @@ BattleResult Battlefield::extractResult()
 
 void Battlefield::triggerSpecialPhase()
 {
-    for (auto& unit : _red.units)
-        if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
-            unit->special();
-
-    for (auto& unit : _blue.units)
-        if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
-            unit->special();
+    // Spells first, then the remaining virtual special() hook (only Archer
+    // until Stage R1 moves ranged attacks onto weapons). Casters have no
+    // special() override and archers no spells, so no unit acts twice —
+    // when a unit can eventually do both, priority is decided here.
+    //
+    // Act on a snapshot of the phase-start roster: summons (raise_dead)
+    // push_back into the very vector being walked, which invalidates live
+    // iterators — and units raised this phase must not act this phase.
+    // Raw pointers stay valid; nothing is destroyed until cleanup().
+    auto actPhaseStart = [](std::vector<std::unique_ptr<AUnit>>& units) {
+        std::vector<AUnit*> roster;
+        roster.reserve(units.size());
+        for (auto& unit : units)
+            if (unit) roster.push_back(unit.get());
+        for (AUnit* unit : roster)
+            if (unit->getFatigue() < FATIGUE_MAX && unit->getAlive()) {
+                unit->castSpells();
+                unit->special();
+            }
+    };
+    actPhaseStart(_red.units);
+    actPhaseStart(_blue.units);
 }
 
 size_t Battlefield::getCorpses()      { return corpses; }
