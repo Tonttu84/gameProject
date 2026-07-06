@@ -36,7 +36,8 @@ notes below over the git history if they ever disagree — the commits win.
 - **Done & committed on `feature/campaign-mode`:** Stage 5 augury rework (`77ee3ef`),
   deployment orders panel (`002fb73`), `make frontend-test` fix (`395bc34`), in-game bug
   reports (`71ac20f`), 2026-07-05 playtest fixes (placement roster filter, immediate
-  battle-annihilation defeat, **augury v4** — see below).
+  battle-annihilation defeat, **augury v4** — see below), **renderer-layout unification
+  (2026-07-06** — see the SHIPPED bullet below**)**.
 - **First playtest happened 2026-07-05** (Docker stack on the Windows/Docker-Desktop
   machine) and drove a full day of fixes/features, ALL landed and deployed same day:
   - **Replay/SFML parity shipped**: `ReplayRecorder` emits per-unit `squad` (name),
@@ -62,20 +63,27 @@ notes below over the git history if they ever disagree — the commits win.
   - Open augury debug flag: `AUGURY_DEBUG_SHOW_TRUTH=true` shows truths at consult;
     flip to false for the final reroll-gated reveal. Duplicate visions across slots
     (two Traders) are possible and accepted for now.
-  - **Known duplication (user flagged, accepted for now)**: engagement FACTS
-    (side/rank/squad) are single-sourced from the engine recorder, but the cosmetic
-    pixel projection exists twice — `BattleRenderer.cpp` and `ReplayView.jsx` each map
-    "rank-1 file on side 0" to positions with their own geometry (the two views are
-    also transposed relative to each other). **Agreed direction (user, 2026-07-05):
-    the DB is the single interface — the browser must need NOTHING from the C++ at
-    render time.** Engine-session plan: factor `BattleRenderer`'s formation layout
-    into a pure function producing normalized in-hex offsets (ox, oy ∈ hex-radius
-    units) per unit; `BattleRenderer` consumes it live, `ReplayRecorder` writes the
-    offsets into every tick. `ReplayView` then just draws `center + offset × size`
-    (one axis transpose for the web orientation) and its side/rank geometry is
-    DELETED — side/rank stay in the tick docs as facts (queryable, testable), no
-    longer used for layout. Reminder while playtesting: every redeploy needs a hard
-    browser refresh — a stale bundle is the usual "feature missing" culprit.
+  - **Renderer-layout unification SHIPPED (2026-07-06 session).** The 2026-07-05
+    duplication flag is resolved: in-hex formation layout is one pure engine function,
+    `layoutHexFormation()` (`backend/engine/src/FormationLayout.cpp`), returning
+    normalized offsets (ox, oy, sz ∈ hex-radius units) per alive unit in draw order.
+    `BattleRenderer` consumes it live; `ReplayRecorder` writes ox/oy/sz onto every
+    unit of every tick (3-decimal rounding); `ReplayView.jsx` just draws
+    `center + offset × HEX_SIZE` (web axes are transposed vs engine flat space:
+    ox→web y, oy→web x) and its side/rank geometry is DELETED — side/rank stay in
+    tick docs as queryable FACTS only. Parity is pinned by
+    `test_formation_layout.cpp` (geometry contract) + a recorder test asserting
+    recorded offsets == the function's output. **Gotcha found on the way: the
+    campaign-server `Tick` unit schema is strict — new engine fields MUST be added
+    to `models/tick.js` or Mongo silently strips them** (caught by driving the real
+    stack; now pinned by a battles.test assertion). Layout decisions from this
+    session's visual pass (user): battle-line ranks 1–3 all draw at the SAME size
+    (no shrinking for standing in the second line; depth = position + SFML alpha);
+    squad palette colors stay as the unit color override for visual debugging until
+    sprites land (team reads from the hex tint), and SFML now hashes the squad NAME
+    (same function as the web) so a squad wears one color in both views and across
+    runs. Reminder while playtesting: every redeploy needs a hard browser refresh —
+    a stale bundle is the usual "feature missing" culprit.
 - **Next up after that:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
   militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
   (fully designed below — coverage → cavalry-superiority gauge).
@@ -88,6 +96,15 @@ notes below over the git history if they ever disagree — the commits win.
   but no Docker; the other (2026-07-05 playtest machine) runs the stack via **Docker Desktop**
   (`make docker-up-display` puts SFML battle windows on the Windows desktop via WSLg; GNU make
   installed via `winget install ezwinports.make`).
+- **Docker-Desktop machine specifics (learned 2026-07-06):** its WSL Ubuntu has g++/make and a
+  working WSLg display (`DISPLAY=:0`), so engine build/tests AND windowed `./game battle` runs
+  work directly in WSL — no Docker needed for engine work. `make test`'s `run_parallel.sh`
+  fails there (`bash\r`: CRLF checkout); use `make test-serial`. WSL has **no native node** —
+  `npm` falls through interop to **Windows node 25**, so frontend/campaign-server tests run
+  from PowerShell with `NODE_OPTIONS=--no-experimental-webstorage`; first campaign-server run
+  needs a one-off `MongoMemoryServer.create()` warm-up (mongod download outlives the 10s hook
+  timeout), and the 2 `engine.integration` tests always fail natively (Windows node can't spawn
+  the Linux `./game` ELF — they pass in WSL/Docker/CI).
 - **Node 25 gotcha:** its built-in `localStorage` shadows jsdom's and breaks the frontend
   tests (`window.localStorage.clear is not a function`). Run them with
   `NODE_OPTIONS=--no-experimental-webstorage` (the pinned nvm node in `make frontend-test`

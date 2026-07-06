@@ -8,9 +8,15 @@ const unitStateSchema = new mongoose.Schema(
     q: { type: Number, required: true },
     r: { type: Number, required: true },
     hp: { type: Number, required: true },
-    // Formation state (absent when not applicable): squad name for squad
+    // In-hex layout from the engine's FormationLayout (hex-radius units):
+    // offset from the hex centre + glyph size. ReplayView draws exclusively
+    // from these — the DB is the render interface, no geometry client-side.
+    ox: { type: Number, default: undefined },
+    oy: { type: Number, default: undefined },
+    sz: { type: Number, default: undefined },
+    // Formation FACTS (absent when not applicable): squad name for squad
     // coloring; engaged hex side 0-5 (engine HexDirection: NE E SE SW W NW)
-    // + rank within that engagement for SFML-parity replay layout.
+    // + rank within that engagement. Queryable state — not used for layout.
     squad: { type: String, default: undefined },
     side: { type: Number, min: 0, max: 5, default: undefined },
     rank: { type: Number, min: 0, default: undefined },

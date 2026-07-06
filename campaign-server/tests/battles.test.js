@@ -68,6 +68,16 @@ describe('POST /api/battles', () => {
     expect(ticks.map((t) => t.index)).toEqual([0, 1, 2])
     expect(ticks[0].units.length).toBe(3)
     expect(ticks[2].log).toEqual(['Zombie (red) fell'])
+
+    // The engine's layout offsets must survive persistence — ReplayView draws
+    // exclusively from them (the DB is the render interface; a strict schema
+    // silently dropping ox/oy/sz would break every replay).
+    expect(ticks[0].units[0].ox).toBe(0)
+    expect(ticks[0].units[0].oy).toBe(-0.75)
+    expect(ticks[0].units[0].sz).toBe(0.2)
+    expect(ticks[1].units[1].ox).toBe(0.78)
+    expect(ticks[1].units[1].side).toBe(1)
+    expect(ticks[1].units[1].rank).toBe(1)
   })
 
   test('replay is not echoed back in the response (fetched separately)', async () => {

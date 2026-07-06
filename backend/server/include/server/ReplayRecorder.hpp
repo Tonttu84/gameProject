@@ -1,7 +1,10 @@
 #pragma once
 
 #include "Battlefield.hpp"
+#include "FormationLayout.hpp"
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -31,7 +34,12 @@ public:
     nlohmann::json toJson(const std::string& mapName) const;
 
 private:
-    void recordTeam(nlohmann::json& units, Battlefield& field, int team);
+    // Per-tick memo of layoutHexFormation results, keyed by hex, so each
+    // occupied hex is laid out once even though teams are recorded separately.
+    using LayoutCache = std::unordered_map<const Hex*, std::vector<UnitPlacement>>;
+
+    void recordTeam(nlohmann::json& units, Battlefield& field, int team,
+                    LayoutCache& layouts);
 
     nlohmann::json _ticks = nlohmann::json::array();
     int _nextId = 0;
