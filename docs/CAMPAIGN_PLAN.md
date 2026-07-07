@@ -84,6 +84,11 @@ notes below over the git history if they ever disagree — the commits win.
     (same function as the web) so a squad wears one color in both views and across
     runs. Reminder while playtesting: every redeploy needs a hard browser refresh —
     a stale bundle is the usual "feature missing" culprit.
+- **ACTIVE NOW (2026-07-07): Retire SFML — the browser becomes the single battle renderer.**
+  Chosen over in-engine renderer unification: battle data already round-trips
+  C++ → DB → browser, so C++/SFML rendering buys no speed and is the only place real-time
+  (SFML) and history (browser replay) can disagree. Takes priority over Stages 3–4. Full,
+  cold-startable plan below — see the section **"Rendering: retire SFML"**.
 - **Next up after that:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
   militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
   (fully designed below — coverage → cavalry-superiority gauge).
@@ -119,6 +124,91 @@ notes below over the git history if they ever disagree — the commits win.
   never `res.json()` a raw campaign document. Tests assert this.
 - **New unit workflow:** stats in the C++ ctor + one `UnitCatalog` line + a tripwire test;
   C++ is the single source of truth, nothing hand-maintained in JS.
+
+---
+
+# Rendering: retire SFML — the browser becomes the single battle renderer
+
+**Decision (2026-07-07, user):** delete the SFML renderer; the browser `ReplayView` is the
+only renderer. Re-adding SFML later is easy given the single source of truth — recover the
+code from git: `backend/render/` and the SFML plumbing exist through commit **`5e8fb21`**, so
+`git checkout 5e8fb21 -- backend/render` (and cherry-pick the Makefile/Utility bits) revives it.
+No attic copy is kept — git history is the archive.
+
+**Why.** The battle sim never needs SFML: `./game battle` just loops `field.tick()`, records
+ticks, prints JSON — SFML was only the live window. Battle data already round-trips
+C++ → DB → browser, so rendering in C++ buys zero speed and creates the only surface where
+real-time (SFML) and history (browser replay) can diverge. Unit *positions/sizes* already come
+from one pure engine function (`layoutHexFormation`) that BOTH the recorder and the old
+renderer called; the only real difference was cosmetic styling. NOTE: the "in-window rewind"
+task that spawned this already exists — the browser `ReplayView` has scrub/play/step. Nothing
+functional is lost; we only port the visual cues so the browser is lossless.
+
+**Architecture as found (all confirmed by reading the code):**
+- `./game battle` (subprocess from `POST /api/battle`) opens an SFML window and runs
+  `runBattleLoop` (`SampleBattle.cpp`): each iteration `field.tick()` → `onTick` records a tick
+  → `renderer.render(field.hexGrid)` draws LIVE `Battlefield`. At end, `BATTLE_HOLD_WINDOW=1`
+  holds the window (`BattleServer.cpp` ~232-254). Prints `{result, replay:{ticks}}` on stdout.
+- `ReplayRecorder` (`backend/server`) writes per unit per tick: `q,r,ox,oy,sz,hp,type,team`,
+  `squad`, and when engaged `side,rank` — offsets from `layoutHexFormation`. It does NOT record
+  `broken`/`cast`.
+- `ReplayView.jsx` draws `center + (ox,oy)*HEX_SIZE` at size `sz`, squad/team color. Applies NO
+  rank-alpha dimming and NO cast/broken color. Already has the scrub/play/step controls.
+- SFML-only surface: `backend/render/` (BattleRenderer); `main.cpp` window + `Utility::load()`;
+  `Utility::font` + `Utility::load()` — the ONLY thing pulling SFML headers into the engine +
+  test binary; `runBattleLoop`/`runBattleFromJson` renderer params; Makefile SFML
+  download/link/font + `-I$(SFML_DIR)`; Dockerfile xvfb + X11/GL/freetype libs; docker-
+  entrypoint.sh Xvfb/DISPLAY; `docker-compose.display.yml` + Makefile `docker-up-display`.
+- `sample`/`spread` (`SpreadTest`/`SampleBattle`) are SFML visual dev scenarios. `sample` is
+  the user's visual combat-FEEL debugger — it MUST return to the browser in Phase 2.
+
+## Phase 1 — kill SFML, browser is the only renderer (one fresh session)
+
+Delete SFML LAST so the tree keeps building throughout. Suggested commit series on
+`feature/campaign-mode`:
+
+1. **Headless battle path.**
+   - `runBattleFromJson` (`BattleServer.cpp` ~133): drop the `BattleRenderer&` param; replace
+     the `runBattleLoop(...)` call AND the `BATTLE_HOLD_WINDOW` hold loop with
+     `recorder.recordTick(field); field.setMaxTicks(maxTicks); while (field.tick())
+     recorder.recordTick(field);`. Output JSON must stay byte-identical.
+   - `runBattleLoop` (`SampleBattle.cpp` ~20): reduce to a headless version (no renderer,
+     window, pause, or sleep) — or inline into callers. Scenarios still call it.
+   - `main.cpp`: remove `sf::RenderWindow`, `BattleRenderer`, `Utility::load()`; `battle`/
+     `sample`/`spread` call headless entries.
+2. **Browser replay = lossless** (before deleting SFML, so old styling is still reference-able).
+   - `ReplayRecorder::recordTeam`: add `broken` (bool) + `cast` (int `getCast()`) per unit.
+   - `campaign-server/models/tick.js`: add `broken`/`cast` to the unit sub-schema — the STRICT
+     schema silently strips unknown fields (pinned by `battles.test`). Extend fixtures.
+   - `ReplayView.jsx`: port SFML cues from `BattleRenderer::renderUnitsInHex` — rank-alpha
+     `RANK_ALPHA[4]={140,255,200,160}` indexed by `rank` when `side` present (solid 255 when not
+     engaged); `cast`→yellow; `broken`→orange (broken wins). Add vitest for styling.
+3. **Delete SFML.**
+   - Remove `backend/render/`; strip `sf::Font font` + `load()` + the SFML include from
+     `Utility.hpp/.cpp` (decouples engine + tests from SFML entirely).
+   - Makefile: drop SFML download/link/rpath, `-I$(SFML_DIR)`, font copy — from
+     CFLAGS/CLANG_FLAGS/test flags and all prereqs.
+   - Dockerfile: drop xvfb + X11/GL/freetype + SFML lib copy + font. `docker-entrypoint.sh`:
+     drop Xvfb/DISPLAY. Delete `docker-compose.display.yml` + Makefile `docker-up-display`.
+4. **sample/spread headless + docs.**
+   - `sample`/`spread`: run the scenario headless and write its replay JSON to a file (e.g. a
+     `replays/` dir); print a result summary to stderr. NO browser viewer yet — Phase 2 wires
+     it. Disconnected but data-producing.
+   - Update `CLAUDE.md` (build/test/docker: no SFML, battles headless), `ARCHITECTURE.md`, this
+     file.
+
+**Verify (WSL — Linux-only build):** `make && make test-serial` (engine builds with ZERO SFML);
+`./game battle < in.json > out.json` byte-compatible result+replay; `cd campaign-server &&
+npm test` (tick schema incl. broken/cast); frontend `npm test` (replay styling); then drive a
+real turn and eyeball the browser replay dimming/colors. Reminders: `make test` CRLF-fails on
+the WSL box — use `make test-serial`; frontend/campaign-server tests run from PowerShell with
+`NODE_OPTIONS=--no-experimental-webstorage`.
+
+## Phase 2 — reconnect the visual combat-feel debugger (separate session)
+
+`./game sample` → browser: add a dev path in the React app to load a scenario replay JSON into
+`ReplayView` (file drop / dev route / `?replay=` param) so watching how combat "feels" uses the
+SAME renderer as real battles. One feature per fresh session.
 
 ---
 
