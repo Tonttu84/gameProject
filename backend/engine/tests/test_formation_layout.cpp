@@ -197,7 +197,7 @@ TEST_CASE("formation layout: opposite sides mirror", "[formation_layout]") {
     REQUIRE(nwy == Approx(-sey));
 }
 
-TEST_CASE("formation layout: unseated units pool at the hex centre, dimmed-small",
+TEST_CASE("formation layout: unseated units pool at the hex centre, same size as the line",
           "[formation_layout]") {
     Hex hex;
     HexSide side;
@@ -219,9 +219,66 @@ TEST_CASE("formation layout: unseated units pool at the hex centre, dimmed-small
         // Support huddles near the centre, well inside the frontline's edge.
         REQUIRE(std::abs(sup->ox) < 0.5f);
         REQUIRE(std::abs(sup->oy) < 0.5f);
-        // 0.7x support size vs 1.3x frontline.
-        REQUIRE(sup->scale < front->scale);
+        // A soldier in reserve draws the same size as one on the border
+        // (user, 2026-07-06) — depth reads from position + alpha, not size.
+        REQUIRE(sup->scale == Approx(front->scale));
     }
+}
+
+TEST_CASE("formation layout: consecutive ranks are separated by at least a glyph height",
+          "[formation_layout]") {
+    // The regression that made "only one rank" show: the inward rank step was
+    // smaller than a glyph, so ranks 1/2/3 drew on top of one another. Each
+    // rank must now clear a full glyph height from the next.
+    Hex hex;
+    HexSide side;
+    side.engaged = true;
+    hex.sides[1] = &side;   // E: ranks step inward along -x
+
+    auto owned = fillHex<Soldier>(hex, 3, REDTEAM);
+    for (int ri = 0; ri < 3; ++ri) {
+        owned[ri]->setFormationSide(&side);
+        owned[ri]->setEngagedRank(ri + 1);
+    }
+
+    auto ps = layoutHexFormation(hex);
+    const UnitPlacement* r1 = findPlacement(ps, owned[0].get());
+    const UnitPlacement* r2 = findPlacement(ps, owned[1].get());
+    const UnitPlacement* r3 = findPlacement(ps, owned[2].get());
+    REQUIRE(r1); REQUIRE(r2); REQUIRE(r3);
+    // Inward gap (along x for side E) clears a full glyph so ranks read apart.
+    REQUIRE((r1->ox - r2->ox) >= r1->scale);
+    REQUIRE((r2->ox - r3->ox) >= r2->scale);
+}
+
+TEST_CASE("formation layout: units order squad-first, then loners by type",
+          "[formation_layout]") {
+    // Unengaged hex → single march pool whose output order is the pack order:
+    // squad members first (grouped by squad name), then lone units grouped by
+    // unit type (printSymbol). (user, 2026-07-06: "ordered by squads, then
+    // unsquadded in unit type order".)
+    Hex hex;
+    Squad beta("Beta", false);
+    Squad alpha("Alpha", false);
+
+    // Deliberately interleave construction order so only orderlyLess can sort.
+    auto lonerC = std::make_unique<Cavalry>(REDTEAM); // symbol 'C'
+    auto memB   = std::make_unique<Soldier>(REDTEAM);
+    auto lonerX = std::make_unique<Soldier>(REDTEAM); // symbol 'X'
+    auto memA   = std::make_unique<Soldier>(REDTEAM);
+    beta.addMember(memB.get());
+    alpha.addMember(memA.get());
+    for (AUnit* u : { (AUnit*)lonerC.get(), (AUnit*)memB.get(),
+                      (AUnit*)lonerX.get(), (AUnit*)memA.get() })
+        hex.units.push_back(u);
+
+    auto ps = layoutHexFormation(hex);
+    REQUIRE(ps.size() == 4);
+    // Expected order: Alpha member, Beta member, then loners by symbol 'C' < 'X'.
+    REQUIRE(ps[0].unit == memA.get());
+    REQUIRE(ps[1].unit == memB.get());
+    REQUIRE(ps[2].unit == lonerC.get());
+    REQUIRE(ps[3].unit == lonerX.get());
 }
 
 TEST_CASE("formation layout: support draws before the frontline (back-to-front order)",

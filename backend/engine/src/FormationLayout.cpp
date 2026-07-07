@@ -16,26 +16,52 @@ constexpr float PI = 3.14159265358979323846f;
 constexpr float EDGE_ANGLE[6] = { -60.f, 0.f, 60.f, 120.f, 180.f, -120.f };
 
 // Glyph sizes in hex-radius units. The floor mirrors the SFML renderer's old
-// 4px minimum at the default hex size (HexGrid's HEX_SIZE_DEFAULT = 60).
+// 4px minimum at the default hex size (HexGrid's HEX_SIZE_DEFAULT).
 constexpr float MIN_SCALE = 4.f / 60.f;
 constexpr float MAX_SCALE = 1.5f;
 
-// All battle-line ranks draw at the same enlarged size — the same troops
-// must not shrink for standing in the second line (user, 2026-07-06); depth
-// reads from position and the renderer's alpha. Index 0 unused (support
-// pool uses the 0.7 factor below).
-constexpr float RANK_SIZE_MUL[4] = { 0.f, 1.3f, 1.3f, 1.3f };
-constexpr float SUPPORT_SIZE_MUL = 0.7f;
+// Spacing factors in units of the average glyph size. A glyph is ~1.0 tall and
+// ~0.6 wide in its own scale units, so:
+//   FILE_STEP   — along an edge (glyph width) — 0.9 clears the ~0.6 width.
+//   RANK_STEP   — inward, rank to rank (glyph HEIGHT) — must exceed ~1.0 so
+//                 consecutive ranks don't stack on top of each other. This is
+//                 the fix for "only one rank shows": the old 0.85 inward step
+//                 was smaller than a glyph, so ranks drew over one another.
+//   POOL_STEP   — reserve / march grid — 0.95, roomy in both axes.
+constexpr float FILE_STEP = 0.90f;
+constexpr float RANK_STEP = 1.15f;
+constexpr float POOL_STEP = 0.95f;
 
 float clampScale(float s) {
     return std::max(MIN_SCALE, std::min(s, MAX_SCALE));
 }
 
 // Symbol size proportional to the unit's physical size — larger creatures
-// appear larger.
+// appear larger. Every unit draws at THIS size regardless of rank or reserve
+// status: a soldier is the same soldier on the front line or behind it (user,
+// 2026-07-06). Depth is read from position and the renderer's alpha, never size.
 float baseSym(const AUnit* u) {
     return 1.6f * std::sqrt(static_cast<float>(u->getSize())
                             / static_cast<float>(Hex::CAPACITY));
+}
+
+// Draw/pack order within a hex: squad members first (grouped so a squad reads
+// as one contiguous cluster, ordered by squad name for process-independence),
+// then lone units grouped by unit type (printSymbol), each group by stable
+// sortKey. Keeps a hex orderly instead of scattering same-squad / same-type
+// troops through the formation (user, 2026-07-06).
+bool orderlyLess(AUnit* a, AUnit* b) {
+    Squad* sa = a->getSquad();
+    Squad* sb = b->getSquad();
+    if ((sa != nullptr) != (sb != nullptr)) return sa != nullptr; // squads before loners
+    if (sa && sb) {
+        if (sa != sb && sa->getName() != sb->getName())
+            return sa->getName() < sb->getName();
+    } else {                                                      // both loners: by type
+        if (a->getPrintSymbol() != b->getPrintSymbol())
+            return a->getPrintSymbol() < b->getPrintSymbol();
+    }
+    return a->getSortKey() < b->getSortKey();
 }
 
 } // namespace
@@ -46,8 +72,7 @@ std::vector<UnitPlacement> layoutHexFormation(const Hex& hex)
     for (AUnit* u : hex.units)
         if (u && u->getAlive()) alive.push_back(u);
     if (alive.empty()) return {};
-    std::sort(alive.begin(), alive.end(),
-              [](AUnit* a, AUnit* b) { return a->getSortKey() < b->getSortKey(); });
+    std::sort(alive.begin(), alive.end(), orderlyLess);
 
     float avgSym = 0.f;
     for (AUnit* u : alive) avgSym += baseSym(u);
@@ -66,7 +91,7 @@ std::vector<UnitPlacement> layoutHexFormation(const Hex& hex)
         // Unengaged: march formation, front rank toward the attack direction.
         // Red (team 1) homes at high y and attacks toward low y; Blue mirrors.
         int   team   = alive[0]->getTeam();
-        float step   = avgSym * 0.80f;
+        float step   = avgSym * POOL_STEP;
         int   perRow = std::max(1, static_cast<int>(1.7f / step));
         float frontY = (team == 1 ? -0.75f : 0.75f);
         float yDir   = (team == 1 ? 1.f : -1.f);
@@ -83,8 +108,9 @@ std::vector<UnitPlacement> layoutHexFormation(const Hex& hex)
 
     // Engaged: ranked units file along their side, everyone else pools at the
     // centre. Rank 1 at the edge, ranks 2/3 stepping inward.
-    float fStep     = avgSym * 0.85f;
-    int   edgeWidth = std::max(1, static_cast<int>(1.5f / fStep));
+    float fileStep  = avgSym * FILE_STEP;
+    float rankStep  = avgSym * RANK_STEP;
+    int   edgeWidth = std::max(1, static_cast<int>(1.5f / fileStep));
 
     struct Ranked { AUnit* unit; float ox, oy, scale; int rank; };
     std::vector<Ranked> formation;
@@ -109,15 +135,15 @@ std::vector<UnitPlacement> layoutHexFormation(const Hex& hex)
             int total = static_cast<int>(rankUnits.size());
             for (int start = 0, wrap = 0; start < total; start += edgeWidth, ++wrap) {
                 int   cnt     = std::min(edgeWidth, total - start);
-                float rankOff = static_cast<float>(ri - 1 + wrap) * fStep;
-                float t0      = -(cnt - 1) * fStep * 0.5f;
+                float rankOff = static_cast<float>(ri - 1 + wrap) * rankStep;
+                float t0      = -(cnt - 1) * fileStep * 0.5f;
                 for (int i = 0; i < cnt; ++i) {
                     AUnit* u = rankUnits[start + i];
-                    float  t = t0 + static_cast<float>(i) * fStep;
+                    float  t = t0 + static_cast<float>(i) * fileStep;
                     formation.push_back({ u,
                         midX - ey * t - ex * rankOff,
                         midY + ex * t - ey * rankOff,
-                        clampScale(baseSym(u) * RANK_SIZE_MUL[ri]), ri });
+                        clampScale(baseSym(u)), ri });
                     seated.insert(u);
                 }
             }
@@ -125,27 +151,14 @@ std::vector<UnitPlacement> layoutHexFormation(const Hex& hex)
     }
 
     // Support pool: rank-0 units, plus any ranked unit whose side wasn't
-    // engaged (stale state) — every alive unit must get a placement.
+    // engaged (stale state) — every alive unit must get a placement. `alive`
+    // is already in orderly draw order, so the pool preserves it.
     std::vector<AUnit*> support;
     for (AUnit* u : alive)
         if (!seated.count(u)) support.push_back(u);
 
-    // Group support by squad so same-squad members draw together; loners
-    // last. Squads order by name so the layout is process-independent.
-    std::sort(support.begin(), support.end(), [](AUnit* a, AUnit* b) {
-        Squad* sa = a->getSquad();
-        Squad* sb = b->getSquad();
-        if (sa != sb) {
-            if (!sa) return false;
-            if (!sb) return true;
-            if (sa->getName() != sb->getName())
-                return sa->getName() < sb->getName();
-        }
-        return a->getSortKey() < b->getSortKey();
-    });
-
     if (!support.empty()) {
-        float sStep   = avgSym * 0.70f;
+        float sStep   = avgSym * POOL_STEP;
         int   sPerRow = std::max(1, static_cast<int>(1.3f / sStep));
         int   numS    = static_cast<int>(support.size());
         int   numRows = (numS + sPerRow - 1) / sPerRow;
@@ -157,7 +170,7 @@ std::vector<UnitPlacement> layoutHexFormation(const Hex& hex)
             for (int i = 0; i < rowCnt; ++i, ++si)
                 out.push_back({ support[si], rowX,
                                 rowY0 + static_cast<float>(i) * sStep,
-                                clampScale(baseSym(support[si]) * SUPPORT_SIZE_MUL) });
+                                clampScale(baseSym(support[si])) });
         }
     }
 
