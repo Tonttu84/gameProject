@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl.exe -e sh -c *)",
+      "Bash(wsl.exe -e bash -c *)",
+      "Bash(wsl -e sh -c *)",
+      "Bash(wsl -e bash -c *)",
+      "PowerShell(wsl.exe -e sh -c *)",
+      "PowerShell(wsl.exe -e bash -c *)",
+      "PowerShell(wsl -e sh -c *)",
+      "PowerShell(wsl -e bash -c *)"
+    ]
+  }
+}

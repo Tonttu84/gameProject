@@ -3,6 +3,7 @@ backend/SFML-2.6.0/
 BUILD/
 game
 run_tests
-.claude/
+.claude/*
+!.claude/settings.json
 game_clang
 node_modules/
