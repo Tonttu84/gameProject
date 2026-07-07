@@ -78,6 +78,13 @@ describe('POST /api/battles', () => {
     expect(ticks[1].units[1].ox).toBe(0.78)
     expect(ticks[1].units[1].side).toBe(1)
     expect(ticks[1].units[1].rank).toBe(1)
+
+    // Visual-state cues must survive the strict schema too (ReplayView colors
+    // broken orange / casting yellow); absent at their defaults.
+    expect(ticks[1].units[0].broken).toBe(true)
+    expect(ticks[1].units[1].cast).toBe(2)
+    expect(ticks[0].units[0].broken).toBeUndefined()
+    expect(ticks[0].units[0].cast).toBeUndefined()
   })
 
   test('replay is not echoed back in the response (fetched separately)', async () => {

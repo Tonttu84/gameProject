@@ -237,6 +237,36 @@ TEST_CASE("replay recorder: recorded offsets match the shared layout function") 
     field.extractResult();
 }
 
+// ── Visual-state cues (broken / cast) ────────────────────────────────────────
+// ReplayView colors these (broken orange, casting yellow); they must ride out
+// on the tick doc, and be omitted at their defaults to keep docs lean.
+
+TEST_CASE("replay recorder: broken and cast are recorded only when set") {
+    Battlefield& field = setupSmallBattle();
+
+    AUnit* broken  = field.getTeam(REDTEAM)[0].get();
+    AUnit* casting = field.getTeam(REDTEAM)[1].get();
+    broken->setBroken(true);
+    casting->setCast(3);
+
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+    json replay = recorder.toJson("sample_battle");
+
+    int seenBroken = 0, seenCast = 0, plainUnits = 0;
+    for (const auto& u : replay["ticks"][0]["units"]) {
+        if (u.value("broken", false)) { seenBroken++; REQUIRE(u["broken"] == true); }
+        if (u.contains("cast"))       { seenCast++;   REQUIRE(u["cast"].get<int>() == 3); }
+        // Units at their defaults carry neither key.
+        if (!u.contains("broken") && !u.contains("cast")) plainUnits++;
+    }
+    REQUIRE(seenBroken == 1);
+    REQUIRE(seenCast == 1);
+    REQUIRE(plainUnits == 3); // 2 zombies + 1 untouched soldier
+
+    field.extractResult();
+}
+
 // ── Battle length ("day is over") ─────────────────────────────────────────────
 
 TEST_CASE("extractResult: both sides still standing scores as a draw") {

@@ -65,6 +65,12 @@ void ReplayRecorder::recordTeam(json& units, Battlefield& field, int team,
             }
         }
 
+        // Visual-state cues the SFML renderer showed and ReplayView now mirrors:
+        // a broken unit routs (drawn orange), a casting unit is mid-spell (yellow).
+        // Omitted at their defaults (not broken / not casting) to keep docs lean.
+        if (u->getBroken())    ju["broken"] = true;
+        if (u->getCast() != 0) ju["cast"]   = u->getCast();
+
         units.push_back(std::move(ju));
     }
 }

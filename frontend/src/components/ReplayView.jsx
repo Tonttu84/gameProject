@@ -36,6 +36,28 @@ const squadColor = (name) => {
   return SQUAD_PALETTE[h % SQUAD_PALETTE.length]
 }
 
+// Visual cues ported from the SFML renderer (BattleRenderer::renderUnitsInHex),
+// so the browser replay is a lossless stand-in for the retired live window:
+//   • casting → yellow, broken → orange (broken wins over casting);
+//   • rank-alpha dims reserves when engaged — RANK_ALPHA indexed by rank, with
+//     RANK_ALPHA[0] the fallback for engaged-but-off-rank; solid when the unit
+//     isn't engaged (no `side` recorded).
+const CAST_COLOR = '#ffff00' // sf::Color::Yellow
+const BROKEN_COLOR = '#ff8c00' // sf::Color(255,140,0)
+const RANK_ALPHA = [140, 255, 200, 160]
+
+const unitColor = (u) => {
+  if (u.broken) return BROKEN_COLOR
+  if (u.cast) return CAST_COLOR
+  return u.squad ? squadColor(u.squad) : (TEAM_COLOR[u.team] ?? '#ffffff')
+}
+
+const unitOpacity = (u) => {
+  if (u.side === undefined || u.side === null) return 1 // not engaged → solid
+  const a = u.rank >= 1 && u.rank <= 3 ? RANK_ALPHA[u.rank] : RANK_ALPHA[0]
+  return a / 255
+}
+
 // Web glyphs draw a bit larger than strict SFML-pixel parity (uniform factor,
 // layout untouched) — at 20px hexes a 1:1 mapping is unreadably small.
 const GLYPH_SCALE = 1.5
@@ -100,7 +122,8 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
       dominantBaseline="middle"
       fontSize={size}
       fontWeight="bold"
-      fill={u.squad ? squadColor(u.squad) : (TEAM_COLOR[u.team] ?? '#ffffff')}
+      fill={unitColor(u)}
+      fillOpacity={unitOpacity(u)}
     >
       {u.type[0]}
     </text>
