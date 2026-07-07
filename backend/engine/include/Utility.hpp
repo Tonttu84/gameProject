@@ -22,10 +22,6 @@
 #include "Battlefield.hpp"
 #include <iostream>
 #include <functional>
-#include <SFML/Graphics.hpp>
-
-
-
 
 
 
@@ -33,8 +29,6 @@ class Utility
 {
 public:
         static int throwDice();
-        static sf::Font font;
-        static void load();
 
         static AUnit* findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, const std::function<bool(const AUnit&, int)>& validPriorityTarget, \
         const std::function<int(const AUnit&, int)>& validTarget, int myTeam);

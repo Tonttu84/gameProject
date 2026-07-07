@@ -33,10 +33,10 @@ void ReplayRecorder::recordTeam(json& units, Battlefield& field, int team,
             {"hp",   u->getHp()},
         };
 
-        // In-hex layout from the shared FormationLayout — the same call the
-        // SFML renderer draws from, so the web replay reproduces formations
-        // exactly by drawing center + offset * hexSize. ox/oy are offsets
-        // from the hex centre and sz the glyph size, all in hex-radius units.
+        // In-hex layout from the shared FormationLayout — the web replay
+        // reproduces formations exactly by drawing center + offset * hexSize.
+        // ox/oy are offsets from the hex centre and sz the glyph size, all in
+        // hex-radius units.
         const Hex* hex = u->getHex();
         auto cached = layouts.find(hex);
         if (cached == layouts.end())

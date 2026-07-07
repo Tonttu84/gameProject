@@ -204,8 +204,8 @@ void runBattleFromJson(Battlefield& field)
     field.loadArmies(std::move(enemy), std::move(player));
 
     // Same-hex same-type stacks fight as squads (user, 2026-07-05): they move
-    // and resolve engagements as formations, and the SFML renderer + web
-    // replay give each squad its own color.
+    // and resolve engagements as formations, and the web replay gives each
+    // squad its own color.
     for (int team : {REDTEAM, BLUETEAM})
         for (auto& sq : buildSquadsFromArmy(field.getTeam(team)))
             field.getTeamData(team).squads.push_back(std::move(sq));

@@ -214,8 +214,8 @@ TEST_CASE("replay recorder: recorded offsets match the shared layout function") 
 
     json replay = recorder.toJson("sample_battle");
     // Map replay id → the live unit, then compare against layoutHexFormation
-    // on that unit's hex — the SFML renderer draws from the same call, so
-    // this is the SFML↔web parity guarantee.
+    // on that unit's hex — this pins that the recorded offsets are exactly the
+    // shared layout function's output (the web replay's render contract).
     std::map<int, AUnit*> byId;
     for (int team : {REDTEAM, BLUETEAM})
         for (auto& u : field.getTeam(team))

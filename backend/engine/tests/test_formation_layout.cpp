@@ -11,9 +11,9 @@
 #include <vector>
 
 // layoutHexFormation is the single source of the cosmetic in-hex unit layout:
-// BattleRenderer consumes it live, ReplayRecorder persists its offsets into
-// replay ticks, and the React ReplayView just draws center + offset * size.
-// These tests pin the geometry contract both viewers rely on.
+// ReplayRecorder persists its offsets into replay ticks, and the React
+// ReplayView (the only renderer) just draws center + offset * size.
+// These tests pin the geometry contract the replay relies on.
 //
 // Offsets are in hex-radius units in the engine's flat pixel space
 // (x = axial q direction, y grows toward high r rows / red's home edge).

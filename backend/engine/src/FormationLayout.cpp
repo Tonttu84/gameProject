@@ -15,8 +15,9 @@ constexpr float PI = 3.14159265358979323846f;
 // SE=2, SW=3, W=4, NW=5.
 constexpr float EDGE_ANGLE[6] = { -60.f, 0.f, 60.f, 120.f, 180.f, -120.f };
 
-// Glyph sizes in hex-radius units. The floor mirrors the SFML renderer's old
-// 4px minimum at the default hex size (HexGrid's HEX_SIZE_DEFAULT).
+// Glyph sizes in hex-radius units. The floor is a legacy 4px minimum at the
+// engine's old 60px default hex radius; ReplayView applies its own readability
+// floor on top when drawing.
 constexpr float MIN_SCALE = 4.f / 60.f;
 constexpr float MAX_SCALE = 1.5f;
 
