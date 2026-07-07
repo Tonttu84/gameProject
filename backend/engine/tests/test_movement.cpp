@@ -15,6 +15,21 @@
 #include "BattleSetup.hpp"
 #include "Squad.hpp"
 
+namespace {
+// Enemy that just sits tight. Convention: use an immobile dummy (movementSpeed
+// = 0) when a test needs the opposing side stationary, rather than holding a
+// real unit — the intent reads straight off the type. Mirrors
+// test_battle_length's ImmobileDummy.
+class ImmobileDummy : public AUnit {
+public:
+    explicit ImmobileDummy(int t) : AUnit(t) {
+        movementSpeed = 0;   // never moves
+        morale        = 99;  // never breaks/flees
+        printSymbol   = 'D';
+    }
+};
+} // namespace
+
 // ── Basic approach ────────────────────────────────────────────────────────────
 // Grid: buildRect(16,30). Axial: q = col - r/2.
 // r=5: valid q in -2..13. NE=(+1,-1) E=(+1,0) SE=(0,+1) SW=(-1,+1) W=(-1,0) NW=(0,-1)
@@ -1133,7 +1148,9 @@ TEST_CASE("hold order: broken unit flees even when holdTurns > 0") {
 }
 
 TEST_CASE("hold order: squad does not advance while holdTurns > 0") {
-    Battlefield& field = Utility::getBattlefield();
+    // Own Battlefield, not the shared singleton, to stay isolated from other
+    // tests' grid state.
+    Battlefield field;
 
     auto sq = std::make_unique<Squad>("Alpha", false);
     Squad* sqPtr = sq.get();
@@ -1149,7 +1166,12 @@ TEST_CASE("hold order: squad does not advance while holdTurns > 0") {
     sqPtr->addMember(b.get());
     sqPtr->setFlagBearer(a.get());
 
-    auto blueEnemy = std::make_unique<Soldier>(BLUETEAM);
+    // Immobile enemy so the {5,8} reference stays put. A mobile enemy would
+    // advance toward the squad during the hold ticks, and by tick 3 the squad
+    // would head for its new (RNG-nudged, possibly diagonal) position — landing
+    // on a hex that can still be distance 5 from the reference and flaking the
+    // "squad advanced" check.
+    auto blueEnemy = std::make_unique<ImmobileDummy>(BLUETEAM);
     blueEnemy->setHex(field.hexGrid.getHex({5, 8}));
     blue.push_back(std::move(blueEnemy));
     red.push_back(std::move(a));
