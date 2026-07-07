@@ -527,7 +527,7 @@ TEST_CASE("Priest::castBless does not heal a cavalry whose mount is hurt but rid
     REQUIRE(cav->getHp() == cav->getmaxHP()); // rider still full -> not "wounded" from the outside
 
     AUnit* priest = field.getTeam(REDTEAM)[0].get();
-    priest->special(); // castBless(): finds no eligible target, does nothing
+    priest->castSpells(); // bless: finds no eligible target, does nothing
 
     REQUIRE(cav->getHp() == cav->getmaxHP()); // unchanged — never healed
 
@@ -559,7 +559,7 @@ TEST_CASE("Priest::castBless detects and heals a cavalry whose rider is hurt") {
     REQUIRE(hpAfterHit < cav->getmaxHP());
 
     AUnit* priest = field.getTeam(REDTEAM)[0].get();
-    priest->special(); // castBless(): finds the wounded rider, heals it
+    priest->castSpells(); // bless: finds the wounded rider, heals it
 
     REQUIRE(cav->getHp() > hpAfterHit);
     REQUIRE(cav->hasMount() == true); // mount untouched throughout
@@ -583,7 +583,7 @@ TEST_CASE("Priest::castBless detects and rallies a cavalry whose rider is broken
     REQUIRE(cav->getBroken() == true);
 
     AUnit* priest = field.getTeam(REDTEAM)[0].get();
-    priest->special(); // castBless(): isBroken is the priority filter — rallies immediately
+    priest->castSpells(); // bless: isBroken is the priority filter — rallies immediately
 
     REQUIRE(cav->getBroken() == false);
 

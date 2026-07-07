@@ -201,6 +201,107 @@ static ReinforceChoice bestReinforceNeighbor(HexGrid& hexGrid, const Hex* fromHe
     return best;
 }
 
+// Whole-squad analogue of bestReinforceNeighbor: the passable, enemy-free
+// neighbour holding strictly fewer reserve size-points than fromHex that a
+// squad of `squadSize` could still fit into (loose capacity gate here; the
+// atomic trySquadEnter below makes the final call). Lets a non-engaged squad
+// equalize crowding the same way a loner does — moving toward the emptier
+// hex — but as one block. `ref` supplies the squad's movement category/team.
+static ReinforceChoice bestSquadSpreadNeighbor(HexGrid& hexGrid, const Hex* fromHex,
+                                               const AUnit& ref, int squadSize)
+{
+    ReinforceChoice best;
+    int fromReserve = hexReserveSize(fromHex);
+    int bestReserve = fromReserve;
+
+    int start = Utility::getRandom(0, 5);
+    for (int i = 0; i < 6; ++i) {
+        int di = (start + i) % 6;
+        auto dir = static_cast<HexDirection>(di);
+        if (!sidePassable(hexGrid.getSide(fromHex->coord, dir), ref.getCategory())) continue;
+        HexCoord nc = hexGrid.neighborCoord(fromHex->coord, dir);
+        Hex* nh = hexGrid.getHex(nc);
+        if (!nh || (nh->impassable && ref.getCategory() != UnitCategory::Flyer)) continue;
+        if (ref.getCategory() == UnitCategory::Mounted
+            && (nh->terrain == TerrainType::Forest || nh->terrain == TerrainType::Marsh)) continue;
+        bool enemyThere = false;
+        for (AUnit* u : nh->units)
+            if (u && u->getAlive() && u->getTeam() != ref.getTeam()) { enemyThere = true; break; }
+        if (enemyThere) continue;
+
+        int reserve = hexReserveSize(nh);
+        if (reserve >= fromReserve) continue; // not emptier — never move the jam into a fuller hex
+        // Loose fit gate (capacity + best-case 25% loner displacement); the
+        // exact atomic check is trySquadEnter.
+        if (Hex::CAPACITY - nh->sizeUsed
+            + static_cast<int>(squadSize * Squad::DISPLACE_FRACTION) < squadSize) continue;
+        if (reserve < bestReserve) {
+            bestReserve = reserve;
+            best.coord  = nc;
+            best.hex    = nh;
+            best.cost   = terrainMoveCost(nh, hexGrid.getSide(fromHex->coord, dir), ref.getCategory());
+        }
+    }
+    return best;
+}
+
+// Move the whole squad into targetHex atomically, applying the ≤25% loner
+// displacement rule. Feasibility (capacity + which loners to displace) is fully
+// resolved BEFORE any unit moves, so a failed attempt leaves the board
+// untouched — letting moveSquad fall through and try another target. Returns
+// true and commits on success. `squadSize` is the alive-non-broken footprint.
+static bool trySquadEnter(Squad& squad, Hex* targetHex, Hex* fromHex, int squadSize)
+{
+    if (!targetHex) return false;
+
+    // Space squad members already occupy in the target counts as available
+    // (they "leave and re-enter").
+    int squadFootprintInNext = 0;
+    for (AUnit* m : squad.getMembers())
+        if (m && m->getAlive() && !m->getBroken() && m->getHex() == targetHex)
+            squadFootprintInNext += static_cast<int>(m->getSize());
+
+    int available = Hex::CAPACITY - targetHex->sizeUsed + squadFootprintInNext;
+
+    // Plan (but do not yet perform) the loner displacement needed to fit.
+    std::vector<AUnit*> toDisplace;
+    if (available < squadSize) {
+        int needed      = squadSize - available;
+        int maxDisplace = static_cast<int>(squadSize * Squad::DISPLACE_FRACTION);
+
+        std::vector<AUnit*> candidates;
+        for (AUnit* u : targetHex->units)
+            if (u && u->getAlive() && !u->getSquad())
+                candidates.push_back(u);
+        std::sort(candidates.begin(), candidates.end(),
+                  [](AUnit* a, AUnit* b){ return a->getSize() < b->getSize(); });
+
+        int freed    = 0;
+        int fromRoom = fromHex ? Hex::CAPACITY - static_cast<int>(fromHex->sizeUsed) : 0;
+        for (AUnit* victim : candidates) {
+            if (freed >= needed) break;
+            int vs = static_cast<int>(victim->getSize());
+            if (freed + vs > maxDisplace) break; // sorted ascending — cap reached for all
+            if (vs > fromRoom) continue;          // from-hex can't absorb this one
+            toDisplace.push_back(victim);
+            fromRoom -= vs;
+            freed    += vs;
+        }
+        if (available + freed < squadSize) return false; // still won't fit — leave untouched
+    }
+
+    // Commit: displace the planned loners, then bring every member in.
+    for (AUnit* victim : toDisplace)
+        victim->setHex(fromHex);
+    for (AUnit* m : squad.getMembers()) {
+        if (!m || !m->getAlive() || m->getBroken()) continue;
+        if (m->getHex() == targetHex) continue; // already there
+        m->addFatigue(m->getFatigueCost() / 2);
+        m->setHex(targetHex);
+    }
+    return true;
+}
+
 // Result of scanning the 6 neighbors of a hex for the best move toward (or
 // away from, for flee) a distance target. decrHex/latHex are cached from the
 // scan so callers don't need to re-resolve the hex or its move cost.
@@ -578,73 +679,38 @@ int Battlefield::moveSquad(Squad& squad)
         if (m && m->getAlive() && !m->getBroken())
             squadSize += static_cast<int>(m->getSize());
 
-    bool     tookLateral = false;
-    Hex*     nextHex     = nullptr;
-    int      moveCost    = 1;
-    Hex*     fromHex     = ref->getHex();
-    bool     engaged     = ref->getEngaged(*this);
-    if (choice.decrDir >= 0) {
-        nextHex = choice.decrHex; moveCost = choice.decrCost;
-    } else if (!engaged && choice.latDir >= 0 && !mustDecrease) {
-        nextHex = choice.latHex; moveCost = choice.latCost; tookLateral = true;
+    Hex* fromHex = ref->getHex();
+    bool engaged = ref->getEngaged(*this);
+
+    // Each candidate is committed atomically by trySquadEnter (capacity + ≤25%
+    // loner displacement); a failed attempt changes nothing, so we fall through
+    // to the next.
+    //
+    // 1. Advance — a distance-decreasing move always takes priority.
+    if (choice.decrDir >= 0 && trySquadEnter(squad, choice.decrHex, fromHex, squadSize)) {
+        ref->setTookLateral(false);
+        return choice.decrCost;
     }
-    // Engaged squads hold their seated position — hard to disengage and
-    // reform, same as an individual seated unit in moveToward(). Squad
-    // members are still counted toward hexReserveSize() for loners
-    // redistributing around them, but a squad itself never leaves via
-    // reinforcement; it moves as a block only when actually advancing.
-    if (!nextHex) return 0;
-
-    // Space already occupied in nextHex by squad members that happen to be there already
-    // (they will "leave and re-enter" so we add them back to available space).
-    int squadFootprintInNext = 0;
-    for (AUnit* m : squad.getMembers())
-        if (m && m->getAlive() && !m->getBroken() && m->getHex() == nextHex)
-            squadFootprintInNext += static_cast<int>(m->getSize());
-
-    int available = Hex::CAPACITY - nextHex->sizeUsed + squadFootprintInNext;
-
-    // Displacement: only if needed and only lone (squad-less) units.
-    if (available < squadSize) {
-        int needed      = squadSize - available;
-        int maxDisplace = static_cast<int>(squadSize * Squad::DISPLACE_FRACTION);
-
-        // Collect displaceable lone units sorted smallest-first to minimise evictions.
-        std::vector<AUnit*> candidates;
-        for (AUnit* u : nextHex->units)
-            if (u && u->getAlive() && !u->getSquad())
-                candidates.push_back(u);
-        std::sort(candidates.begin(), candidates.end(),
-                  [](AUnit* a, AUnit* b){ return a->getSize() < b->getSize(); });
-
-        int  freed   = 0;
-        for (AUnit* victim : candidates) {
-            if (freed >= needed) break;
-            int vs = static_cast<int>(victim->getSize());
-            if (freed + vs > maxDisplace) break; // would exceed the displacement cap
-            // Only displace if the from-hex can absorb the unit.
-            if (fromHex && fromHex->sizeUsed + vs <= Hex::CAPACITY) {
-                victim->setHex(fromHex);
-                freed += vs;
-                available += vs;
-            }
+    // 2. Lateral — only when free to (not engaged, not owed a decrease after a
+    //    previous lateral step).
+    if (!engaged && !mustDecrease && choice.latDir >= 0
+        && trySquadEnter(squad, choice.latHex, fromHex, squadSize)) {
+        ref->setTookLateral(true);
+        return choice.latCost;
+    }
+    // 3. Spread — a non-engaged squad that cannot advance equalizes crowding,
+    //    relocating as one block toward the emptier passable neighbour (the
+    //    whole-squad analogue of a loner's reserve-gradient reinforcement).
+    //    Skipped while engaged: an engaged squad holds the line and never
+    //    abandons contact to redistribute.
+    if (!engaged) {
+        ReinforceChoice sp = bestSquadSpreadNeighbor(hexGrid, fromHex, *ref, squadSize);
+        if (sp.hex && trySquadEnter(squad, sp.hex, fromHex, squadSize)) {
+            ref->setTookLateral(false);
+            return sp.cost;
         }
-
-        if (available < squadSize) return 0; // still not enough room — squad holds position
     }
-
-    // Move all alive non-broken members to nextHex. Each member's old hex is vacated
-    // via setHex (which calls removeFromHex internally). Fatigue cost mirrors moveAUnit.
-    // Terrain cost is NOT tracked here — moveUnits() charges every member's
-    // movement-points bank with the returned cost.
-    for (AUnit* m : squad.getMembers()) {
-        if (!m || !m->getAlive() || m->getBroken()) continue;
-        if (m->getHex() == nextHex) continue; // already there
-        m->addFatigue(m->getFatigueCost() / 2);
-        m->setHex(nextHex);
-    }
-    ref->setTookLateral(tookLateral);
-    return moveCost;
+    return 0; // nothing legal — squad holds position
 }
 
 void Battlefield::moveTeam(Team& team)
@@ -1250,13 +1316,28 @@ BattleResult Battlefield::extractResult()
 
 void Battlefield::triggerSpecialPhase()
 {
-    for (auto& unit : _red.units)
-        if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
-            unit->special();
-
-    for (auto& unit : _blue.units)
-        if (unit && unit->getFatigue() < FATIGUE_MAX && unit->getAlive())
-            unit->special();
+    // Spells first, then the remaining virtual special() hook (only Archer
+    // until Stage R1 moves ranged attacks onto weapons). Casters have no
+    // special() override and archers no spells, so no unit acts twice —
+    // when a unit can eventually do both, priority is decided here.
+    //
+    // Act on a snapshot of the phase-start roster: summons (raise_dead)
+    // push_back into the very vector being walked, which invalidates live
+    // iterators — and units raised this phase must not act this phase.
+    // Raw pointers stay valid; nothing is destroyed until cleanup().
+    auto actPhaseStart = [](std::vector<std::unique_ptr<AUnit>>& units) {
+        std::vector<AUnit*> roster;
+        roster.reserve(units.size());
+        for (auto& unit : units)
+            if (unit) roster.push_back(unit.get());
+        for (AUnit* unit : roster)
+            if (unit->getFatigue() < FATIGUE_MAX && unit->getAlive()) {
+                unit->castSpells();
+                unit->special();
+            }
+    };
+    actPhaseStart(_red.units);
+    actPhaseStart(_blue.units);
 }
 
 size_t Battlefield::getCorpses()      { return corpses; }

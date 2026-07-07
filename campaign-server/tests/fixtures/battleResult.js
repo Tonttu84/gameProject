@@ -21,8 +21,8 @@ export const battleResultFixture = {
       {
         tick: 1,
         units: [
-          { id: 0, type: 'Zombie', team: 'red', q: 3, r: 24, hp: 20, ox: 0, oy: -0.75, sz: 0.2 },
-          { id: 1, type: 'Soldier', team: 'blue', q: 4, r: 5, hp: 10, ox: 0.78, oy: 0, sz: 0.26, side: 1, rank: 1 },
+          { id: 0, type: 'Zombie', team: 'red', q: 3, r: 24, hp: 20, ox: 0, oy: -0.75, sz: 0.2, broken: true },
+          { id: 1, type: 'Soldier', team: 'blue', q: 4, r: 5, hp: 10, ox: 0.78, oy: 0, sz: 0.26, side: 1, rank: 1, cast: 2 },
           { id: 2, type: 'Soldier', team: 'blue', q: 5, r: 5, hp: 8, ox: 0.61, oy: 0, sz: 0.2, side: 1, rank: 2 },
         ],
         log: [],

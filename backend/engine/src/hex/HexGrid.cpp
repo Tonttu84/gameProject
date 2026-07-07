@@ -46,27 +46,7 @@ static TerrainType terrainFromName(const std::string& s) {
 static constexpr int DQ[6] = { 1,  1,  0, -1, -1,  0};
 static constexpr int DR[6] = {-1,  0,  1,  1,  0, -1};
 
-static constexpr float HEX_ORIGIN_X     = 30.f;
-static constexpr float HEX_ORIGIN_Y     = 30.f;
-static constexpr float HEX_SIZE_DEFAULT = 60.f;
-
-HexGrid::HexGrid()
-    : _origin(HEX_ORIGIN_X, HEX_ORIGIN_Y), _hexSize(HEX_SIZE_DEFAULT)
-{}
-
-sf::Vector2f HexGrid::hexToPixel(HexCoord c) const {
-    static const float sq3 = std::sqrt(3.f);
-    float fq = static_cast<float>(c.q);
-    float fr = static_cast<float>(c.r);
-    return {
-        _origin.x + _hexSize * (sq3 * fq + sq3 * 0.5f * fr),
-        _origin.y + _hexSize * 1.5f * fr
-    };
-}
-
-float HexGrid::getHexSize() const {
-    return _hexSize;
-}
+HexGrid::HexGrid() = default;
 
 const std::unordered_map<HexCoord, Hex, HexCoordHash>& HexGrid::getHexes() const {
     return _hexes;

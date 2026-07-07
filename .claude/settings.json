@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl.exe -e sh -c *)",
+      "Bash(wsl.exe -e bash -c *)",
+      "Bash(wsl -e sh -c *)",
+      "Bash(wsl -e bash -c *)",
+      "Bash(wsl.exe -e sh -lc *)",
+      "Bash(wsl.exe -e bash -lc *)",
+      "Bash(wsl -e sh -lc *)",
+      "Bash(wsl -e bash -lc *)",
+      "PowerShell(wsl.exe -e sh -c *)",
+      "PowerShell(wsl.exe -e bash -c *)",
+      "PowerShell(wsl -e sh -c *)",
+      "PowerShell(wsl -e bash -c *)",
+      "PowerShell(wsl.exe -e sh -lc *)",
+      "PowerShell(wsl.exe -e bash -lc *)",
+      "PowerShell(wsl -e sh -lc *)",
+      "PowerShell(wsl -e bash -lc *)",
+      "Bash(*vitest*)",
+      "Bash(*npm test*)",
+      "Bash(*npm run test*)",
+      "PowerShell(*vitest*)",
+      "PowerShell(*npm test*)",
+      "PowerShell(*npm run test*)"
+    ]
+  }
+}

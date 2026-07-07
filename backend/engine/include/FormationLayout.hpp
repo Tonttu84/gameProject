@@ -17,11 +17,10 @@ struct UnitPlacement {
     float  scale;
 };
 
-// Pure in-hex formation layout — the single source of unit layout for every
-// viewer: BattleRenderer consumes it live each frame, ReplayRecorder writes
-// its offsets into replay ticks so the web ReplayView needs no geometry of
-// its own. Reads engine state only (units, engagement sides/ranks), draws
-// nothing.
+// Pure in-hex formation layout — the single source of unit layout: the
+// ReplayRecorder writes its offsets into replay ticks so the web ReplayView
+// (the only renderer) needs no geometry of its own. Reads engine state only
+// (units, engagement sides/ranks), draws nothing.
 //
 // Returns one placement per alive unit, in back-to-front draw order
 // (support pool, then engaged ranks deepest-first so the frontline lands

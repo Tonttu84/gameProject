@@ -20,6 +20,11 @@ const unitStateSchema = new mongoose.Schema(
     squad: { type: String, default: undefined },
     side: { type: Number, min: 0, max: 5, default: undefined },
     rank: { type: Number, min: 0, default: undefined },
+    // Visual-state cues ReplayView colors by (absent at their defaults): a
+    // broken unit routs (orange), a casting unit is mid-spell (yellow). Like
+    // ox/oy/sz these MUST be in the schema or the strict schema drops them.
+    broken: { type: Boolean, default: undefined },
+    cast: { type: Number, default: undefined },
   },
   { _id: false },
 )

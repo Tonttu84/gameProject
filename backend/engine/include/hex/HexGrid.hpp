@@ -7,13 +7,12 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <SFML/System/Vector2.hpp>
 
 enum class HexDirection { NE = 0, E = 1, SE = 2, SW = 3, W = 4, NW = 5 };
 enum class TerrainType  { Open, Forest, Marsh, Rubble };
 
-// Single source of truth for terrain display — both BattleRenderer (SFML) and
-// the React campaign UI read name/color from here.
+// Single source of truth for terrain display — the React campaign UI reads
+// name/color from here (exported via /api/info).
 struct TerrainMeta {
     const char* name;
     uint8_t r, g, b;
@@ -142,8 +141,6 @@ public:
     std::vector<HexCoord> playerZone() const;
     std::vector<HexCoord> enemyZone()  const;
 
-    sf::Vector2f hexToPixel(HexCoord c) const;  // axial → flat 2D pixel position
-    float        getHexSize() const;
     static int   distance(HexCoord a, HexCoord b);
 
     const std::unordered_map<HexCoord, Hex, HexCoordHash>& getHexes() const;
@@ -168,9 +165,6 @@ public:
     int hexCount() const { return static_cast<int>(_hexIndex.size()); }
 
 private:
-    sf::Vector2f _origin;
-    float        _hexSize;
-
     // Deployment zone row ranges. -1 = not set.
     int _playerZoneMinRow = -1;
     int _playerZoneMaxRow = -1;

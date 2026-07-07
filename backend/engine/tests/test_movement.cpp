@@ -15,6 +15,21 @@
 #include "BattleSetup.hpp"
 #include "Squad.hpp"
 
+namespace {
+// Enemy that just sits tight. Convention: use an immobile dummy (movementSpeed
+// = 0) when a test needs the opposing side stationary, rather than holding a
+// real unit — the intent reads straight off the type. Mirrors
+// test_battle_length's ImmobileDummy.
+class ImmobileDummy : public AUnit {
+public:
+    explicit ImmobileDummy(int t) : AUnit(t) {
+        movementSpeed = 0;   // never moves
+        morale        = 99;  // never breaks/flees
+        printSymbol   = 'D';
+    }
+};
+} // namespace
+
 // ── Basic approach ────────────────────────────────────────────────────────────
 // Grid: buildRect(16,30). Axial: q = col - r/2.
 // r=5: valid q in -2..13. NE=(+1,-1) E=(+1,0) SE=(0,+1) SW=(-1,+1) W=(-1,0) NW=(0,-1)
@@ -359,10 +374,10 @@ TEST_CASE("moveToward: an overflow reserve keeps redistributing on consecutive t
 }
 
 TEST_CASE("moveSquad: an engaged squad holds position even in a badly overcrowded hex") {
-    // Squads have no reinforcement/redistribution path at all — that's a
-    // per-unit loner mechanism (moveToward's bestReinforceNeighbor). A squad
-    // always moves as one atomic block, and while engaged it simply holds,
-    // no matter how many reserve size-points are piled up around it.
+    // Redistribution is a whole-squad move and only fires while the squad is
+    // NOT engaged (see the spread test below). An engaged squad — in contact
+    // with the enemy — always holds, no matter how many reserve size-points are
+    // piled up around it: it does not abandon the line to equalize crowding.
     Battlefield& field = Utility::getBattlefield();
 
     auto sqOwned = std::make_unique<Squad>("Spreaders", false);
@@ -416,7 +431,8 @@ TEST_CASE("moveSquad: an engaged squad holds even when it would itself be the re
     // {0,5}: squad of 4 (40) + 13 lone Soldiers (130) — enough loners to
     // overflow the 3-rank capacity (12 seated), so some of them (and
     // possibly squad members too) end up rank-0 reserves. Doesn't matter:
-    // squads never redistribute regardless of their own seating state.
+    // an ENGAGED squad holds regardless of its own seating state — only a
+    // non-engaged squad redistributes (see the spread test below).
     Hex* origin = field.hexGrid.getHex({0, 5});
     for (int i = 0; i < 4; ++i) {
         auto u = std::make_unique<Soldier>(REDTEAM);
@@ -440,10 +456,73 @@ TEST_CASE("moveSquad: an engaged squad holds even when it would itself be the re
 
     for (AUnit* m : sq->getMembers()) {
         REQUIRE(m->getHex() != nullptr);
-        CHECK(m->getHex()->coord == HexCoord{0, 5}); // held — squads never redistribute
+        CHECK(m->getHex()->coord == HexCoord{0, 5}); // held — engaged squads never redistribute
     }
 
     field.extractResult();
+}
+
+TEST_CASE("moveSquad: a non-engaged squad blocked from advancing spreads into an emptier neighbor") {
+    // Counterpart to the two 'engaged squad holds' cases above. A squad NOT in
+    // contact, packed into a hex it cannot advance out of (the hex ahead is
+    // full), relocates as one atomic block to the passable neighbor holding
+    // strictly fewer reserve size-points — the whole-squad analogue of a loner's
+    // reserve-gradient reinforcement, gated by the same capacity + 25% loner
+    // displacement rules. (User, 2026-07-06: squads should also spread, but only
+    // when the whole-squad move follows the rules, and only while non-engaged.)
+    Battlefield field;
+
+    // Axial neighbours of O={5,10}: NE{6,9} E{6,10} SE{5,11} SW{4,11} W{4,10} NW{5,9}.
+    // Enemy at {8,10} → distance 3, so the squad is NOT engaged. Forward hex is
+    // E{6,10} (distance 2). The spread target is W{4,10} (distance 4 — farther,
+    // so never a decreasing or lateral move; today the squad simply holds).
+    const HexCoord O{5, 10};
+    const HexCoord ENEMY{8, 10};
+    const HexCoord FWD{6, 10};
+    const HexCoord SPREAD{4, 10};
+
+    Army red, blue;
+
+    auto enemy = std::make_unique<Soldier>(BLUETEAM);
+    enemy->setHex(field.hexGrid.getHex(ENEMY));
+    blue.push_back(std::move(enemy));
+
+    Hex* origin = field.hexGrid.getHex(O);
+    auto sqOwned = std::make_unique<Squad>("Spreaders", false);
+    Squad* sq = sqOwned.get();
+    for (int i = 0; i < 4; ++i) {
+        auto u = std::make_unique<Soldier>(REDTEAM);
+        u->setHex(origin);
+        sq->addMember(u.get());
+        red.push_back(std::move(u));
+    }
+
+    // Fill the forward hex so the squad cannot advance-commit even after the
+    // 25% loner displacement: sizeUsed 630 → available 10, max displace 10,
+    // 10 + 10 = 20 < squad's 40. The forward hex stays passable, so BFS still
+    // reaches the enemy (occupancy does not block pathing).
+    Hex* fwd = field.hexGrid.getHex(FWD);
+    for (int i = 0; i < 63; ++i) {
+        auto u = std::make_unique<Soldier>(REDTEAM);
+        u->setHex(fwd);
+        red.push_back(std::move(u));
+    }
+
+    // Seal the other four neighbours so W{4,10} is the unique open spread target.
+    field.hexGrid.getHex({6, 9})->impassable  = true; // NE
+    field.hexGrid.getHex({5, 11})->impassable = true; // SE
+    field.hexGrid.getHex({4, 11})->impassable = true; // SW
+    field.hexGrid.getHex({5, 9})->impassable  = true; // NW
+
+    field.loadArmies(std::move(red), std::move(blue));
+    field.getTeamData(REDTEAM).squads.push_back(std::move(sqOwned));
+
+    field.moveSquad(*sq);
+
+    for (AUnit* m : sq->getMembers()) {
+        REQUIRE(m->getHex() != nullptr);
+        CHECK(m->getHex()->coord == SPREAD); // spread as a whole block
+    }
 }
 
 // ── Impassable hex ────────────────────────────────────────────────────────────
@@ -1069,7 +1148,9 @@ TEST_CASE("hold order: broken unit flees even when holdTurns > 0") {
 }
 
 TEST_CASE("hold order: squad does not advance while holdTurns > 0") {
-    Battlefield& field = Utility::getBattlefield();
+    // Own Battlefield, not the shared singleton, to stay isolated from other
+    // tests' grid state.
+    Battlefield field;
 
     auto sq = std::make_unique<Squad>("Alpha", false);
     Squad* sqPtr = sq.get();
@@ -1085,7 +1166,12 @@ TEST_CASE("hold order: squad does not advance while holdTurns > 0") {
     sqPtr->addMember(b.get());
     sqPtr->setFlagBearer(a.get());
 
-    auto blueEnemy = std::make_unique<Soldier>(BLUETEAM);
+    // Immobile enemy so the {5,8} reference stays put. A mobile enemy would
+    // advance toward the squad during the hold ticks, and by tick 3 the squad
+    // would head for its new (RNG-nudged, possibly diagonal) position — landing
+    // on a hex that can still be distance 5 from the reference and flaking the
+    // "squad advanced" check.
+    auto blueEnemy = std::make_unique<ImmobileDummy>(BLUETEAM);
     blueEnemy->setHex(field.hexGrid.getHex({5, 8}));
     blue.push_back(std::move(blueEnemy));
     red.push_back(std::move(a));

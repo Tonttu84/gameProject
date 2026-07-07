@@ -112,12 +112,3 @@ AUnit* Utility::findTarget(const std::vector<std::unique_ptr<AUnit>>& targets, c
         return getBattlefield().hexGrid.safeGetHex(targetQ, targetR);
     }
 
-    sf::Font Utility::font;
-    void Utility::load()
-    {
-        if (!font.loadFromFile("assets/fonts/DejaVuSans.ttf")) // or any placeholder
-        {std::cerr << "Fatal: Could not load font\n";
-        std::exit(EXIT_FAILURE);
-        }
-    }
-    

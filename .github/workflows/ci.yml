@@ -12,26 +12,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Cache the extracted SFML directory so we don't re-download it every run.
-      # The key is fixed because we always use the same SFML version.
-      - name: Cache SFML
-        uses: actions/cache@v4
-        with:
-          path: backend/SFML-2.6.0
-          key: sfml-2.6.0-linux-gcc-64
-
-      # The SFML prebuilt binary needs these runtime libs to load on the runner.
-      # We also need wget (for the Makefile's SFML download if cache misses)
-      # and the DejaVu font (copied by the Makefile's font rule).
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q \
-            wget \
-            fonts-dejavu-core \
-            libx11-6 libxrandr2 libxcursor1 libudev1 \
-            libgl1 libfreetype6 libogg0 libvorbis0a
-
+      # The engine is headless (no SFML/X11) — g++ and make on ubuntu-latest
+      # are all `make test-serial` needs.
+      #
       # Uses the serial runner (not the default `make test`, which shards
       # across processes) so CI stays a trustworthy cross-check independent
       # of the parallel sharding script.
@@ -47,16 +30,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # Same cache the test job maintains. With backend/SFML-2.6.0/ present in
-      # the build context, the Makefile inside the image skips the sfml-dev.org
-      # download — which is both faster and immune to that site flaking (it
-      # has failed builds with network timeouts before).
-      - name: Cache SFML
-        uses: actions/cache@v4
-        with:
-          path: backend/SFML-2.6.0
-          key: sfml-2.6.0-linux-gcc-64
 
       - name: Build image
         run: docker build -t gameproject .
@@ -89,8 +62,8 @@ jobs:
           test "$ID" != "null"
           curl -fs -X POST $BASE/campaigns/$ID/forage -H "$AUTH" -H 'Content-Type: application/json' \
             -d '{"assignment":{"Soldier":100}}' | jq -e '.forage.capacityKg > 0' > /dev/null
-          # A real battle proves the xvfb + SFML path: the engine subprocess
-          # opens a window on the virtual display.
+          # A real battle proves the headless engine path: the ./game battle
+          # subprocess simulates and returns a result + recorded replay.
           WINNER=$(curl -fs -X POST $BASE/campaigns/$ID/battles -H "$AUTH" -H 'Content-Type: application/json' \
             -d '{"player_placement":[{"unit_type":"Soldier","q":4,"r":4}]}' | jq -r .winner)
           echo "battle winner: $WINNER"; test -n "$WINNER" && test "$WINNER" != "null"

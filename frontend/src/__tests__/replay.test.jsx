@@ -313,3 +313,64 @@ describe('ReplayView layout from recorded offsets', () => {
     expect(new Set(fills).size).toBe(1)
   })
 })
+
+// Visual-state cues ported from the retired SFML renderer
+// (BattleRenderer::renderUnitsInHex): casting → yellow, broken → orange
+// (broken wins), and rank-alpha dimming for engaged reserves.
+describe('ReplayView visual state cues', () => {
+  const renderTick = (units) => {
+    getTicks.mockImplementation((_id, from, to) =>
+      Promise.resolve(
+        [{ index: 0, units, log: [] }].filter((t) => t.index >= from && t.index <= to),
+      ),
+    )
+    return render(
+      <ReplayView battleId="battle1" tickCount={1} info={info} map={{ hexes: [] }} onBack={vi.fn()} />,
+    )
+  }
+
+  it('a casting unit is drawn yellow', async () => {
+    renderTick([{ id: 1, type: 'Mage', team: 'blue', q: 4, r: 4, hp: 10, cast: 2, ox: 0, oy: 0, sz: 0.2 }])
+    expect((await screen.findByText('M')).getAttribute('fill')).toBe('#ffff00')
+  })
+
+  it('a broken unit is drawn orange', async () => {
+    renderTick([{ id: 1, type: 'Soldier', team: 'red', q: 4, r: 4, hp: 10, broken: true, ox: 0, oy: 0, sz: 0.2 }])
+    expect((await screen.findByText('S')).getAttribute('fill')).toBe('#ff8c00')
+  })
+
+  it('broken wins over casting', async () => {
+    renderTick([{ id: 1, type: 'Mage', team: 'blue', q: 4, r: 4, hp: 10, broken: true, cast: 2, ox: 0, oy: 0, sz: 0.2 }])
+    expect((await screen.findByText('M')).getAttribute('fill')).toBe('#ff8c00')
+  })
+
+  it('broken/cast override the squad color', async () => {
+    renderTick([{ id: 1, type: 'Soldier', team: 'blue', q: 4, r: 4, hp: 10, squad: 'Ironguard', broken: true, ox: 0, oy: 0, sz: 0.2 }])
+    expect((await screen.findByText('S')).getAttribute('fill')).toBe('#ff8c00')
+  })
+
+  it('an unengaged unit (no side) draws at full opacity', async () => {
+    renderTick([{ id: 1, type: 'Soldier', team: 'blue', q: 4, r: 4, hp: 10, ox: 0, oy: 0, sz: 0.2 }])
+    expect(Number((await screen.findByText('S')).getAttribute('fill-opacity'))).toBe(1)
+  })
+
+  it('engaged reserves dim by rank; the front rank stays solid', async () => {
+    // RANK_ALPHA = [140, 255, 200, 160]: rank 1 solid, rank 2/3 dimmer.
+    renderTick([
+      { id: 1, type: 'Soldier', team: 'red', q: 4, r: 4, hp: 10, side: 0, rank: 1, ox: 0.4, oy: 0, sz: 0.2 },
+      { id: 2, type: 'Soldier', team: 'red', q: 4, r: 4, hp: 10, side: 0, rank: 2, ox: 0.6, oy: 0, sz: 0.2 },
+      { id: 3, type: 'Soldier', team: 'red', q: 4, r: 4, hp: 10, side: 0, rank: 3, ox: 0.2, oy: 0, sz: 0.2 },
+    ])
+    const byRank = (await screen.findAllByText('S')).map((el) =>
+      Number(el.getAttribute('fill-opacity')),
+    )
+    expect(byRank[0]).toBeCloseTo(255 / 255, 5)
+    expect(byRank[1]).toBeCloseTo(200 / 255, 5)
+    expect(byRank[2]).toBeCloseTo(160 / 255, 5)
+  })
+
+  it('an engaged off-rank unit falls back to RANK_ALPHA[0]', async () => {
+    renderTick([{ id: 1, type: 'Soldier', team: 'red', q: 4, r: 4, hp: 10, side: 0, rank: 0, ox: 0, oy: 0, sz: 0.2 }])
+    expect(Number((await screen.findByText('S')).getAttribute('fill-opacity'))).toBeCloseTo(140 / 255, 5)
+  })
+})

@@ -12,6 +12,7 @@
 
 #include "AUnit.hpp"
 #include "MeleeCombat.hpp"
+#include "SpellList.hpp"
 #include "Squad.hpp"
 #include "WeaponEffects.hpp"
 #include <algorithm>
@@ -555,6 +556,37 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	void AUnit::setCast(int setCast)
 	{
 		cast = setCast;
+	}
+
+	void AUnit::assignSpells(std::string_view unitTypeName)
+	{
+		_spells = Spells::forUnitType(unitTypeName);
+	}
+
+	const Spell* AUnit::chooseSpellToCast() const
+	{
+		for (const Spell* s : _spells)
+			if (s && mana >= s->manaCost)
+				return s;
+		return nullptr;
+	}
+
+	void AUnit::castSpells()
+	{
+		if (_spells.empty()) return;
+		// Cooldown ticks once per special phase, exactly as the old
+		// special() bodies decremented it before anything else.
+		if (cast > 0) { setCast(cast - 1); return; }
+		// No hex gate here: spells that need the caster placed on the grid
+		// (fireball's range check, raise_dead's neighbor scan) check it in
+		// their own bodies — bless works from anywhere, as it always has.
+		if (!alive || broken) return;
+		const Spell* s = chooseSpellToCast();
+		if (!s) return;
+		if (s->cast(*this)) {
+			mana -= s->manaCost;
+			setCast(s->cooldown);
+		}
 	}
 
 	void AUnit::setPlaced(bool value)

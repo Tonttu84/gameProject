@@ -93,8 +93,8 @@ fortified sides, and player/enemy deployment zone row ranges.
   crashing the `./game battle` subprocess. See SECURITY_NOTES.md.
 
 ### `backend/scenarios/SampleBattle.{hpp,cpp}`, `SpreadTest.{hpp,cpp}`
-Hardcoded (not JSON-driven) dev scenarios used only by the SFML `sample`/`spread` modes and to
-seed `maps/sample_battle.json`. Not reachable from the network.
+Hardcoded (not JSON-driven) dev scenarios run headless by the `sample`/`spread` modes (each
+writes a replay JSON) and used to seed `maps/sample_battle.json`. Not reachable from the network.
 
 ---
 
@@ -155,9 +155,10 @@ Consumers:
 
 ---
 
-## 6. Rendering — `backend/render/`
+## 6. Rendering — browser only (`frontend/src/components/ReplayView.jsx`)
 
-`BattleRenderer` (SFML) reads `Battlefield`/`HexGrid`/`AUnit` state to draw the window. It
-never receives external input directly — everything it reads has already been validated (or
-not) further upstream. Not a trust boundary; documented here only because the task scope named
-it as one of the six areas.
+There is no C++ renderer (the SFML `BattleRenderer` was retired 2026-07-07). Battles are
+recorded per tick by `ReplayRecorder` (unit positions/sizes from the shared engine
+`FormationLayout`, plus `squad`/`side`/`rank`/`broken`/`cast` cues) and stored in the DB; the
+React `ReplayView` draws exclusively from those tick documents (scrub/play/step). Not a trust
+boundary — it only reads already-persisted state.

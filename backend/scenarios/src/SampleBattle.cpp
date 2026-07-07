@@ -8,78 +8,75 @@
 #include "units/Necromancer.hpp"
 #include "units/Cavalry.hpp"
 #include "units/Warhorse.hpp"
-#include "render/BattleRenderer.hpp"
-#include <SFML/Window/Event.hpp>
+#include "server/ReplayRecorder.hpp"
+#include <filesystem>
+#include <fstream>
 #include <iostream>
-#include <thread>
-#include <chrono>
 
-static constexpr int PAUSED_SLEEP_MS = 50;
-static constexpr int TICK_SLEEP_MS   = 200;
-
-BattleResult runBattleLoop(Battlefield& field, BattleRenderer& renderer,
+BattleResult runBattleLoop(Battlefield& field,
                            const std::string& title,
                            const std::function<void()>& onTick,
                            int maxTicks)
 {
-    sf::RenderWindow& window = renderer.getWindow();
-    int  counter = 0;
-    bool paused  = false;
-    bool ongoing = true;
-
     // The engine owns the day-length rule: tick() returns false at the limit
     // and extractResult() scores both-sides-alive as a draw.
     field.setMaxTicks(maxTicks);
 
     // Progress goes to stderr: battle mode's stdout is a JSON contract
     // (the campaign server parses it), so nothing else may print there.
-    std::cerr << "\n=== " << title << " — SPACE to pause ===\n";
+    std::cerr << "\n=== " << title << " ===\n";
 
-    while (ongoing && window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
-                window.close();
-                return field.extractResult();
-            }
-            if (event.type == sf::Event::KeyPressed
-                    && event.key.code == sf::Keyboard::Space) {
-                paused = !paused;
-                std::cerr << (paused ? "  [PAUSED]\n" : "  [RESUMED]\n");
-            }
-            renderer.handleEvent(event);
-        }
-
-        if (paused) {
-            renderer.render(field.hexGrid);
-            std::this_thread::sleep_for(std::chrono::milliseconds(PAUSED_SLEEP_MS));
-            continue;
-        }
-
+    // onTick runs after every tick() — including the final one, which returns
+    // false after a full turn's work — so a caller's replay recorder captures
+    // the closing state too.
+    bool ongoing = true;
+    int  counter = 0;
+    while (ongoing) {
         ongoing = field.tick();
         counter++;
         if (onTick) onTick();
-        if (!ongoing && counter >= maxTicks)
-            std::cerr << "Day over after " << counter << " turns\n";
-        std::cerr << "Turn " << counter << "\n";
-        renderer.render(field.hexGrid);
-        std::this_thread::sleep_for(std::chrono::milliseconds(TICK_SLEEP_MS));
     }
+    std::cerr << "Battle ended after " << counter << " turns\n";
 
     return field.extractResult();
 }
 
-void runSampleBattle(Battlefield& field, BattleRenderer& renderer)
+void writeReplayJson(const ReplayRecorder& recorder, const std::string& mapName,
+                     const std::string& outPath)
+{
+    std::filesystem::path p(outPath);
+    if (p.has_parent_path())
+        std::filesystem::create_directories(p.parent_path());
+    std::ofstream f(outPath);
+    if (!f) {
+        std::cerr << "could not open " << outPath << " for the replay\n";
+        return;
+    }
+    f << recorder.toJson(mapName).dump() << "\n";
+    std::cerr << "wrote replay: " << outPath << "\n";
+}
+
+void runSampleBattle(Battlefield& field, const std::string& outPath)
 {
     field.reset();
     setupSampleBattle(field);
-    BattleResult result = runBattleLoop(field, renderer, "SAMPLE BATTLE");
 
-    std::cout << "\nBattle ended. ";
-    if      (result.winner == REDTEAM)  std::cout << "Red wins.\n";
-    else if (result.winner == BLUETEAM) std::cout << "Blue wins.\n";
-    else                                std::cout << "Draw.\n";
-    std::cout << "Red survivors: "  << result.redSurvivors.size()
+    // Record every tick (tick 0 = deployment) so the scenario produces the same
+    // replay a campaign battle does — the browser ReplayView is the only viewer.
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+    BattleResult result = runBattleLoop(field, "SAMPLE BATTLE",
+                                        [&] { recorder.recordTick(field); });
+    // setupSampleBattle lays the same terrain dump-map writes to
+    // maps/sample_battle.json, so that map name renders this replay's terrain.
+    writeReplayJson(recorder, "sample_battle", outPath);
+
+    // Summary to stderr — stdout stays clean for callers that pipe it.
+    std::cerr << "Battle ended. ";
+    if      (result.winner == REDTEAM)  std::cerr << "Red wins.\n";
+    else if (result.winner == BLUETEAM) std::cerr << "Blue wins.\n";
+    else                                std::cerr << "Draw.\n";
+    std::cerr << "Red survivors: "  << result.redSurvivors.size()
               << "  Blue survivors: " << result.blueSurvivors.size() << "\n";
 }
 

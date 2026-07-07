@@ -214,8 +214,8 @@ TEST_CASE("replay recorder: recorded offsets match the shared layout function") 
 
     json replay = recorder.toJson("sample_battle");
     // Map replay id → the live unit, then compare against layoutHexFormation
-    // on that unit's hex — the SFML renderer draws from the same call, so
-    // this is the SFML↔web parity guarantee.
+    // on that unit's hex — this pins that the recorded offsets are exactly the
+    // shared layout function's output (the web replay's render contract).
     std::map<int, AUnit*> byId;
     for (int team : {REDTEAM, BLUETEAM})
         for (auto& u : field.getTeam(team))
@@ -233,6 +233,36 @@ TEST_CASE("replay recorder: recorded offsets match the shared layout function") 
         REQUIRE(ju["oy"].get<double>() == Approx(p->oy).margin(0.0006));
         REQUIRE(ju["sz"].get<double>() == Approx(p->scale).margin(0.0006));
     }
+
+    field.extractResult();
+}
+
+// ── Visual-state cues (broken / cast) ────────────────────────────────────────
+// ReplayView colors these (broken orange, casting yellow); they must ride out
+// on the tick doc, and be omitted at their defaults to keep docs lean.
+
+TEST_CASE("replay recorder: broken and cast are recorded only when set") {
+    Battlefield& field = setupSmallBattle();
+
+    AUnit* broken  = field.getTeam(REDTEAM)[0].get();
+    AUnit* casting = field.getTeam(REDTEAM)[1].get();
+    broken->setBroken(true);
+    casting->setCast(3);
+
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+    json replay = recorder.toJson("sample_battle");
+
+    int seenBroken = 0, seenCast = 0, plainUnits = 0;
+    for (const auto& u : replay["ticks"][0]["units"]) {
+        if (u.value("broken", false)) { seenBroken++; REQUIRE(u["broken"] == true); }
+        if (u.contains("cast"))       { seenCast++;   REQUIRE(u["cast"].get<int>() == 3); }
+        // Units at their defaults carry neither key.
+        if (!u.contains("broken") && !u.contains("cast")) plainUnits++;
+    }
+    REQUIRE(seenBroken == 1);
+    REQUIRE(seenCast == 1);
+    REQUIRE(plainUnits == 3); // 2 zombies + 1 untouched soldier
 
     field.extractResult();
 }

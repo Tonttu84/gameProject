@@ -1,6 +1,5 @@
 #pragma once
 #include "Battlefield.hpp"
-#include "render/BattleRenderer.hpp"
 #include <string>
 
 // HTTP campaign server. Blocks until the server is stopped.
@@ -8,8 +7,8 @@
 void runServer(int port, const std::string& binaryPath);
 
 // Battle-from-JSON mode: read BattleInput JSON from stdin, set up the field,
-// run the SFML battle, write BattleResult JSON to stdout.
-void runBattleFromJson(Battlefield& field, BattleRenderer& renderer);
+// run the battle headless (recording every tick), write BattleResult JSON to stdout.
+void runBattleFromJson(Battlefield& field);
 
 // True if `name` is safe to interpolate into "maps/" + name + ".json" — rejects empty
 // names, path separators, and "..". Guards GET /api/map's ?name= param and POST /api/battle's

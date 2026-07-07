@@ -1,5 +1,6 @@
 #include "scenarios/SpreadTest.hpp"
 #include "scenarios/SampleBattle.hpp"
+#include "server/ReplayRecorder.hpp"
 #include "BattleSetup.hpp"
 #include "units/Soldier.hpp"
 #include "hex/HexGrid.hpp"
@@ -80,18 +81,19 @@ static void setupSpreadBattle(Battlefield& field, TerrainType t)
     field.loadArmies(std::move(red), std::move(blue));
 }
 
-void runSpreadTest(Battlefield& field, BattleRenderer& renderer)
+void runSpreadTest(Battlefield& field, const std::string& outDir)
 {
     struct TerrainCase {
         TerrainType type;
         const char* label;
+        const char* slug;   // filename/map-name stem
     };
 
     constexpr TerrainCase cases[] = {
-        { TerrainType::Open,   "Spreading: Open"   },
-        { TerrainType::Forest, "Spreading: Forest" },
-        { TerrainType::Marsh,  "Spreading: Marsh"  },
-        { TerrainType::Rubble, "Spreading: Rubble" },
+        { TerrainType::Open,   "Spreading: Open",   "spread_open"   },
+        { TerrainType::Forest, "Spreading: Forest", "spread_forest" },
+        { TerrainType::Marsh,  "Spreading: Marsh",  "spread_marsh"  },
+        { TerrainType::Rubble, "Spreading: Rubble", "spread_rubble" },
     };
 
     for (const auto& tc : cases) {
@@ -102,17 +104,18 @@ void runSpreadTest(Battlefield& field, BattleRenderer& renderer)
 
         setupSpreadBattle(field, tc.type);
 
-        BattleResult result = runBattleLoop(field, renderer, tc.label);
+        // Record every tick so each terrain run yields a browser-loadable replay.
+        ReplayRecorder recorder;
+        recorder.recordTick(field);
+        BattleResult result = runBattleLoop(field, tc.label,
+                                            [&] { recorder.recordTick(field); });
+        writeReplayJson(recorder, tc.slug, outDir + "/" + tc.slug + ".json");
 
-        std::cout << "\n[SpreadTest] " << tc.label << " ended. ";
-        if      (result.winner == REDTEAM)  std::cout << "Red wins.\n";
-        else if (result.winner == BLUETEAM) std::cout << "Blue wins.\n";
-        else                                std::cout << "Draw.\n";
-        std::cout << "  Red survivors: "  << result.redSurvivors.size()
+        std::cerr << "[SpreadTest] " << tc.label << " ended. ";
+        if      (result.winner == REDTEAM)  std::cerr << "Red wins.\n";
+        else if (result.winner == BLUETEAM) std::cerr << "Blue wins.\n";
+        else                                std::cerr << "Draw.\n";
+        std::cerr << "  Red survivors: "  << result.redSurvivors.size()
                   << "  Blue survivors: " << result.blueSurvivors.size() << "\n";
-
-        // If the window was closed mid-battle, stop.
-        if (!renderer.getWindow().isOpen())
-            return;
     }
 }
