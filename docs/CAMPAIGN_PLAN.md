@@ -84,12 +84,30 @@ notes below over the git history if they ever disagree — the commits win.
     (same function as the web) so a squad wears one color in both views and across
     runs. Reminder while playtesting: every redeploy needs a hard browser refresh —
     a stale bundle is the usual "feature missing" culprit.
-- **ACTIVE NOW (2026-07-07): Retire SFML — the browser becomes the single battle renderer.**
-  Chosen over in-engine renderer unification: battle data already round-trips
-  C++ → DB → browser, so C++/SFML rendering buys no speed and is the only place real-time
-  (SFML) and history (browser replay) can disagree. Takes priority over Stages 3–4. Full,
-  cold-startable plan below — see the section **"Rendering: retire SFML"**.
-- **Next up after that:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
+- **SFML retirement — Phase 1 SHIPPED (2026-07-07).** The browser `ReplayView` is now the
+  ONLY renderer. Landed as four commits on `feature/campaign-mode`: (1) headless battle
+  path (`runBattleFromJson`/`runBattleLoop`/`runSampleBattle`/`runSpreadTest`/`main.cpp` drop
+  the `BattleRenderer`; the `BATTLE_HOLD_WINDOW` window-hold is gone); (2) browser replay made
+  lossless — `ReplayRecorder` writes per-unit `broken`/`cast`, `tick.js` schema + fixtures
+  gain them, `ReplayView` ports the SFML cues (casting yellow, broken orange with broken
+  winning, `RANK_ALPHA {140,255,200,160}` dimming keyed on recorded `side`/`rank`); (3) SFML
+  deleted — `backend/render/` gone, `Utility` font/`load()` and `HexGrid`'s render-only
+  `hexToPixel`/`getHexSize`/`_origin`/`_hexSize` removed (the last SFML in the engine + test
+  binary), Makefile/Dockerfile/CI/`docker-entrypoint.sh`/`docker-compose.display.yml`/
+  `docker-up-display`/vendored font all stripped; (4) `sample`/`spread` run headless and each
+  WRITES a replay JSON (same `{map,cols,rows,ticks}` shape as a campaign battle) to a path
+  arg or default `replays/` (user steer: reuse the campaign's own replay format, take a file
+  arg or default path). Verified in WSL: `make` links `game` with zero SFML (`ldd` clean),
+  `make test-serial` green (308 cases), campaign-server + frontend vitest green.
+  **GOTCHA for anyone touching the loop:** the plan's `while (field.tick()) record` sketch
+  DROPS the final tick (which does a full turn's work before returning false) — the shipped
+  loop records after EVERY `tick()` so a `max_turns=N` battle yields `N+1` ticks and stdout
+  stays byte-compatible.
+- **NEXT — Phase 2 (separate session): reconnect the visual combat-feel debugger.** `sample`/
+  `spread` now emit replay JSONs but nothing views them. Add a dev path in the React app to
+  load a scenario replay JSON into `ReplayView` (file drop / dev route / `?replay=` param) so
+  watching how combat "feels" uses the SAME renderer as real battles. See "Phase 2" below.
+- **Then:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
   militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
   (fully designed below — coverage → cavalry-superiority gauge).
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
@@ -162,7 +180,14 @@ functional is lost; we only port the visual cues so the browser is lossless.
 - `sample`/`spread` (`SpreadTest`/`SampleBattle`) are SFML visual dev scenarios. `sample` is
   the user's visual combat-FEEL debugger — it MUST return to the browser in Phase 2.
 
-## Phase 1 — kill SFML, browser is the only renderer (one fresh session)
+## Phase 1 — kill SFML, browser is the only renderer  ✅ SHIPPED 2026-07-07
+
+**Done** — see the "Phase 1 SHIPPED" bullet in Project state above for what landed and the
+byte-compat gotcha. The original plan (kept below for reference) was followed, with two
+deviations worth remembering: the tick-recording loop is a do-while (records the final tick,
+unlike the `while (field.tick())` sketch), and `sample`/`spread` write their replay JSON to a
+path arg / default `replays/` in the campaign's own replay shape (user steer) rather than an
+unspecified file.
 
 Delete SFML LAST so the tree keeps building throughout. Suggested commit series on
 `feature/campaign-mode`:
@@ -545,6 +570,8 @@ class count.
 Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; `Militia` unit; fortification combat effects; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
 
 **Deferred test-infra cleanup:** extract the stationary-enemy dummy (`movementSpeed = 0`) into one shared test header/cpp under `backend/engine/tests/` and migrate the current copies onto it — `ImmobileDummy` now lives independently in both `test_movement.cpp` and `test_battle_length.cpp`, and `test_main.cpp` has a near-identical `HighArmorDummy`. Convention: tests that need the enemy to sit tight use this dummy rather than holding a real unit.
+
+**Deferred — frontend rendering/integration test coverage (user, 2026-07-07).** Now that rendering lives entirely in the browser (SFML retired), revisit test coverage with the JS test libraries already in place: broaden `ReplayView`/`HexGrid` **rendering** tests (styling cues, layout, terrain) and add **integration** tests where plausible (e.g. a full campaign loop through the campaign-server routes, or a battle → recorded replay → `ReplayView` round-trip). Ideas only, not scheduled; fold into whichever session touches the relevant surface. Pairs naturally with Phase 2 (the scenario-replay dev route is itself a testable render path).
 
 ## Independent assessment: weapons in C++ vs DB
 **Keep weapons as C++ `constexpr` source of truth — do not move to DB.** Unit ctors reference weapons by identity (`addWeapon(MeleeWeapons::Pike)`); the engine is a self-contained stdin/stdout subprocess, and the DB is *populated from* the engine — a DB-sourced weapon table would invert that into a cycle and complicate the trust boundary. SSOT is about direction, not location: nothing downstream duplicates weapon data today, so there is no drift risk. Worthwhile later & cheap: extend `dump-units` to export each unit's weapon list read off a live instance (name, reach, shield, pen) for UI tooltips, optionally a `weaponCatalog()` + tripwire mirroring the unit pattern, synced to a display-only collection. No engine behaviour change.

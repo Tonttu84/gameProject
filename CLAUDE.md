@@ -18,13 +18,13 @@ only in Claude's per-machine auto-memory (`~/.claude/…`, which does NOT move b
 
 ## Build & test commands
 
-This is a Linux-targeted project (the Makefile downloads a prebuilt Linux SFML binary and shells
-out to `/usr/share/fonts`). Build tooling (g++/clang++, make) is expected to be available on the
-host; there is no native Windows build path and none is planned — Windows machines run the stack
-via Docker (see `make docker-up`) or WSL.
+This is a Linux-targeted project. The engine is fully headless (no SFML/X11/font deps — the
+browser is the only renderer), so `make` just needs g++/clang++ + make on the host. There is no
+native Windows build path and none is planned — Windows machines run the stack via Docker (see
+`make docker-up`) or WSL.
 
 ```sh
-make                 # builds ./game (SFML window modes + headless modes)
+make                 # builds ./game (fully headless — no SFML/X11)
 make clean / fclean   # remove objects / remove objects+binaries
 make re               # fclean + all
 
@@ -44,13 +44,10 @@ make frontend-test     # npm --prefix frontend test (vitest run), via the pinned
 make docker-up         # docker compose up --build: the WHOLE stack (engine + campaign
                         # server + built frontend + MongoDB) in containers on
                         # http://localhost:3001, login testuser/test. For machines with
-                        # Docker (e.g. Windows via Docker Desktop). The engine's battle
-                        # mode opens an SFML window even when spawned by the server, so
-                        # the container wraps everything in xvfb-run. CI's "docker" job
-                        # builds this image and smokes a full campaign turn through it.
-make docker-up-display # docker-up, but battle windows appear on the host desktop
-                        # (Windows Docker Desktop + WSLg socket mount; falls back to
-                        # Xvfb automatically when the host X socket isn't there)
+                        # Docker (e.g. Windows via Docker Desktop). Battles are headless
+                        # (no X server), so the image is plain node + the engine binary.
+                        # CI's "docker" job builds this image and smokes a full campaign
+                        # turn through it.
 make docker-down       # stop the stack (campaign DB volume survives)
 make docker-clean      # stop AND wipe the campaign DB volume (Docker twin of db-clean)
 make docker-logs       # follow the game server's container logs
@@ -59,10 +56,13 @@ make docker-build      # build just the image, start nothing
 ./game info                       # headless: print buildInfoJson() and exit
 ./game server 8080                # headless: run the HTTP server
 ./game dump-map [path]             # headless: write the sample battle's terrain to JSON
-./game battle < in.json > out.json # SFML-window mode: run one battle from BattleInput JSON on
-                                    # stdin, print BattleResult JSON to stdout (this is what
-                                    # POST /api/battle spawns as a subprocess)
-./game sample / ./game spread      # SFML-window dev scenarios
+./game battle < in.json > out.json # headless: run one battle from BattleInput JSON on
+                                    # stdin, print BattleResult JSON (result + recorded
+                                    # replay) to stdout (this is what POST /api/battle
+                                    # spawns as a subprocess)
+./game sample [out.json]           # headless dev scenario: simulate + write a replay JSON
+./game spread [outDir]             #   (default replays/); the browser ReplayView is the
+                                    #   only renderer — Phase 2 wires these into a dev route
 ```
 
 Frontend-only commands (run from `frontend/`): `npm run dev`, `npm run build`, `npm run lint`
@@ -90,12 +90,16 @@ engagement/frontage/formation system it describes is only partially built in
   (`Human` → `Soldier`/`Archer`/`Mage`/`Priest`/`Necromancer`, plus `Cavalry`, `Zombie`,
   `Skeleton`, `Scorpion`), `Battlefield` (owns two `Team`s), `Squad`/`Wing` formation grouping,
   `Utility` (global RNG/targeting/distance singleton accessor).
-- `backend/render/` — SFML rendering of engine state only; never a source of external input.
+- Rendering lives entirely in the browser: `frontend/src/components/ReplayView.jsx` draws
+  battles from the recorded per-tick JSON. There is no C++/SFML renderer (retired 2026-07-07);
+  `FormationLayout` (engine) is the single source of in-hex unit positions, which
+  `ReplayRecorder` writes into each tick.
 - `backend/server/` — `httplib`-based HTTP server (`BattleServer.cpp`) and the JSON unit
   factory / army-from-placement builder (`UnitRegistry.cpp`). This is the trust boundary between
   the outside world and the engine.
-- `backend/scenarios/` — hardcoded dev scenarios (`SampleBattle`, `SpreadTest`) used by the SFML
-  `sample`/`spread` modes and to seed `maps/sample_battle.json` via `dump-map`.
+- `backend/scenarios/` — hardcoded dev scenarios (`SampleBattle`, `SpreadTest`) run headless by
+  the `sample`/`spread` modes (each writes a replay JSON) and used to seed
+  `maps/sample_battle.json` via `dump-map`.
 - `auth/` — currently just a `.gitkeep`; no authentication is implemented yet. Every HTTP
   endpoint in `BattleServer.cpp` is unauthenticated.
 - `maps/` — JSON map files (terrain/elevation/impassable/deployment zones), read by

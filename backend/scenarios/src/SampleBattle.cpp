@@ -8,6 +8,9 @@
 #include "units/Necromancer.hpp"
 #include "units/Cavalry.hpp"
 #include "units/Warhorse.hpp"
+#include "server/ReplayRecorder.hpp"
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 
 BattleResult runBattleLoop(Battlefield& field,
@@ -38,17 +41,42 @@ BattleResult runBattleLoop(Battlefield& field,
     return field.extractResult();
 }
 
-void runSampleBattle(Battlefield& field)
+void writeReplayJson(const ReplayRecorder& recorder, const std::string& mapName,
+                     const std::string& outPath)
+{
+    std::filesystem::path p(outPath);
+    if (p.has_parent_path())
+        std::filesystem::create_directories(p.parent_path());
+    std::ofstream f(outPath);
+    if (!f) {
+        std::cerr << "could not open " << outPath << " for the replay\n";
+        return;
+    }
+    f << recorder.toJson(mapName).dump() << "\n";
+    std::cerr << "wrote replay: " << outPath << "\n";
+}
+
+void runSampleBattle(Battlefield& field, const std::string& outPath)
 {
     field.reset();
     setupSampleBattle(field);
-    BattleResult result = runBattleLoop(field, "SAMPLE BATTLE");
 
-    std::cout << "\nBattle ended. ";
-    if      (result.winner == REDTEAM)  std::cout << "Red wins.\n";
-    else if (result.winner == BLUETEAM) std::cout << "Blue wins.\n";
-    else                                std::cout << "Draw.\n";
-    std::cout << "Red survivors: "  << result.redSurvivors.size()
+    // Record every tick (tick 0 = deployment) so the scenario produces the same
+    // replay a campaign battle does — the browser ReplayView is the only viewer.
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+    BattleResult result = runBattleLoop(field, "SAMPLE BATTLE",
+                                        [&] { recorder.recordTick(field); });
+    // setupSampleBattle lays the same terrain dump-map writes to
+    // maps/sample_battle.json, so that map name renders this replay's terrain.
+    writeReplayJson(recorder, "sample_battle", outPath);
+
+    // Summary to stderr — stdout stays clean for callers that pipe it.
+    std::cerr << "Battle ended. ";
+    if      (result.winner == REDTEAM)  std::cerr << "Red wins.\n";
+    else if (result.winner == BLUETEAM) std::cerr << "Blue wins.\n";
+    else                                std::cerr << "Draw.\n";
+    std::cerr << "Red survivors: "  << result.redSurvivors.size()
               << "  Blue survivors: " << result.blueSurvivors.size() << "\n";
 }
 

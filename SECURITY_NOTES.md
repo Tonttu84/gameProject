@@ -1,9 +1,9 @@
 # Security Notes
 
 Findings from a boundary audit of `backend/server/`, `auth/`, `backend/scenarios/`+`maps/`,
-the engine entry points, `frontend/`, and `backend/render/` — see `API.md` for what each
-boundary does. Scope: input crossing from the frontend/network into the engine is treated as
-untrusted. Internal-only logic is out of scope.
+the engine entry points, and `frontend/` — see `API.md` for what each boundary does. Scope:
+input crossing from the frontend/network into the engine is treated as untrusted. Internal-only
+logic is out of scope. (Battle rendering is browser-only, off any input path.)
 
 Status legend: **Open** = documented, not yet fixed. **Fixed** = fixed in this branch, with a
 regression test. **Accepted / follow-up** = documented but deliberately not fixed here because
@@ -118,7 +118,7 @@ can be enforced. Flagged as a design-scope item, not a one-line fix.
 If the deployment zone is too small for the army being placed, the function calls
 `std::exit(1)`, terminating the entire process immediately — including, in the `/api/battle`
 subprocess case, mid-battle with no output written, and in any future in-process caller (the
-Makefile SFML modes), the whole `./game` process. A capacity-exceeding army (reachable from
+`sample`/`spread` scenario modes), the whole `./game` process. A capacity-exceeding army (reachable from
 attacker-controlled placement data — a huge default-army fallback combined with a small custom
 map's zone, or a future explicit-placement-with-overflow path) can be used to kill the process
 outright rather than fail gracefully.

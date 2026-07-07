@@ -7,3 +7,5 @@ run_tests
 !.claude/settings.json
 game_clang
 node_modules/
+# Generated scenario replays (./game sample / spread)
+replays/
