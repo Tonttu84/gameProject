@@ -80,7 +80,7 @@ static void setupSpreadBattle(Battlefield& field, TerrainType t)
     field.loadArmies(std::move(red), std::move(blue));
 }
 
-void runSpreadTest(Battlefield& field, BattleRenderer& renderer)
+void runSpreadTest(Battlefield& field)
 {
     struct TerrainCase {
         TerrainType type;
@@ -102,7 +102,7 @@ void runSpreadTest(Battlefield& field, BattleRenderer& renderer)
 
         setupSpreadBattle(field, tc.type);
 
-        BattleResult result = runBattleLoop(field, renderer, tc.label);
+        BattleResult result = runBattleLoop(field, tc.label);
 
         std::cout << "\n[SpreadTest] " << tc.label << " ended. ";
         if      (result.winner == REDTEAM)  std::cout << "Red wins.\n";
@@ -110,9 +110,5 @@ void runSpreadTest(Battlefield& field, BattleRenderer& renderer)
         else                                std::cout << "Draw.\n";
         std::cout << "  Red survivors: "  << result.redSurvivors.size()
                   << "  Blue survivors: " << result.blueSurvivors.size() << "\n";
-
-        // If the window was closed mid-battle, stop.
-        if (!renderer.getWindow().isOpen())
-            return;
     }
 }

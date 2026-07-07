@@ -6,20 +6,18 @@
 #include "Battlefield.hpp"
 #include "Utility.hpp"
 
-#include <SFML/Graphics.hpp>
 #include <fstream>
 #include <iostream>
 #include <string>
 
-constexpr unsigned int WINDOW_WIDTH  = 1000;
-constexpr unsigned int WINDOW_HEIGHT = 1000;
-constexpr int          SERVER_PORT   = 8080;
+constexpr int SERVER_PORT = 8080;
 
 int main(int argc, char* argv[])
 {
     std::string mode = (argc > 1) ? argv[1] : "";
 
-    // ── Headless modes (no SFML window) ──────────────────────────────────────
+    // Every mode is headless — battles simulate and record; the browser
+    // ReplayView is the only renderer (see docs/CAMPAIGN_PLAN.md).
     if (mode == "info") {
         std::cout << buildInfoJson() << "\n";
         return 0;
@@ -56,26 +54,19 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    // ── SFML modes ────────────────────────────────────────────────────────────
-    Utility::load();
+    // ── Battle / scenario modes (headless) ──────────────────────────────────
     Battlefield& field = Utility::getBattlefield();
 
-    sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "Battlefield");
-    BattleRenderer renderer(Utility::font, window);
-    renderer.build(field.hexGrid);
-    renderer.initView(window.getSize());
-
     if (mode == "battle")
-        runBattleFromJson(field, renderer);
+        runBattleFromJson(field);
     else if (mode == "sample")
-        runSampleBattle(field, renderer);
+        runSampleBattle(field);
     else if (mode == "spread")
-        runSpreadTest(field, renderer);
-
-    sf::Event event;
-    while (window.isOpen() && window.pollEvent(event))
-        if (event.type == sf::Event::Closed)
-            window.close();
+        runSpreadTest(field);
+    else {
+        std::cerr << "unknown mode: '" << mode << "'\n";
+        return 1;
+    }
 
     return 0;
 }
