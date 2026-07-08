@@ -23,6 +23,12 @@ export const login = (credentials) => axios.post('/api/login', credentials).then
 export const postBattle = (payload) =>
   axios.post('/api/battles', payload, { headers: { Authorization: token } }).then(r => r.data)
 
+// Launch the hardcoded sample battle (login-screen demo). No auth — runs the
+// scenario through the same engine→DB pipeline as a real battle and returns its
+// summary { id, tickCount, ... }; play it with ReplayView(id) like any battle.
+export const launchSampleBattle = () =>
+  axios.post('/api/sample-battle').then(r => r.data)
+
 export const getBattle = (id) => axios.get(`/api/battles/${id}`).then(r => r.data)
 export const getTicks  = (id, from, to) =>
   axios.get(`/api/battles/${id}/ticks`, { params: { from, to } }).then(r => r.data)

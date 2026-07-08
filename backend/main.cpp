@@ -60,9 +60,11 @@ int main(int argc, char* argv[])
     if (mode == "battle")
         runBattleFromJson(field);
     else if (mode == "sample")
-        // ./game sample [outPath] — writes the scenario replay JSON (default
-        // replays/sample.json); Phase 2 loads it into the browser ReplayView.
-        runSampleBattle(field, argc > 2 ? argv[2] : "replays/sample.json");
+        // ./game sample — runs the scenario and prints {winner,...,replay} on
+        // stdout, exactly like `./game battle`. The campaign server runs and
+        // stores it through the one battle pipeline; the browser ReplayView plays
+        // it (login-screen demo). See docs/CAMPAIGN_PLAN.md Phase 2.
+        runSampleBattle(field);
     else if (mode == "spread")
         // ./game spread [outDir] — one replay JSON per terrain (default replays/).
         runSpreadTest(field, argc > 2 ? argv[2] : "replays");

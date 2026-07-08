@@ -46,6 +46,14 @@ export function runBattle(input) {
   return runEngine('battle', JSON.stringify(input))
 }
 
+// The hardcoded sample scenario, run headless. Same { winner, *_survivors,
+// replay } contract as runBattle — the field SOURCE is the C++ scenario instead
+// of stdin JSON, but the output rides the identical persist/render pipeline
+// (see services/battleRunner.js). No stdin. Powers the login-screen demo battle.
+export function runSample() {
+  return runEngine('sample')
+}
+
 // Full unit catalog (single source of truth) — synced into the DB at boot.
 export function dumpUnits() {
   return runEngine('dump-units')

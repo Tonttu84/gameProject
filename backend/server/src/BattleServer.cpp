@@ -74,6 +74,25 @@ static json resultToJson(const BattleResult& r)
     };
 }
 
+// Shared run/record/emit tail for `battle` and `sample`. The caller has already
+// built the field (from stdin JSON, or from a hardcoded scenario); this records
+// tick 0 (deployment) plus a snapshot after every engine tick, then prints the
+// {winner, *_survivors, replay} envelope on stdout for the campaign server to
+// store. One path so the two field sources produce byte-identical output shapes.
+void runAndEmitBattle(Battlefield& field, const std::string& mapName,
+                      const std::string& title, int maxTicks)
+{
+    ReplayRecorder recorder;
+    recorder.recordTick(field);
+    BattleResult result = runBattleLoop(field, title,
+                                        [&] { recorder.recordTick(field); },
+                                        maxTicks);
+
+    json out = resultToJson(result);
+    out["replay"] = recorder.toJson(mapName);
+    std::cout << out.dump() << "\n" << std::flush;
+}
+
 // ── Battle-from-JSON ──────────────────────────────────────────────────────────
 
 // Rejects empty names, path separators, and ".." so a map name can never escape maps/.
@@ -216,18 +235,7 @@ void runBattleFromJson(Battlefield& field)
     if (j.contains("max_turns") && j["max_turns"].is_number_integer())
         maxTicks = clampMaxTurns(j["max_turns"].get<int>());
 
-    // Record tick 0 (deployment) plus one snapshot after every engine tick;
-    // the whole replay rides out on stdout with the result for the campaign
-    // server to store.
-    ReplayRecorder recorder;
-    recorder.recordTick(field);
-    BattleResult result = runBattleLoop(field, "BATTLE",
-                                        [&] { recorder.recordTick(field); },
-                                        maxTicks);
-
-    json out = resultToJson(result);
-    out["replay"] = recorder.toJson(mapName);
-    std::cout << out.dump() << "\n" << std::flush;
+    runAndEmitBattle(field, mapName, "BATTLE", maxTicks);
 }
 
 // ── HTTP server ───────────────────────────────────────────────────────────────

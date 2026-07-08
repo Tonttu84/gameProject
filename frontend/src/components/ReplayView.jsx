@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import useReplay from '../hooks/useReplay'
 
 // Same geometry as HexGrid.jsx (kept in sync — extract if a third user appears).
@@ -66,8 +66,14 @@ const MIN_GLYPH_PX = 4
 // Replays a stored battle: terrain grid + per-tick unit stacks, scrub slider,
 // step/play controls, and the tick's log lines. All data comes from the DB
 // via useReplay — no re-simulation, so scrubbing backward is exact.
-const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
+const ReplayView = ({ battleId, tickCount, info, map, onBack, autoPlay = false, backLabel = 'Back to result' }) => {
   const { current, tick, seek, next, prev, playing, setPlaying } = useReplay(battleId, tickCount)
+
+  // The login-screen demo starts playing on its own — the visitor launched it
+  // to watch a battle, not to press Play. Real battle replays open paused.
+  useEffect(() => {
+    if (autoPlay) setPlaying(true)
+  }, [autoPlay, setPlaying])
 
   const { grid } = info
   const svgW = Math.ceil(HEX_SIZE * 1.5 * grid.height + HEX_SIZE * 2)
@@ -152,7 +158,7 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack }) => {
         <h2>Battle Replay — turn {current} / {Math.max(0, tickCount - 1)}</h2>
         {onBack && (
           <button className="btn-primary" data-testid="replay-back" onClick={onBack}>
-            Back to result
+            {backLabel}
           </button>
         )}
       </div>

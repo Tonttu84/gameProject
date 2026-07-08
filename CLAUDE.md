@@ -60,9 +60,15 @@ make docker-build      # build just the image, start nothing
                                     # stdin, print BattleResult JSON (result + recorded
                                     # replay) to stdout (this is what POST /api/battle
                                     # spawns as a subprocess)
-./game sample [out.json]           # headless dev scenario: simulate + write a replay JSON
-./game spread [outDir]             #   (default replays/); the browser ReplayView is the
-                                    #   only renderer — Phase 2 wires these into a dev route
+./game sample                      # headless dev scenario: simulate and print the SAME
+                                    # {result, replay} JSON as `battle` to stdout. The
+                                    # campaign server runs it via POST /api/sample-battle
+                                    # (the login-screen "Watch a battle" demo), persisting
+                                    # it through the one battle pipeline so the browser
+                                    # ReplayView renders it from the DB like any battle.
+./game spread [outDir]             # headless dev scenario: one replay JSON per terrain to
+                                    #   outDir (default replays/). Browser ReplayView is the
+                                    #   only renderer.
 ```
 
 Frontend-only commands (run from `frontend/`): `npm run dev`, `npm run build`, `npm run lint`

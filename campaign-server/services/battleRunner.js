@@ -1,19 +1,18 @@
 import Battle from '../models/battle.js'
 import Tick from '../models/tick.js'
-import { runBattle } from './engine.js'
+import { runBattle, runSample } from './engine.js'
 
-// Run one battle through the engine and persist it: one Battle doc plus one
-// Tick doc per turn (separate collection so long battles never approach the
-// 16MB document limit). Extracted from routes/battles.js so campaign battles
-// (and later forager skirmishes) reuse the exact same run-and-persist path.
+// Persist a battle the engine already produced: one Battle doc plus one Tick doc
+// per turn (separate collection so long battles never approach the 16MB document
+// limit). Shared tail for every battle SOURCE — stdin-JSON battles, the sample
+// scenario, later forager skirmishes — so they all land in the DB the browser
+// ReplayView renders from, identically.
 //
-// Returns { error } for engine-level rejections (bad map name, empty input …
-// — client error, nothing stored), otherwise { battle, result, summary }
-// where summary is the client-facing shape the /api/battles route returns.
-export async function runAndPersistBattle(input, userId) {
-  const result = await runBattle(input)
-  if (result.error) return { error: result.error }
-
+// `result` is the engine's { winner, *_survivors, replay } envelope; `input` is
+// the BattleInput (or a marker like { sample: true }) stored for the record;
+// `userId` is the owner (null for ownerless demo battles). Returns
+// { battle, result, summary } where summary is the client-facing shape.
+async function persistBattleResult(result, { input, userId }) {
   const replay = result.replay ?? { map: input.map ?? 'unknown', cols: 0, rows: 0, ticks: [] }
 
   const battle = await Battle.create({
@@ -53,4 +52,26 @@ export async function runAndPersistBattle(input, userId) {
       tickCount: replay.ticks.length,
     },
   }
+}
+
+// Run one battle through the engine and persist it. Extracted from
+// routes/battles.js so campaign battles (and later forager skirmishes) reuse the
+// exact same run-and-persist path.
+//
+// Returns { error } for engine-level rejections (bad map name, empty input …
+// — client error, nothing stored), otherwise { battle, result, summary }.
+export async function runAndPersistBattle(input, userId) {
+  const result = await runBattle(input)
+  if (result.error) return { error: result.error }
+  return persistBattleResult(result, { input, userId })
+}
+
+// Run the hardcoded sample scenario and persist it as an ownerless battle. Same
+// pipeline as a real battle — only the SOURCE differs (the C++ scenario, not
+// stdin JSON) — so the login-screen demo plays through the one DB-backed
+// ReplayView. Returns { battle, result, summary }.
+export async function runAndPersistSample() {
+  const result = await runSample()
+  if (result.error) return { error: result.error }
+  return persistBattleResult(result, { input: { sample: true }, userId: null })
 }

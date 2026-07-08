@@ -9,6 +9,7 @@
 #include "units/Cavalry.hpp"
 #include "units/Warhorse.hpp"
 #include "server/ReplayRecorder.hpp"
+#include "server/BattleServer.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -56,28 +57,17 @@ void writeReplayJson(const ReplayRecorder& recorder, const std::string& mapName,
     std::cerr << "wrote replay: " << outPath << "\n";
 }
 
-void runSampleBattle(Battlefield& field, const std::string& outPath)
+void runSampleBattle(Battlefield& field)
 {
     field.reset();
     setupSampleBattle(field);
 
-    // Record every tick (tick 0 = deployment) so the scenario produces the same
-    // replay a campaign battle does — the browser ReplayView is the only viewer.
-    ReplayRecorder recorder;
-    recorder.recordTick(field);
-    BattleResult result = runBattleLoop(field, "SAMPLE BATTLE",
-                                        [&] { recorder.recordTick(field); });
-    // setupSampleBattle lays the same terrain dump-map writes to
-    // maps/sample_battle.json, so that map name renders this replay's terrain.
-    writeReplayJson(recorder, "sample_battle", outPath);
-
-    // Summary to stderr — stdout stays clean for callers that pipe it.
-    std::cerr << "Battle ended. ";
-    if      (result.winner == REDTEAM)  std::cerr << "Red wins.\n";
-    else if (result.winner == BLUETEAM) std::cerr << "Blue wins.\n";
-    else                                std::cerr << "Draw.\n";
-    std::cerr << "Red survivors: "  << result.redSurvivors.size()
-              << "  Blue survivors: " << result.blueSurvivors.size() << "\n";
+    // Same run/record/emit tail as `./game battle`: records tick 0 (deployment)
+    // plus every engine tick and prints {winner, *_survivors, replay} on stdout
+    // for the campaign server to persist. setupSampleBattle lays the same terrain
+    // dump-map writes to maps/sample_battle.json, so that map name renders this
+    // replay's terrain in ReplayView.
+    runAndEmitBattle(field, "sample_battle", "SAMPLE BATTLE");
 }
 
 void setupSampleBattle(Battlefield& field)
