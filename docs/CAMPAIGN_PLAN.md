@@ -122,12 +122,34 @@ notes below over the git history if they ever disagree — the commits win.
   status (verified 2026-07-08): campaign-server + frontend vitest green; C++ `make re` +
   `make test-serial` green (308 cases, 3653 assertions) via the new `scripts/dev.sh` wrapper —
   the WSL permission prompt is resolved. Phase 2 fully verified.**
-- **Then (NEXT, planned 2026-07-08):** **Stage 3 — materials** — spend routes fortify
-  (`50×(level+1)`) + militia; materials already accrue at 0.2 forage share. **Fortify now has
-  real teeth:** an abstract `fortificationLevel` (0–2) walls a widening span of the player's
-  front deployment edge with engine `fortified` hexsides (the engine already does the combat
-  effect; only a small `fortified_sides` battle-input seam is new). Full design in the rewritten
-  Stage 3 section below. Then **Stage 4 — scouting** (coverage → cavalry-superiority gauge).
+- **Stage 3 SHIPPED (2026-07-08): materials sink + real fortifications.** Landed as four commits
+  on `feature/campaign-mode` (engine seam → campaign-server → frontend → dev.sh fe-lint tooling):
+  - **Engine seam** (`55a1f7a`): `HexSide.fortDurability` (placeholder — set/serialized/shown, NOT
+    yet consumed; the [[todo-combat-score-per-hexside]] erosion step makes it live). `HexGrid`
+    toJson/fromJson round-trips it (`fortified_sides` entries become `{dir,durability}` when
+    durability≠0, else the plain string — existing maps byte-identical). File-static direction
+    parsers promoted to public `hexDirName`/`hexDirFromName`/`isHexDirName`. New
+    `applyFortifiedSides(json, grid)` in BattleServer applies an optional battle-input
+    `fortified_sides [{q,r,dir,durability?}]` array after the map loads (default durability
+    `DEFAULT_FORT_DURABILITY=100`); wired into `runBattleFromJson`. The combat penalty already
+    existed — this only feeds the dynamic level in. 315 C++ cases green.
+  - **Campaign-server** (`a70765c`): `fortificationLevel` (0–2) + `militiaBoughtToday` on the
+    model, `CAMPAIGN_SCHEMA_VERSION` 6→7. `campaignConfig`: `FORTIFY_COST_BASE=50 × (level+1)`,
+    `FORTIFICATION_MAX_LEVEL=2`, `FORTIFICATION_PRESETS` (tier-gated player-front SE/SW sides of
+    row-7 hexes on sample_battle), militia costs. `services/fortification.js`
+    (`fortifiedSidesFor`/`fortifyCost`/`atFortCap`). Battle route injects `fortified_sides` for the
+    level; new `POST /:id/spend` (`fortify` cost/cap-gated + `militia` food+materials, per-turn
+    capped). `materials` event effect + quarry/tool_rot events. View exposes
+    `fortification {level,atCap,nextCost,sides}`. 134 JS tests green.
+  - **Frontend** (`f8c8b52`): `CampPanel` (fortify + militia, gated on view cost/cap) in the war
+    council; `api.spendCampaign` + `useCampaign` fortify/buyMilitia; HUD fort-level readout
+    (materials now shown raw, a spend currency); `HexGrid` draws a rampart per walled side from
+    `campaign.fortification.sides` (perpendicular-bisector geometry, robust to the axis swap) so
+    the player deploys behind the wall. 122 frontend tests green; oxlint clean.
+  - Also added a `dev.sh fe-lint` task + allow-rule (`afbe495`) so oxlint runs prompt-free.
+- **Then (NEXT):** **combat-score-per-hexside** ([[todo-combat-score-per-hexside]]) — make
+  `HexSide.combatScore` erode `fortDurability` mid-battle so the placeholder goes live (sits
+  directly after Stage 3). Then **Stage 4 — scouting** (coverage → cavalry-superiority gauge).
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
@@ -402,7 +424,14 @@ POST /api/campaigns/:id/end-day         → dayReport {event, upkeep, enemy:{sta
 
 ---
 
-## Stage 3 — Building materials (materials sink + real fortifications)
+## Stage 3 — Building materials (materials sink + real fortifications)  ✅ SHIPPED 2026-07-08
+
+**Done** — see the "Stage 3 SHIPPED" bullet in Project state above for the four commits and what
+landed at each layer. The design below was followed as written; the one nuance worth remembering is
+that the map-file `fortified_sides` format was extended to accept either a plain dir-name string
+(durability 0) or a `{dir, durability}` object, keeping existing map files byte-identical. Militia
+buys `Soldier` for now (distinct `Militia` unit type still a later SSOT run). Next up is the
+`fortDurability` erosion step ([[todo-combat-score-per-hexside]]) that makes the placeholder live.
 
 **Design decided 2026-07-08 (user):** fortifications are **abstract levels that fortify the
 battle map at preset locations** — spending materials raises a campaign `fortificationLevel`,
