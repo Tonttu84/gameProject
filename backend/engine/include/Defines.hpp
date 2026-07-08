@@ -94,6 +94,8 @@ constexpr int ELEV_RANGED_BONUS       = 1;  // per tier: to-hit and damage bonus
 constexpr int ELEV_RANGED_CAP         = 2;  // max tiers counted for ranged modifiers
 constexpr int FORTIFIED_ATK_PENALTY   = 1;  // attacker crossing a fortified side
 constexpr int FORTIFIED_DEF_BONUS     = 1;  // defender behind a fortified side
+constexpr int DEFAULT_FORT_DURABILITY = 100; // fortified-side durability when battle input omits it
+                                             // (placeholder — nothing consumes it yet, Stage 3)
 constexpr int RUBBLE_DEF_BONUS        = 1;  // melee defender in Rubble hex
 constexpr int FOREST_RANGED_PENALTY   = 1;  // accuracy penalty (×10%) per forest hex in path
 constexpr int FOREST_COVER_DEF_BONUS  = 1;  // free shield roll value for defender in forest

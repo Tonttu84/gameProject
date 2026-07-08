@@ -3,6 +3,7 @@
 #include "server/BattleServer.hpp"
 #include "hex/HexGrid.hpp"
 #include "Battlefield.hpp"
+#include "Defines.hpp"
 #include "units/Cavalry.hpp"
 #include "units/Soldier.hpp"
 #include "units/Horse.hpp"
@@ -372,6 +373,115 @@ TEST_CASE("buildArmyFromPlacement: empty array returns empty army") {
     g.buildRect(16, 20);
     auto army = buildArmyFromPlacement(json::array().dump(), BLUETEAM, g);
     REQUIRE(army.empty());
+}
+
+// ── applyFortifiedSides (Stage 3 battle-input seam) ──────────────────────────
+
+TEST_CASE("applyFortifiedSides: marks exactly the named sides fortified with durability") {
+    HexGrid g;
+    g.buildRect(16, 20);
+
+    // {5,5} and {6,6} are interior — all 6 sides exist.
+    json forts = json::array({
+        json{{"q", 5}, {"r", 5}, {"dir", "NE"}, {"durability", 120}},
+        json{{"q", 6}, {"r", 6}, {"dir", "SW"}, {"durability", 200}},
+    });
+    int applied = applyFortifiedSides(forts.dump(), g);
+    REQUIRE(applied == 2);
+
+    HexSide* a = g.getSide({5, 5}, HexDirection::NE);
+    REQUIRE(a != nullptr);
+    REQUIRE(a->fortified == true);
+    REQUIRE(a->fortifiedDefender == g.getHex({5, 5}));  // the {q,r} hex is the defender
+    REQUIRE(a->fortDurability == 120);
+
+    HexSide* b = g.getSide({6, 6}, HexDirection::SW);
+    REQUIRE(b != nullptr);
+    REQUIRE(b->fortified == true);
+    REQUIRE(b->fortifiedDefender == g.getHex({6, 6}));
+    REQUIRE(b->fortDurability == 200);
+
+    // A side not named stays unfortified.
+    HexSide* c = g.getSide({5, 5}, HexDirection::E);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->fortified == false);
+}
+
+TEST_CASE("applyFortifiedSides: durability defaults to DEFAULT_FORT_DURABILITY when omitted") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json forts = json::array({ json{{"q", 5}, {"r", 5}, {"dir", "E"}} });
+    REQUIRE(applyFortifiedSides(forts.dump(), g) == 1);
+
+    HexSide* s = g.getSide({5, 5}, HexDirection::E);
+    REQUIRE(s != nullptr);
+    REQUIRE(s->fortified == true);
+    REQUIRE(s->fortDurability == DEFAULT_FORT_DURABILITY);
+}
+
+TEST_CASE("applyFortifiedSides: malformed/invalid entries are skipped, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json forts = json::array({
+        42,                                                     // not an object
+        json{{"q", 5}, {"r", 5}},                                // missing dir
+        json{{"q", 5}, {"r", 5}, {"dir", "UP"}},                 // bad dir name
+        json{{"q", "x"}, {"r", 5}, {"dir", "NE"}},               // wrong-typed q
+        json{{"q", 999}, {"r", 999}, {"dir", "NE"}},             // off-grid hex
+        json{{"q", 5}, {"r", 5}, {"dir", "SE"}},                 // valid — the only one applied
+    });
+    int applied = 0;
+    REQUIRE_NOTHROW(applied = applyFortifiedSides(forts.dump(), g));
+    REQUIRE(applied == 1);
+    REQUIRE(g.getSide({5, 5}, HexDirection::SE)->fortified == true);
+    REQUIRE(g.getSide({5, 5}, HexDirection::NE)->fortified == false);
+}
+
+TEST_CASE("applyFortifiedSides: malformed top-level JSON / non-array is a no-op, not thrown") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    int applied = 1;
+    REQUIRE_NOTHROW(applied = applyFortifiedSides("{not valid json", g));
+    REQUIRE(applied == 0);
+    REQUIRE_NOTHROW(applied = applyFortifiedSides(json{{"dir", "NE"}}.dump(), g)); // object, not array
+    REQUIRE(applied == 0);
+}
+
+// The engine already implements the fortified-side combat penalty; this pins the
+// contract the Stage 3 seam relies on: an attacker engaged across a side whose
+// fortifiedDefender is the ENEMY hex eats FORTIFIED_ATK_PENALTY, and it does NOT
+// apply when the fortification protects the attacker's own hex.
+TEST_CASE("fortified side: attacker crossing into the defender's work eats the attack penalty") {
+    Battlefield bf;
+    Hex* atkHex = bf.hexGrid.getHex({1, 14});
+    Hex* defHex = bf.hexGrid.getHex({1, 13});
+    REQUIRE(atkHex != nullptr);
+    REQUIRE(defHex != nullptr);
+
+    HexSide side;
+    side.hexA = atkHex;
+    side.hexB = defHex;
+
+    Soldier attacker(REDTEAM);
+    attacker.setHex(atkHex);
+    attacker.setEngagedSide(&side);
+
+    // A defender engaged on the same side, so the undefended-side bonus does NOT
+    // muddy the baseline (baseline attack bonus = 0).
+    Soldier defender(BLUETEAM);
+    defender.setHex(defHex);
+    defender.setEngagedSide(&side);
+
+    REQUIRE(attacker.computeMeleeAttackBonus() == 0);
+
+    // Fortify the side in favor of the defender's hex → attacker eats the penalty.
+    side.fortified        = true;
+    side.fortifiedDefender = defHex;
+    REQUIRE(attacker.computeMeleeAttackBonus() == -FORTIFIED_ATK_PENALTY);
+
+    // A fort protecting the attacker's OWN hex gives the attacker no penalty.
+    side.fortifiedDefender = atkHex;
+    REQUIRE(attacker.computeMeleeAttackBonus() == 0);
 }
 
 // ── SECURITY_NOTES.md #1: path traversal ─────────────────────────────────────

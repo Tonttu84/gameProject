@@ -75,6 +75,55 @@ TEST_CASE("HexGrid::toJson/fromJson round-trip: blocked hexside") {
     REQUIRE(hs3->blocked == false);
 }
 
+TEST_CASE("HexGrid::toJson/fromJson round-trip: fortified hexside (no durability)") {
+    HexGrid g;
+    g.buildRect(16, 10);
+
+    Hex* def = g.getHex({5, 5});
+    HexSide* hs = g.getSide({5, 5}, HexDirection::NE);
+    REQUIRE(def != nullptr);
+    REQUIRE(hs != nullptr);
+    hs->fortified        = true;
+    hs->fortifiedDefender = def;
+    // fortDurability left at default 0 → serializes as a plain "NE" string.
+
+    HexGrid g2;
+    g2.fromJson(g.toJson(16, 10, "fort_test"));
+
+    HexSide* hs2 = g2.getSide({5, 5}, HexDirection::NE);
+    REQUIRE(hs2 != nullptr);
+    REQUIRE(hs2->fortified == true);
+    REQUIRE(hs2->fortifiedDefender == g2.getHex({5, 5}));
+    REQUIRE(hs2->fortDurability == 0);
+
+    // An unrelated side stays unfortified.
+    HexSide* other = g2.getSide({5, 5}, HexDirection::E);
+    REQUIRE(other != nullptr);
+    REQUIRE(other->fortified == false);
+}
+
+TEST_CASE("HexGrid::toJson/fromJson round-trip: fortified hexside carries durability") {
+    HexGrid g;
+    g.buildRect(16, 10);
+
+    Hex* def = g.getHex({4, 6});
+    HexSide* hs = g.getSide({4, 6}, HexDirection::SE);
+    REQUIRE(def != nullptr);
+    REQUIRE(hs != nullptr);
+    hs->fortified        = true;
+    hs->fortifiedDefender = def;
+    hs->fortDurability    = 175;   // non-zero → serializes as {dir, durability}
+
+    HexGrid g2;
+    g2.fromJson(g.toJson(16, 10, "fort_dur_test"));
+
+    HexSide* hs2 = g2.getSide({4, 6}, HexDirection::SE);
+    REQUIRE(hs2 != nullptr);
+    REQUIRE(hs2->fortified == true);
+    REQUIRE(hs2->fortifiedDefender == g2.getHex({4, 6}));
+    REQUIRE(hs2->fortDurability == 175);
+}
+
 TEST_CASE("HexGrid::toJson/fromJson round-trip: all terrain types") {
     HexGrid g;
     g.buildRect(16, 10);

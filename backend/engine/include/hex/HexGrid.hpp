@@ -11,6 +11,14 @@
 enum class HexDirection { NE = 0, E = 1, SE = 2, SW = 3, W = 4, NW = 5 };
 enum class TerrainType  { Open, Forest, Marsh, Rubble };
 
+// Hexside direction name ("NE"/"E"/"SE"/"SW"/"W"/"NW") <-> enum. Used by the map-file
+// loader and the battle-input fortified_sides seam (BattleServer). `hexDirName` never
+// fails; `hexDirFromName` returns NE for any unrecognized string — callers that must
+// reject bad input should validate with `isHexDirName` first.
+const char*  hexDirName(HexDirection d);
+HexDirection hexDirFromName(const std::string& s);
+bool         isHexDirName(const std::string& s);
+
 // Single source of truth for terrain display — the React campaign UI reads
 // name/color from here (exported via /api/info).
 struct TerrainMeta {
@@ -57,6 +65,12 @@ struct HexSide {
     // fortifiedDefender points to the hex whose occupants benefit.
     bool  fortified         = false;
     Hex*  fortifiedDefender = nullptr;
+    // Durability/strength of the defensive work. PLACEHOLDER (Stage 3): it is set at
+    // battle start, serialized, and shown, but nothing consumes it yet. The planned
+    // combat-score erosion step (see docs/CAMPAIGN_PLAN.md "combat score per hexside")
+    // will drain it as the attacker generates pressure; at 0 the side reverts to
+    // unfortified mid-battle. Inert until then.
+    int   fortDurability    = 0;
 
     // Accumulated during a tick's combat phase. Positive means hexA's side is
     // winning (dealing more net damage), negative means hexB's side is winning.
