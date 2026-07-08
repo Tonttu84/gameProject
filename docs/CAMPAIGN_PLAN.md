@@ -427,19 +427,28 @@ almost no engine work, because the engine already implements fortifications end-
 - Level scales **coverage, mostly** (wider walled span per level), engine penalty stays the flat
   constant for now. **Only levels 1–2** (cap `fortificationLevel` at **2**, not 3). A per-side
   strength bump ("a bit of both") is deferred — it arrives naturally with the degradation step:
-- **Forward path (soon, not this stage):** per-hexside `combatScore` (the field already exists,
-  documented in `HexGrid.hpp` ~60-68) will **erode** a fortification as the enemy generates score
-  against it — an abstraction for pushing through / battering down the works. That is what
-  introduces per-side fort *strength/HP*; design this stage so it slots in (see below). Safer
-  still once maps are generated dynamically.
+- **Per-side durability placeholder (added this stage, user 2026-07-08):** the fortified hexside
+  gains a **`fortDurability`** (int) "durability/strength" score. In THIS stage it is a *placeholder*
+  — set at battle start, serialized, and shown, but **not yet consumed** (nothing erodes it). It
+  exists now so the schema/data path is in place before the erosion logic lands.
+- **Forward path (soon, not this stage — TODO: "combat score per hexside"):** per-hexside
+  `combatScore` (the field already exists, documented in `HexGrid.hpp` ~60-68) will **erode**
+  `fortDurability` as the enemy generates score against the side — an abstraction for pushing
+  through / battering down the works; at 0 durability the side reverts to unfortified mid-battle.
+  That step is what makes `fortDurability` live (and where per-level *strength* scaling — the "bit
+  of both" — really bites). Safer still once maps are generated dynamically.
 
 **The one engine seam (small):**
+- Add `int fortDurability = 0;` to `HexSide` (`hex/HexGrid.hpp`), next to `fortified`/
+  `fortifiedDefender`. Round-trip it in `HexGrid` toJson/fromJson alongside `fortified_sides`
+  (so hand-authored map works can set it too). Placeholder — no combat/tick code reads it yet.
 - `runBattleFromJson` (`BattleServer.cpp`): after `field.hexGrid.fromJson(mapContent)`, if the
-  battle-input JSON has an optional `fortified_sides` array (`[{q,r,dir}]`), apply each to the
-  grid — set `side->fortified = true; side->fortifiedDefender = <that {q,r} hex>` — mirroring the
-  existing map-file `fortified_sides` loader (`HexGrid.cpp` ~428). ~15 lines + a round-trip test.
-  This is the *whole* C++ change; the combat effect is already there. Keep the same `dir` string
-  names (`NE/E/SE/SW/W/NW`) the map loader uses.
+  battle-input JSON has an optional `fortified_sides` array (entries `{q, r, dir, durability?}`),
+  apply each to the grid — set `side->fortified = true; side->fortifiedDefender = <that {q,r}
+  hex>; side->fortDurability = durability (default e.g. 100)` — mirroring the existing map-file
+  `fortified_sides` loader (`HexGrid.cpp` ~428). ~20 lines + a round-trip test. This is the
+  *whole* C++ change for now; the combat penalty is already there, the durability is inert. Keep
+  the same `dir` string names (`NE/E/SE/SW/W/NW`) the map loader uses.
 
 **Campaign server:**
 - `models/campaign.js`: add `fortificationLevel` (Number, 0–2, default 0). Bump
@@ -448,11 +457,14 @@ almost no engine work, because the engine already implements fortifications end-
   - `FORTIFY_COST_BASE = 50` → fortify cost `FORTIFY_COST_BASE × (level+1)` (L0→1 costs 50, L1→2
     costs 100).
   - `FORTIFICATION_PRESETS` keyed by map name: an ordered, **tier-gated** list of player-front
-    hexsides, `{ q, r, dir, tier }` (tier 1 or 2). `fortificationLevel = N` activates every preset
-    with `tier ≤ N`. Author these along the enemy-facing edge of the player deployment zone
-    (`player_zone_rows` top edge of `maps/sample_battle.json`), `fortifiedDefender` = the
-    player-side hex. Level 1 = a short center span; level 2 = a wider span. (Structured so it can
-    migrate to a map-file `fort_presets` field later, but lives in config now — single fixed map.)
+    hexsides, `{ q, r, dir, tier, durability }` (tier 1 or 2). `fortificationLevel = N` activates
+    every preset with `tier ≤ N`. Author these along the enemy-facing edge of the player deployment
+    zone (`player_zone_rows` top edge of `maps/sample_battle.json`), `fortifiedDefender` = the
+    player-side hex. Level 1 = a short center span; level 2 = a wider span, and its sides carry a
+    higher `durability` (the "mostly coverage, a bit of strength" steer — durability is inert until
+    the combat-score erosion step, so it's forward-looking data for now). `durability` flows into
+    the battle input's `fortified_sides` entries. (Structured so it can migrate to a map-file
+    `fort_presets` field later, but lives in config now — single fixed map.)
 - New `services/fortification.js`: `fortifiedSidesFor(mapName, level)` → the `fortified_sides`
   array for the battle input (pure, from `FORTIFICATION_PRESETS`). Injected into the battle input
   at `campaigns.js` ~204 (`input.fortified_sides = fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel)`).
@@ -649,6 +661,15 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 ---
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
+
+**TODO — combat score per hexside (fortification erosion).** Make `HexSide.combatScore`
+accumulate the net pressure the enemy exerts on a fortified side each combat phase, and have it
+**erode `fortDurability`** (the placeholder added in Stage 3); at 0 the side reverts to
+unfortified mid-battle — the abstraction for the enemy pushing through / battering down the works.
+This is the step that makes `fortDurability` live and where per-level fortification *strength*
+scaling really bites. Sits directly after Stage 3 fortifications; see the Stage 3 "Forward path"
+note. (Mirrored as an auto-memory todo, but this repo entry is the SSOT — it travels between
+machines; the memory pointer may not.)
 
 **Morale overhaul (battle↔campaign).** Two morale tracks per army on a 1–1000 scale: a
 **starting/max** value and a **current** value. Unit deaths damage the max a little and the
