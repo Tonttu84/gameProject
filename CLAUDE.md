@@ -23,6 +23,16 @@ browser is the only renderer), so `make` just needs g++/clang++ + make on the ho
 native Windows build path and none is planned — Windows machines run the stack via Docker (see
 `make docker-up`) or WSL.
 
+**On Windows/WSL, run dev tasks through `scripts/dev.sh`, not ad-hoc `wsl -e bash -lc '…'`.**
+Claude Code's permission engine only honors *exact* Bash allow-rules here — it refuses prefix
+wildcards that capture shell code (`Bash(wsl -e bash -lc *)` never matches) and its command
+splitter is not quote-aware, so any `&&`/`|`/`;` inside a `wsl … -lc '…'` string forces a prompt.
+`scripts/dev.sh` keeps every operator/variable *inside* the script, so each task is one fixed
+string that a single exact rule in `.claude/settings.json` covers with no prompt (rules travel via
+git). Invoke as `wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh <task>'` where `<task>` is
+`build｜re｜test｜test-par｜clang｜fe-test｜cs-test｜info｜help` (`dev.sh help` lists them). Add a new
+exact rule whenever you add a task. `bypassPermissions` does not work in this VS Code extension.
+
 ```sh
 make                 # builds ./game (fully headless — no SFML/X11)
 make clean / fclean   # remove objects / remove objects+binaries
