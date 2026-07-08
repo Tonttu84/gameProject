@@ -433,6 +433,13 @@ that the map-file `fortified_sides` format was extended to accept either a plain
 buys `Soldier` for now (distinct `Militia` unit type still a later SSOT run). Next up is the
 `fortDurability` erosion step ([[todo-combat-score-per-hexside]]) that makes the placeholder live.
 
+**Militia = spear militia (user, 2026-07-08 — NOT scheduled yet).** When the distinct `Militia`
+unit type lands (its own SSOT run, sequenced AFTER the combat-score/`fortDurability` erosion step —
+do not build it before then), it should be **spear-armed** (a cheap levy: `MeleeWeapons::Spear`,
+light/no armour, foot speed). Follow the standard new-unit workflow (C++ ctor + one `UnitCatalog`
+line + tripwire test; campaign-server mirror). Until then `POST /spend {action:'militia'}` keeps
+adding `Soldier` (`MILITIA_UNIT` in `campaignConfig.js` — flip it to `Militia` when the unit exists).
+
 **Design decided 2026-07-08 (user):** fortifications are **abstract levels that fortify the
 battle map at preset locations** — spending materials raises a campaign `fortificationLevel`,
 which walls a wider span of the player's front deployment edge with engine `fortified` hexsides.
@@ -739,7 +746,8 @@ pattern) over new subclasses; the catalog+tripwire SSOT is the thing to preserve
 class count.
 
 ## Follow-ups (out of scope now)
-Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; `Militia` unit; fortification combat effects; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
+Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; **`Militia` unit (spear-armed levy — see the Stage 3 SHIPPED note; sequence
+after the `fortDurability` erosion step, then flip `MILITIA_UNIT` to it)**; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
 
 **Deferred test-infra cleanup:** extract the stationary-enemy dummy (`movementSpeed = 0`) into one shared test header/cpp under `backend/engine/tests/` and migrate the current copies onto it — `ImmobileDummy` now lives independently in both `test_movement.cpp` and `test_battle_length.cpp`, and `test_main.cpp` has a near-identical `HighArmorDummy`. Convention: tests that need the enemy to sit tight use this dummy rather than holding a real unit.
 
