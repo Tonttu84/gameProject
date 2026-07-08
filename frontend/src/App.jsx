@@ -5,6 +5,7 @@ import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
 import DayReport from './components/DayReport'
 import ForagePanel from './components/ForagePanel'
+import CampPanel from './components/CampPanel'
 import CampaignHUD from './components/CampaignHUD'
 import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
@@ -34,7 +35,7 @@ const App = () => {
     () => window.localStorage.getItem('tutorialEnabled') !== 'off',
   )
 
-  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fight, endDay, reload } = useCampaign(user)
+  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, endDay, reload } = useCampaign(user)
 
   useEffect(() => {
     Promise.all([getInfo(), getMap()])
@@ -328,6 +329,7 @@ const App = () => {
         food={campaign.resources.food}
         foodNeed={campaign.resources.foodNeedPerTurn}
         materials={campaign.resources.materials}
+        fortLevel={campaign.fortification?.level ?? 0}
         roster={roster}
         forage={campaign.forage}
       />
@@ -363,6 +365,15 @@ const App = () => {
               forage={campaign.forage}
               roster={roster}
               onAssign={guarded(assignForagers)}
+              tutorial={tutorial}
+            />
+          )}
+          {campaign.fortification && (
+            <CampPanel
+              fortification={campaign.fortification}
+              resources={campaign.resources}
+              onFortify={guarded(fortify)}
+              onBuyMilitia={guarded(buyMilitia)}
               tutorial={tutorial}
             />
           )}
@@ -426,6 +437,7 @@ const App = () => {
             onPlacementsChange={setPlacements}
             roster={availableRoster}
             disabled={phase === 'battling'}
+            fortifiedSides={campaign.fortification?.sides ?? []}
           />
           <div className="placement-bar">
             <span>
