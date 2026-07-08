@@ -119,12 +119,15 @@ notes below over the git history if they ever disagree — the commits win.
   `sample` mode already lives in `./game`). Tests: `campaign-server/tests/sampleBattle.test.js`
   (route + persist + ownerless + ticks fetchable + 502) and
   `frontend/src/__tests__/sampleBattleDemo.test.jsx` (button → ReplayView → getTicks). **Build
-  status: campaign-server + frontend vitest green; the C++ engine change is unbuilt (WSL
-  permission prompt unresolved — see the deferred permission issue) and needs a `make &&
-  make test-serial` verify.**
-- **Then:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
-  militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
-  (fully designed below — coverage → cavalry-superiority gauge).
+  status (verified 2026-07-08): campaign-server + frontend vitest green; C++ `make re` +
+  `make test-serial` green (308 cases, 3653 assertions) via the new `scripts/dev.sh` wrapper —
+  the WSL permission prompt is resolved. Phase 2 fully verified.**
+- **Then (NEXT, planned 2026-07-08):** **Stage 3 — materials** — spend routes fortify
+  (`50×(level+1)`) + militia; materials already accrue at 0.2 forage share. **Fortify now has
+  real teeth:** an abstract `fortificationLevel` (0–2) walls a widening span of the player's
+  front deployment edge with engine `fortified` hexsides (the engine already does the combat
+  effect; only a small `fortified_sides` battle-input seam is new). Full design in the rewritten
+  Stage 3 section below. Then **Stage 4 — scouting** (coverage → cavalry-superiority gauge).
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
@@ -266,8 +269,8 @@ it from the DB. Only the battle-data SOURCE differs (the C++ scenario vs stdin J
   in `App.jsx` launches it and renders the existing `ReplayView(battleId)` with new additive
   props `autoPlay`/`backLabel`. No forked viewer, no makefile rule.
 - **Tests:** `campaign-server/tests/sampleBattle.test.js`, `frontend/src/__tests__/sampleBattleDemo.test.jsx`.
-- **Left to verify:** the C++ build (`make && make test-serial`) — blocked on the unresolved WSL
-  permission prompt; JS suites (campaign-server + frontend) are green.
+- **Verified 2026-07-08:** C++ `make re` + `make test-serial` green (308 cases) via
+  `scripts/dev.sh` (WSL permission prompt resolved); JS suites green. Phase 2 complete.
 
 <details><summary>Original sketch (superseded)</summary>
 
@@ -399,13 +402,91 @@ POST /api/campaigns/:id/end-day         → dayReport {event, upkeep, enemy:{sta
 
 ---
 
-## Stage 3 — Building materials
+## Stage 3 — Building materials (materials sink + real fortifications)
 
-- `resources.materials` already accrues from Stage 2; add `fortificationLevel` (0–3).
-- `events.js`: add `materials`-type effects (quarry +25, tool rot −15).
-- `POST /api/campaigns/:id/spend`: `{action:'fortify'}` → cost 50×(level+1), level++ (combat effect = logged stub); `{action:'militia', count}` → 2 food + 1 material per Soldier, daily cap (distinct Militia unit type = later SSOT run).
-- Frontend: materials in HUD; `components/CampPanel.jsx` + TutorialIntro.
-- **Verify:** spend validation (insufficient → 400) tests; curl both actions.
+**Design decided 2026-07-08 (user):** fortifications are **abstract levels that fortify the
+battle map at preset locations** — spending materials raises a campaign `fortificationLevel`,
+which walls a wider span of the player's front deployment edge with engine `fortified` hexsides.
+This turns the plan's old "combat effect = logged stub" into a **real** combat effect with
+almost no engine work, because the engine already implements fortifications end-to-end.
+
+**What already exists in the engine (confirmed by reading the code — do NOT rebuild it):**
+- `HexSide.fortified` + `fortifiedDefender` (`hex/HexGrid.hpp`). `fortifiedDefender` is the hex
+  whose occupants are protected; the attacker *crossing into* that side eats
+  `FORTIFIED_ATK_PENALTY` (`Defines.hpp`, currently **1** — same magnitude as an elevation edge)
+  in `AUnit::computeAttackBonus` (`AUnit.cpp` ~262).
+- Fortified is **assaultable**: it only adds a combat penalty, it never blocks movement (only the
+  separate `blocked` flag does — `Battlefield.cpp` ~96/135). So ramparts slow an assault, they
+  never stalemate the battle. **Decision: ramparts only, no `blocked` walls** (user).
+- Map JSON already round-trips `fortified_sides` per hex (`HexGrid.cpp` toJson ~322 / fromJson
+  ~428). But campaign battles pass a fixed **map NAME** (`MAP_NAME`) and the engine loads
+  `maps/<name>.json` from disk (`campaigns.js` ~205, `BattleServer.cpp` ~168-187) — the file is
+  static, the level is dynamic, so the level can't be baked into the map file.
+
+**Locked decisions (user, 2026-07-08):**
+- Level scales **coverage, mostly** (wider walled span per level), engine penalty stays the flat
+  constant for now. **Only levels 1–2** (cap `fortificationLevel` at **2**, not 3). A per-side
+  strength bump ("a bit of both") is deferred — it arrives naturally with the degradation step:
+- **Forward path (soon, not this stage):** per-hexside `combatScore` (the field already exists,
+  documented in `HexGrid.hpp` ~60-68) will **erode** a fortification as the enemy generates score
+  against it — an abstraction for pushing through / battering down the works. That is what
+  introduces per-side fort *strength/HP*; design this stage so it slots in (see below). Safer
+  still once maps are generated dynamically.
+
+**The one engine seam (small):**
+- `runBattleFromJson` (`BattleServer.cpp`): after `field.hexGrid.fromJson(mapContent)`, if the
+  battle-input JSON has an optional `fortified_sides` array (`[{q,r,dir}]`), apply each to the
+  grid — set `side->fortified = true; side->fortifiedDefender = <that {q,r} hex>` — mirroring the
+  existing map-file `fortified_sides` loader (`HexGrid.cpp` ~428). ~15 lines + a round-trip test.
+  This is the *whole* C++ change; the combat effect is already there. Keep the same `dir` string
+  names (`NE/E/SE/SW/W/NW`) the map loader uses.
+
+**Campaign server:**
+- `models/campaign.js`: add `fortificationLevel` (Number, 0–2, default 0). Bump
+  `CAMPAIGN_SCHEMA_VERSION`.
+- `utils/campaignConfig.js`:
+  - `FORTIFY_COST_BASE = 50` → fortify cost `FORTIFY_COST_BASE × (level+1)` (L0→1 costs 50, L1→2
+    costs 100).
+  - `FORTIFICATION_PRESETS` keyed by map name: an ordered, **tier-gated** list of player-front
+    hexsides, `{ q, r, dir, tier }` (tier 1 or 2). `fortificationLevel = N` activates every preset
+    with `tier ≤ N`. Author these along the enemy-facing edge of the player deployment zone
+    (`player_zone_rows` top edge of `maps/sample_battle.json`), `fortifiedDefender` = the
+    player-side hex. Level 1 = a short center span; level 2 = a wider span. (Structured so it can
+    migrate to a map-file `fort_presets` field later, but lives in config now — single fixed map.)
+- New `services/fortification.js`: `fortifiedSidesFor(mapName, level)` → the `fortified_sides`
+  array for the battle input (pure, from `FORTIFICATION_PRESETS`). Injected into the battle input
+  at `campaigns.js` ~204 (`input.fortified_sides = fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel)`).
+- Spend route `POST /api/campaigns/:id/spend` (userExtractor, ownership → 404):
+  - `{action:'fortify'}` → cost `FORTIFY_COST_BASE × (level+1)` materials; insufficient → 400;
+    already at cap (2) → 400; else `materials -= cost`, `fortificationLevel++`, log entry.
+  - `{action:'militia', count}` → 2 food + 1 material per Soldier, daily cap (distinct `Militia`
+    unit type = later SSOT run). (Unchanged from the original plan.)
+- `services/events.js`: add `materials`-type effects (quarry +25, tool rot −15).
+- `services/campaignView.js`: expose `fortificationLevel` + derived `fortifyCost`/`atCap` (own
+  info, not hidden). No enemy fortification info leaks.
+
+**Frontend:**
+- `CampaignHUD`: materials + fortification level readout.
+- `components/CampPanel.jsx` + TutorialIntro: fortify button (shows cost, disabled when
+  materials < cost or at cap); militia purchase.
+- **Placement `HexGrid`:** draw the active `fortified_sides` on the player edge so the player can
+  see the wall and knows to deploy behind it (positional — fortification only helps troops the
+  enemy must assault across a walled side). Reuse `fortifiedSidesFor` output via the campaign view.
+
+**Tests:**
+- Server: spend validation (insufficient materials → 400; cap at 2 → 400; happy path debits +
+  increments); `fortifiedSidesFor` returns the right sides per level (0 → [], 1 → tier-1 set, 2 →
+  tier-1+2); the battle route injects `fortified_sides` matching the campaign's level; hidden-info
+  test still passes (no enemy fort/army leak).
+- Engine: C++ round-trip — a battle input with `fortified_sides` marks exactly those sides
+  fortified (and a combat test asserting the attacker penalty applies across a fortified side).
+- Frontend: `campPanel.test.jsx` (fortify button gating on cost/cap); placement renders the
+  walled sides.
+
+**Verify:** WSL `make && make test-serial` (round-trip + combat); `campaign-server npm test`;
+`frontend npm test`; curl fortify twice (2nd at cap → 400) then fight a battle and confirm the
+replay tick-0/side data shows the fortified sides; browser: fortify, deploy behind the wall, watch
+the enemy assault eat the penalty.
 
 ---
 
