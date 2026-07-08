@@ -23,6 +23,9 @@ BattleResult runBattleLoop(Battlefield& field,
 void writeReplayJson(const ReplayRecorder& recorder, const std::string& mapName,
                      const std::string& outPath);
 
-// Run the sample battle headless and write its replay JSON to outPath
-// (default replays/sample.json). Result summary goes to stderr.
-void runSampleBattle(Battlefield& field, const std::string& outPath = "replays/sample.json");
+// Run the sample battle headless and print the {winner, *_survivors, replay}
+// envelope to stdout — the SAME contract as `./game battle` (via runAndEmitBattle),
+// so the campaign server runs and stores it through the one battle pipeline. The
+// scenario is just a different SOURCE of battle data; a human-readable summary
+// still goes to stderr. See docs/CAMPAIGN_PLAN.md Phase 2.
+void runSampleBattle(Battlefield& field);

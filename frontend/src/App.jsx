@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getInfo, getMap, setToken } from './services/api'
+import { getInfo, getMap, setToken, launchSampleBattle } from './services/api'
 import useCampaign from './hooks/useCampaign'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
@@ -28,6 +28,8 @@ const App = () => {
   const [error,        setError]        = useState(null)
   const [user,         setUser]         = useState(null) // { token, username, name }
   const [authNotice,   setAuthNotice]   = useState(null)
+  const [demoBattle,   setDemoBattle]   = useState(null) // login-screen sample: { id, tickCount }
+  const [demoLoading,  setDemoLoading]  = useState(false)
   const [tutorial,     setTutorial]     = useState(
     () => window.localStorage.getItem('tutorialEnabled') !== 'off',
   )
@@ -69,6 +71,21 @@ const App = () => {
     const next = !tutorial
     window.localStorage.setItem('tutorialEnabled', next ? 'on' : 'off')
     setTutorial(next)
+  }
+
+  // Login-screen demo: launch the hardcoded sample battle through the SAME
+  // engine→DB pipeline a real battle uses, then play it in ReplayView (the only
+  // renderer — it reads ticks back from the DB). No login needed.
+  const watchDemo = async () => {
+    setDemoLoading(true)
+    setAuthNotice(null)
+    try {
+      setDemoBattle(await launchSampleBattle())
+    } catch {
+      setAuthNotice('Could not launch the demo battle — is the game server running?')
+    } finally {
+      setDemoLoading(false)
+    }
   }
 
   // Campaign calls share one error path: an expired token drops back to the
@@ -188,6 +205,24 @@ const App = () => {
 
   // ── Pre-campaign screens ──────────────────────────────────────────────────
   if (!user) {
+    // The demo battle plays through the very same ReplayView a campaign battle
+    // uses, fed by the DB — a visitor can watch the engine before signing up.
+    if (demoBattle) {
+      return (
+        <div className="app">
+          {authBar}
+          <ReplayView
+            battleId={demoBattle.id}
+            tickCount={demoBattle.tickCount}
+            info={info}
+            map={map}
+            autoPlay
+            backLabel="Back to login"
+            onBack={() => setDemoBattle(null)}
+          />
+        </div>
+      )
+    }
     return (
       <div className="app">
         {authBar}
@@ -204,6 +239,15 @@ const App = () => {
             ]}
           />
           <p>Log in to begin your campaign.</p>
+          <p>Or see the engine in action first:</p>
+          <button
+            className="btn-primary"
+            data-testid="watch-demo"
+            onClick={watchDemo}
+            disabled={demoLoading}
+          >
+            {demoLoading ? 'Mustering the armies…' : 'Watch a battle'}
+          </button>
         </div>
       </div>
     )

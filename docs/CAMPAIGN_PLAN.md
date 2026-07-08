@@ -103,10 +103,25 @@ notes below over the git history if they ever disagree — the commits win.
   DROPS the final tick (which does a full turn's work before returning false) — the shipped
   loop records after EVERY `tick()` so a `max_turns=N` battle yields `N+1` ticks and stdout
   stays byte-compatible.
-- **NEXT — Phase 2 (separate session): reconnect the visual combat-feel debugger.** `sample`/
-  `spread` now emit replay JSONs but nothing views them. Add a dev path in the React app to
-  load a scenario replay JSON into `ReplayView` (file drop / dev route / `?replay=` param) so
-  watching how combat "feels" uses the SAME renderer as real battles. See "Phase 2" below.
+- **Phase 2 SHIPPED (2026-07-08): the sample battle rides the real battle pipeline.** Design
+  steer (user): don't build a bespoke replay-file loader — the browser renderer requires the DB
+  (that's the whole point of retiring SFML), so the sample must be *run and stored* like any
+  battle, then rendered from the DB. So `./game sample` now prints the SAME
+  `{winner, *_survivors, replay}` envelope as `./game battle` (shared tail `runAndEmitBattle` in
+  `BattleServer.cpp`; the old `replays/*.json` file write is gone — `spread` keeps its file
+  output). Campaign server: `engine.runSample()` + `battleRunner.runAndPersistSample()` (persist
+  extracted into a shared `persistBattleResult` so battle/sample/skirmish share one DB path;
+  demo battle is ownerless, `user: null`). New **unauth** `POST /api/sample-battle` runs +
+  persists + returns the summary. Frontend: a **"Watch a battle"** button on the login screen
+  (`launchSampleBattle`) → the existing `ReplayView(battleId)` autoplays it, fetching ticks from
+  the DB via the public `/api/battles/:id/ticks` route — the one and only renderer. `ReplayView`
+  gained two additive props (`autoPlay`, `backLabel`); nothing forked. No new Makefile rule (the
+  `sample` mode already lives in `./game`). Tests: `campaign-server/tests/sampleBattle.test.js`
+  (route + persist + ownerless + ticks fetchable + 502) and
+  `frontend/src/__tests__/sampleBattleDemo.test.jsx` (button → ReplayView → getTicks). **Build
+  status: campaign-server + frontend vitest green; the C++ engine change is unbuilt (WSL
+  permission prompt unresolved — see the deferred permission issue) and needs a `make &&
+  make test-serial` verify.**
 - **Then:** **Stage 3 — materials** (spend routes: fortify `50×(level+1)`,
   militia; materials already accrue at 0.2 forage share), then **Stage 4 — scouting**
   (fully designed below — coverage → cavalry-superiority gauge).
@@ -229,11 +244,37 @@ real turn and eyeball the browser replay dimming/colors. Reminders: `make test` 
 the WSL box — use `make test-serial`; frontend/campaign-server tests run from PowerShell with
 `NODE_OPTIONS=--no-experimental-webstorage`.
 
-## Phase 2 — reconnect the visual combat-feel debugger (separate session)
+## Phase 2 — reconnect the visual combat-feel debugger  ✅ SHIPPED 2026-07-08
+
+**How it actually landed (differs from the original file-loader sketch below).** The key user
+steer: the browser renderer *requires the DB* now (SFML is gone), so a standalone replay-JSON
+loader would be a second, DB-less render path — exactly the divergence Phase 1 removed. Instead
+the sample battle **rides the real battle pipeline**: run it like any battle, store it, render
+it from the DB. Only the battle-data SOURCE differs (the C++ scenario vs stdin JSON).
+
+- **Engine:** `./game sample` prints the same `{winner, *_survivors, replay}` envelope as
+  `./game battle` via a shared `runAndEmitBattle(field, mapName, title, maxTicks)` tail in
+  `backend/server/src/BattleServer.cpp` (both `runBattleFromJson` and `runSampleBattle` call it).
+  Dropped the `replays/sample.json` file write; `spread` still writes files (multi-replay tool).
+- **Campaign server:** `services/engine.js` `runSample()` = `runEngine('sample')`;
+  `services/battleRunner.js` extracts `persistBattleResult(result, {input, userId})` shared by
+  `runAndPersistBattle` and the new `runAndPersistSample()` (ownerless, `user: null`); new
+  **unauthenticated** `POST /api/sample-battle` (`routes/sampleBattle.js`) runs + persists +
+  returns the summary. The ticks come back through the existing public
+  `GET /api/battles/:id/ticks`.
+- **Frontend:** `api.launchSampleBattle()`; a "Watch a battle" button on the logged-out screen
+  in `App.jsx` launches it and renders the existing `ReplayView(battleId)` with new additive
+  props `autoPlay`/`backLabel`. No forked viewer, no makefile rule.
+- **Tests:** `campaign-server/tests/sampleBattle.test.js`, `frontend/src/__tests__/sampleBattleDemo.test.jsx`.
+- **Left to verify:** the C++ build (`make && make test-serial`) — blocked on the unresolved WSL
+  permission prompt; JS suites (campaign-server + frontend) are green.
+
+<details><summary>Original sketch (superseded)</summary>
 
 `./game sample` → browser: add a dev path in the React app to load a scenario replay JSON into
 `ReplayView` (file drop / dev route / `?replay=` param) so watching how combat "feels" uses the
 SAME renderer as real battles. One feature per fresh session.
+</details>
 
 ---
 
