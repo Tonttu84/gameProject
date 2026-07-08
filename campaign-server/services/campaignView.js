@@ -1,7 +1,8 @@
 import { getCatalog } from '../utils/catalog.js'
 import { armyFoodPerTurn, forageValue } from '../utils/capabilities.js'
-import { FORAGE_KG_PER_POINT, AUGURY_DEBUG_SHOW_TRUTH } from '../utils/campaignConfig.js'
+import { FORAGE_KG_PER_POINT, AUGURY_DEBUG_SHOW_TRUTH, MAP_NAME } from '../utils/campaignConfig.js'
 import { forageCapacityKg } from './forage.js'
+import { fortifyCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 
 // THE single serializer between campaign documents and the client. Hidden
 // information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
@@ -60,6 +61,18 @@ export async function campaignView(campaign) {
       foodNeedPerTurn: armyFoodPerTurn(campaign.roster, catalog),
     },
     roster: Object.fromEntries(campaign.roster),
+    // Own info (not hidden): the fort level, what the next level costs (null at
+    // cap), and the actual walled sides so the placement grid can draw the wall
+    // the player deploys behind. fortifiedSides reuses the same source the
+    // battle input does, so screen and battle can't drift.
+    fortification: {
+      level: campaign.fortificationLevel,
+      atCap: atFortCap(campaign.fortificationLevel),
+      nextCost: atFortCap(campaign.fortificationLevel)
+        ? null
+        : fortifyCost(campaign.fortificationLevel),
+      sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
+    },
     forage: {
       rings: campaign.forage.rings.map(({ ring, richness, initialRichness }) => ({
         ring,

@@ -39,7 +39,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 6 // v6: augury odds from the open-ended reading roll (rolled at consult)
+export const CAMPAIGN_SCHEMA_VERSION = 7 // v7: fortificationLevel + militiaBoughtToday (Stage 3 materials sink)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -60,6 +60,15 @@ const campaignSchema = new mongoose.Schema({
   // Unit-type name -> count. Names validated against the unittypes collection
   // at the routes that mutate it.
   roster: { type: Map, of: Number, required: true },
+
+  // Abstract fortification level (0..FORTIFICATION_MAX_LEVEL). Spending
+  // materials at the camp raises it; a higher level walls a wider span of the
+  // player's front deployment edge (services/fortification.js →
+  // fortifiedSidesFor), injected into the battle input. Own info, not hidden.
+  fortificationLevel: { type: Number, default: 0 },
+  // Militia bought this turn — caps the per-turn militia purchase; reset at
+  // newDay. (Militia are Soldiers for now; a distinct unit type lands later.)
+  militiaBoughtToday: { type: Number, default: 0 },
 
   // The turn's fates: AUGURY_SLOTS independent true/false event pairs, each
   // with its own odds. Every slot's trueEvent applies at end-of-turn

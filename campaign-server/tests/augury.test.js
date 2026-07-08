@@ -122,10 +122,10 @@ describe('EVENT_POOL structure', () => {
   const pools = [...new Set(EVENT_POOL.map((e) => e.severity))]
 
   const isGood = ({ effect }) =>
-    (effect.type === 'food' && effect.delta > 0) ||
+    ((effect.type === 'food' || effect.type === 'materials') && effect.delta > 0) ||
     (effect.type === 'roster' && (effect.delta ?? 0) > 0)
   const isBad = ({ effect }) =>
-    (effect.type === 'food' && effect.delta < 0) ||
+    ((effect.type === 'food' || effect.type === 'materials') && effect.delta < 0) ||
     (effect.type === 'roster' && effect.factor !== undefined && effect.factor < 1) ||
     (effect.type === 'all_roster' && effect.factor < 1) ||
     effect.type === 'enemy_advance'

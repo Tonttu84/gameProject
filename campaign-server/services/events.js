@@ -30,6 +30,9 @@ export const EVENT_POOL = [
   { id: 'defection',     title: 'Mass Defection',    description: 'Enemy soldiers slip across in the night. +40 Soldiers.',  severity: 3, effect: { type: 'roster',     unit: 'Soldier', delta: +40 } },
   { id: 'plague',        title: 'Plague',            description: 'Disease thins the ranks by 5%.',                          severity: 3, effect: { type: 'all_roster', factor: 0.95 } },
   { id: 'ambush',        title: 'Enemy Ambush',      description: 'Enemy scouts have located your camp.',                    severity: 3, effect: { type: 'enemy_advance' } },
+  // ── materials fates (Stage 3 sink feeds fortifications/militia) ──
+  { id: 'quarry',        title: 'Quarry Found',      description: 'A workable seam of stone and timber. +25 materials.',     severity: 1, effect: { type: 'materials',  delta: +25 } },
+  { id: 'tool_rot',      title: 'Tool Rot',          description: 'Damp ruins tools and cordage. -15 materials.',            severity: 2, effect: { type: 'materials',  delta: -15 } },
 ]
 // (The old 'intel' event died with auguryScore; a defector event returns as a
 // scouting-points effect when the scouting stage lands.)
@@ -43,6 +46,9 @@ export function applyEffect(campaign, effect) {
   if (effect.type === 'food') {
     campaign.resources.food = Math.max(0, campaign.resources.food + effect.delta)
     log.push(`Food ${effect.delta > 0 ? '+' : ''}${+(effect.delta / 1000).toFixed(1)} t.`)
+  } else if (effect.type === 'materials') {
+    campaign.resources.materials = Math.max(0, campaign.resources.materials + effect.delta)
+    log.push(`Materials ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
   } else if (effect.type === 'roster') {
     const cur = campaign.roster.get(effect.unit) ?? 0
     const next =
