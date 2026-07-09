@@ -7,6 +7,7 @@
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh test-par')",
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh clang')",
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh fe-test')",
+      "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh fe-lint')",
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh cs-test')",
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh info')",
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh help')",

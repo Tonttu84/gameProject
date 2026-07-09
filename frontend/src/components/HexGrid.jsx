@@ -21,6 +21,35 @@ const hexPoints = (cx, cy) => {
 
 // visual offset (col, row) → axial (q, r)
 const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
+// axial (q, r) → visual offset (col, row)
+const toOffset = (q, r) => ({ col: q + Math.floor(r / 2), row: r })
+
+// Engine hexside direction → axial neighbor offset (mirrors HexGrid.cpp DQ/DR).
+const DIR_OFFSET = {
+  NE: [1, -1], E: [1, 0], SE: [0, 1], SW: [-1, 1], W: [-1, 0], NW: [0, -1],
+}
+
+// A fortified side {q, r, dir} draws a rampart on the edge SHARED between the
+// defended hex and its neighbor in `dir`. That edge is the perpendicular
+// bisector of the two hex centers — computing it from the centers avoids having
+// to reason about vertex order under the row→x / col→y axis swap.
+const wallSegment = (q, r, dir) => {
+  const off = DIR_OFFSET[dir]
+  if (!off) return null
+  const a = toOffset(q, r)
+  const nb = toOffset(q + off[0], r + off[1])
+  const c = hexCenter(a.col, a.row)
+  const n = hexCenter(nb.col, nb.row)
+  const mx = (c.x + n.x) / 2
+  const my = (c.y + n.y) / 2
+  const dx = n.x - c.x
+  const dy = n.y - c.y
+  const len = Math.hypot(dx, dy) || 1
+  const px = -dy / len // unit perpendicular
+  const py = dx / len
+  const half = HEX_SIZE * 0.5 // hex edge length ≈ HEX_SIZE
+  return { x1: mx - px * half, y1: my - py * half, x2: mx + px * half, y2: my + py * half }
+}
 
 // blend a hex color string with an RGB overlay
 const blendColor = (hex, oR, oG, oB, alpha) => {
@@ -33,7 +62,7 @@ const blendColor = (hex, oR, oG, oB, alpha) => {
   return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`
 }
 
-const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }) => {
+const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled, fortifiedSides = [] }) => {
   const [selectedHex, setSelectedHex] = useState(null)
 
   const { grid, playerZone, enemyZone } = info
@@ -177,6 +206,25 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled }
       <div className="hex-grid-scroll">
         <svg width={svgW} height={svgH}>
           {hexElements}
+          {/* Fortified sides: a rampart drawn on the enemy-facing edge of each
+              defended front hex, so the player deploys behind the wall. */}
+          {fortifiedSides.map((s) => {
+            const seg = wallSegment(s.q, s.r, s.dir)
+            if (!seg) return null
+            return (
+              <line
+                key={`fort-${s.q}-${s.r}-${s.dir}`}
+                data-testid={`fort-side-${s.q}-${s.r}-${s.dir}`}
+                x1={seg.x1}
+                y1={seg.y1}
+                x2={seg.x2}
+                y2={seg.y2}
+                stroke="#d9a441"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+            )
+          })}
           <text x={playerLabelX} y={svgH / 2} textAnchor="middle" fontSize="10" fill="#5566bb" opacity="0.7"
                 transform={`rotate(-90, ${playerLabelX}, ${svgH / 2})`}>
             — player deployment zone —

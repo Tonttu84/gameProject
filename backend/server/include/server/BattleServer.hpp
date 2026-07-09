@@ -24,6 +24,14 @@ void runAndEmitBattle(Battlefield& field, const std::string& mapName,
 // unit-testable from backend/engine/tests/.
 bool isSafeMapName(const std::string& name);
 
+// Apply a battle-input "fortified_sides" JSON array to the grid, on top of any forts
+// baked into the map file. `json` is the array string (e.g. j["fortified_sides"].dump()).
+// Each entry: {q, r, dir, durability?} — dir is a hexside name (NE/E/SE/SW/W/NW) and the
+// {q,r} hex is the defended (player-side) hex; durability defaults to
+// DEFAULT_FORT_DURABILITY. Attacker-controlled input: malformed entries are skipped and
+// nothing throws. Exposed for unit tests. Returns the number of sides fortified.
+int applyFortifiedSides(const std::string& json, HexGrid& grid);
+
 // Clamp BattleInput's attacker-controlled "max_turns" to a sane battle length:
 // < 1 (or absent/mistyped, handled at the call site) → DEFAULT_MAX_BATTLE_TICKS,
 // otherwise capped at MAX_BATTLE_TICKS_CAP. Exposed for unit tests.

@@ -100,6 +100,52 @@ export const CLASH_WINNER_CASUALTY_PCT = [1, 2]
 // The enemy AI sends this fraction of its host's forage capacity out each turn.
 export const ENEMY_FORAGE_FRACTION = 0.4
 
+// ── Fortifications & militia (materials sink, Stage 3) ───────────────────────
+// Fortifications are ABSTRACT LEVELS that wall the battle map at preset
+// locations. Spending materials raises fortificationLevel; each level activates
+// every preset side with tier ≤ level, walling a wider (and sturdier) span of
+// the player's front deployment edge. The engine already applies the combat
+// penalty for an attacker crossing a fortified side — the campaign only decides
+// WHICH sides are fortified this battle (services/fortification.js).
+export const FORTIFY_COST_BASE = 50 // cost to reach level N+1 = FORTIFY_COST_BASE × (N+1)
+export const FORTIFICATION_MAX_LEVEL = 2 // cap (levels 1–2 for now; strength scaling later)
+
+// Ordered, tier-gated player-front hexsides per map. fortificationLevel = N
+// activates every entry with tier ≤ N. Authored along the enemy-facing (south,
+// higher-r) edge of the player deployment zone: on sample_battle the player
+// zone is rows 0–7 and the enemy is at rows 22–29, so the front is row 7 and
+// the two southern sides (SE/SW) of each front hex are the wall. The defended
+// hex is the row-7 (player-side) hex. `durability` is inert for now (placeholder
+// consumed by the later combat-score erosion step) — level 2 sides are sturdier,
+// the "mostly coverage, a bit of strength" steer. Axial q at r=7 is visual
+// col − 3, so q 4–5 is the center (cols 7–8); tier 2 widens to cols 5–10.
+export const FORTIFICATION_PRESETS = {
+  sample_battle: [
+    // tier 1 — short center span
+    { q: 4, r: 7, dir: 'SE', tier: 1, durability: 100 },
+    { q: 4, r: 7, dir: 'SW', tier: 1, durability: 100 },
+    { q: 5, r: 7, dir: 'SE', tier: 1, durability: 100 },
+    { q: 5, r: 7, dir: 'SW', tier: 1, durability: 100 },
+    // tier 2 — widens the span, sturdier works
+    { q: 2, r: 7, dir: 'SE', tier: 2, durability: 160 },
+    { q: 2, r: 7, dir: 'SW', tier: 2, durability: 160 },
+    { q: 3, r: 7, dir: 'SE', tier: 2, durability: 160 },
+    { q: 3, r: 7, dir: 'SW', tier: 2, durability: 160 },
+    { q: 6, r: 7, dir: 'SE', tier: 2, durability: 160 },
+    { q: 6, r: 7, dir: 'SW', tier: 2, durability: 160 },
+    { q: 7, r: 7, dir: 'SE', tier: 2, durability: 160 },
+    { q: 7, r: 7, dir: 'SW', tier: 2, durability: 160 },
+  ],
+}
+
+// Militia purchase: raw bodies bought with stores. Cost per head + a per-turn
+// cap so it's a steady trickle, not an instant army. (Added to Soldier for now;
+// a distinct Militia unit type is a later SSOT run.)
+export const MILITIA_FOOD_COST = 2
+export const MILITIA_MATERIAL_COST = 1
+export const MILITIA_DAILY_CAP = 50
+export const MILITIA_UNIT = 'Soldier'
+
 // Enemy AI stance machine (services/enemyAi.js). Thresholds are turns.
 export const ENEMY_SHADOW_DAY = 3 // leaves camp and starts shadowing from this turn
 export const ENEMY_OFFER_EVERY = 5 // offers battle every Nth turn regardless

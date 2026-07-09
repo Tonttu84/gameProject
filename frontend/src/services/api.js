@@ -55,6 +55,11 @@ export const rerollCampaignAugury = (id, slot) =>
 // Replace the turn's forager assignment ({unitType: count}); returns the view.
 export const setCampaignForage = (id, assignment) =>
   axios.post(`/api/campaigns/${id}/forage`, { assignment }, authed()).then(r => r.data)
+// Spend stores at the camp; returns the refreshed view. body is either
+// {action:'fortify'} (raise the fortification level with materials) or
+// {action:'militia', count} (buy bodies with food + materials).
+export const spendCampaign = (id, body) =>
+  axios.post(`/api/campaigns/${id}/spend`, body, authed()).then(r => r.data)
 // Returns the battle summary plus the refreshed campaign view.
 export const postCampaignBattle = (id, payload) =>
   axios.post(`/api/campaigns/${id}/battles`, payload, authed()).then(r => r.data)

@@ -6,6 +6,7 @@ import { createUserAndToken } from './helpers/auth.js'
 import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
+import { fortifiedSidesFor } from '../services/fortification.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
 // C++ binary. getInfo feeds buildEnemyPlacement's zone geometry.
@@ -471,6 +472,30 @@ describe('POST /api/campaigns/:id/battles', () => {
     expect((await fightSoldiers(c.id)).status).toBe(400)
   })
 
+  test('injects the campaign fortification level as battle-input fortified_sides', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    const doc = await shrinkRoster(c.id, { Soldier: 1 })
+    doc.fortificationLevel = 1
+    await doc.save()
+
+    await fightSoldiers(c.id)
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.fortified_sides).toEqual(fortifiedSidesFor('sample_battle', 1))
+    expect(input.fortified_sides.length).toBeGreaterThan(0)
+    for (const s of input.fortified_sides)
+      expect(s).toMatchObject({ q: expect.any(Number), r: expect.any(Number), dir: expect.any(String) })
+  })
+
+  test('no fortifications → empty fortified_sides', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    await shrinkRoster(c.id, { Soldier: 1 })
+    await fightSoldiers(c.id)
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.fortified_sides).toEqual([])
+  })
+
   test('a partial deployment is rejected — the whole army takes the field', async () => {
     // Playtest 2026-07-05: 212 of 378 placed still offered Fight. The server
     // now rejects any placement that leaves non-foraging units in camp.
@@ -542,6 +567,76 @@ describe('POST /api/campaigns/:id/battles', () => {
     })
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/not a placeable/)
+  })
+})
+
+describe('POST /api/campaigns/:id/spend', () => {
+  const spend = (id, body) => auth(api.post(`/api/campaigns/${id}/spend`)).send(body)
+  const setMaterials = async (id, materials) => {
+    const doc = await Campaign.findById(id)
+    doc.resources.materials = materials
+    await doc.save()
+  }
+
+  test('fortify debits materials and raises the level; cost scales L0→1=50, L1→2=100', async () => {
+    const { body: c } = await createCampaign()
+    await setMaterials(c.id, 500)
+
+    const first = await spend(c.id, { action: 'fortify' })
+    expect(first.status).toBe(200)
+    expect(first.body.fortification.level).toBe(1)
+    expect(first.body.resources.materials).toBe(500 - 50)
+    // The view now exposes the walled sides for the placement grid.
+    expect(first.body.fortification.sides.length).toBeGreaterThan(0)
+    expect(first.body.fortification.nextCost).toBe(100)
+    expectNoHiddenInfo(first.body)
+
+    const second = await spend(c.id, { action: 'fortify' })
+    expect(second.body.fortification.level).toBe(2)
+    expect(second.body.resources.materials).toBe(500 - 50 - 100)
+    // At the cap: no further level, no next cost.
+    expect(second.body.fortification.atCap).toBe(true)
+    expect(second.body.fortification.nextCost).toBeNull()
+  })
+
+  test('fortify is rejected without enough materials and at the cap', async () => {
+    const { body: c } = await createCampaign()
+    await setMaterials(c.id, 40) // < 50
+    expect((await spend(c.id, { action: 'fortify' })).status).toBe(400)
+
+    // Jump to the cap and confirm a further fortify 400s.
+    const doc = await Campaign.findById(c.id)
+    doc.fortificationLevel = 2
+    doc.resources.materials = 1000
+    await doc.save()
+    const capped = await spend(c.id, { action: 'fortify' })
+    expect(capped.status).toBe(400)
+    expect(capped.body.error).toMatch(/maximum/)
+  })
+
+  test('militia buys Soldiers for food+materials, capped per turn', async () => {
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 10 }
+    doc.resources = { food: 1000, materials: 1000 }
+    await doc.save()
+
+    const res = await spend(c.id, { action: 'militia', count: 10 })
+    expect(res.status).toBe(200)
+    expect(res.body.roster.Soldier).toBe(20)
+    expect(res.body.resources.food).toBe(1000 - 10 * 2)
+    expect(res.body.resources.materials).toBe(1000 - 10 * 1)
+
+    // Over the per-turn cap (50) is rejected.
+    expect((await spend(c.id, { action: 'militia', count: 41 })).status).toBe(400)
+  })
+
+  test('bad actions and counts are rejected', async () => {
+    const { body: c } = await createCampaign()
+    expect((await spend(c.id, {})).status).toBe(400)
+    expect((await spend(c.id, { action: 'bribe' })).status).toBe(400)
+    expect((await spend(c.id, { action: 'militia', count: 0 })).status).toBe(400)
+    expect((await spend(c.id, { action: 'militia', count: 1.5 })).status).toBe(400)
   })
 })
 

@@ -9,6 +9,9 @@ export const campaignFixture = {
   battleFoughtToday: false,
   resources: { food: 50000, materials: 0, foodNeedPerTurn: 12432 },
   roster: { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10, LightCavalry: 12 },
+  // Own info (not hidden): fort level + next-level cost + the walled sides the
+  // placement grid draws. sides is empty at level 0.
+  fortification: { level: 0, atCap: false, nextCost: 50, sides: [] },
   forage: {
     rings: [
       { ring: 0, richness: 20000, initialRichness: 20000 },

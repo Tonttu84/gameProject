@@ -8,6 +8,7 @@ import { endDay, checkAnnihilation } from '../services/dayResolution.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
+import { fortifiedSidesFor, fortifyCost, atFortCap } from '../services/fortification.js'
 import { getCatalog } from '../utils/catalog.js'
 import config from '../utils/config.js'
 import {
@@ -18,6 +19,10 @@ import {
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
   FORAGE_RINGS,
+  MILITIA_FOOD_COST,
+  MILITIA_MATERIAL_COST,
+  MILITIA_DAILY_CAP,
+  MILITIA_UNIT,
 } from '../utils/campaignConfig.js'
 
 const router = Router()
@@ -205,6 +210,9 @@ router.post('/:id/battles', async (req, res) => {
     map: MAP_NAME,
     player_placement: placement,
     enemy_placement: campaign.enemy.plannedPlacement ?? [],
+    // The player's paid-for fortifications for this battle: the map file is
+    // static, the level is dynamic, so the walled sides are injected here.
+    fortified_sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
   }
   const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
   if (error) return res.status(400).json({ error })
@@ -228,6 +236,59 @@ router.post('/:id/battles', async (req, res) => {
   await campaign.save()
 
   res.status(201).json({ ...summary, campaign: await campaignView(campaign) })
+})
+
+// Spend stores at the camp. {action:'fortify'} raises the fortification level
+// (materials); {action:'militia', count} buys bodies (food + materials, per-turn
+// capped). Own-resource spend — no hidden info touched.
+router.post('/:id/spend', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+
+  const action = req.body?.action
+
+  if (action === 'fortify') {
+    if (atFortCap(campaign.fortificationLevel))
+      return res.status(400).json({ error: 'fortifications already at maximum' })
+    const cost = fortifyCost(campaign.fortificationLevel)
+    if (campaign.resources.materials < cost)
+      return res.status(400).json({ error: 'not enough materials' })
+    campaign.resources.materials -= cost
+    campaign.fortificationLevel += 1
+    campaign.log.push({
+      day: campaign.day,
+      entries: [`The works are raised to level ${campaign.fortificationLevel} (−${cost} materials).`],
+    })
+    await campaign.save()
+    return res.json(await campaignView(campaign))
+  }
+
+  if (action === 'militia') {
+    const count = req.body?.count
+    if (!Number.isInteger(count) || count <= 0)
+      return res.status(400).json({ error: 'count required' })
+    if (campaign.militiaBoughtToday + count > MILITIA_DAILY_CAP)
+      return res.status(400).json({
+        error: `militia limited to ${MILITIA_DAILY_CAP} per turn (${campaign.militiaBoughtToday} already raised)`,
+      })
+    const foodCost = count * MILITIA_FOOD_COST
+    const materialCost = count * MILITIA_MATERIAL_COST
+    if (campaign.resources.food < foodCost || campaign.resources.materials < materialCost)
+      return res.status(400).json({ error: 'not enough stores' })
+    campaign.resources.food -= foodCost
+    campaign.resources.materials -= materialCost
+    campaign.roster.set(MILITIA_UNIT, (campaign.roster.get(MILITIA_UNIT) ?? 0) + count)
+    campaign.militiaBoughtToday += count
+    campaign.log.push({
+      day: campaign.day,
+      entries: [`${count} militia join the ranks (−${foodCost} food, −${materialCost} materials).`],
+    })
+    await campaign.save()
+    return res.json(await campaignView(campaign))
+  }
+
+  return res.status(400).json({ error: 'unknown spend action' })
 })
 
 router.post('/:id/end-day', async (req, res) => {

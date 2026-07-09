@@ -5,6 +5,7 @@ import {
   consultCampaignAugury,
   rerollCampaignAugury,
   setCampaignForage,
+  spendCampaign,
   postCampaignBattle,
   endCampaignDay,
 } from '../services/api'
@@ -52,6 +53,14 @@ export default function useCampaign(user) {
     setCampaign(await setCampaignForage(campaign.id, assignment))
   }
 
+  const fortify = async () => {
+    setCampaign(await spendCampaign(campaign.id, { action: 'fortify' }))
+  }
+
+  const buyMilitia = async (count) => {
+    setCampaign(await spendCampaign(campaign.id, { action: 'militia', count }))
+  }
+
   const fight = async (playerPlacement) => {
     const res = await postCampaignBattle(campaign.id, { player_placement: playerPlacement })
     setCampaign(res.campaign)
@@ -64,5 +73,5 @@ export default function useCampaign(user) {
     return res.report
   }
 
-  return { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fight, endDay, reload }
+  return { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, endDay, reload }
 }

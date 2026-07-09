@@ -111,6 +111,47 @@ int clampMaxTurns(int requested)
     return std::min(requested, MAX_BATTLE_TICKS_CAP);
 }
 
+int applyFortifiedSides(const std::string& jsonStr, HexGrid& grid)
+{
+    json arr;
+    try {
+        arr = json::parse(jsonStr);
+    } catch (const std::exception&) {
+        return 0; // malformed — apply nothing
+    }
+    if (!arr.is_array()) return 0;
+
+    int applied = 0;
+    for (const auto& entry : arr) {
+        if (!entry.is_object()) continue;
+        // q/r/dir required; anything mistyped or out of range skips the entry (never throws).
+        auto qIt = entry.find("q");
+        auto rIt = entry.find("r");
+        auto dIt = entry.find("dir");
+        if (qIt == entry.end() || !qIt->is_number_integer()) continue;
+        if (rIt == entry.end() || !rIt->is_number_integer()) continue;
+        if (dIt == entry.end() || !dIt->is_string()) continue;
+        std::string dirStr = dIt->get<std::string>();
+        if (!isHexDirName(dirStr)) continue;
+
+        HexCoord coord{qIt->get<int>(), rIt->get<int>()};
+        Hex*     defender = grid.getHex(coord);
+        HexSide* side     = grid.getSide(coord, hexDirFromName(dirStr));
+        if (!defender || !side) continue;
+
+        int durability = DEFAULT_FORT_DURABILITY;
+        if (auto durIt = entry.find("durability");
+            durIt != entry.end() && durIt->is_number_integer())
+            durability = durIt->get<int>();
+
+        side->fortified        = true;
+        side->fortifiedDefender = defender;
+        side->fortDurability    = durability;
+        ++applied;
+    }
+    return applied;
+}
+
 // SECURITY (see SECURITY_NOTES.md #1): `name` is attacker-controlled (GET /api/map?name=,
 // POST /api/battle's "map" field) and is concatenated directly into a filesystem path.
 // Every caller MUST pass `name` through isSafeMapName() first — this function does not
@@ -185,6 +226,13 @@ void runBattleFromJson(Battlefield& field)
 
     field.reset();
     field.hexGrid.fromJson(mapContent);
+
+    // Optional per-battle fortifications (Stage 3): the campaign server injects the
+    // player-front fortified sides for the current fortificationLevel here, since the
+    // map file is static but the level is dynamic. Attacker-controlled → validated
+    // inside applyFortifiedSides; absent/mistyped is a no-op.
+    if (j.contains("fortified_sides"))
+        applyFortifiedSides(j["fortified_sides"].dump(), field.hexGrid);
 
     // Build player army from explicit placement, or default if absent.
     Army player;

@@ -14,7 +14,7 @@ using json = nlohmann::json;
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
 
-static const char* dirName(HexDirection d) {
+const char* hexDirName(HexDirection d) {
     switch (d) {
         case HexDirection::NE: return "NE";
         case HexDirection::E:  return "E";
@@ -26,13 +26,17 @@ static const char* dirName(HexDirection d) {
     return "NE";
 }
 
-static HexDirection dirFromName(const std::string& s) {
+HexDirection hexDirFromName(const std::string& s) {
     if (s == "E")  return HexDirection::E;
     if (s == "SE") return HexDirection::SE;
     if (s == "SW") return HexDirection::SW;
     if (s == "W")  return HexDirection::W;
     if (s == "NW") return HexDirection::NW;
     return HexDirection::NE;
+}
+
+bool isHexDirName(const std::string& s) {
+    return s == "NE" || s == "E" || s == "SE" || s == "SW" || s == "W" || s == "NW";
 }
 
 static TerrainType terrainFromName(const std::string& s) {
@@ -318,10 +322,20 @@ std::string HexGrid::toJson(int cols, int rows, const std::string& name) const
             auto dir = static_cast<HexDirection>(i);
             // Store blocked sides where this hex is hexA (owner of NE/E/SE).
             if (side->blocked && side->hexA == &hex)
-                blockedSides.push_back(dirName(dir));
-            // Store fortified sides where this hex is the fortifiedDefender.
-            if (side->fortified && side->fortifiedDefender == &hex)
-                fortifiedSides.push_back(dirName(dir));
+                blockedSides.push_back(hexDirName(dir));
+            // Store fortified sides where this hex is the fortifiedDefender. Emit the
+            // object form {dir, durability} only when durability is non-zero, so maps
+            // without durability stay byte-identical to the plain dir-name form.
+            if (side->fortified && side->fortifiedDefender == &hex) {
+                if (side->fortDurability != 0) {
+                    json fs;
+                    fs["dir"]        = hexDirName(dir);
+                    fs["durability"] = side->fortDurability;
+                    fortifiedSides.push_back(std::move(fs));
+                } else {
+                    fortifiedSides.push_back(hexDirName(dir));
+                }
+            }
         }
 
         bool nonDefault = (hex.terrain   != TerrainType::Open)
@@ -421,15 +435,30 @@ void HexGrid::fromJson(const std::string& jsonStr)
         if (entry.contains("blocked_sides") && entry["blocked_sides"].is_array()) {
             for (const auto& ds : entry["blocked_sides"]) {
                 if (!ds.is_string()) continue;
-                HexSide* hs = getSide({q, r}, dirFromName(ds.get<std::string>()));
+                HexSide* hs = getSide({q, r}, hexDirFromName(ds.get<std::string>()));
                 if (hs) hs->blocked = true;
             }
         }
         if (entry.contains("fortified_sides") && entry["fortified_sides"].is_array()) {
             for (const auto& ds : entry["fortified_sides"]) {
-                if (!ds.is_string()) continue;
-                HexSide* hs = getSide({q, r}, dirFromName(ds.get<std::string>()));
-                if (hs) { hs->fortified = true; hs->fortifiedDefender = h; }
+                // Each entry is either a plain dir-name string (durability 0) or an
+                // object {dir, durability?} — mirrors the toJson forms above.
+                std::string dirStr;
+                int durability = 0;
+                if (ds.is_string()) {
+                    dirStr = ds.get<std::string>();
+                } else if (ds.is_object()) {
+                    if (ds.contains("dir") && ds["dir"].is_string())
+                        dirStr = ds["dir"].get<std::string>();
+                    tryGetInt(ds, "durability", durability);
+                }
+                if (!isHexDirName(dirStr)) continue;
+                HexSide* hs = getSide({q, r}, hexDirFromName(dirStr));
+                if (hs) {
+                    hs->fortified        = true;
+                    hs->fortifiedDefender = h;
+                    hs->fortDurability    = durability;
+                }
             }
         }
     }

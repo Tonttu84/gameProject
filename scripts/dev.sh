@@ -23,6 +23,7 @@
 #   clang               clang cross-compile          (make clang)
 #   case "<filter>"     one C++ test by Catch2 filter (builds, then ./run_tests)
 #   fe-test [args]      frontend Vitest suite        (make frontend-test)
+#   fe-lint [args]      frontend oxlint              (npm --prefix frontend run lint)
 #   cs-test [args]      campaign-server Vitest suite
 #   info                build + ./game info
 # Env: TAIL=N trims output to the last N lines (default 40; 0 = no trim).
@@ -41,6 +42,7 @@ case "$task" in
   clang)    _run make clang ;;
   case)     make run_tests >/dev/null 2>&1; _run ./run_tests "$@" ;;
   fe-test)  _run make frontend-test ;;
+  fe-lint)  _run npm --prefix frontend run lint "$@" ;;
   cs-test)  ( cd campaign-server && _run npx vitest run "$@" ) ;;
   info)     make >/dev/null 2>&1; ./game info ;;
   help|*)   sed -n '/^# Usage:/,/^# Env:/p' "$0" | sed 's/^# \{0,1\}//' ; [ "$task" = help ] || { echo "unknown task: $task" >&2; exit 2; } ;;
