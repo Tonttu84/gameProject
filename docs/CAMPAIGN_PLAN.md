@@ -540,6 +540,60 @@ the enemy assault eat the penalty.
 
 ## Stage 4 — Scouting (coverage → cavalry-superiority gauge)
 
+> ### ⚠️ PENDING REVISION (2026-07-09, user) — NOT YET FINALIZED, do not implement
+> The body of Stage 4 below is being **redesigned before it is built**. Recorded here so the
+> reasoning survives a context clear; fold it *into* the Stage 4 body (rewriting, not just
+> appending) after the current manual-testing pass. Design steer from the user this session:
+>
+> **Split the single gauge into TWO tied-but-distinct systems.** The Stage-4 body below collapses
+> "scouting" and "cavalry superiority" into one band (Overwhelming → **Blind**). That's wrong:
+> being *blind* is an information state, losing the cavalry contest is a field-control state, and
+> **lack of cavalry must NOT mean blind** — especially in a fantasy setting (a scrying mage, a
+> flyer, or a ranger sees without a single horse). Light cavalry feeds *both*, which is its
+> identity; heavy cavalry feeds field control only; a flyer/mage feeds recon only. That divergence
+> is exactly why the two are separable and worth separating.
+>
+> - **Cavalry Superiority = control of the open ground** (a *comparison* → band; fed by the mobile
+>   combat arm, infantry ≈ 0). Governs foraging/security only:
+>   - **Forage posture** — superiority → forage in small dispersed parties (cover more ground,
+>     higher yield); inferiority → large escorted columns (less ground, must self-defend).
+>   - **Supply-line tax** — weaker cavalry ⇒ more troops you must *detach to guard the supply line
+>     / escort foragers*, i.e. fewer bodies in the battle line (legible cost, not just a multiplier).
+>   - **Forager clash outcomes** — whether your foragers survive contact and whether you screen theirs.
+> - **Scouting = information / reconnaissance** (fed by light cavalry **AND** fantasy recon —
+>   scrying mage / flyer / ranger). Governs knowledge only:
+>   - Locating isolated enemy troops; **raid timing** (hit them when their foragers are out);
+>     forage intel (how many enemy units forage vs. camp).
+>   - **Deployment reveal** — see terrain, and (more) see enemy troops before you commit placement.
+>   - **Information initiative (tempo)** — the side with *less* scouting **commits its choices
+>     first** (forage assignment, maybe deployment); the superior side reacts with knowledge.
+>     Information = the right to move last. (Strongest idea: makes scouting matter even when nothing
+>     is "revealed" on screen.)
+> - **How they interlock:** light cav feeds both; the forage loop consumes both at different steps
+>   (cav = how efficiently/safely you forage + supply tax; scouting = what you know + who reacts);
+>   a **raid = scouting × cavalry** (scouting gives the opportunity, cavalry decides if it succeeds).
+>
+> **Divergences from the body below to resolve when rewriting:**
+> 1. "Blind" is no longer the bottom cavalry band — cavalry bands mean *field control* (secure ↔
+>    exposed); scouting gets its own scale.
+> 2. **Reveal moves from automatic-by-band toward (partly) spendable.** User wants to "spend
+>    scouting points to see terrain, more to see enemy troops." That reverses the body's explicit
+>    "passive ratio, no point pool" decision — likely a **hybrid**: passive scouting *strength*
+>    (comparison → drives the initiative mechanic + what you passively know) *accrues points* you
+>    *spend* at deployment for reveals.
+> 3. **Two derived unit values, not one** — a *mobile field-control value* (cavalry superiority) and
+>    a *recon value* (scouting). Light cav high on both; heavy cav control-only; flyer/mage recon-only.
+>    Engine `reconTag` still feeds the recon value.
+> 4. **Event transforms (old Phase B) split by theme** — forage-raid/supply events key off cavalry
+>    superiority; "you knew it was coming / night-raid warning" events key off scouting.
+>
+> **Open decisions still to settle (before rewriting the body):**
+> - Scouting: pure comparison, or comparison + spendable points (hybrid)?
+> - Supply-line tax: hard troop lock-out, or a yield/efficiency penalty?
+> - Does cavalry superiority also gate the initiative/tempo mechanic, or is that scouting's alone?
+> - Fantasy recon sources at launch — just light cav (+ "a flyer later"), or a mage/scrying
+>   contribution from the start so "no cavalry ≠ blind" is demonstrable on the starting roster?
+
 **Supersedes the earlier points/intel-tier draft.** Decisions this session: scouting is a
 **passive coverage ratio**, not a spendable point pool; there is no intel "shop." The whole
 stage hangs on **one derived number** — *control of the ground between the armies* — read as a
