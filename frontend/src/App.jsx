@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { getInfo, getMap, setToken, launchSampleBattle } from './services/api'
 import useCampaign from './hooks/useCampaign'
 import HexGrid from './components/HexGrid'
@@ -38,6 +38,29 @@ const App = () => {
 
   const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, endDay, reload } = useCampaign(user)
 
+  // authNotice is a transient toast, not a persistent state — it must not
+  // stay on screen forever. Fullstack Open-style: showing a new notice
+  // (re)starts a timer that clears it; a manual clear cancels any pending
+  // timer so an old one can't wipe out a newer message set right after.
+  const authNoticeTimeout = useRef(null)
+  const AUTH_NOTICE_TIMEOUT_MS = 10000 // debugging value — keep short in prod too, never forever
+  const showAuthNotice = (message, timeoutMs = AUTH_NOTICE_TIMEOUT_MS) => {
+    if (authNoticeTimeout.current) window.clearTimeout(authNoticeTimeout.current)
+    setAuthNotice(message)
+    authNoticeTimeout.current = window.setTimeout(() => {
+      setAuthNotice(null)
+      authNoticeTimeout.current = null
+    }, timeoutMs)
+  }
+  const clearAuthNotice = () => {
+    if (authNoticeTimeout.current) window.clearTimeout(authNoticeTimeout.current)
+    authNoticeTimeout.current = null
+    setAuthNotice(null)
+  }
+  useEffect(() => () => {
+    if (authNoticeTimeout.current) window.clearTimeout(authNoticeTimeout.current)
+  }, [])
+
   useEffect(() => {
     Promise.all([getInfo(), getMap()])
       .then(([infoData, mapData]) => { setInfo(infoData); setMap(mapData) })
@@ -59,7 +82,7 @@ const App = () => {
     window.localStorage.setItem('loggedGameUser', JSON.stringify(u))
     setToken(u.token)
     setUser(u)
-    setAuthNotice(null)
+    clearAuthNotice()
   }
 
   const handleLogout = () => {
@@ -80,11 +103,11 @@ const App = () => {
   // renderer — it reads ticks back from the DB). No login needed.
   const watchDemo = async () => {
     setDemoLoading(true)
-    setAuthNotice(null)
+    clearAuthNotice()
     try {
       setDemoBattle(await launchSampleBattle())
     } catch {
-      setAuthNotice('Could not launch the demo battle — is the game server running?')
+      showAuthNotice('Could not launch the demo battle — is the game server running?')
     } finally {
       setDemoLoading(false)
     }
@@ -102,9 +125,9 @@ const App = () => {
     } catch (e) {
       if (e.response?.status === 401) {
         handleLogout()
-        setAuthNotice('Session expired — log in again.')
+        showAuthNotice('Session expired — log in again.')
       } else if (e.response?.status === 404) {
-        setAuthNotice('This campaign is gone (a new build wiped old saves) — start a fresh one.')
+        showAuthNotice('This campaign is gone (a new build wiped old saves) — start a fresh one.')
         setPlacements([])
         setSquadPlacements({})
         setBattleResult(null)
@@ -112,7 +135,7 @@ const App = () => {
         setPhase('setup')
         await reload().catch(() => {})
       } else if (e.response?.data?.error) {
-        setAuthNotice(e.response.data.error)
+        showAuthNotice(e.response.data.error)
       } else {
         setError('Campaign server call failed. Check that it is running.')
       }
