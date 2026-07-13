@@ -10,6 +10,41 @@
 #                                                                              #
 # **************************************************************************** #
 
+# ── Windows shim ──────────────────────────────────────────────────────────────
+# The engine is Linux-only (no native Windows build — see CLAUDE.md). GNU make
+# sets OS=Windows_NT when run from cmd/PowerShell; forward every goal into WSL,
+# where the toolchain lives, then skip the Unix rules below. WSL inherits the
+# current directory (C:\gameProject → /mnt/c/gameProject) automatically, so no
+# path needs hardcoding. Kept as a single operator-free command so it works
+# whether make's recipe shell is cmd.exe or an sh.exe on PATH.
+ifeq ($(OS),Windows_NT)
+
+# On Windows the app runs in Docker only (make docker-up). The WSL dev servers
+# don't work when driven from Windows: the shim forwards into WSL, but WSL's
+# Windows-PATH interop runs Windows node.exe, which can't spawn the Linux engine
+# binary. Refuse those targets with a clear pointer; build/test still forward.
+DOCKER_ONLY := serve server-node frontend
+ifneq ($(filter $(DOCKER_ONLY),$(MAKECMDGOALS)),)
+$(error On Windows, run the app in Docker: 'make docker-up'. The WSL dev servers (serve/server-node/frontend) cannot run here; build/test still work via make.)
+endif
+
+GOALS := $(or $(MAKECMDGOALS),all)
+.PHONY: $(GOALS) __wsl
+$(GOALS): __wsl
+	@:
+__wsl:
+	@wsl -e bash -lc "make $(MAKECMDGOALS)"
+
+else
+
+# Non-Windows: this project builds on Linux only (headless engine, Linux
+# toolchain, and the Unix shell built-ins used below). Bail out clearly on
+# anything else (macOS, *BSD, …) instead of failing later with cryptic errors.
+UNAME_S := $(shell uname -s)
+ifneq ($(UNAME_S),Linux)
+$(error Unsupported platform '$(UNAME_S)': build on Linux, or on Windows via WSL)
+endif
+
 # Compiler and flags
 CC      = g++
 
@@ -75,7 +110,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial run clang serve server server-node frontend frontend-test db-clean docker-build docker-up docker-down docker-clean docker-logs
+.PHONY: all clean fclean re test test-serial clang serve server-node frontend frontend-test db-clean docker-build docker-up docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(NAME)
@@ -141,13 +176,7 @@ re:
 	$(MAKE) fclean
 	$(MAKE) all
 
-run: $(NAME)
-	./$(NAME)
-
 # ── Campaign dev ──────────────────────────────────────────────────────────────
-server: $(NAME)
-	./$(NAME) server 8080
-
 # Node BFF (campaign-server/): DB + replay storage; spawns ./game itself.
 # This is what the frontend's /api proxy points at (port 3001).
 server-node: $(NAME)
@@ -192,3 +221,5 @@ docker-clean:
 # Follow the game server's logs (battle tick counts, boot messages).
 docker-logs:
 	docker compose logs -f game
+
+endif  # Windows shim: end of Unix (else) branch

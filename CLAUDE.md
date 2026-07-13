@@ -20,8 +20,17 @@ only in Claude's per-machine auto-memory (`~/.claude/…`, which does NOT move b
 
 This is a Linux-targeted project. The engine is fully headless (no SFML/X11/font deps — the
 browser is the only renderer), so `make` just needs g++/clang++ + make on the host. There is no
-native Windows build path and none is planned — Windows machines run the stack via Docker (see
-`make docker-up`) or WSL.
+native Windows build path and none is planned.
+
+**Windows workflow (portable rule): run the app in Docker, use WSL only for build/test.** The
+Makefile has an OS shim: on Windows (`OS=Windows_NT`) it forwards every goal into WSL, so
+`make` / `make test` / `make clang` etc. just work. But the WSL *dev servers*
+(`serve` / `server-node` / `frontend`) **cannot** run when driven from Windows — WSL's
+Windows-PATH interop launches Windows `node.exe`, which then can't spawn the Linux `game`
+binary (`spawn C:\…\game ENOENT`). Those targets therefore **hard-error on Windows and point to
+`make docker-up`**, which runs the whole stack in Linux containers on http://localhost:3001.
+(On a real Linux/WSL dev box with native node, `make serve` runs the stack directly — the shim
+and guard only apply when `make` is invoked from Windows itself.)
 
 **On Windows/WSL, run dev tasks through `scripts/dev.sh`, not ad-hoc `wsl -e bash -lc '…'`.**
 Claude Code's permission engine only honors *exact* Bash allow-rules here — it refuses prefix
@@ -46,9 +55,12 @@ make test-serial       # builds run_tests, runs it as one process — this is wh
 make clang             # cross-compile with clang++ into a separate object dir (catches
                        # compiler-specific UB/warnings gcc doesn't)
 
-make server            # ./game server 8080 — starts the HTTP campaign server
-make frontend          # cd frontend && npm run dev — Vite dev server
-make serve             # both of the above together
+make server-node       # cd campaign-server && npm start — the Node BFF (DB + replay
+                       # storage; spawns ./game itself). This is the real campaign backend
+                       # the frontend's /api proxy points at (port 3001). Linux/WSL only.
+make frontend          # cd frontend && npm run dev — Vite dev server. Linux/WSL only.
+make serve             # server-node + frontend together (the full dev stack). Linux/WSL only;
+                       # on Windows use make docker-up instead (see Windows workflow above).
 make frontend-test     # npm --prefix frontend test (vitest run), via the pinned nvm node
 
 make docker-up         # docker compose up --build: the WHOLE stack (engine + campaign
@@ -64,7 +76,10 @@ make docker-logs       # follow the game server's container logs
 make docker-build      # build just the image, start nothing
 
 ./game info                       # headless: print buildInfoJson() and exit
-./game server 8080                # headless: run the HTTP server
+./game server 8080                # headless: run the LEGACY thin C++ HTTP server directly.
+                                   # Bypasses the campaign layer (Node BFF); NOT used by Docker,
+                                   # CI, or the campaign flow. No `make server` target — a test
+                                   # that needs it launches it itself. See SECURITY_NOTES.md.
 ./game dump-map [path]             # headless: write the sample battle's terrain to JSON
 ./game battle < in.json > out.json # headless: run one battle from BattleInput JSON on
                                     # stdin, print BattleResult JSON (result + recorded
