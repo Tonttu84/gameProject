@@ -24,9 +24,16 @@ std::string buildInfoJson();
 // enforced.
 Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid& grid);
 
-// Groups same-type units stacked on one hex into squads — campaign stacks
-// fight as formations (they move and resolve engagements together) and the
-// renderer/replay give each squad a distinct color. Loners stay squadless.
+// Groups units into squads so they fight as formations (move and resolve
+// engagements together; the renderer/replay give each squad a distinct
+// color). Two grouping modes, keyed per unit:
+//   - Explicitly tagged (AUnit::getSquadId() > 0, set from a placement
+//     entry's squad_id/squad_name — see buildArmyFromPlacement): grouped by
+//     (hex, squadId), so one campaign squad can mix unit types. Honored even
+//     at one member. Takes its squad-level hold order from the tagged
+//     units' (per-unit) hold_turns.
+//   - Untagged (squadId == 0): the original same-hex-same-type ad hoc
+//     grouping by (hex, printSymbol). A lone unit stays squadless.
 // Call after placement (units must have hexes); attach the returned squads to
 // field.getTeamData(team).squads once loadArmies has run.
 std::vector<std::unique_ptr<Squad>> buildSquadsFromArmy(const Army& army);

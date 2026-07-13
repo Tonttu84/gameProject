@@ -7,6 +7,7 @@
 #include "units/Cavalry.hpp"
 #include "units/Soldier.hpp"
 #include "units/Horse.hpp"
+#include "Squad.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -722,4 +723,177 @@ TEST_CASE("buildArmyFromPlacement: non-integer hold_turns is ignored, unit still
     auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
     REQUIRE(army.size() == 2);
     REQUIRE(army[0]->getHoldTurns() == 0);
+}
+
+// ── squad_id / squad_name in placement JSON (persistent campaign squads) ──────
+
+TEST_CASE("buildArmyFromPlacement: squad_id/squad_name are applied when present") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}, {"squad_name", "1st Cohort"}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getSquadId() == 7);
+    REQUIRE(army[0]->getSquadName() == "1st Cohort");
+}
+
+TEST_CASE("buildArmyFromPlacement: missing squad_id defaults to unassigned (0)") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getSquadId() == 0);
+}
+
+TEST_CASE("buildArmyFromPlacement: squad_id 0 or negative is treated as unassigned") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 0}},
+        json{{"unit_type", "Archer"},  {"q", 3}, {"r", 5}, {"squad_id", -1}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 2);
+    REQUIRE(army[0]->getSquadId() == 0);
+    REQUIRE(army[1]->getSquadId() == 0);
+}
+
+// ── buildSquadsFromArmy: explicit squad_id grouping ────────────────────────────
+
+// NOTE on declaration order below: `squads` (vector<unique_ptr<Squad>>) is
+// declared BEFORE `army` (vector<unique_ptr<AUnit>>) in every test here, so
+// that C++'s reverse-destruction-order destroys `army` FIRST. AUnit::~AUnit()
+// calls leaveSquad() -> Squad::removeMember(), which dereferences the unit's
+// live _squad pointer — that Squad must still be alive when a member unit is
+// destroyed, or it's a use-after-free. This mirrors how Team (Battlefield.hpp)
+// declares its `squads` member before `units` for exactly the same reason.
+
+TEST_CASE("buildSquadsFromArmy: mixed-type placement entries sharing one squad_id become one squad") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}, {"squad_name", "Vanguard"}},
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}, {"squad_name", "Vanguard"}},
+        json{{"unit_type", "Archer"},  {"q", 3}, {"r", 5}, {"squad_id", 7}, {"squad_name", "Vanguard"}},
+    });
+    std::vector<std::unique_ptr<Squad>> squads;
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    squads = buildSquadsFromArmy(army);
+
+    REQUIRE(squads.size() == 1);
+    REQUIRE(squads[0]->getName() == "Vanguard");
+    REQUIRE(squads[0]->totalCount() == 3);
+    for (const auto& u : army)
+        REQUIRE(squads[0]->hasMember(u.get()));
+}
+
+TEST_CASE("buildSquadsFromArmy: a lone tagged unit still forms a squad (unlike untagged loners)") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}, {"squad_name", "Lonesome"}},
+    });
+    std::vector<std::unique_ptr<Squad>> squads;
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    squads = buildSquadsFromArmy(army);
+
+    REQUIRE(squads.size() == 1);
+    REQUIRE(squads[0]->totalCount() == 1);
+}
+
+TEST_CASE("buildSquadsFromArmy: untagged same-type stacks keep the original ad hoc behavior") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}},
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}},
+        json{{"unit_type", "Archer"},  {"q", 3}, {"r", 5}}, // lone archer — no squad
+    });
+    std::vector<std::unique_ptr<Squad>> squads;
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    squads = buildSquadsFromArmy(army);
+
+    REQUIRE(squads.size() == 1); // only the 2-soldier stack forms a squad
+    REQUIRE(squads[0]->totalCount() == 2);
+}
+
+TEST_CASE("buildSquadsFromArmy: squad-level hold order is set once from the tagged entries") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}, {"hold_turns", 4}},
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}, {"hold_turns", 4}},
+    });
+    std::vector<std::unique_ptr<Squad>> squads;
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    squads = buildSquadsFromArmy(army);
+
+    REQUIRE(squads.size() == 1);
+    REQUIRE(squads[0]->getHoldTurns() == 4);
+}
+
+// ── squadSurvivorJson (blue_squads/red_squads battle-output contract) ─────────
+
+TEST_CASE("squadSurvivorJson: buckets tagged survivors by squadId, untagged ones are skipped") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}},
+        json{{"unit_type", "Archer"},  {"q", 3}, {"r", 5}, {"squad_id", 7}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}}, // untagged — excluded
+    });
+    std::vector<std::unique_ptr<Squad>> squads;
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    squads = buildSquadsFromArmy(army);
+
+    json out = squadSurvivorJson(army);
+    REQUIRE(out.size() == 1); // only squadId 7 appears
+    REQUIRE(out["7"]["survivors"]["Soldier"] == 1);
+    REQUIRE(out["7"]["survivors"]["Archer"]  == 1);
+    REQUIRE(out["7"]["wiped"] == false); // both still attached to their live Squad
+}
+
+TEST_CASE("squadSurvivorJson: wiped is true once every tagged survivor has left the squad") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}},
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}},
+    });
+    std::vector<std::unique_ptr<Squad>> squads;
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    squads = buildSquadsFromArmy(army);
+
+    // Simulate both members having broken and fled (Battlefield::moveUnits
+    // calls leaveSquad() on break) — they're alive survivors, but stragglers.
+    for (const auto& u : army)
+        u->leaveSquad();
+
+    json out = squadSurvivorJson(army);
+    REQUIRE(out["7"]["survivors"]["Soldier"] == 2);
+    REQUIRE(out["7"]["wiped"] == true);
+}
+
+TEST_CASE("squadSurvivorJson: wiped is false if even one tagged survivor is still attached") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}},
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"squad_id", 7}},
+    });
+    std::vector<std::unique_ptr<Squad>> squads;
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    squads = buildSquadsFromArmy(army);
+
+    army[0]->leaveSquad(); // one straggler broke and fled...
+    // ...but army[1] is still standing with the formation.
+
+    json out = squadSurvivorJson(army);
+    REQUIRE(out["7"]["survivors"]["Soldier"] == 2); // both counted as survivors
+    REQUIRE(out["7"]["wiped"] == false);             // formation held — regroups
 }

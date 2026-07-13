@@ -2,6 +2,14 @@
 #include "Battlefield.hpp"
 #include <string>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wformat-security"
+#include "extern/json.hpp"
+#pragma GCC diagnostic pop
+
 // HTTP campaign server. Blocks until the server is stopped.
 // binaryPath: path to the game binary (used to spawn ./game battle subprocesses).
 void runServer(int port, const std::string& binaryPath);
@@ -36,3 +44,15 @@ int applyFortifiedSides(const std::string& json, HexGrid& grid);
 // < 1 (or absent/mistyped, handled at the call site) → DEFAULT_MAX_BATTLE_TICKS,
 // otherwise capped at MAX_BATTLE_TICKS_CAP. Exposed for unit tests.
 int clampMaxTurns(int requested);
+
+// Per-campaign-squad survivor breakdown for one side's surviving Army, keyed
+// by stringified squadId (JSON object keys must be strings):
+//   {"<id>": {"survivors": {"Soldier": 26, "Archer": 3}, "wiped": false}}
+// Only units carrying a persistent squadId (AUnit::getSquadId() > 0) are
+// bucketed; untagged survivors belong only in the flat *_survivors counts.
+// "wiped" is false iff at least one tagged survivor is still attached to its
+// live in-battle Squad (getSquad() != nullptr) — the formation held to the
+// end, however reduced; true means every tagged survivor already left the
+// squad (broke and fled), so the campaign layer should fold them back into
+// the loose pool instead of reforming the squad. Exposed for unit tests.
+nlohmann::json squadSurvivorJson(const Army& army);

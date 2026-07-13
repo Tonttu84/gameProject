@@ -195,6 +195,21 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             if (ht > 0) u->setHoldTurns(ht);
         }
 
+        // Optional persistent squad tag (campaign squads): squad_id is an
+        // int > 0; squad_name is the display name buildSquadsFromArmy uses
+        // when it first sees this id. Absent/mistyped → unassigned (0), same
+        // as every other field here — never throws on attacker input.
+        auto squadIdIt = entry.find("squad_id");
+        if (squadIdIt != entry.end() && squadIdIt->is_number_integer()) {
+            int sid = squadIdIt->get<int>();
+            if (sid > 0) {
+                u->setSquadId(sid);
+                auto squadNameIt = entry.find("squad_name");
+                if (squadNameIt != entry.end() && squadNameIt->is_string())
+                    u->setSquadName(squadNameIt->get<std::string>());
+            }
+        }
+
         u->setHex(h);
         u->setPlaced(true);
         army.push_back(std::move(u));
@@ -206,28 +221,72 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
 
 std::vector<std::unique_ptr<Squad>> buildSquadsFromArmy(const Army& army)
 {
-    // std::map (ordered) so squad creation order — and therefore the debug
-    // palette colors — is deterministic for a given placement.
-    std::map<std::pair<const Hex*, char>, std::vector<AUnit*>> groups;
-    for (const auto& u : army)
-        if (u && u->getHex())
-            groups[{u->getHex(), u->getPrintSymbol()}].push_back(u.get());
+    // Group key: (hex, squadId) for explicitly tagged campaign squads
+    // (squadId > 0 — set from a placement entry's squad_id, see
+    // buildArmyFromPlacement above), or (hex, printSymbol) as before for
+    // untagged stacks (squadId == 0) — the original same-hex-same-type ad
+    // hoc grouping. Keying tagged units by squadId rather than symbol is
+    // what lets one campaign squad mix unit types.
+    struct GroupKey {
+        const Hex* hex;
+        int        squadId; // 0 for the untagged/symbol-keyed path
+        char       symbol;  // only meaningful when squadId == 0
+        bool operator<(const GroupKey& o) const {
+            if (hex != o.hex) return hex < o.hex; // ordered map -> deterministic palette colors
+            if (squadId != o.squadId) return squadId < o.squadId;
+            return symbol < o.symbol;
+        }
+    };
+    std::map<GroupKey, std::vector<AUnit*>> groups;
+    for (const auto& u : army) {
+        if (!u || !u->getHex()) continue;
+        int sid = u->getSquadId();
+        groups[{u->getHex(), sid, sid == 0 ? u->getPrintSymbol() : '\0'}].push_back(u.get());
+    }
 
     std::vector<std::unique_ptr<Squad>> squads;
     for (auto& [key, members] : groups) {
-        if (members.size() < 2) continue; // a loner is not a squad
+        // Untagged same-type stacks: a lone unit isn't worth forming a squad
+        // for. An explicitly tagged campaign squad (squadId > 0) is honored
+        // even down to one survivor — the player organized it on purpose,
+        // and the campaign layer needs a live Squad here to detect "wiped"
+        // (aliveCount() == 0) once the battle ends.
+        if (key.squadId == 0 && members.size() < 2) continue;
 
-        std::string type = unitNameForSymbol(key.second);
-        if (type.empty()) type = std::string(1, key.second);
-        char name[64];
-        std::snprintf(name, sizeof(name), "%s (%d,%d)",
-                      type.c_str(), key.first->coord.q, key.first->coord.r);
+        std::string name;
+        if (key.squadId != 0 && !members.front()->getSquadName().empty()) {
+            name = members.front()->getSquadName();
+        } else {
+            std::string type = unitNameForSymbol(key.symbol);
+            if (type.empty()) type = std::string(1, key.symbol);
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "%s (%d,%d)",
+                          type.c_str(), key.hex->coord.q, key.hex->coord.r);
+            name = buf;
+        }
 
         auto sq = std::make_unique<Squad>(name, false);
-        if (members.front()->getCategory() == UnitCategory::Mounted)
-            sq->setType(SquadType::Cavalry);
+        bool anyMounted = false, allMounted = true;
+        for (AUnit* m : members) {
+            bool mounted = m->getCategory() == UnitCategory::Mounted;
+            anyMounted |= mounted;
+            allMounted &= mounted;
+        }
+        if (allMounted)      sq->setType(SquadType::Cavalry);
+        else if (anyMounted) sq->setType(SquadType::Mixed);
         for (AUnit* m : members)
             sq->addMember(m);
+
+        // Squad-level hold order: campaign squads carry one order for the
+        // whole formation (buildArmyFromPlacement already set it per-unit
+        // from the placement entry's hold_turns; every member of one
+        // squad_id shares that value in the normal flow, so first-seen is
+        // authoritative — Squad::setHoldTurns does not propagate back to
+        // members, so the redundant per-unit value is simply unused while
+        // the unit stays in the squad).
+        if (key.squadId != 0)
+            sq->setHoldTurns(members.front()->getHoldTurns());
+
         squads.push_back(std::move(sq));
     }
     return squads;

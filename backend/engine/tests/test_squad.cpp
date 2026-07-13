@@ -388,3 +388,55 @@ TEST_CASE("Squad: holdTurns INT_MAX never decrements to 0") {
         REQUIRE(sq.tickHold() == true);
     REQUIRE(sq.getHoldTurns() == INT_MAX);
 }
+
+// ── Persistent squad identity (campaign squads) ───────────────────────────────
+
+TEST_CASE("AUnit: squadId/squadName default to unassigned") {
+    Soldier s(REDTEAM);
+    REQUIRE(s.getSquadId() == 0);
+    REQUIRE(s.getSquadName() == "");
+}
+
+TEST_CASE("AUnit: squadId/squadName round-trip") {
+    Soldier s(REDTEAM);
+    s.setSquadId(7);
+    s.setSquadName("1st Cohort");
+    REQUIRE(s.getSquadId() == 7);
+    REQUIRE(s.getSquadName() == "1st Cohort");
+}
+
+TEST_CASE("leaveSquad clears the live squad pointer but not the persistent squadId") {
+    Squad sq("Alpha", true);
+    Soldier s(REDTEAM);
+    s.setSquadId(7);
+    s.setSquadName("1st Cohort");
+    sq.addMember(&s);
+    s.leaveSquad();
+    REQUIRE(s.getSquad() == nullptr);
+    REQUIRE(s.getSquadId() == 7);
+    REQUIRE(s.getSquadName() == "1st Cohort");
+}
+
+TEST_CASE("a break-triggered leaveSquad (Squad::removeMember) also preserves squadId") {
+    // Mirrors what Battlefield::moveUnits does when a unit breaks: it calls
+    // leaveSquad(), which is Squad::removeMember() under the hood. The
+    // persistent tag must survive exactly like the direct leaveSquad() case.
+    Squad sq("Alpha", true);
+    Soldier s(REDTEAM);
+    s.setSquadId(7);
+    sq.removeMember(&s); // no-op, not a member yet — sanity
+    sq.addMember(&s);
+    sq.removeMember(&s);
+    REQUIRE(s.getSquad() == nullptr);
+    REQUIRE(s.getSquadId() == 7);
+}
+
+TEST_CASE("setAlive(false) (death) also preserves squadId on the now-dead unit") {
+    Squad sq("Alpha", true);
+    Soldier s(REDTEAM);
+    s.setSquadId(7);
+    sq.addMember(&s);
+    s.setAlive(false);
+    REQUIRE(s.getSquad() == nullptr);
+    REQUIRE(s.getSquadId() == 7); // dead units are filtered out of survivors elsewhere
+}

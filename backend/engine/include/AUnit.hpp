@@ -15,6 +15,7 @@
 #include <memory>
 #include <assert.h>
 #include <climits>
+#include <string>
 #include "Weapon.hpp"
 #include "WeaponList.hpp"
 #include <vector>
@@ -243,6 +244,18 @@ public:
     // Call before setting alive=false or triggering any state that severs the unit from formation.
     void   leaveSquad();
 
+    // Persistent squad identity — separate from the live _squad pointer above.
+    // leaveSquad()/Squad::removeMember() only ever clear _squad; they never
+    // touch this tag, so a unit that breaks and flees (which does call
+    // leaveSquad(), see Battlefield::moveUnits) keeps its squadId. This is
+    // what lets a campaign layer regroup survivors — including stragglers who
+    // broke but lived — into the same persistent squad after the battle.
+    // 0 = unassigned/loose (not part of any campaign squad).
+    int  getSquadId()   const           { return _squadId; }
+    void setSquadId(int id)             { _squadId = id; }
+    const std::string& getSquadName() const { return _squadName; }
+    void setSquadName(std::string name) { _squadName = std::move(name); }
+
     // ── Formation cohesion ────────────────────────────────────────────────────
     // Per-unit base score (0-100+). Subclasses or setup code set this; the
     // default of 50 puts a regular soldier at tier-1 bonus territory.
@@ -382,6 +395,8 @@ protected:
     int _attacksReceivedThisTurn = 0;
     int repelMalus = 0;
     Squad* _squad = nullptr;  // non-owning; nullptr = lone unit
+    int  _squadId = 0;        // persistent campaign squad tag — see getSquadId()
+    std::string _squadName;   // display name for the tag, e.g. for buildSquadsFromArmy
     int sortKey = 0; // random tiebreaker set at construction, used for render ordering
     int _cohesion      = 50; // base formation cohesion score; set by subclass or setup
     int _cohesionBonus = 0;  // per-tick tier (0-3), set by resolveEngagements, reset each tick

@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <fstream>
 #include <cstdio>
@@ -62,6 +63,28 @@ static json survivorJson(const Army& army)
     return counts;
 }
 
+// See BattleServer.hpp for the contract (exposed there, not static, for
+// unit tests).
+json squadSurvivorJson(const Army& army)
+{
+    struct Bucket { json counts = json::object(); bool hasCore = false; };
+    std::map<int, Bucket> buckets;
+    for (const auto& u : army) {
+        if (!u) continue;
+        int sid = u->getSquadId();
+        if (sid == 0) continue;
+        std::string name = unitNameForSymbol(u->getPrintSymbol());
+        if (name.empty()) continue;
+        Bucket& b = buckets[sid];
+        b.counts[name] = b.counts.value(name, 0) + 1;
+        if (u->getSquad() != nullptr) b.hasCore = true;
+    }
+    json out = json::object();
+    for (auto& [sid, b] : buckets)
+        out[std::to_string(sid)] = {{"survivors", b.counts}, {"wiped", !b.hasCore}};
+    return out;
+}
+
 static json resultToJson(const BattleResult& r)
 {
     const char* winner = (r.winner == BLUETEAM) ? "blue"
@@ -71,6 +94,8 @@ static json resultToJson(const BattleResult& r)
         {"winner",         winner},
         {"blue_survivors", survivorJson(r.blueSurvivors)},
         {"red_survivors",  survivorJson(r.redSurvivors)},
+        {"blue_squads",    squadSurvivorJson(r.blueSurvivors)},
+        {"red_squads",     squadSurvivorJson(r.redSurvivors)},
     };
 }
 
