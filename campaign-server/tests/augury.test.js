@@ -8,7 +8,7 @@ import {
   rollAuguryOdds,
   mageBonus,
 } from '../services/augury.js'
-import { EVENT_POOL, POOL_LEGIBILITY } from '../services/events.js'
+import { EVENT_POOL, POOL_LEGIBILITY, eventValence } from '../services/events.js'
 import {
   AUGURY_SLOTS,
   AUGURY_ODDS_MAX,
@@ -121,14 +121,10 @@ describe('drawAugury', () => {
 describe('EVENT_POOL structure', () => {
   const pools = [...new Set(EVENT_POOL.map((e) => e.severity))]
 
-  const isGood = ({ effect }) =>
-    ((effect.type === 'food' || effect.type === 'materials') && effect.delta > 0) ||
-    (effect.type === 'roster' && (effect.delta ?? 0) > 0)
-  const isBad = ({ effect }) =>
-    ((effect.type === 'food' || effect.type === 'materials') && effect.delta < 0) ||
-    (effect.type === 'roster' && effect.factor !== undefined && effect.factor < 1) ||
-    (effect.type === 'all_roster' && effect.factor < 1) ||
-    effect.type === 'enemy_advance'
+  // Valence is derived by the one server-side classifier, so the leak guards
+  // and the augur's header can never drift apart.
+  const isGood = (e) => eventValence(e.effect) === 'good'
+  const isBad = (e) => eventValence(e.effect) === 'bad'
 
   test('every pool has a legibility modifier', () => {
     for (const pool of pools) expect(POOL_LEGIBILITY[pool]).toBeTypeOf('number')
@@ -148,7 +144,32 @@ describe('EVENT_POOL structure', () => {
   })
 
   test('every event has a recognized valence (keeps the classifier honest)', () => {
-    for (const e of EVENT_POOL) expect(isGood(e) || isBad(e)).toBe(true)
+    for (const e of EVENT_POOL)
+      expect(['good', 'bad', 'neutral']).toContain(eventValence(e.effect))
+  })
+})
+
+// The augur's header labels the SHOWN card's flavour (user, 2026-07-13): the
+// valence comes from the displayed omen's own effect, so a bluff card reads
+// as the mood it shows, not the mood of the hidden truth. Neutral is a real
+// third mood — some fates (rains that foul both sides, a passing comet) net to
+// no advantage — so the classifier and the pool both carry it.
+describe('eventValence', () => {
+  test('classifies gains, losses, and no-ops', () => {
+    expect(eventValence({ type: 'food', delta: 3000 })).toBe('good')
+    expect(eventValence({ type: 'food', delta: -1000 })).toBe('bad')
+    expect(eventValence({ type: 'materials', delta: 25 })).toBe('good')
+    expect(eventValence({ type: 'materials', delta: -15 })).toBe('bad')
+    expect(eventValence({ type: 'roster', unit: 'Soldier', delta: 20 })).toBe('good')
+    expect(eventValence({ type: 'roster', unit: 'Soldier', factor: 0.9 })).toBe('bad')
+    expect(eventValence({ type: 'all_roster', factor: 0.95 })).toBe('bad')
+    expect(eventValence({ type: 'enemy_advance' })).toBe('bad')
+    expect(eventValence({ type: 'none' })).toBe('neutral')
+    expect(eventValence(undefined)).toBe('neutral')
+  })
+
+  test('the pool carries neutral events so all three moods appear in play', () => {
+    expect(EVENT_POOL.some((e) => eventValence(e.effect) === 'neutral')).toBe(true)
   })
 })
 

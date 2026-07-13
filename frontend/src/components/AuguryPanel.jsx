@@ -8,7 +8,20 @@ import React from 'react'
 // shown comes from the server view — the odds are the server's own roll
 // target, never recomputed here.
 
-const SEVERITY_LABEL = { 1: 'A gentle omen', 2: 'A troubling omen', 3: 'A dire omen' }
+// The header names the SHOWN card's flavour: its mood (valence, from the
+// server) crossed with its magnitude (severity). So a bluff reads as the mood
+// it shows, never the hidden truth's, and severity stops implying good/bad on
+// its own. Neutral fates (a comet, rains that foul both sides) get their own
+// mood-free words. Valence/severity come from the server view; the wording
+// lives here (presentation).
+const OMEN_LABEL = {
+  good: { 1: 'A kind omen', 2: 'A favorable omen', 3: 'A blessed omen' },
+  bad: { 1: 'An uneasy omen', 2: 'A troubling omen', 3: 'A dire omen' },
+  neutral: { 1: 'A faint omen', 2: 'A clouded omen', 3: 'A portentous omen' },
+}
+
+const omenLabel = ({ valence, severity }) =>
+  OMEN_LABEL[valence ?? 'neutral']?.[severity] ?? 'An omen'
 
 const AuguryPanel = ({ augury, onConsult, onReroll, onContinue }) => {
   const canReroll = augury.rerollsRemaining > 0
@@ -43,7 +56,7 @@ const AuguryPanel = ({ augury, onConsult, onReroll, onContinue }) => {
                 disabled={!canReroll}
               >
                 <div className="augury-severity">
-                  {SEVERITY_LABEL[vision.severity] ?? 'An omen'}
+                  {omenLabel(vision)}
                 </div>
                 <div className="augury-title">{vision.title}</div>
                 <div className="augury-desc">{vision.description}</div>

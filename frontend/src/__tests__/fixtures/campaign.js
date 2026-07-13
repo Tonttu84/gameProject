@@ -43,6 +43,7 @@ export const consultedAugury = {
       title: 'Supply Cache',
       description: 'Scouts find an abandoned depot. +3 t of food.',
       severity: 1,
+      valence: 'good',
       effect: { type: 'food', delta: 3000 },
       odds: 0.75,
       // Truth revealed (debug flag / reroll spent): this vision holds.
@@ -53,6 +54,7 @@ export const consultedAugury = {
       title: 'Harsh Weather',
       description: 'A hard fortnight drains rations. -1 t of food.',
       severity: 2,
+      valence: 'bad',
       effect: { type: 'food', delta: -1000 },
       odds: 0.3,
       // ...and this vision lied: the truth is a different same-pool event.
@@ -63,6 +65,7 @@ export const consultedAugury = {
       title: 'Plague',
       description: 'Disease thins the ranks.',
       severity: 3,
+      valence: 'bad',
       effect: { type: 'all_roster', factor: 0.95 },
       odds: 0.9,
     },

@@ -79,9 +79,13 @@ describe('campaign flow', () => {
     const first = await screen.findByTestId('augury-vision-0')
     expect(consultCampaignAugury).toHaveBeenCalledWith('c1')
     expect(first).toHaveTextContent('Supply Cache')
-    expect(first).toHaveTextContent('A gentle omen')
+    // The header names the SHOWN card's mood × magnitude: a good minor fate,
+    // a bad one, a bad major one — severity alone no longer implies good/bad.
+    expect(first).toHaveTextContent('A kind omen')
     expect(screen.getByTestId('augury-vision-1')).toHaveTextContent('Harsh Weather')
+    expect(screen.getByTestId('augury-vision-1')).toHaveTextContent('A troubling omen')
     expect(screen.getByTestId('augury-vision-2')).toHaveTextContent('Plague')
+    expect(screen.getByTestId('augury-vision-2')).toHaveTextContent('A dire omen')
     // The odds ARE the minigame (user, 2026-07-05): each card states the
     // server's roll target verbatim — a 30% dire omen is probably noise, a
     // 90% one is all but certain.
@@ -109,7 +113,7 @@ describe('campaign flow', () => {
         rerollsRemaining: 0,
         visions: [
           consultedAugury.visions[0],
-          { id: 'traders', title: 'Traveling Traders', description: 'Merchants sell supplies.', severity: 1 },
+          { id: 'traders', title: 'Traveling Traders', description: 'Merchants sell supplies.', severity: 1, valence: 'good' },
           consultedAugury.visions[2],
         ],
       },

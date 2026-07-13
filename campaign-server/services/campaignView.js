@@ -3,6 +3,7 @@ import { armyFoodPerTurn, forageValue } from '../utils/capabilities.js'
 import { FORAGE_KG_PER_POINT, AUGURY_DEBUG_SHOW_TRUTH, MAP_NAME } from '../utils/campaignConfig.js'
 import { forageCapacityKg } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
+import { eventValence } from './events.js'
 
 // THE single serializer between campaign documents and the client. Hidden
 // information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
@@ -44,6 +45,10 @@ const visionCard = ({ id, title, description, severity, effect }) => ({
   title,
   description,
   severity,
+  // The shown card's mood (good/bad/neutral), derived from its own effect so
+  // the augur's header labels the flavour on display — never the hidden truth.
+  // No leak: the shown card's nature is already fully visible.
+  valence: eventValence(effect),
   effect, // what WOULD happen if the vision is true — not a leak
 })
 

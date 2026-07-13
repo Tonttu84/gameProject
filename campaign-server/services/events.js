@@ -33,12 +33,43 @@ export const EVENT_POOL = [
   // ── materials fates (Stage 3 sink feeds fortifications/militia) ──
   { id: 'quarry',        title: 'Quarry Found',      description: 'A workable seam of stone and timber. +25 materials.',     severity: 1, effect: { type: 'materials',  delta: +25 } },
   { id: 'tool_rot',      title: 'Tool Rot',          description: 'Damp ruins tools and cordage. -15 materials.',            severity: 2, effect: { type: 'materials',  delta: -15 } },
+  // ── neutral fates: something happens, nothing tips the scales. One per pool
+  // so all three magnitudes of the "neutral" reading show up in play. A
+  // `none` effect is a genuine no-op at end-of-turn — the drama is in the
+  // reading, not the result (a "dire" omen that comes to nothing is a relief).
+  { id: 'lull',          title: 'A Quiet Fortnight', description: 'The days pass without incident — no gift, no blow.',       severity: 1, effect: { type: 'none' } },
+  { id: 'rains',         title: 'Season of Rains',   description: 'Downpours foul every bowstring, yours and theirs alike. Neither host gains an edge.', severity: 2, effect: { type: 'none' } },
+  { id: 'comet',         title: 'A Comet Overhead',  description: 'A comet burns across the sky for a fortnight. The men mutter of doom, but nothing comes of it.', severity: 3, effect: { type: 'none' } },
 ]
 // (The old 'intel' event died with auguryScore; a defector event returns as a
 // scouting-points effect when the scouting stage lands.)
 
 export const rosterTotal = (roster) =>
   [...roster.values()].reduce((a, b) => a + b, 0)
+
+// The single source of an event's mood: good / bad / neutral, derived from its
+// own effect. The augur's header labels the SHOWN card with this (so a bluff
+// reads as the flavour it shows), and the pool leak-guards use it too — one
+// classifier, so the two can never disagree. Anything without a clear gain or
+// loss (a no-op `none`, or an unknown effect) is neutral.
+export const eventValence = (effect) => {
+  if (!effect) return 'neutral'
+  switch (effect.type) {
+    case 'food':
+    case 'materials':
+      return effect.delta > 0 ? 'good' : effect.delta < 0 ? 'bad' : 'neutral'
+    case 'roster':
+      if (effect.delta !== undefined)
+        return effect.delta > 0 ? 'good' : effect.delta < 0 ? 'bad' : 'neutral'
+      return effect.factor > 1 ? 'good' : effect.factor < 1 ? 'bad' : 'neutral'
+    case 'all_roster':
+      return effect.factor > 1 ? 'good' : effect.factor < 1 ? 'bad' : 'neutral'
+    case 'enemy_advance':
+      return 'bad'
+    default:
+      return 'neutral'
+  }
+}
 
 // Mutates the campaign in place; caller saves. Returns log lines.
 export function applyEffect(campaign, effect) {
@@ -65,6 +96,9 @@ export function applyEffect(campaign, effect) {
     // The enemy comes looking for a fight tomorrow.
     campaign.enemy.stance = 'offering_battle'
     log.push('The enemy host is moving on your camp.')
+  } else if (effect.type === 'none') {
+    // A neutral fate: it passes without tipping the scales.
+    log.push('The fortnight passes without consequence.')
   }
   return log
 }
