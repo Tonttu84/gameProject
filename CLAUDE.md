@@ -27,10 +27,10 @@ Makefile has an OS shim: on Windows (`OS=Windows_NT`) it forwards every goal int
 `make` / `make test` / `make clang` etc. just work. But the WSL *dev servers*
 (`serve` / `server-node` / `frontend`) **cannot** run when driven from Windows — WSL's
 Windows-PATH interop launches Windows `node.exe`, which then can't spawn the Linux `game`
-binary (`spawn C:\…\game ENOENT`). Those targets therefore **hard-error on Windows and point to
+binary (`spawn C:\…\game ENOENT`). So on Windows those targets are **redirected to
 `make docker-up`**, which runs the whole stack in Linux containers on http://localhost:3001.
 (On a real Linux/WSL dev box with native node, `make serve` runs the stack directly — the shim
-and guard only apply when `make` is invoked from Windows itself.)
+and redirect only apply when `make` is invoked from Windows itself.)
 
 **On Windows/WSL, run dev tasks through `scripts/dev.sh`, not ad-hoc `wsl -e bash -lc '…'`.**
 Claude Code's permission engine only honors *exact* Bash allow-rules here — it refuses prefix
@@ -57,10 +57,12 @@ make clang             # cross-compile with clang++ into a separate object dir (
 
 make server-node       # cd campaign-server && npm start — the Node BFF (DB + replay
                        # storage; spawns ./game itself). This is the real campaign backend
-                       # the frontend's /api proxy points at (port 3001). Linux/WSL only.
-make frontend          # cd frontend && npm run dev — Vite dev server. Linux/WSL only.
-make serve             # server-node + frontend together (the full dev stack). Linux/WSL only;
-                       # on Windows use make docker-up instead (see Windows workflow above).
+                       # the frontend's /api proxy points at (port 3001). Native on Linux/WSL;
+                       # on Windows it redirects to docker-up (see Windows workflow above).
+make frontend          # cd frontend && npm run dev — Vite dev server. Native on Linux/WSL;
+                       # on Windows it redirects to docker-up.
+make serve             # server-node + frontend together (the full dev stack). Native on
+                       # Linux/WSL; on Windows it redirects to docker-up.
 make frontend-test     # npm --prefix frontend test (vitest run), via the pinned nvm node
 
 make docker-up         # docker compose up --build: the WHOLE stack (engine + campaign

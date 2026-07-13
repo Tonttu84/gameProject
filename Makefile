@@ -11,29 +11,31 @@
 # **************************************************************************** #
 
 # ── Windows shim ──────────────────────────────────────────────────────────────
-# The engine is Linux-only (no native Windows build — see CLAUDE.md). GNU make
-# sets OS=Windows_NT when run from cmd/PowerShell; forward every goal into WSL,
-# where the toolchain lives, then skip the Unix rules below. WSL inherits the
-# current directory (C:\gameProject → /mnt/c/gameProject) automatically, so no
-# path needs hardcoding. Kept as a single operator-free command so it works
-# whether make's recipe shell is cmd.exe or an sh.exe on PATH.
+# No native Windows build (see CLAUDE.md). GNU make sets OS=Windows_NT when run
+# from cmd/PowerShell; forward every goal into WSL, where the toolchain lives,
+# then skip the Unix rules below. WSL inherits the current directory
+# (C:\gameProject → /mnt/c/gameProject) automatically, so nothing is hardcoded,
+# and a single operator-free command works whether make's recipe shell is
+# cmd.exe or an sh.exe on PATH.
+#
+# The app runs in Docker on Windows: the WSL dev servers can't work here (WSL's
+# Windows-PATH interop runs Windows node.exe, which can't spawn the Linux engine
+# binary). So serve/server-node/frontend are redirected to docker-up — the whole
+# stack in Linux containers; every other goal forwards to WSL unchanged.
 ifeq ($(OS),Windows_NT)
 
-# On Windows the app runs in Docker only (make docker-up). The WSL dev servers
-# don't work when driven from Windows: the shim forwards into WSL, but WSL's
-# Windows-PATH interop runs Windows node.exe, which can't spawn the Linux engine
-# binary. Refuse those targets with a clear pointer; build/test still forward.
-DOCKER_ONLY := serve server-node frontend
-ifneq ($(filter $(DOCKER_ONLY),$(MAKECMDGOALS)),)
-$(error On Windows, run the app in Docker: 'make docker-up'. The WSL dev servers (serve/server-node/frontend) cannot run here; build/test still work via make.)
+GOALS       := $(or $(MAKECMDGOALS),all)
+RUN_TARGETS := serve server-node frontend
+FWD         := $(foreach g,$(GOALS),$(if $(filter $(RUN_TARGETS),$g),docker-up,$g))
+ifneq ($(FWD),$(GOALS))
+$(info Windows: the app runs in Docker — forwarding as 'make $(FWD)'.)
 endif
 
-GOALS := $(or $(MAKECMDGOALS),all)
 .PHONY: $(GOALS) __wsl
 $(GOALS): __wsl
 	@:
 __wsl:
-	@wsl -e bash -lc "make $(MAKECMDGOALS)"
+	@wsl -e bash -lc "make $(FWD)"
 
 else
 
