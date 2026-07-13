@@ -261,10 +261,9 @@ then item 1 last). **Remaining: item 2 (hold-order granularity), now unblocked b
    - **Layout:** `CampPanel` is now a right-side sticky stack (`.camp-side`) — a Workforce readout,
      a Fortifications box, and a Militia box; the War Council split into `.council-main` (left) +
      `.camp-side` (right), stacking below on `<760px`.
-   - **DEFERRED (still open):** (a) **worker replenishment** — none yet; user leaning events *or*
-     per-turn growth, undecided. (b) **workers eating food at 1/3 upkeep** — intentionally NOT wired:
-     at a 2000-pool it would eat ~22 t/turn (> the whole army's 12.4 t) and instantly starve; revisit
-     together with replenishment so the two are balanced as a pair.
+   - **DEFERRED (still open):** worker replenishment + workers eating food — see
+     [[TODO — worker replenishment + workers eating food (paired)]] in the Deferred design
+     backlog below (kept there, not duplicated here, so there's one place to update).
 
 ### Working conventions (carry these to the new machine)
 
@@ -864,6 +863,18 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 ---
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
+
+**TODO — worker replenishment + workers eating food (paired).** From the Stage-5 playtest-item
+notes (2026-07-13): `workers` (civilian labour pool, `campaignConfig.js` `STARTING_WORKERS =
+2000`) currently only ever shrinks (`used` grows permanently on militia/fort spend, never
+resets) and never eats food — both intentionally deferred, and intentionally paired:
+- **Workers eating food** (planned: 1/3 the per-unit upkeep rate) is NOT wired because at a
+  2000-pool it would eat ~22 t/turn — more than the whole fighting army's 12.4 t/turn need —
+  and instantly starve any campaign.
+- **Worker replenishment** doesn't exist yet either (no natural growth, no event-driven influx).
+  User is leaning toward **events or per-turn growth**, undecided.
+Wire them together, not separately: eating without replenishment is an unwinnable drain: revisit
+once the replenishment mechanism is chosen.
 
 **TODO — combat score per hexside (fortification erosion).** Make `HexSide.combatScore`
 accumulate the net pressure the enemy exerts on a fortified side each combat phase, and have it
