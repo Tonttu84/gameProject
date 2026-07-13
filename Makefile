@@ -28,7 +28,7 @@ GOALS       := $(or $(MAKECMDGOALS),all)
 RUN_TARGETS := serve server-node frontend
 FWD         := $(foreach g,$(GOALS),$(if $(filter $(RUN_TARGETS),$g),docker-up,$g))
 ifneq ($(FWD),$(GOALS))
-$(info Windows: the app runs in Docker — forwarding as 'make $(FWD)'.)
+$(info Windows: the app runs in Docker; forwarding as 'make $(FWD)'.)
 endif
 
 .PHONY: $(GOALS) __wsl
