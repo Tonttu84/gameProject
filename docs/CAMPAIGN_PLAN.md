@@ -157,19 +157,66 @@ notes below over the git history if they ever disagree — the commits win.
 
 First campaign playtest on the new Docker-only Windows flow (`make serve` → auto `docker-up`;
 Makefile OS shim + boot login banner landed on branch `chore/windows-docker-makefile`). Sample
-battle runs + rewatches fine. Five items found. **Items 3, 4 & 5 are ✅ DONE** (all on branch
-`chore/windows-docker-makefile`; item 5 first on 2026-07-13, then items 3 & 4 the same session).
-**Remaining: item 1 (campaign squads) — the big one — then item 2 (hold-order), which depends on
-it.** Precondition fact: the campaign has **no
-player-facing squad concept yet** — placement stacks only group same-hex same-type into engine
-`Squad`s inside `./game battle` (`buildSquadsFromArmy`, UnitRegistry); the orders UI shows
-per-unit-TYPE rows in a hex.
+battle runs + rewatches fine. Five items found. **Items 1, 3, 4 & 5 are ✅ DONE** (all on branch
+`chore/windows-docker-makefile`; item 5 first on 2026-07-13, then items 3 & 4 the same session,
+then item 1 last). **Remaining: item 2 (hold-order granularity), now unblocked by item 1.**
 
-1. **Campaign squads — DO FIRST (2–4 depend on it).** Add a real squad concept to the campaign so
-   units can be grouped, **and seed the default starting army with squads so they're testable**
-   (starting roster = `STARTING_ROSTER` in `campaign-server/utils/campaignConfig.js`). Needs a
-   `CAMPAIGN_SCHEMA_VERSION` bump. Touches model + campaignView + placement/orders UI. Scope the
-   data model before building.
+1. **Campaign squads — ✅ DONE 2026-07-13** (`CAMPAIGN_SCHEMA_VERSION` 8 → 9). Persistent,
+   player-facing, mixed-type squads with full identity, reusing the engine's existing `Squad`
+   mechanics (name/banner/leader/collective morale/cohesion/squad-level hold order) almost
+   as-is — confirmed by reading the code that a broken/routed unit already calls `leaveSquad()`
+   (`Battlefield.cpp`), so the only engine gap was a persistent identity tag that survives a
+   rout, distinct from the live `Squad*` pointer (**enum/tag outside combat, pointer inside** —
+   user steer).
+   - **Engine seam:** `AUnit` gains `squadId`(int)/`squadName`(string), untouched by
+     `leaveSquad()`/`setBroken()`/`setAlive()`. `buildArmyFromPlacement` parses optional
+     `squad_id`/`squad_name` per placement entry (`UnitRegistry.cpp`). `buildSquadsFromArmy`
+     groups by `(hex, squadId)` instead of `(hex, symbol)` when tagged — this is what makes a
+     squad **mixed-type** — and sets the squad's hold order once from the tagged entries;
+     untagged stacks keep the original ad hoc same-type grouping unchanged. Battle output gains
+     `blue_squads`/`red_squads`: `{"<id>": {survivors: {type:count}, wiped: bool}}`
+     (`squadSurvivorJson`, exposed non-static in `BattleServer.hpp` for unit tests, matching the
+     existing `isSafeMapName`/`applyFortifiedSides` pattern). **`wiped` is derived with no new
+     Battlefield bookkeeping:** a survivor's `getSquad() != nullptr` means it's still attached to
+     the live in-battle Squad (the formation held) — `wiped = true` only when every tagged
+     survivor already left the squad (broke and fled), which is exactly how the campaign layer
+     tells "regroup" from "stragglers only, disband." Tests: `test_squad.cpp` (tag survives a
+     break/leaveSquad/death), `test_server_api.cpp` (mixed-type grouping, lone-tagged-unit squad,
+     squad-level hold, `squadSurvivorJson` wiped/not-wiped). Verified live: hand-built `./game
+     battle` JSON with a mixed `squad_id` group produced the exact designed `blue_squads` shape.
+   - **Campaign-server:** `squads: [{id, name, composition}]` on the model — `composition` is
+     always a subset already reflected in `roster` (the economy SSOT is unchanged; "loose" count
+     per type = `roster − Σ squads.composition − forage.assignment`, computed client-side the
+     same way forage availability already is). `STARTING_SQUADS` (`campaignConfig.js`) seeds
+     three named squads sized to fit one hex (`Hex::CAPACITY`) from `STARTING_ROSTER` — 1st
+     Cohort (40 Soldier), Skirmishers (30 Archer), Vanguard Riders (6 Cavalry + 6 LightCavalry,
+     the mixed-type exercise). Battle route (`routes/campaigns.js`) validates any `squad_id` in
+     `player_placement` belongs to the campaign's own squads (400 otherwise); after battle,
+     reconciles each fielded squad from `summary.blue_squads` — regroups with survivors
+     (including stragglers who broke but lived) or disbands if wiped (its survivors still land in
+     the flat roster via the existing per-type reconciliation, only the squad's organized
+     identity is lost). `red_squads` is deliberately never forwarded past `battleRunner.js` — the
+     enemy has no persistent squad concept, so it's dropped rather than becoming a hidden-info
+     leak surface with no use. `campaignView` exposes `squads` verbatim (own info). Tests: 6 new
+     cases in `campaigns.test.js` (seeding, regroup, disband-on-wipe, untouched-if-left-in-camp,
+     reject-foreign-squad-id, `red_squads` never leaks).
+   - **Frontend:** `ReachMenu` gains a "Squads" section above "Troops" — place/move a squad onto
+     a hex and set its one hold order, applied immediately (no per-type quantity to type, unlike
+     loose stacks). `HexGrid` renders squad markers on their hex and passes the new props through.
+     `App.jsx` tracks `squadPlacements` (`{squadId: {col,row,holdTurns}}`) alongside the existing
+     `placements`; `startBattle` expands each placed squad into one tagged entry per member;
+     "loose" roster (what "Troops" can offer) and the "N still in camp" gate both account for
+     squad-committed troops. Tests: `squadPlacement.test.jsx` (ReachMenu unit tests),
+     `squadPlacementFlow.test.jsx` (full War Council → muster → place → Fight! → payload,
+     mirroring `holdOrderFlow.test.jsx`).
+   - **Scope, deliberately:** no squad create/split/merge/rename UI yet (seeded squads only — a
+     later pass can add an editor); the **per-hex hold order for loose units stays per-type**
+     (unchanged) — that rework is item 2, sequenced after this because it depends on squads
+     existing to draw the "only a squad carries its own order" line.
+   - **Not yet run:** a real browser click-through (place a squad, fight, watch it regroup) —
+     every layer is unit/integration-tested (C++ `make test-serial`, `campaign-server npm test`,
+     `frontend npm test`, all green) plus one hand-built engine battle verified live, but the
+     Docker-on-Windows browser loop itself is next for a playtest session.
 2. **Hold-order granularity** (depends on 1). Today each hex/"square" shows a hold order **per
    unit type** (screenshot: Soldier/Archer/Mage… each "Hold (turns) 0"). Desired: only a **squad**
    carries its own hold order; every non-squad unit in a square shares **one** hold order for the
