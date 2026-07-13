@@ -864,6 +864,30 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.report.forage.clashes).toEqual([])
   })
 
+  // Workers eating food is DEFERRED on purpose (docs/CAMPAIGN_PLAN.md
+  // "Deferred design backlog" — at the 2000-pool starting size it would
+  // dwarf the whole army's upkeep and instantly starve every campaign;
+  // it's paired with worker replenishment, which doesn't exist yet
+  // either). This pins that today's upkeep depends ONLY on the roster —
+  // spending nearly the whole workforce (as militia/forts would) changes
+  // nothing about food consumed. If this test ever needs updating, that's
+  // the signal the deferred feature has been wired in for real.
+  test('workers do not eat food — upkeep is unaffected by the workforce pool', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id) // ±0-food truth keeps the resource math exact
+
+    const doc = await Campaign.findById(c.id)
+    doc.workers.used = 1999 // almost the entire 2000-worker pool spent
+    await doc.save()
+
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(res.status).toBe(200)
+    // Same 12,432 kg as the plain starting-roster case (see the test
+    // above) — workers.used had no effect on upkeep.
+    expect(res.body.report.upkeep.foodConsumed).toBe(12432)
+    expect(res.body.campaign.resources.food).toBe(50000 - 12432)
+  })
+
   test('foragers harvest at end of turn; the assignment clears for the new turn', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id) // keep the food math free of event noise
