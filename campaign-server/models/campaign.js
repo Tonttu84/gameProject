@@ -39,7 +39,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 8 // v8: workers (civilian labour pool); forts + militia spend it
+export const CAMPAIGN_SCHEMA_VERSION = 9 // v9: persistent player-facing squads (composition subset of roster)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -60,6 +60,28 @@ const campaignSchema = new mongoose.Schema({
   // Unit-type name -> count. Names validated against the unittypes collection
   // at the routes that mutate it.
   roster: { type: Map, of: Number, required: true },
+
+  // Persistent, player-facing squads (playtest item 1, docs/CAMPAIGN_PLAN.md).
+  // A squad's `composition` is always a subset reflected inside the matching
+  // `roster` counts, never a separate pool — "loose" (unassigned) count for a
+  // type = roster[type] − Σ squads[*].composition[type] − forage.assignment[type].
+  // `id` is a small campaign-scoped int (not an ObjectId) since it flows
+  // straight into the engine's placement JSON as squad_id. Seeded once at
+  // campaign creation from STARTING_SQUADS; there is no squad create/split/
+  // merge/rename UI yet, so no id-allocation counter is needed either.
+  squads: {
+    type: [
+      new mongoose.Schema(
+        {
+          id:          { type: Number, required: true },
+          name:        { type: String, required: true },
+          composition: { type: Map, of: Number, required: true },
+        },
+        { _id: false },
+      ),
+    ],
+    default: [],
+  },
 
   // Abstract fortification level (0..FORTIFICATION_MAX_LEVEL). Spending
   // materials at the camp raises it; a higher level walls a wider span of the

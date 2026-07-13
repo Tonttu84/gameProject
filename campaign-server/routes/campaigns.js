@@ -14,6 +14,7 @@ import config from '../utils/config.js'
 import {
   MAP_NAME,
   STARTING_ROSTER,
+  STARTING_SQUADS,
   STARTING_FOOD,
   STARTING_MATERIALS,
   STARTING_WORKERS,
@@ -54,6 +55,7 @@ router.post('/', async (req, res) => {
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS },
     workers: { total: STARTING_WORKERS, used: 0 },
     roster: STARTING_ROSTER,
+    squads: STARTING_SQUADS,
     forage: {
       rings: FORAGE_RINGS.map((richness, ring) => ({ ring, richness, initialRichness: richness })),
       assignment: {},
@@ -176,11 +178,23 @@ router.post('/:id/battles', async (req, res) => {
   if (!Array.isArray(placement) || placement.length === 0)
     return res.status(400).json({ error: 'player_placement required' })
 
-  // The roster is the budget: you can only field units you own.
+  // The roster is the budget: you can only field units you own. Placement
+  // entries for a squad carry squad_id (see Stage A) — validated against the
+  // campaign's own squads so a client can't invent an id or borrow one that
+  // isn't theirs. Whole-army/roster budget checks below don't need to treat
+  // squad-tagged entries any differently: they're already flattened into
+  // this same per-unit array by the client, one entry per unit.
+  const ownSquadIds = new Set(campaign.squads.map((s) => s.id))
+  const fieldedSquadIds = new Set()
   const placed = new Map()
   for (const entry of placement) {
     if (!entry || typeof entry.unit_type !== 'string')
       return res.status(400).json({ error: 'malformed placement entry' })
+    if (entry.squad_id != null) {
+      if (!ownSquadIds.has(entry.squad_id))
+        return res.status(400).json({ error: `not one of your squads: squad_id ${entry.squad_id}` })
+      fieldedSquadIds.add(entry.squad_id)
+    }
     placed.set(entry.unit_type, (placed.get(entry.unit_type) ?? 0) + 1)
   }
   const placeableTypes = new Set(
@@ -227,6 +241,25 @@ router.post('/:id/battles', async (req, res) => {
     campaign.roster.set(type, inCamp + (summary.blue_survivors[type] ?? 0))
   }
   campaign.enemy.army = summary.red_survivors
+
+  // Reconcile fielded squads: a squad regroups with its battle survivors
+  // (including any stragglers who broke but lived — Stage A's persistent
+  // squadId tag survives a rout) unless the engine reports the formation
+  // wiped, in which case it's disbanded — its survivors, if any, are already
+  // folded into the flat roster reconciliation above as loose troops.
+  // Squads left in camp (not in fieldedSquadIds) are untouched.
+  const squadSurvivors = summary.blue_squads ?? {}
+  campaign.squads = campaign.squads
+    .filter((squad) => {
+      if (!fieldedSquadIds.has(squad.id)) return true
+      const result = squadSurvivors[String(squad.id)]
+      return Boolean(result) && !result.wiped
+    })
+    .map((squad) => {
+      if (fieldedSquadIds.has(squad.id))
+        squad.composition = squadSurvivors[String(squad.id)].survivors
+      return squad
+    })
   campaign.battleFoughtToday = true
   campaign.battles.push(battle._id)
   campaign.log.push({

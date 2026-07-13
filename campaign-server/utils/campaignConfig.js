@@ -21,6 +21,18 @@ export const STARTING_ROSTER = {
   Cavalry: 10,
   LightCavalry: 12,
 }
+// Persistent starting squads (playtest item 1): a subset of STARTING_ROSTER
+// organized into named, deployable formations so squads are testable from
+// turn 1. Sized to fit one hex (Hex::CAPACITY = 640 size-points; Soldier/
+// Archer are 10, Cavalry/LightCavalry are 20 — see `./game info`). At least
+// one is mixed-type (Vanguard Riders) to exercise that path. `id` is a small
+// int, not an ObjectId — it flows straight into the engine's placement JSON
+// as squad_id. The remainder of STARTING_ROSTER stays loose (unassigned).
+export const STARTING_SQUADS = [
+  { id: 1, name: '1st Cohort',      composition: { Soldier: 40 } },
+  { id: 2, name: 'Skirmishers',     composition: { Archer: 30 } },
+  { id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 } },
+]
 // ~4 turns for the starting army (which needs 12,432 kg per turn).
 export const STARTING_FOOD = 50000
 // Playtest aid: seed enough to build the full fort progression from turn 1

@@ -66,6 +66,16 @@ export async function campaignView(campaign) {
       foodNeedPerTurn: armyFoodPerTurn(campaign.roster, catalog),
     },
     roster: Object.fromEntries(campaign.roster),
+    // Persistent, player-facing squads (own info, not hidden — same tier as
+    // fortificationLevel). A squad's composition is always a subset already
+    // reflected inside `roster` above; the client derives the loose
+    // (unassigned) remainder the same way it already derives forage
+    // availability — roster minus what's committed elsewhere.
+    squads: campaign.squads.map(({ id, name, composition }) => ({
+      id,
+      name,
+      composition: Object.fromEntries(composition),
+    })),
     // Civilian labour pool (own info): available = total − used. Forts and
     // militia both spend it; the client gates their buttons on `available`.
     workers: {

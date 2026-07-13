@@ -568,6 +568,126 @@ describe('POST /api/campaigns/:id/battles', () => {
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/not a placeable/)
   })
+
+  describe('squads (playtest item 1)', () => {
+    const setSquads = async (id, squads, roster) => {
+      const doc = await Campaign.findById(id)
+      doc.squads = squads
+      if (roster) doc.roster = roster
+      await doc.save()
+      return doc
+    }
+    const fieldSquad = (id, squad) =>
+      auth(api.post(`/api/campaigns/${id}/battles`)).send({
+        player_placement: Object.entries(squad.composition).flatMap(([unit_type, n]) =>
+          Array.from({ length: n }, () => ({
+            unit_type,
+            q: 4,
+            r: 4,
+            squad_id: squad.id,
+            squad_name: squad.name,
+          })),
+        ),
+      })
+
+    test('a fresh campaign seeds STARTING_SQUADS', async () => {
+      const { body: c } = await createCampaign()
+      expect(c.squads).toEqual([
+        { id: 1, name: '1st Cohort', composition: { Soldier: 40 } },
+        { id: 2, name: 'Skirmishers', composition: { Archer: 30 } },
+        { id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 } },
+      ])
+    })
+
+    test('fielding a squad regroups its battle survivors', async () => {
+      const squad = { id: 1, name: '1st Cohort', composition: { Soldier: 2 } }
+      const result = structuredClone(battleResultFixture)
+      result.blue_squads = { 1: { survivors: { Soldier: 1 }, wiped: false } }
+      engine.runBattle.mockResolvedValue(result)
+
+      const { body: c } = await createCampaign()
+      await setSquads(c.id, [squad], { Soldier: 2 })
+
+      const res = await fieldSquad(c.id, squad)
+      expect(res.status).toBe(201)
+      expect(res.body.campaign.squads).toEqual([
+        { id: 1, name: '1st Cohort', composition: { Soldier: 1 } },
+      ])
+    })
+
+    test('a wiped squad is disbanded after battle', async () => {
+      const squad = { id: 1, name: '1st Cohort', composition: { Soldier: 2 } }
+      const result = structuredClone(battleResultFixture)
+      // Both members broke and fled — stragglers, not a standing formation.
+      result.blue_survivors = { Soldier: 2 }
+      result.blue_squads = { 1: { survivors: { Soldier: 2 }, wiped: true } }
+      engine.runBattle.mockResolvedValue(result)
+
+      const { body: c } = await createCampaign()
+      await setSquads(c.id, [squad], { Soldier: 2 })
+
+      const res = await fieldSquad(c.id, squad)
+      expect(res.status).toBe(201)
+      expect(res.body.campaign.squads).toEqual([])
+      // The stragglers still count toward the roster — only the squad's
+      // organized identity is lost, not the troops themselves.
+      expect(res.body.campaign.roster.Soldier).toBe(2)
+    })
+
+    test('a squad left in camp is untouched by a battle fielding a different squad', async () => {
+      const fielded = { id: 1, name: '1st Cohort', composition: { Soldier: 2 } }
+      const inCamp = { id: 2, name: 'Skirmishers', composition: { Archer: 5 } }
+      const result = structuredClone(battleResultFixture)
+      result.blue_survivors = { Soldier: 2, Archer: 5 }
+      result.blue_squads = { 1: { survivors: { Soldier: 2 }, wiped: false } }
+      engine.runBattle.mockResolvedValue(result)
+
+      const { body: c } = await createCampaign()
+      await setSquads(c.id, [fielded, inCamp], { Soldier: 2, Archer: 5 })
+
+      // Field the 1st Cohort AND the Skirmishers' units loose (so the whole
+      // army rule is satisfied) — only 1st Cohort's placement carries its
+      // squad_id, so Skirmishers stays a squad, untouched.
+      const res = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+        player_placement: [
+          { unit_type: 'Soldier', q: 4, r: 4, squad_id: 1, squad_name: '1st Cohort' },
+          { unit_type: 'Soldier', q: 4, r: 4, squad_id: 1, squad_name: '1st Cohort' },
+          ...Array.from({ length: 5 }, () => ({ unit_type: 'Archer', q: 5, r: 4 })),
+        ],
+      })
+      expect(res.status).toBe(201)
+      expect(res.body.campaign.squads).toEqual([
+        { id: 1, name: '1st Cohort', composition: { Soldier: 2 } },
+        { id: 2, name: 'Skirmishers', composition: { Archer: 5 } },
+      ])
+    })
+
+    test('rejects a squad_id that is not one of the campaign\'s own squads', async () => {
+      const { body: c } = await createCampaign()
+      await shrinkRoster(c.id, { Soldier: 1 })
+      const res = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+        player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 999 }],
+      })
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(/not one of your squads/)
+      expect(engine.runBattle).not.toHaveBeenCalled()
+    })
+
+    test('red_squads is never exposed to the client', async () => {
+      const squad = { id: 1, name: '1st Cohort', composition: { Soldier: 2 } }
+      const result = structuredClone(battleResultFixture)
+      result.blue_squads = { 1: { survivors: { Soldier: 2 }, wiped: false } }
+      result.red_squads = { 5: { survivors: { Zombie: 3 }, wiped: false } } // engine-side, must not leak
+      engine.runBattle.mockResolvedValue(result)
+
+      const { body: c } = await createCampaign()
+      await setSquads(c.id, [squad], { Soldier: 2 })
+
+      const res = await fieldSquad(c.id, squad)
+      expect(res.status).toBe(201)
+      expect(JSON.stringify(res.body)).not.toContain('red_squads')
+    })
+  })
 })
 
 describe('POST /api/campaigns/:id/spend', () => {

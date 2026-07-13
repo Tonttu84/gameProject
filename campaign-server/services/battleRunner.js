@@ -49,6 +49,13 @@ async function persistBattleResult(result, { input, userId }) {
       winner: result.winner,
       blue_survivors: result.blue_survivors ?? {},
       red_survivors: result.red_survivors ?? {},
+      // Per-campaign-squad survivor breakdown for the player's OWN army —
+      // {"<squadId>": {survivors: {type: count}, wiped: bool}} — so the
+      // battle route can regroup/disband persistent squads. red_squads is
+      // deliberately never surfaced here: the enemy has no persistent
+      // squad concept in this campaign design, and exposing it would be a
+      // hidden-info leak surface for no current use.
+      blue_squads: result.blue_squads ?? {},
       tickCount: replay.ticks.length,
     },
   }
