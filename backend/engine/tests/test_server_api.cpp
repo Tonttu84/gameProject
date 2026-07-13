@@ -32,6 +32,29 @@ TEST_CASE("buildInfoJson: every unit entry has a placementSize > 0") {
     }
 }
 
+// The campaign layer's raid party-builder needs per-unit speed client-side,
+// so the placement info exports it alongside placementSize (same live-instance
+// read as the catalog — it can never drift from the constructors).
+TEST_CASE("buildInfoJson: every unit entry exports its movement speed") {
+    auto j = json::parse(buildInfoJson());
+    REQUIRE(!j["units"].empty());
+    for (const auto& u : j["units"]) {
+        INFO("unit: " << u["type"].get<std::string>());
+        REQUIRE(u.contains("speed"));
+        REQUIRE(u["speed"].is_number_integer());
+        REQUIRE(u["speed"].get<int>() >= 1);
+    }
+    auto speedOf = [&](const char* type) {
+        for (const auto& u : j["units"])
+            if (u["type"] == type) return u["speed"].get<int>();
+        FAIL("missing type: " << type);
+        return -1;
+    };
+    REQUIRE(speedOf("Soldier") == 1);
+    REQUIRE(speedOf("Cavalry") == 2);
+    REQUIRE(speedOf("LightCavalry") == 3);
+}
+
 TEST_CASE("buildInfoJson: Cavalry placementSize equals Horse::SIZE (mount size)") {
     auto j = json::parse(buildInfoJson());
     const auto& units = j["units"];

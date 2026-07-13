@@ -292,6 +292,7 @@ public:
     void setPreferredRange(int r)    { preferredRange = r; }
     int  getMovementSpeed()  const  { return movementSpeed; }
     int  getBallisticSkill() const  { return ballisticSkill; }
+    int  getReconTag()       const  { return reconTag; }
     int  getAccuracy()       const  { return accuracy; }
 
     // ── Squad movement points ─────────────────────────────────────────────────
@@ -372,6 +373,12 @@ protected:
     int fatigueRecovery = FATIGUERECOVERY;
     int preferredRange  = 0; // 0/1 = advance to melee; >1 = try to hold this hex distance
     int movementSpeed   = 1; // hexes moved per tick; 0 = immobile (never moves)
+    // Signed scouting adjustment, unused by the battle engine itself: the
+    // campaign layer's reconValue = speed² + ⌊ballisticSkill/2⌋ + reconTag.
+    // Set only where a unit's scouting worth diverges from what speed and
+    // ballistics already imply (LightCavalry +, Warhorse −); exported via
+    // unitCatalogJson() like every other stat.
+    int reconTag        = 0;
     
     int resistance = 10;
     int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff

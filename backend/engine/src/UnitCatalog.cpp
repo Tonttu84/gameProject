@@ -110,6 +110,7 @@ std::string unitCatalogJson()
                 {"speed",          u->getMovementSpeed()},
                 {"ballisticSkill", u->getBallisticSkill()},
                 {"preferredRange", u->getPreferredRange()},
+                {"reconTag",       u->getReconTag()},
             }},
         });
     }

@@ -47,7 +47,8 @@ const char* categoryName(UnitCategory cat);
 
 // Full catalog as JSON: {"units":[{name, symbol, size, category,
 // forbiddenTerrain, placeable, spawnable, stats{maxHP, attack, defence,
-// armour, speed, preferredRange}}, ...]}. Printed by `./game dump-units`;
+// armour, speed, ballisticSkill, preferredRange, reconTag}}, ...]}.
+// Printed by `./game dump-units`;
 // the campaign server imports it into the DB at startup.
 // NOTE: types whose constructors roll random gear (currently Skeleton) export
 // one sampled loadout for attack/defence/armour — treat those as representative,

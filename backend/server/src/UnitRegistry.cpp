@@ -59,6 +59,8 @@ std::string buildInfoJson()
             {"placementSize",    static_cast<int>(u->getSize())},
             {"category",         categoryName(u->getCategory())},
             {"forbiddenTerrain", forbidden},
+            // The campaign client needs per-unit speed (raid party costs).
+            {"speed",            u->getMovementSpeed()},
         });
     }
     std::string units = unitsJson.dump();

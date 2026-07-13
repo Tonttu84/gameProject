@@ -28,4 +28,5 @@ LightCavalry::LightCavalry(int setTeam)
 {
     printSymbol   = 'l';
     movementSpeed = 3; // light load — outpaces heavy Cavalry's 2
+    reconTag      = 4; // trained outriders — scouting is this unit's job
 }

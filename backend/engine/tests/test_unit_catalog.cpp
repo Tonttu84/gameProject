@@ -62,7 +62,8 @@ TEST_CASE("unit catalog: every entry has the full field set") {
         REQUIRE(u.contains("stats"));
         const auto& s = u["stats"];
         for (const char* k : {"maxHP", "attack", "defence", "armour",
-                              "speed", "ballisticSkill", "preferredRange"}) {
+                              "speed", "ballisticSkill", "preferredRange",
+                              "reconTag"}) {
             INFO("stat: " << k);
             REQUIRE(s.contains(k));
             REQUIRE(s[k].is_number_integer());
@@ -98,6 +99,7 @@ TEST_CASE("unit catalog: exported values match a live instance of each type") {
         REQUIRE(cat["stats"]["speed"].get<int>()          == u->getMovementSpeed());
         REQUIRE(cat["stats"]["ballisticSkill"].get<int>() == u->getBallisticSkill());
         REQUIRE(cat["stats"]["preferredRange"].get<int>() == u->getPreferredRange());
+        REQUIRE(cat["stats"]["reconTag"].get<int>()       == u->getReconTag());
 
         // forbiddenTerrain mirrors forbiddenTerrainForCategory()
         auto forbidden = forbiddenTerrainForCategory(u->getCategory());
@@ -130,6 +132,20 @@ TEST_CASE("unit catalog: movement speed and ballistic skill pinned per type") {
     REQUIRE(findUnit(j, "LightCavalry")["stats"]["ballisticSkill"].get<int>() == 8);
     // Fast but ranged-blind — the flag that keeps quick animals from scouting.
     REQUIRE(findUnit(j, "Horse")["stats"]["ballisticSkill"].get<int>()        == 1);
+}
+
+// reconTag: the signed designer knob in the campaign's reconValue
+// (speed² + ⌊ballisticSkill/2⌋ + reconTag). Default 0 — only units whose
+// scouting worth diverges from what speed+ballistics already say carry one:
+// LightCavalry positive (trained outriders), Warhorse negative (a battle
+// mount bred for the charge, not the picket line).
+TEST_CASE("unit catalog: reconTag pinned per type, default 0") {
+    auto j = json::parse(unitCatalogJson());
+    REQUIRE(findUnit(j, "LightCavalry")["stats"]["reconTag"].get<int>() == 4);
+    REQUIRE(findUnit(j, "Warhorse")["stats"]["reconTag"].get<int>()     == -2);
+    REQUIRE(findUnit(j, "Soldier")["stats"]["reconTag"].get<int>()      == 0);
+    REQUIRE(findUnit(j, "Cavalry")["stats"]["reconTag"].get<int>()      == 0);
+    REQUIRE(findUnit(j, "Horse")["stats"]["reconTag"].get<int>()        == 0);
 }
 
 TEST_CASE("unit catalog: pinned sizes stay consistent with SIZE constexprs") {
