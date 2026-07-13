@@ -196,10 +196,15 @@ stacks only group same-hex same-type into engine `Squad`s inside `./game battle`
      actually exercise them so the walls can be bought and seen on the campaign map + in battle —
      bump starting `resources.materials` in `campaign-server/utils/campaignConfig.js`, and/or add a
      debug "grant resources" option.
-   - **Workers-resource readout.** Show a resource as **total AND used**, formatted
-     `(total − used) / total` (available-over-total, e.g. `8/12`). OPEN QUESTION before building:
-     define "workers" — a genuinely new resource, or a readout over an existing pool (foragers
-     assigned vs. roster, or militia)? Clarify the referent first.
+   - **Workers = NEW resource (civilians, NOT shown on the campaign map).** Add a `workers` pool
+     to the campaign model (track total + used; `CAMPAIGN_SCHEMA_VERSION` bump). Display as
+     **`(total − used) / total`** = available-over-total (e.g. `8/12`). **Militia training consumes
+     1 *unspent* worker per militia**, on top of the existing 2 food + 1 material — so the militia
+     purchase now also gates on / decrements available workers, and both the cost line and
+     `canBuyMilitia` (`CampPanel.jsx`) must include workers; the server spend route enforces it. A
+     worker is spent permanently (it *becomes* the soldier). `campaignView` exposes
+     total/used/available; HUD + `CampPanel` surface it. OPEN: starting total (config) and whether
+     workers ever replenish.
 
 ### Working conventions (carry these to the new machine)
 
