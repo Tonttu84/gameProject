@@ -659,10 +659,102 @@ the enemy assault eat the penalty.
 
 ## Stage 4 — Scouting (coverage → cavalry-superiority gauge)
 
-> ### ⚠️ PENDING REVISION (2026-07-09, user) — NOT YET FINALIZED, do not implement
-> The body of Stage 4 below is being **redesigned before it is built**. Recorded here so the
-> reasoning survives a context clear; fold it *into* the Stage 4 body (rewriting, not just
-> appending) after the current manual-testing pass. Design steer from the user this session:
+> ### ✅ PLAN FINALIZED 2026-07-13 (user-approved, NOT yet implemented) — READ THIS FIRST
+> The 2026-07-09 revision below was resolved in a planning session on 2026-07-13 and an
+> implementation plan was **approved by the user**. It supersedes both the old Stage-4 body
+> (which stays below as the detailed reference for Phases A/B/C — still the design being
+> executed, just keyed off the new scouting band) and the open questions in the revision block.
+> Work ships as **two parts, four sub-pieces**, each independently shippable (one per fresh
+> session); 1a must land first, 1b/1c/1d in any order, Part 2 (raids) after 1a.
+>
+> **1a. Scouting coverage/band foundation.**
+> - Engine: signed stat `reconTag` on `AUnit` (default 0; LightCavalry positive, Warhorse/heavy
+>   negative), exported in `unitCatalogJson()` — same SSOT workflow as `ballisticSkill`
+>   (tripwire in `test_unit_catalog.cpp`). ALSO add `"speed"` to `buildInfoJson()`'s placement
+>   units (`UnitRegistry.cpp` ~56-62; currently type/symbol/placementSize/category/
+>   forbiddenTerrain) — the raid party-builder needs per-unit speed client-side; tripwire in
+>   `test_server_api.cpp`.
+> - Campaign-server: `unitType.js` statsSchema += `reconTag`; fixtures updated. In
+>   `capabilities.js`: replace unused `scoutValue` with
+>   `reconValue(stats) = speed² + floor(ballisticSkill/2) + reconTag`, add
+>   `scoutingCoverage(army, catalog) = Σ(count·reconValue) / Σ(count·size)` (armyFoodPerTurn's
+>   Map-or-object pattern). `scoutingBand(playerCoverage/enemyCoverage)` →
+>   Overwhelming/Superior/Contested/Outmatched/Blind, thresholds `SCOUTING_BAND_THRESHOLDS` in
+>   `campaignConfig.js`. `campaignView` exposes `scouting: {band}` — ONLY the band label ever
+>   crosses the hidden-info boundary (never raw ratio/enemy composition); no schema change
+>   (derived at view time like foodNeedPerTurn).
+> **1b. Graduated enemy reveal** = old Phase A keyed off the 1a band: Blind → stance only (as
+> today); Outmatched/Contested → + strength band (bucket `armyTotal(enemy.army)` into named
+> ranges) + supplies trend; Superior → + composition by category % (reuse the catalog `category`);
+> Overwhelming → + exact counts AND `enemy.plannedPlacement` (the model field's reserved "HIDDEN
+> until a scouting reveal" moment; no schema change). All band-conditional logic in
+> `campaignView.js` (the single leak gate). Frontend: `HexGrid.jsx` optional `enemyPlacements`
+> prop → red glyphs on enemy-zone hexes (inverse axial `col = q + floor(r/2)`). NOTE the tempo
+> insight: revealing plannedPlacement at the top band IS the "worse intel commits first"
+> mechanic (the enemy's placement is already fixed at new-turn; a well-scouted player reacts to
+> it) — literal staged/sequential deployment commits were considered and DEFERRED (needs
+> multi-round placement plumbing; revisit only if 1b doesn't satisfy once played).
+> **1c. Recon-sensitive event rungs** = old Phase B keyed off the band: `EVENT_POOL` entries get
+> `reconSensitive: true` + a 3-rung ladder (Blind → full bad; Warned = Outmatched/Contested →
+> lesser; Anticipated = Superior/Overwhelming → neutral/reversed-positive; new `applyEffect`
+> arms `enemy_losses` + free-reveal). `dayResolution` step 3 picks the rung; the augur still
+> foretells the Blind rung; day report names the FIRED rung + "scouts intervened" flag. The
+> blueprint events below (Enemy Ambush / Forage Raiders / Night Raid) stand.
+> **1d. Forage posture multipliers** = old Phase C: band-keyed `FORAGE_YIELD_BY_BAND` +
+> `FORAGE_CLASH_DAMPER_BY_BAND` tables in `campaignConfig.js`, applied as two `×` insertions in
+> `forage.js` yield + `skirmish.js`/forage clash chance. Includes the
+> forageValue/screenValue/reconValue overlap check (non-blocking).
+>
+> **Part 2 — RAID OPPORTUNITIES (new, user design 2026-07-13).** A raid phase: capacity-limited
+> parties hit scouted targets, resolved as REAL short engine battles through the existing
+> pipeline (watchable in ReplayView — that's the point; NOT the abstract resolveClash formula).
+> - **Model** (`CAMPAIGN_SCHEMA_VERSION` 9→10): `raid.opportunities []` of `{id, type:
+>   destroy_detachment|loot_supplies|rescue_troops|counter_event, title, description,
+>   targetForce (Map, HIDDEN), strengthBand (shown), capacity, reward (Mixed), resolved,
+>   outcome {winner, battleId}|null}`.
+> - **Generation** (`services/raid.js`, called in dayResolution step 7 beside
+>   buildEnemyPlacement): count/quality scales with scouting band (`RAID_OPPORTUNITIES_PER_DAY`
+>   by band, Blind→1 … Overwhelming→3 — raids stay somewhat random; the OTHER benefits above are
+>   deterministic by level, per user steer). `targetForce` = random slice of `enemy.army`
+>   (`RAID_TARGET_FRACTION`), NOT pre-subtracted — becomes real only on a win. `counter_event`
+>   generates only when some augury slot's trueEvent has `eventValence(effect) === 'bad'`
+>   (reuse the existing classifier); reward `{slot}`; description stays vague about which event.
+> - **Party capacity**: `raidCapacityCost(stats, size) = max(0, size × (40 − speed) /
+>   RAID_CAPACITY_SPEED_SCALE)` with scale 40 (user formula, kept literally even though speed is
+>   1–3 today — the movement-speed rework in the deferred backlog makes it meaningful; the TODO
+>   comment lives on this one function).
+> - **Placement**: extract `buildEnemyPlacement`'s zone-spread core into shared
+>   `spreadPlacement(army, zone, sizeOf)`; auto-place BOTH sides of a raid (no manual raid
+>   placement UI in v1).
+> - **Route** `POST /:id/raids/:raidId/launch {party: {type:count}}`: guards like existing
+>   routes; validate party vs `roster − forage.assignment` + Σcost ≤ capacity; battle input
+>   `{map: MAP_NAME, player_placement: spread(party, playerZone), enemy_placement:
+>   spread(targetForce, enemyZone), max_turns: RAID_MAX_TURNS}`, NO fortified_sides;
+>   `runAndPersistBattle`; reconcile roster like the battle route; on WIN apply reward
+>   (destroy → subtract targetForce from enemy.army clamped ≥0; loot → +food/materials;
+>   rescue → +roster; counter_event → `augury.slots[slot].countered = true`, new schema flag);
+>   mark resolved + outcome, log, return `{...summary, campaign: view}`.
+> - **dayResolution step 3**: a `countered` slot SKIPS applyEffect, logs "averted";
+>   `auguryReveal` reports the flag.
+> - **campaignView**: unresolved opportunities strip `targetForce` to `strengthBand` only;
+>   resolved ones show outcome/battleId (the replay is the reveal).
+> - **Frontend**: `components/RaidPanel.jsx` in `council-main` beside ForagePanel (phase
+>   'setup'); party-builder clamps live vs capacity using the new `speed` on info.units;
+>   "Watch the raid" = existing `ReplayView(battleId)`; scouting band label shown in
+>   HUD/RaidPanel (banded label, no raw odds — house style).
+> - **Tests**: `campaign-server/tests/raid.test.js` (generation scaling, counter_event
+>   conditionality, capacity/roster 400s, per-type reward application with mocked engine,
+>   hidden-info: targetForce never leaks pre-resolution); `raidPanel.test.jsx`; extend the
+>   campaigns.test.js hidden-info sweep to `raid`.
+> **Open decisions recorded, NOT resolved:** (1) raid-vs-main-battle turn sequencing — for now
+> INDEPENDENT (same units may raid and fight the main battle the same turn, no battleFoughtToday
+> gate; explicitly a placeholder — might become a distinct raiding phase / multiple raid turns
+> before the main battle); (2) the movement-speed rework (see deferred backlog); (3) staged
+> deployment commits (see 1b note). Enemy-reinforcement detection stays deferred (needs the
+> reinforcement mechanic first, see below).
+
+> ### ⚠️ PENDING REVISION (2026-07-09, user) — resolved by the 2026-07-13 finalized plan above;
+> kept for the reasoning. Original steer:
 >
 > **Split the single gauge into TWO tied-but-distinct systems.** The Stage-4 body below collapses
 > "scouting" and "cavalry superiority" into one band (Overwhelming → **Blind**). That's wrong:
@@ -891,6 +983,23 @@ This is the step that makes `fortDurability` live and where per-level fortificat
 scaling really bites. Sits directly after Stage 3 fortifications; see the Stage 3 "Forward path"
 note. (Mirrored as an auto-memory todo, but this repo entry is the SSOT — it travels between
 machines; the memory pointer may not.)
+
+**TODO — movement-speed rework (scale + terrain-flexible cost).** From the 2026-07-13 raid
+planning session (user): today's `movementSpeed` is 1–3 (foot/heavy cav/light cav), which makes
+the raid capacity formula `size × (40 − speed) / 40` barely differentiate units — the user chose
+to ship the formula literally anyway and fix the STAT later. Rework: movement on a bigger scale
+(something like ~10 basic infantry, ~20 cavalry), with per-terrain movement cost made flexible at
+the same time. When it lands, the raid formula (one seam: `raidCapacityCost` in
+`campaign-server/utils/capabilities.js`) becomes meaningful without a raid-side rewrite. Engine
+`getMovementSpeed()` consumers (movement loop steps/tick, squad min-speed, `reconValue`'s speed²)
+must be rescaled together.
+
+**TODO — raid vs. main-battle turn sequencing (open DECISION, could go either way).** For the
+first raid implementation, raiding is INDEPENDENT of the main battle — the same units may raid
+and fight the main battle in one turn, and raids aren't gated by `battleFoughtToday`. This is
+explicitly the simplest placeholder, not a decision: the real turn cycle (e.g. one or more
+raiding turns/phases BEFORE the main battle, or raids consuming the turn's battle slot, or a
+forage-style carve-out) is deferred until the full loop is playtested with raids in it.
 
 **Morale overhaul (battle↔campaign).** Two morale tracks per army on a 1–1000 scale: a
 **starting/max** value and a **current** value. Unit deaths damage the max a little and the
