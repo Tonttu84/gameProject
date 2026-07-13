@@ -153,6 +153,42 @@ notes below over the git history if they ever disagree — the commits win.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
+### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  ⏳ NOT STARTED
+
+First campaign playtest on the new Docker-only Windows flow (`make serve` → auto `docker-up`;
+Makefile OS shim + boot login banner landed on branch `chore/windows-docker-makefile`). Sample
+battle runs + rewatches fine. Four items found, none started — recorded here so a context clear
+loses nothing. **Immediate next session = item 1 (campaign squads); items 2–4 depend on or follow
+it.** Precondition fact: the campaign has **no player-facing squad concept yet** — placement
+stacks only group same-hex same-type into engine `Squad`s inside `./game battle`
+(`buildSquadsFromArmy`, UnitRegistry); the orders UI shows per-unit-TYPE rows in a hex.
+
+1. **Campaign squads — DO FIRST (2–4 depend on it).** Add a real squad concept to the campaign so
+   units can be grouped, **and seed the default starting army with squads so they're testable**
+   (starting roster = `STARTING_ROSTER` in `campaign-server/utils/campaignConfig.js`). Needs a
+   `CAMPAIGN_SCHEMA_VERSION` bump. Touches model + campaignView + placement/orders UI. Scope the
+   data model before building.
+2. **Hold-order granularity** (depends on 1). Today each hex/"square" shows a hold order **per
+   unit type** (screenshot: Soldier/Archer/Mage… each "Hold (turns) 0"). Desired: only a **squad**
+   carries its own hold order; every non-squad unit in a square shares **one** hold order for the
+   whole square — not one per type. Order UI = the deployment-orders panel
+   (`frontend` placement orders; `deploymentOrders.test.jsx`).
+3. **Militia UX polish — pure frontend (`components/CampPanel.jsx`).** The commit button + resource
+   validation ALREADY exist (`militia-button`, `canBuyMilitia`), so this is polish, not new
+   function: (a) clamp the numeric input to max-affordable `min(floor(food/2), floor(materials/1))`
+   (it currently accepts `99999999`), and (b) add a `title` explaining *why* the button is disabled
+   (mirror the fortify button's `title` pattern a few lines up). Keep the server-side cap as the
+   real guard.
+4. **Omen header vs shown flavor — decide + fix (`components/AuguryPanel.jsx`).** The severity label
+   ("A gentle/troubling/dire omen") comes from `vision.severity`, which currently tracks the **true**
+   omen, so it mismatches the shown (false) flavor: *Harsh Weather* shows "gentle" (its truth is
+   Supply Cache); *Reinforcements* shows "troubling" (its truth is Desertion). **DECISION (user
+   leaned a):** (a) label the SHOWN flavor — severity should come from the displayed omen, preserving
+   the bluff; vs (b) keep header = true omen as a deliberate truth-tell. Root cause is server-side —
+   check where `severity` is set in `campaign-server/services/augury.js` (+ the omen pool in
+   `services/events.js`): fix is likely sourcing severity from the *displayed* event, or auditing
+   each omen definition so its own severity matches its own flavor.
+
 ### Working conventions (carry these to the new machine)
 
 - **Build is Linux-only.** On Windows use **WSL (Ubuntu)** or Docker. One dev machine has WSL
