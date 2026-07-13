@@ -203,8 +203,10 @@ stacks only group same-hex same-type into engine `Squad`s inside `./game battle`
      purchase now also gates on / decrements available workers, and both the cost line and
      `canBuyMilitia` (`CampPanel.jsx`) must include workers; the server spend route enforces it. A
      worker is spent permanently (it *becomes* the soldier). `campaignView` exposes
-     total/used/available; HUD + `CampPanel` surface it. OPEN: starting total (config) and whether
-     workers ever replenish.
+     total/used/available; HUD + `CampPanel` surface it. **Workers also eat food at 1/3 the
+     per-unit upkeep rate** (they cover the rest from private sources) — fold into the
+     `dayResolution` player-upkeep step (today `food -= ceil(units/10)`). OPEN: starting total
+     (config) and whether workers ever replenish.
 
 ### Working conventions (carry these to the new machine)
 
