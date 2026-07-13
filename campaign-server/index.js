@@ -3,7 +3,7 @@ import config from './utils/config.js'
 import { connectDb } from './utils/db.js'
 import { dumpUnits, getInfo } from './services/engine.js'
 import { syncCatalog } from './services/catalogSync.js'
-import { seedDevUser } from './services/devSeed.js'
+import { seedDevUser, devLoginAvailable } from './services/devSeed.js'
 
 // Boot: DB up → catalog synced from the engine (single source of truth) →
 // info cache warmed → listen. A failed catalog sync aborts the boot on
@@ -35,6 +35,8 @@ const start = async () => {
     console.log('  POST /api/campaigns/:id/forage   — assign foragers for the turn')
     console.log('  POST /api/campaigns/:id/battles  — fight the turn\'s battle')
     console.log('  POST /api/campaigns/:id/end-day  — resolve the turn (two weeks)')
+    if (devLoginAvailable())
+      console.log(`\nReady: open http://localhost:${config.PORT} and log in as ${config.DEV_USER} / ${config.DEV_PASSWORD}`)
   })
 }
 
