@@ -181,33 +181,34 @@ const HexGrid = ({
           {stack.map((p, i) => {
             const rowY = y + (i - (stack.length - 1) / 2) * 9
             return (
-              <React.Fragment key={p.type}>
-                <text
-                  x={x}
-                  y={rowY}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fontSize="8"
-                  fill="#88aaff"
-                >
-                  {p.type[0]}{p.count}
-                </text>
-                {p.holdTurns > 0 && (
-                  <text
-                    data-testid={`hold-badge-${col}-${row}-${p.type}`}
-                    x={x + HEX_SIZE * 0.55}
-                    y={rowY}
-                    textAnchor="start"
-                    dominantBaseline="middle"
-                    fontSize="7"
-                    fill="#ffcc66"
-                  >
-                    ⌛{p.holdTurns}
-                  </text>
-                )}
-              </React.Fragment>
+              <text
+                key={p.type}
+                x={x}
+                y={rowY}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="8"
+                fill="#88aaff"
+              >
+                {p.type[0]}{p.count}
+              </text>
             )
           })}
+          {/* One hold badge for the whole square — loose units share a single
+              order (only a squad carries its own, drawn separately below). */}
+          {stack.length > 0 && stack[0].holdTurns > 0 && (
+            <text
+              data-testid={`hold-badge-${col}-${row}`}
+              x={x + HEX_SIZE * 0.55}
+              y={y + (0 - (stack.length - 1) / 2) * 9}
+              textAnchor="start"
+              dominantBaseline="middle"
+              fontSize="7"
+              fill="#ffcc66"
+            >
+              ⌛{stack[0].holdTurns}
+            </text>
+          )}
           {hexSquads.map((sq, i) => {
             const rowY = y + (stack.length + i - (stack.length + hexSquads.length - 1) / 2) * 9
             const holdTurns = squadPlacements[sq.id]?.holdTurns ?? 0

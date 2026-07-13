@@ -153,13 +153,12 @@ notes below over the git history if they ever disagree — the commits win.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
-### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  🔶 IN PROGRESS
+### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  ✅ ALL DONE
 
 First campaign playtest on the new Docker-only Windows flow (`make serve` → auto `docker-up`;
 Makefile OS shim + boot login banner landed on branch `chore/windows-docker-makefile`). Sample
-battle runs + rewatches fine. Five items found. **Items 1, 3, 4 & 5 are ✅ DONE** (all on branch
-`chore/windows-docker-makefile`; item 5 first on 2026-07-13, then items 3 & 4 the same session,
-then item 1 last). **Remaining: item 2 (hold-order granularity), now unblocked by item 1.**
+battle runs + rewatches fine. Five items found, **all ✅ DONE** (items 5, then 3 & 4, then 1, all
+on branch `chore/windows-docker-makefile`; item 2 last, on `main`, unblocked by item 1).
 
 1. **Campaign squads — ✅ DONE 2026-07-13** (`CAMPAIGN_SCHEMA_VERSION` 8 → 9). Persistent,
    player-facing, mixed-type squads with full identity, reusing the engine's existing `Squad`
@@ -217,11 +216,19 @@ then item 1 last). **Remaining: item 2 (hold-order granularity), now unblocked b
      every layer is unit/integration-tested (C++ `make test-serial`, `campaign-server npm test`,
      `frontend npm test`, all green) plus one hand-built engine battle verified live, but the
      Docker-on-Windows browser loop itself is next for a playtest session.
-2. **Hold-order granularity** (depends on 1). Today each hex/"square" shows a hold order **per
-   unit type** (screenshot: Soldier/Archer/Mage… each "Hold (turns) 0"). Desired: only a **squad**
-   carries its own hold order; every non-squad unit in a square shares **one** hold order for the
-   whole square — not one per type. Order UI = the deployment-orders panel
-   (`frontend` placement orders; `deploymentOrders.test.jsx`).
+2. **Hold-order granularity — ✅ DONE** (`components/ReachMenu.jsx`, `components/HexGrid.jsx`).
+   Previously each hex/"square" showed a hold order **per unit type** (screenshot: Soldier/Archer/
+   Mage… each "Hold (turns) 0"). Now only a **squad** carries its own hold order (unchanged); every
+   non-squad unit placed on a square shares **one** hold order for the whole square — `ReachMenu`
+   keeps a single `holdTurns` number (seeded from any existing placement on the hex, since Place
+   always writes the same value to every type) instead of one per type, and applies it to every
+   placed type on commit. The single control only renders once something is placed
+   (`data-testid="hold-turns"`, replacing the old per-type `hold-turns-<Type>` ids). `HexGrid`'s
+   on-map hold badge follows suit — one `hold-badge-<col>-<row>` per hex instead of one per stack
+   (squad hold badges are unchanged, drawn separately per squad). Tests:
+   `holdOrder.test.jsx` (ReachMenu unit tests, rewritten for the single control),
+   `holdOrderFlow.test.jsx` (testid update only), `deploymentOrders.test.jsx` (badge tests
+   rewritten for one-per-hex). All 160 frontend tests + oxlint green.
 3. **Militia UX polish — ✅ DONE 2026-07-13** (`components/CampPanel.jsx`, commit `d9e654e`). The
    count input now clamps to the most the camp can pay for — `clampMilitia` caps at
    `min(floor(food/2), floor(materials/1), floor(workersFree/1))` (workers added since the plan was

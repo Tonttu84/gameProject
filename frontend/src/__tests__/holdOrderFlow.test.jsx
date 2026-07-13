@@ -77,7 +77,7 @@ const placeSoldiers = async ({ count, holdTurns }) => {
   fireEvent.click(screen.getByTestId('hex-0-4'))
   fireEvent.change(screen.getByTestId('count-Soldier'), { target: { value: String(count) } })
   if (holdTurns !== undefined)
-    fireEvent.change(screen.getByTestId('hold-turns-Soldier'), { target: { value: String(holdTurns) } })
+    fireEvent.change(screen.getByTestId('hold-turns'), { target: { value: String(holdTurns) } })
   fireEvent.click(screen.getByRole('button', { name: /place/i }))
 
   fireEvent.click(screen.getByRole('button', { name: /fight!/i }))

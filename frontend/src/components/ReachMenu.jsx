@@ -8,16 +8,16 @@ const ReachMenu = ({
   hex, placements, roster, units, hexTerrain, hexCapacity, onPlace, onClose,
   squads = [], squadPlacements = {}, onPlaceSquad, onRemoveSquad,
 }) => {
-  const stackCounts    = Object.fromEntries(placements.map(p => [p.type, p.count]))
-  const stackHoldTurns = Object.fromEntries(placements.map(p => [p.type, p.holdTurns ?? 0]))
+  const stackCounts = Object.fromEntries(placements.map(p => [p.type, p.count]))
 
   const [counts, setCounts] = useState(() =>
     Object.fromEntries(units.map(u => [u.type, stackCounts[u.type] ?? 0]))
   )
 
-  const [holdTurns, setHoldTurns] = useState(() =>
-    Object.fromEntries(units.map(u => [u.type, stackHoldTurns[u.type] ?? 0]))
-  )
+  // Hold order is per-square, not per-type: every loose unit placed on this
+  // hex shares one value (only a squad carries its own order). All existing
+  // placement entries on this hex already agree, so any one of them seeds it.
+  const [holdTurns, setHoldTurns] = useState(() => placements[0]?.holdTurns ?? 0)
 
   const isForbidden = (unit) => unit.forbiddenTerrain?.includes(hexTerrain)
 
@@ -71,9 +71,8 @@ const ReachMenu = ({
     setCounts(c => ({ ...c, [unit.type]: Math.min(Math.max(0, requested), cap) }))
   }
 
-  const handleHoldChange = (type, rawVal) => {
-    const v = Math.max(0, parseInt(rawVal) || 0)
-    setHoldTurns(h => ({ ...h, [type]: v }))
+  const handleHoldChange = (rawVal) => {
+    setHoldTurns(Math.max(0, parseInt(rawVal) || 0))
   }
 
   const commit = () => {
@@ -81,7 +80,7 @@ const ReachMenu = ({
       onPlace(
         hex.col, hex.row, u.type,
         isForbidden(u) ? 0 : (counts[u.type] ?? 0),
-        isForbidden(u) ? 0 : (holdTurns[u.type] ?? 0),
+        isForbidden(u) ? 0 : holdTurns,
       )
     })
     onClose()
@@ -92,9 +91,9 @@ const ReachMenu = ({
     onClose()
   }
 
-  // Orders are per-placement: only units actually going onto this hex have
-  // anything to be ordered. An unplaced roster type shows no order controls.
-  const orderedUnits = units.filter(u => !isForbidden(u) && (counts[u.type] ?? 0) > 0)
+  // The order control only appears once something is actually going onto
+  // this hex — an empty square has nothing to be ordered.
+  const hasPlacedUnits = units.some(u => !isForbidden(u) && (counts[u.type] ?? 0) > 0)
 
   return (
     <div className="reach-menu">
@@ -192,30 +191,27 @@ const ReachMenu = ({
       })}
 
       <div className="reach-section-title">Orders</div>
-      {orderedUnits.length === 0 ? (
+      {!hasPlacedUnits ? (
         <div className="reach-orders-empty" data-testid="orders-empty">
           Place troops above to give them orders.
         </div>
       ) : (
-        orderedUnits.map(u => (
-          <div key={u.type} className="reach-order-row">
-            <span className="reach-symbol">{u.symbol}</span>
-            <span className="reach-type">{u.type}</span>
-            {/* Hold is the only order today. Future order types (stance,
-                target priority) add more labeled fields to this row. */}
-            <label className="reach-order-field">
-              Hold (turns)
-              <input
-                type="number"
-                min={0}
-                value={holdTurns[u.type] ?? 0}
-                onChange={e => handleHoldChange(u.type, e.target.value)}
-                className="reach-hold-input"
-                data-testid={`hold-turns-${u.type}`}
-              />
-            </label>
-          </div>
-        ))
+        <div className="reach-order-row">
+          {/* Hold is the only order today. Future order types (stance,
+              target priority) add more labeled fields to this row. One
+              order for the whole square — only a squad carries its own. */}
+          <label className="reach-order-field">
+            Hold (turns)
+            <input
+              type="number"
+              min={0}
+              value={holdTurns}
+              onChange={e => handleHoldChange(e.target.value)}
+              className="reach-hold-input"
+              data-testid="hold-turns"
+            />
+          </label>
+        </div>
       )}
 
       <button className="reach-commit" onClick={commit}>Place</button>

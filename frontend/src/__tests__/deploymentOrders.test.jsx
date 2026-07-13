@@ -1,9 +1,11 @@
 /**
  * Deployment-orders tests spanning the grid and the campaign screen.
  *
- *  - HexGrid draws a hold indicator on any placed hex whose stack carries a
- *    hold order (holdTurns > 0), so a player can see standing orders without
- *    reopening the ReachMenu.  No badge when the order is 0 (advance).
+ *  - HexGrid draws a hold indicator on any placed hex that carries a hold
+ *    order (holdTurns > 0), so a player can see standing orders without
+ *    reopening the ReachMenu. Hold is per-square (one badge per hex, not
+ *    per stack) — only a squad carries its own separate order. No badge
+ *    when the order is 0 (advance).
  *  - The Deployment tutorial intro explains hold orders.
  */
 
@@ -45,7 +47,7 @@ describe('HexGrid: hold indicators on placed hexes', () => {
     renderGrid({
       placements: [{ type: 'Soldier', col: 1, row: 4, count: 3, holdTurns: 2 }],
     })
-    const badge = screen.getByTestId('hold-badge-1-4-Soldier')
+    const badge = screen.getByTestId('hold-badge-1-4')
     expect(badge).toBeInTheDocument()
     expect(badge).toHaveTextContent('2')
   })
@@ -54,18 +56,17 @@ describe('HexGrid: hold indicators on placed hexes', () => {
     renderGrid({
       placements: [{ type: 'Soldier', col: 1, row: 4, count: 3, holdTurns: 0 }],
     })
-    expect(screen.queryByTestId('hold-badge-1-4-Soldier')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('hold-badge-1-4')).not.toBeInTheDocument()
   })
 
-  it('badges each holding stack on a hex independently', () => {
+  it('draws one hold badge for the whole square, not one per stack', () => {
     renderGrid({
       placements: [
         { type: 'Soldier', col: 1, row: 4, count: 3, holdTurns: 2 },
-        { type: 'Mage',    col: 1, row: 4, count: 1, holdTurns: 0 },
+        { type: 'Mage',    col: 1, row: 4, count: 1, holdTurns: 2 },
       ],
     })
-    expect(screen.getByTestId('hold-badge-1-4-Soldier')).toBeInTheDocument()
-    expect(screen.queryByTestId('hold-badge-1-4-Mage')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('hold-badge-1-4')).toHaveLength(1)
   })
 })
 
