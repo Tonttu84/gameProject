@@ -203,16 +203,60 @@ describe('camp panel — militia', () => {
     await screen.findByText(/War Council/)
     expect(screen.getByTestId('militia-button')).toHaveAttribute('title', 'Not enough workers')
   })
+
+  // Playtest report: the count input stayed at whatever was last typed after
+  // a successful buy, so the button kept reading "Raise 5 militia (...)"
+  // even though those 5 workers were already permanently spent — looking
+  // like nothing happened. Reset to 1 so the next preview is never stale.
+  it('resets the count input after a successful buy', async () => {
+    getCampaigns.mockResolvedValue([withMaterials()])
+    spendCampaign.mockResolvedValue(withMaterials({}, { total: 2000, used: 5, available: 1995 }))
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    fireEvent.change(screen.getByTestId('militia-input'), { target: { value: '5' } })
+    fireEvent.click(screen.getByTestId('militia-button'))
+    await waitFor(() => expect(spendCampaign).toHaveBeenCalled())
+
+    expect(await screen.findByTestId('militia-input')).toHaveValue(1)
+    expect(screen.getByTestId('militia-button')).toHaveTextContent(
+      'Raise 1 militia (2 food, 1 materials, 1 workers)',
+    )
+  })
 })
 
 describe('camp panel — workers & side layout', () => {
-  it('shows the workforce readout as available / total', async () => {
+  it('shows the workforce readout as free / raised', async () => {
     getCampaigns.mockResolvedValue([
       withMaterials({}, { total: 2000, used: 500, available: 1500 }),
     ])
     render(<App />)
     await screen.findByText(/War Council/)
-    expect(screen.getByTestId('camp-workers')).toHaveTextContent('1500 / 2000')
+    expect(screen.getByTestId('camp-workers')).toHaveTextContent('1500 free / 2000 raised')
+  })
+
+  // Playtest report: "2000 workers before, 2000 after, but only 1950
+  // available" read as if the pool itself shrank temporarily. It doesn't —
+  // "raised" is a fixed historical ceiling, militia/fort labour is a
+  // PERMANENT commitment (never returns). Spell that out explicitly.
+  it('explains committed workers are permanent, not temporarily checked out', async () => {
+    getCampaigns.mockResolvedValue([
+      withMaterials({}, { total: 2000, used: 50, available: 1950 }),
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    expect(screen.getByTestId('camp-workers-committed')).toHaveTextContent(
+      '50 committed to militia & works — gone for good',
+    )
+  })
+
+  it('shows no committed line for a fresh campaign that has spent nothing', async () => {
+    getCampaigns.mockResolvedValue([
+      withMaterials({}, { total: 2000, used: 0, available: 2000 }),
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    expect(screen.queryByTestId('camp-workers-committed')).not.toBeInTheDocument()
   })
 
   it('renders fortifications and militia as separate stacked boxes', async () => {

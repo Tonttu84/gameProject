@@ -22,6 +22,7 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
   const food = resources.food ?? 0
   const workersFree = workers?.available ?? 0
   const workersTotal = workers?.total ?? 0
+  const workersUsed = workers?.used ?? 0
 
   const canFortify =
     !atCap &&
@@ -69,6 +70,15 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
           ? 'Not enough workers'
           : undefined
 
+  // After a buy, workers/resources shrink but the input stays wherever the
+  // player left it — stale enough to look like nothing happened (the button
+  // still reads "Raise N militia" even though N workers are already spent
+  // and gone). Reset to 1 so the next affordability preview is honest.
+  const handleBuyMilitia = async () => {
+    await onBuyMilitia(militia)
+    setMilitia(1)
+  }
+
   return (
     <aside className="camp-side" data-testid="camp-panel">
       <TutorialIntro
@@ -82,8 +92,20 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
         ]}
       />
       <div className="camp-workers-readout" data-testid="camp-workers">
-        <span className="camp-workers-label">Workforce</span>
-        <span className="camp-workers-count">{workersFree} / {workersTotal}</span>
+        <div className="camp-workers-row">
+          <span className="camp-workers-label">Workforce</span>
+          <span className="camp-workers-count">{workersFree} free / {workersTotal} raised</span>
+        </div>
+        {/* workersTotal is a fixed ceiling (the campaign's starting workforce),
+            never reduced — militia and fort labour are PERMANENT commitments
+            (see campaignConfig.js), so they never return to the pool. Spell
+            that out here instead of leaving "X / Y" to read as "X of Y
+            currently checked out, comes back later". */}
+        {workersUsed > 0 && (
+          <span className="camp-workers-committed" data-testid="camp-workers-committed">
+            {workersUsed} committed to militia &amp; works — gone for good
+          </span>
+        )}
       </div>
 
       <div className="camp-box camp-fort-box" data-testid="camp-fort-box">
@@ -117,7 +139,7 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
         <button
           className="btn-primary"
           data-testid="militia-button"
-          onClick={() => onBuyMilitia(militia)}
+          onClick={handleBuyMilitia}
           disabled={!canBuyMilitia}
           title={militiaReason}
         >
