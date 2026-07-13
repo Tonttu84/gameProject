@@ -39,6 +39,17 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
         ? 'Not enough workers'
         : undefined
 
+  // The most militia the camp can pay for right now — whichever resource runs
+  // out first. Clamps the input so the previewed cost never outruns the stores
+  // (it used to accept 99999999); the server still caps the buy for real.
+  const maxMilitia = Math.min(
+    Math.floor(food / MILITIA_FOOD_COST),
+    Math.floor(materials / MILITIA_MATERIAL_COST),
+    Math.floor(workersFree / MILITIA_WORKER_COST),
+  )
+  const clampMilitia = (n) =>
+    Math.min(Math.max(1, Math.floor(n) || 1), Math.max(1, maxMilitia))
+
   const militiaFood = militia * MILITIA_FOOD_COST
   const militiaMaterials = militia * MILITIA_MATERIAL_COST
   const militiaWorkers = militia * MILITIA_WORKER_COST
@@ -47,6 +58,16 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
     food >= militiaFood &&
     materials >= militiaMaterials &&
     workersFree >= militiaWorkers
+  // Why a buy is blocked (mirrors the fortify button's title), checked in the
+  // same order costs are spent.
+  const militiaReason =
+    food < militiaFood
+      ? 'Not enough food'
+      : materials < militiaMaterials
+        ? 'Not enough materials'
+        : workersFree < militiaWorkers
+          ? 'Not enough workers'
+          : undefined
 
   return (
     <aside className="camp-side" data-testid="camp-panel">
@@ -90,7 +111,7 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
             min="1"
             value={militia}
             data-testid="militia-input"
-            onChange={(e) => setMilitia(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+            onChange={(e) => setMilitia(clampMilitia(Number(e.target.value)))}
           />
         </label>
         <button
@@ -98,6 +119,7 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
           data-testid="militia-button"
           onClick={() => onBuyMilitia(militia)}
           disabled={!canBuyMilitia}
+          title={militiaReason}
         >
           Raise {militia} militia ({militiaFood} food, {militiaMaterials} materials, {militiaWorkers} workers)
         </button>

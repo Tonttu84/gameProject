@@ -172,6 +172,37 @@ describe('camp panel — militia', () => {
     await screen.findByText(/War Council/)
     expect(screen.getByTestId('militia-button')).toBeDisabled()
   })
+
+  // The input used to accept 99999999; now it clamps to what the camp can
+  // actually pay for, so the previewed cost never exceeds the stores. Here
+  // food is the binding constraint (10 food ÷ 2 = 5 militia).
+  it('clamps the militia count to the max the camp can afford', async () => {
+    getCampaigns.mockResolvedValue([
+      {
+        ...withMaterials(),
+        resources: { ...campaignFixture.resources, food: 10, materials: 200 },
+      },
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    fireEvent.change(screen.getByTestId('militia-input'), { target: { value: '99999999' } })
+    expect(screen.getByTestId('militia-input')).toHaveValue(5)
+    const btn = screen.getByTestId('militia-button')
+    expect(btn).toHaveTextContent('Raise 5 militia (10 food, 5 materials, 5 workers)')
+    expect(btn).not.toBeDisabled()
+  })
+
+  // Mirror the fortify button's title: a disabled buy explains the reason so
+  // the player knows which resource is short.
+  it('titles the disabled militia button with why it is blocked', async () => {
+    getCampaigns.mockResolvedValue([
+      withMaterials({}, { total: 2000, used: 2000, available: 0 }),
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    expect(screen.getByTestId('militia-button')).toHaveAttribute('title', 'Not enough workers')
+  })
 })
 
 describe('camp panel — workers & side layout', () => {
