@@ -189,6 +189,18 @@ stacks only group same-hex same-type into engine `Squad`s inside `./game battle`
    `services/events.js`): fix is likely sourcing severity from the *displayed* event, or auditing
    each omen definition so its own severity matches its own flavor.
 
+5. **(DEFERRED — after 1–4) Fortification playtest aid + workers-resource readout.**
+   - **Fortification testing aid.** Buying fortifications already works (Stage 3: `CampPanel`
+     fortify button → `POST /spend {action:'fortify'}`), but the starting roster is too poor to
+     afford them (fort button sits greyed at "Raise to level 1 (50 materials)"). Give a way to
+     actually exercise them so the walls can be bought and seen on the campaign map + in battle —
+     bump starting `resources.materials` in `campaign-server/utils/campaignConfig.js`, and/or add a
+     debug "grant resources" option.
+   - **Workers-resource readout.** Show a resource as **total AND used**, formatted
+     `(total − used) / total` (available-over-total, e.g. `8/12`). OPEN QUESTION before building:
+     define "workers" — a genuinely new resource, or a readout over an existing pool (foragers
+     assigned vs. roster, or militia)? Clarify the referent first.
+
 ### Working conventions (carry these to the new machine)
 
 - **Build is Linux-only.** On Windows use **WSL (Ubuntu)** or Docker. One dev machine has WSL
