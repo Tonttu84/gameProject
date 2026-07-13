@@ -514,6 +514,18 @@ describe('POST /api/campaigns/:id/battles', () => {
     expect(engine.runBattle).not.toHaveBeenCalled()
   })
 
+  test('a placement that overstacks one hex is rejected — the engine would otherwise silently drop the overflow', async () => {
+    // Fixture catalog: Soldier size 10, hex capacity 640 -> 65 on one hex is
+    // one unit over budget (650), while the roster has plenty (budget check
+    // alone would pass this).
+    const { body: c } = await createCampaign()
+    await shrinkRoster(c.id, { Soldier: 65 })
+    const res = await fightSoldiers(c.id, 65)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/overstacked/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
   test('a battle that wipes the whole roster loses the campaign immediately', async () => {
     // Playtest bug 2026-07-05: an annihilated army left the campaign 'active'
     // with 0 soldiers — no defeat screen, no way to start a new campaign.

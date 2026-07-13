@@ -9,6 +9,8 @@ import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
+import { findOverstackedHex } from '../services/placementCapacity.js'
+import { getInfo } from '../services/engine.js'
 import { getCatalog } from '../utils/catalog.js'
 import config from '../utils/config.js'
 import {
@@ -212,6 +214,20 @@ router.post('/:id/battles', async (req, res) => {
           : `not enough ${type} in the roster`,
       })
   }
+
+  // A hex can only hold so much (Hex::CAPACITY). The engine silently DROPS
+  // overflow units per hex rather than rejecting the battle — but the roster
+  // reconciliation below debits what was SENT, not what the engine actually
+  // placed, so an overstacked hex would quietly cost the player units with
+  // no combat fought for them. Reject it up front instead.
+  const catalog = await getCatalog()
+  const info = await getInfo()
+  const overstacked = findOverstackedHex(placement, catalog, info.grid.hexCapacity)
+  if (overstacked)
+    return res.status(400).json({
+      error: `hex (${overstacked.q},${overstacked.r}) is overstacked: `
+        + `${overstacked.used}/${overstacked.hexCapacity}`,
+    })
 
   // Battle commits the WHOLE army (user, 2026-07-05): every unit not out
   // foraging must take the field — no reserves skulking in camp.
