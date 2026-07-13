@@ -6,6 +6,7 @@
   --accent:    #5566ff;
   --accent2:   #88aaff;
   --danger:    #cc4444;
+  --success:   #3a9d5d;
   --gold:      #ccaa44;
   --font:      'Consolas', 'Courier New', monospace;
 }
@@ -74,12 +75,72 @@ body {
 
 .phase-setup {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1.5rem;
   padding: 3rem 1rem;
 }
 .phase-setup h2 { color: var(--gold); font-size: 1.4rem; }
+/* Left column: the council flow (army/food, forage, augur/muster). */
+.council-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  flex: 1 1 auto;
+  max-width: 720px;
+}
+
+/* Right column: the camp spend menu — a stack of self-contained boxes
+   (workforce readout, fortifications, militia). */
+.camp-side {
+  flex: 0 0 260px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: 1rem;
+}
+.camp-workers-readout {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+}
+.camp-workers-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #7777aa; }
+.camp-workers-count { font-size: 1.1rem; color: var(--gold); font-weight: bold; }
+.camp-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.camp-box h3 { color: var(--gold); font-size: 1rem; }
+.camp-box-status { font-size: 13px; color: var(--accent2); }
+.camp-box button { width: 100%; }
+.camp-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.camp-row input {
+  width: 5rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem;
+  font: inherit;
+}
+/* Narrow screens: drop the side menu below the council instead of beside it. */
+@media (max-width: 760px) {
+  .phase-setup { flex-direction: column; align-items: center; }
+  .camp-side { flex-basis: auto; width: 100%; max-width: 360px; position: static; }
+}
 
 .augury-phase {
   display: flex;
@@ -265,6 +326,13 @@ body {
 }
 .btn-primary:hover, .reach-commit:hover, .result-next:hover { background: #6677ff; }
 .btn-primary:disabled { background: #333; color: #666; cursor: default; }
+
+/* Fort-buy affordability: the option is always on the council so players can
+   save toward it — green when they can build now, red (but visible) when short. */
+.btn-primary.affordable            { background: var(--success); }
+.btn-primary.affordable:hover      { background: #45b06e; }
+.btn-primary.unaffordable,
+.btn-primary.unaffordable:disabled { background: var(--danger); color: #fff; cursor: not-allowed; }
 
 .warning      { color: var(--danger); }
 .error-screen { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 3rem; }

@@ -23,7 +23,10 @@ export const STARTING_ROSTER = {
 }
 // ~4 turns for the starting army (which needs 12,432 kg per turn).
 export const STARTING_FOOD = 50000
-export const STARTING_MATERIALS = 0
+// Playtest aid: seed enough to build the full fort progression from turn 1
+// (L0→1 = 50, L1→2 = 100 = 150 to max) plus a little for militia, so forts are
+// visible/testable on the campaign map without a debug grant. See docs/CAMPAIGN_PLAN.md.
+export const STARTING_MATERIALS = 200
 
 // ── Augury ──────────────────────────────────────────────────────────────────
 // Each turn holds AUGURY_SLOTS independent fates, each a hidden true/false
@@ -108,6 +111,12 @@ export const ENEMY_FORAGE_FRACTION = 0.4
 // penalty for an attacker crossing a fortified side — the campaign only decides
 // WHICH sides are fortified this battle (services/fortification.js).
 export const FORTIFY_COST_BASE = 50 // cost to reach level N+1 = FORTIFY_COST_BASE × (N+1)
+// Fortifications also cost labour: raising to level N+1 needs
+// FORTIFY_WORKER_COST_BASE × (N+1) workers (L0→1 = 500, L1→2 = 1000). Workers
+// are the off-map civilian pool (see STARTING_WORKERS); a raised level keeps
+// them permanently (the works stand). Distinct from the materials cost — a
+// fort needs both the stores and the hands.
+export const FORTIFY_WORKER_COST_BASE = 500
 export const FORTIFICATION_MAX_LEVEL = 2 // cap (levels 1–2 for now; strength scaling later)
 
 // Ordered, tier-gated player-front hexsides per map. fortificationLevel = N
@@ -143,8 +152,19 @@ export const FORTIFICATION_PRESETS = {
 // a distinct Militia unit type is a later SSOT run.)
 export const MILITIA_FOOD_COST = 2
 export const MILITIA_MATERIAL_COST = 1
+export const MILITIA_WORKER_COST = 1 // each militiaman IS a worker taken off the civilian pool
 export const MILITIA_DAILY_CAP = 50
 export const MILITIA_UNIT = 'Soldier'
+
+// ── Workers (civilian labour pool, off the campaign map) ─────────────────────
+// A finite workforce that fortifications and militia both draw on. Tracked as
+// total + used; available = total − used. Spending (forts, militia) raises
+// `used` permanently — no replenishment yet (events / growth is a later SSOT
+// run; see docs/CAMPAIGN_PLAN.md item 5). Deliberately large relative to the
+// fighting roster. NOTE: the planned "workers eat food at 1/3 upkeep" step is
+// intentionally NOT wired yet — at this pool size it would dwarf army upkeep;
+// it waits on the replenishment design.
+export const STARTING_WORKERS = 2000
 
 // Enemy AI stance machine (services/enemyAi.js). Thresholds are turns.
 export const ENEMY_SHADOW_DAY = 3 // leaves camp and starts shadowing from this turn

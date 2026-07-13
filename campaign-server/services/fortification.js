@@ -2,6 +2,7 @@ import {
   FORTIFICATION_PRESETS,
   FORTIFICATION_MAX_LEVEL,
   FORTIFY_COST_BASE,
+  FORTIFY_WORKER_COST_BASE,
 } from '../utils/campaignConfig.js'
 
 // Campaign fortifications as an abstract level → concrete engine hexsides.
@@ -23,5 +24,9 @@ export function fortifiedSidesFor(mapName, level) {
 // Materials cost to raise the fort from `level` to `level + 1`.
 // L0→1 = 50, L1→2 = 100. (Undefined once at the cap; callers gate on atFortCap.)
 export const fortifyCost = (level) => FORTIFY_COST_BASE * (level + 1)
+
+// Worker (labour) cost to raise the fort from `level` to `level + 1`.
+// L0→1 = 500, L1→2 = 1000. A fort needs both this and the materials cost.
+export const fortifyWorkerCost = (level) => FORTIFY_WORKER_COST_BASE * (level + 1)
 
 export const atFortCap = (level) => level >= FORTIFICATION_MAX_LEVEL

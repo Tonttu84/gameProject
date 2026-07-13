@@ -8,7 +8,7 @@ import { endDay, checkAnnihilation } from '../services/dayResolution.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
-import { fortifiedSidesFor, fortifyCost, atFortCap } from '../services/fortification.js'
+import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
 import { getCatalog } from '../utils/catalog.js'
 import config from '../utils/config.js'
 import {
@@ -16,11 +16,13 @@ import {
   STARTING_ROSTER,
   STARTING_FOOD,
   STARTING_MATERIALS,
+  STARTING_WORKERS,
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
   FORAGE_RINGS,
   MILITIA_FOOD_COST,
   MILITIA_MATERIAL_COST,
+  MILITIA_WORKER_COST,
   MILITIA_DAILY_CAP,
   MILITIA_UNIT,
 } from '../utils/campaignConfig.js'
@@ -50,6 +52,7 @@ router.post('/', async (req, res) => {
   const campaign = await Campaign.create({
     user: req.user._id,
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS },
+    workers: { total: STARTING_WORKERS, used: 0 },
     roster: STARTING_ROSTER,
     forage: {
       rings: FORAGE_RINGS.map((richness, ring) => ({ ring, richness, initialRichness: richness })),
@@ -254,11 +257,16 @@ router.post('/:id/spend', async (req, res) => {
     const cost = fortifyCost(campaign.fortificationLevel)
     if (campaign.resources.materials < cost)
       return res.status(400).json({ error: 'not enough materials' })
+    const workerCost = fortifyWorkerCost(campaign.fortificationLevel)
+    const workersAvailable = campaign.workers.total - campaign.workers.used
+    if (workersAvailable < workerCost)
+      return res.status(400).json({ error: 'not enough workers to raise the works' })
     campaign.resources.materials -= cost
+    campaign.workers.used += workerCost
     campaign.fortificationLevel += 1
     campaign.log.push({
       day: campaign.day,
-      entries: [`The works are raised to level ${campaign.fortificationLevel} (−${cost} materials).`],
+      entries: [`The works are raised to level ${campaign.fortificationLevel} (−${cost} materials, −${workerCost} workers).`],
     })
     await campaign.save()
     return res.json(await campaignView(campaign))
@@ -276,13 +284,18 @@ router.post('/:id/spend', async (req, res) => {
     const materialCost = count * MILITIA_MATERIAL_COST
     if (campaign.resources.food < foodCost || campaign.resources.materials < materialCost)
       return res.status(400).json({ error: 'not enough stores' })
+    const workerCost = count * MILITIA_WORKER_COST
+    const workersAvailable = campaign.workers.total - campaign.workers.used
+    if (workersAvailable < workerCost)
+      return res.status(400).json({ error: 'not enough workers to muster militia' })
     campaign.resources.food -= foodCost
     campaign.resources.materials -= materialCost
+    campaign.workers.used += workerCost
     campaign.roster.set(MILITIA_UNIT, (campaign.roster.get(MILITIA_UNIT) ?? 0) + count)
     campaign.militiaBoughtToday += count
     campaign.log.push({
       day: campaign.day,
-      entries: [`${count} militia join the ranks (−${foodCost} food, −${materialCost} materials).`],
+      entries: [`${count} militia join the ranks (−${foodCost} food, −${materialCost} materials, −${workerCost} workers).`],
     })
     await campaign.save()
     return res.json(await campaignView(campaign))

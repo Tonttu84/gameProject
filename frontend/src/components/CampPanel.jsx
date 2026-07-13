@@ -1,31 +1,55 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
 
-// Camp spending — the materials sink. Raising the abstract fortification level
-// walls a wider (and sturdier) span of your front deployment edge; the engine
-// makes the enemy pay a combat penalty to assault across it, so you deploy
-// behind the wall. Militia buys raw bodies with stores. The fort cost/cap come
-// from the campaign view (the server owns the rules); the militia cost preview
-// mirrors the server config (2 food + 1 material per head) — the server still
-// validates and caps the purchase.
+// Camp spending — the materials + labour sink, laid out as a right-side stack
+// of self-contained boxes (fortifications on top, militia below). Raising the
+// abstract fortification level walls a wider (and sturdier) span of your front
+// deployment edge; the engine makes the enemy pay a combat penalty to assault
+// across it, so you deploy behind the wall. Militia buys raw bodies. BOTH draw
+// on the civilian workforce (workers.available): a fort needs stores + hands,
+// each militiaman IS one worker taken off the pool. The fort cost/cap come from
+// the campaign view (the server owns the rules); the militia cost preview
+// mirrors the server config, and the server still validates and caps every buy.
 const MILITIA_FOOD_COST = 2
 const MILITIA_MATERIAL_COST = 1
+const MILITIA_WORKER_COST = 1
 
-const CampPanel = ({ fortification, resources, onFortify, onBuyMilitia, tutorial }) => {
+const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia, tutorial }) => {
   const [militia, setMilitia] = useState(1)
 
-  const { level, atCap, nextCost } = fortification
+  const { level, atCap, nextCost, nextWorkerCost } = fortification
   const materials = resources.materials ?? 0
   const food = resources.food ?? 0
+  const workersFree = workers?.available ?? 0
+  const workersTotal = workers?.total ?? 0
 
-  const canFortify = !atCap && nextCost != null && materials >= nextCost
+  const canFortify =
+    !atCap &&
+    nextCost != null &&
+    materials >= nextCost &&
+    workersFree >= (nextWorkerCost ?? 0)
+  // The fort option always shows so players can save toward it: green when
+  // affordable, red when short of materials OR workers, neutral once maxed.
+  const fortState = atCap ? 'maxed' : canFortify ? 'affordable' : 'unaffordable'
+  const fortReason = atCap
+    ? 'Fortifications already at maximum'
+    : materials < (nextCost ?? Infinity)
+      ? 'Not enough materials'
+      : workersFree < (nextWorkerCost ?? 0)
+        ? 'Not enough workers'
+        : undefined
 
   const militiaFood = militia * MILITIA_FOOD_COST
   const militiaMaterials = militia * MILITIA_MATERIAL_COST
-  const canBuyMilitia = militia > 0 && food >= militiaFood && materials >= militiaMaterials
+  const militiaWorkers = militia * MILITIA_WORKER_COST
+  const canBuyMilitia =
+    militia > 0 &&
+    food >= militiaFood &&
+    materials >= militiaMaterials &&
+    workersFree >= militiaWorkers
 
   return (
-    <div className="camp-panel" data-testid="camp-panel">
+    <aside className="camp-side" data-testid="camp-panel">
       <TutorialIntro
         id="camp"
         enabled={tutorial}
@@ -33,31 +57,34 @@ const CampPanel = ({ fortification, resources, onFortify, onBuyMilitia, tutorial
         lines={[
           'Spend salvaged materials on defensive works: each level walls a wider stretch of your front line.',
           'Deploy behind the wall — the enemy pays for every assault across it.',
-          'Muster militia to fill out the ranks when stores allow.',
+          'Muster militia to fill out the ranks — both works and militia cost workers from your camp followers.',
         ]}
       />
-      <h3>Camp Works</h3>
-      <div className="camp-forts">
-        <span data-testid="fort-level">Fortifications: Level {level}</span>
+      <div className="camp-workers-readout" data-testid="camp-workers">
+        <span className="camp-workers-label">Workforce</span>
+        <span className="camp-workers-count">{workersFree} / {workersTotal}</span>
+      </div>
+
+      <div className="camp-box camp-fort-box" data-testid="camp-fort-box">
+        <h3>Fortifications</h3>
+        <span className="camp-box-status" data-testid="fort-level">Level {level}</span>
         <button
-          className="btn-primary"
+          className={`btn-primary ${fortState}`}
           data-testid="fortify-button"
           onClick={onFortify}
           disabled={!canFortify}
-          title={
-            atCap
-              ? 'Fortifications already at maximum'
-              : materials < (nextCost ?? Infinity)
-                ? 'Not enough materials'
-                : undefined
-          }
+          title={fortReason}
         >
-          {atCap ? 'Fortifications maxed' : `Raise to level ${level + 1} (${nextCost} materials)`}
+          {atCap
+            ? 'Fortifications maxed'
+            : `Raise to level ${level + 1} (${nextCost} materials, ${nextWorkerCost} workers)`}
         </button>
       </div>
-      <div className="camp-militia">
+
+      <div className="camp-box camp-militia-box" data-testid="camp-militia-box">
+        <h3>Militia</h3>
         <label className="camp-row">
-          Militia
+          Count
           <input
             type="number"
             min="1"
@@ -72,10 +99,10 @@ const CampPanel = ({ fortification, resources, onFortify, onBuyMilitia, tutorial
           onClick={() => onBuyMilitia(militia)}
           disabled={!canBuyMilitia}
         >
-          Raise {militia} militia ({militiaFood} food, {militiaMaterials} materials)
+          Raise {militia} militia ({militiaFood} food, {militiaMaterials} materials, {militiaWorkers} workers)
         </button>
       </div>
-    </div>
+    </aside>
   )
 }
 

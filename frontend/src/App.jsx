@@ -337,54 +337,57 @@ const App = () => {
 
       {phase === 'setup' && (
         <div className="phase-setup">
-          <h2>Turn {campaign.day} — War Council</h2>
-          <TutorialIntro
-            id="council"
-            enabled={tutorial}
-            title="The war council"
-            lines={[
-              'Each turn covers two weeks of campaigning: your army eats, the land empties, the augur reads the signs.',
-              'Send out foragers, consult the augur, then deploy your line — or rest and regroup.',
-              `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'offering battle' : 'shadowing your army'}.`,
-            ]}
-          />
-          <p>
-            Your army has {totalUnits} soldiers.
-            Food stores: <strong>{tons(campaign.resources.food)}</strong> —
-            they will eat <strong>{tons(campaign.resources.foodNeedPerTurn)}</strong> this turn.
-          </p>
-          {campaign.resources.food <= 0 && (
-            <p className="warning">No food! Units will desert.</p>
-          )}
-          {campaign.enemy.battleOffer && (
-            <p className="warning">Enemy banners are formed up — they offer battle this turn.</p>
-          )}
-          {campaign.forage && (
-            <ForagePanel
-              key={campaign.day}
-              forage={campaign.forage}
-              roster={roster}
-              onAssign={guarded(assignForagers)}
-              tutorial={tutorial}
+          <div className="council-main">
+            <h2>Turn {campaign.day} — War Council</h2>
+            <TutorialIntro
+              id="council"
+              enabled={tutorial}
+              title="The war council"
+              lines={[
+                'Each turn covers two weeks of campaigning: your army eats, the land empties, the augur reads the signs.',
+                'Send out foragers, consult the augur, then deploy your line — or rest and regroup.',
+                `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'offering battle' : 'shadowing your army'}.`,
+              ]}
             />
-          )}
+            <p>
+              Your army has {totalUnits} soldiers.
+              Food stores: <strong>{tons(campaign.resources.food)}</strong> —
+              they will eat <strong>{tons(campaign.resources.foodNeedPerTurn)}</strong> this turn.
+            </p>
+            {campaign.resources.food <= 0 && (
+              <p className="warning">No food! Units will desert.</p>
+            )}
+            {campaign.enemy.battleOffer && (
+              <p className="warning">Enemy banners are formed up — they offer battle this turn.</p>
+            )}
+            {campaign.forage && (
+              <ForagePanel
+                key={campaign.day}
+                forage={campaign.forage}
+                roster={roster}
+                onAssign={guarded(assignForagers)}
+                tutorial={tutorial}
+              />
+            )}
+            {!campaign.augury.consulted ? (
+              <button className="btn-primary" onClick={startAugury}>
+                Visit the Augur
+              </button>
+            ) : (
+              <button className="btn-primary" onClick={musterForBattle}>
+                Muster for Battle
+              </button>
+            )}
+          </div>
           {campaign.fortification && (
             <CampPanel
               fortification={campaign.fortification}
               resources={campaign.resources}
+              workers={campaign.workers}
               onFortify={guarded(fortify)}
               onBuyMilitia={guarded(buyMilitia)}
               tutorial={tutorial}
             />
-          )}
-          {!campaign.augury.consulted ? (
-            <button className="btn-primary" onClick={startAugury}>
-              Visit the Augur
-            </button>
-          ) : (
-            <button className="btn-primary" onClick={musterForBattle}>
-              Muster for Battle
-            </button>
           )}
         </div>
       )}

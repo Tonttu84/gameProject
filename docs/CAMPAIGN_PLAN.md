@@ -153,15 +153,16 @@ notes below over the git history if they ever disagree — the commits win.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
-### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  ⏳ NOT STARTED
+### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  🔶 IN PROGRESS
 
 First campaign playtest on the new Docker-only Windows flow (`make serve` → auto `docker-up`;
 Makefile OS shim + boot login banner landed on branch `chore/windows-docker-makefile`). Sample
-battle runs + rewatches fine. Four items found, none started — recorded here so a context clear
-loses nothing. **Immediate next session = item 1 (campaign squads); items 2–4 depend on or follow
-it.** Precondition fact: the campaign has **no player-facing squad concept yet** — placement
-stacks only group same-hex same-type into engine `Squad`s inside `./game battle`
-(`buildSquadsFromArmy`, UnitRegistry); the orders UI shows per-unit-TYPE rows in a hex.
+battle runs + rewatches fine. Five items found. **Item 5 (fort aid + workers) is ✅ DONE**
+(2026-07-13, done first). **Remaining: items 3 & 4 are simple, independent frontend fixes; item 1
+(campaign squads) is the big one and unblocks item 2.** Precondition fact: the campaign has **no
+player-facing squad concept yet** — placement stacks only group same-hex same-type into engine
+`Squad`s inside `./game battle` (`buildSquadsFromArmy`, UnitRegistry); the orders UI shows
+per-unit-TYPE rows in a hex.
 
 1. **Campaign squads — DO FIRST (2–4 depend on it).** Add a real squad concept to the campaign so
    units can be grouped, **and seed the default starting army with squads so they're testable**
@@ -189,24 +190,28 @@ stacks only group same-hex same-type into engine `Squad`s inside `./game battle`
    `services/events.js`): fix is likely sourcing severity from the *displayed* event, or auditing
    each omen definition so its own severity matches its own flavor.
 
-5. **(DEFERRED — after 1–4) Fortification playtest aid + workers-resource readout.**
-   - **Fortification testing aid.** Buying fortifications already works (Stage 3: `CampPanel`
-     fortify button → `POST /spend {action:'fortify'}`), but the starting roster is too poor to
-     afford them (fort button sits greyed at "Raise to level 1 (50 materials)"). Give a way to
-     actually exercise them so the walls can be bought and seen on the campaign map + in battle —
-     bump starting `resources.materials` in `campaign-server/utils/campaignConfig.js`, and/or add a
-     debug "grant resources" option.
-   - **Workers = NEW resource (civilians, NOT shown on the campaign map).** Add a `workers` pool
-     to the campaign model (track total + used; `CAMPAIGN_SCHEMA_VERSION` bump). Display as
-     **`(total − used) / total`** = available-over-total (e.g. `8/12`). **Militia training consumes
-     1 *unspent* worker per militia**, on top of the existing 2 food + 1 material — so the militia
-     purchase now also gates on / decrements available workers, and both the cost line and
-     `canBuyMilitia` (`CampPanel.jsx`) must include workers; the server spend route enforces it. A
-     worker is spent permanently (it *becomes* the soldier). `campaignView` exposes
-     total/used/available; HUD + `CampPanel` surface it. **Workers also eat food at 1/3 the
-     per-unit upkeep rate** (they cover the rest from private sources) — fold into the
-     `dayResolution` player-upkeep step (today `food -= ceil(units/10)`). OPEN: starting total
-     (config) and whether workers ever replenish.
+5. **Fortification playtest aid + workers-resource — ✅ DONE 2026-07-13** (`CAMPAIGN_SCHEMA_VERSION`
+   7 → 8; done out of order, before 1–4, on branch `chore/windows-docker-makefile`).
+   - **Fortification testing aid.** `STARTING_MATERIALS` bumped `0 → 200`
+     (`campaign-server/utils/campaignConfig.js`) so a fresh campaign can build the full fort
+     progression (L0→1=50, L1→2=100) from turn 1 and see the walls on the map + in battle.
+   - **Fort-buy button always visible + affordability colour.** `CampPanel` fortify button now
+     carries a state class — `affordable` (green, clickable) / `unaffordable` (red, disabled but
+     still showing the cost so it's a save-toward goal) / `maxed` (neutral). CSS `--success` added.
+   - **Workers = NEW resource (civilians, off the campaign map).** `workers { total, used }` on the
+     model; `available = total − used`, shown as **`available / total`**. **Militia costs 1 worker
+     each** and **fortifying costs workers too** (`fortifyWorkerCost`: L0→1=500, L1→2=1000, scaling
+     like materials) — both server actions (`routes/campaigns.js` `spend`) gate on and debit
+     workers, both cost lines + `canFortify`/`canBuyMilitia` (`CampPanel.jsx`) include workers.
+     `campaignView` exposes `workers {total,used,available}` + `fortification.nextWorkerCost`.
+     Config: `STARTING_WORKERS = 2000`, `FORTIFY_WORKER_COST_BASE = 500`, `MILITIA_WORKER_COST = 1`.
+   - **Layout:** `CampPanel` is now a right-side sticky stack (`.camp-side`) — a Workforce readout,
+     a Fortifications box, and a Militia box; the War Council split into `.council-main` (left) +
+     `.camp-side` (right), stacking below on `<760px`.
+   - **DEFERRED (still open):** (a) **worker replenishment** — none yet; user leaning events *or*
+     per-turn growth, undecided. (b) **workers eating food at 1/3 upkeep** — intentionally NOT wired:
+     at a 2000-pool it would eat ~22 t/turn (> the whole army's 12.4 t) and instantly starve; revisit
+     together with replenishment so the two are balanced as a pair.
 
 ### Working conventions (carry these to the new machine)
 

@@ -578,6 +578,12 @@ describe('POST /api/campaigns/:id/spend', () => {
     await doc.save()
   }
 
+  const setWorkers = async (id, total, used = 0) => {
+    const doc = await Campaign.findById(id)
+    doc.workers = { total, used }
+    await doc.save()
+  }
+
   test('fortify debits materials and raises the level; cost scales L0→1=50, L1→2=100', async () => {
     const { body: c } = await createCampaign()
     await setMaterials(c.id, 500)
@@ -629,6 +635,56 @@ describe('POST /api/campaigns/:id/spend', () => {
 
     // Over the per-turn cap (50) is rejected.
     expect((await spend(c.id, { action: 'militia', count: 41 })).status).toBe(400)
+  })
+
+  test('a new campaign starts with the full workforce, none used', async () => {
+    const { body: c } = await createCampaign()
+    expect(c.workers).toEqual({ total: 2000, used: 0, available: 2000 })
+  })
+
+  test('fortify also spends workers (500→1000) and rejects when the workforce is short', async () => {
+    const { body: c } = await createCampaign()
+    await setMaterials(c.id, 1000)
+    await setWorkers(c.id, 2000)
+
+    const first = await spend(c.id, { action: 'fortify' })
+    expect(first.status).toBe(200)
+    expect(first.body.workers).toEqual({ total: 2000, used: 500, available: 1500 })
+    expect(first.body.fortification.nextWorkerCost).toBe(1000)
+
+    const second = await spend(c.id, { action: 'fortify' })
+    expect(second.status).toBe(200)
+    expect(second.body.workers).toEqual({ total: 2000, used: 1500, available: 500 })
+    expect(second.body.fortification.nextWorkerCost).toBeNull() // at cap
+
+    // Plenty of materials but no workforce to spare → rejected, nothing spent.
+    const { body: poor } = await createCampaign()
+    await setMaterials(poor.id, 10000)
+    await setWorkers(poor.id, 400) // < 500 needed for L0→1
+    const rej = await spend(poor.id, { action: 'fortify' })
+    expect(rej.status).toBe(400)
+    expect(rej.body.error).toMatch(/workers|workforce/i)
+    const reload = await auth(api.get(`/api/campaigns/${poor.id}`))
+    expect(reload.body.fortification.level).toBe(0)
+    expect(reload.body.workers.used).toBe(0)
+  })
+
+  test('militia also spends one worker each and rejects when the workforce is short', async () => {
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 10 }
+    doc.resources = { food: 1000, materials: 1000 }
+    doc.workers = { total: 2000, used: 1995 } // only 5 free
+    await doc.save()
+
+    const ok = await spend(c.id, { action: 'militia', count: 5 })
+    expect(ok.status).toBe(200)
+    expect(ok.body.workers).toEqual({ total: 2000, used: 2000, available: 0 })
+
+    // No workers left → even an affordable-in-stores purchase is rejected.
+    const rej = await spend(c.id, { action: 'militia', count: 1 })
+    expect(rej.status).toBe(400)
+    expect(rej.body.error).toMatch(/workers|workforce/i)
   })
 
   test('bad actions and counts are rejected', async () => {
@@ -691,7 +747,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.report.forage.harvested).toEqual({ food: 2400, materials: 600 })
     expect(res.body.report.forage.rings[0].richness).toBe(20000 - 3000 - 9132)
     expect(res.body.campaign.resources.food).toBe(50000 + 2400 - 12432)
-    expect(res.body.campaign.resources.materials).toBe(600)
+    expect(res.body.campaign.resources.materials).toBe(200 + 600) // 200 starting + 0.2 × 3000 forage
     expect(res.body.campaign.forage.assignment).toEqual({})
   })
 
