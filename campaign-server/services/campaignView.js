@@ -1,5 +1,5 @@
 import { getCatalog } from '../utils/catalog.js'
-import { armyFoodPerTurn, forageValue } from '../utils/capabilities.js'
+import { armyFoodPerTurn, forageValue, scoutingCoverage, scoutingBand } from '../utils/capabilities.js'
 import { FORAGE_KG_PER_POINT, AUGURY_DEBUG_SHOW_TRUTH, MAP_NAME } from '../utils/campaignConfig.js'
 import { forageCapacityKg } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
@@ -115,6 +115,15 @@ export async function campaignView(campaign) {
           type,
           (catalog.get(type) ? forageValue(catalog.get(type).stats) : 0) * FORAGE_KG_PER_POINT,
         ]),
+      ),
+    },
+    // Scouting: derived at view time (like foodNeedPerTurn), no schema field.
+    // ONLY the banded label crosses the hidden-info boundary — the raw
+    // coverage/ratio would let the client solve for the enemy composition.
+    scouting: {
+      band: scoutingBand(
+        scoutingCoverage(campaign.roster, catalog),
+        scoutingCoverage(campaign.enemy.army, catalog),
       ),
     },
     augury: auguryView(campaign.augury),

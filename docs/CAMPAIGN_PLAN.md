@@ -147,9 +147,11 @@ notes below over the git history if they ever disagree — the commits win.
     `campaign.fortification.sides` (perpendicular-bisector geometry, robust to the axis swap) so
     the player deploys behind the wall. 122 frontend tests green; oxlint clean.
   - Also added a `dev.sh fe-lint` task + allow-rule (`afbe495`) so oxlint runs prompt-free.
-- **Then (NEXT):** **combat-score-per-hexside** ([[todo-combat-score-per-hexside]]) — make
-  `HexSide.combatScore` erode `fortDurability` mid-battle so the placeholder goes live (sits
-  directly after Stage 3). Then **Stage 4 — scouting** (coverage → cavalry-superiority gauge).
+- **Then (NEXT):** **Stage 4 — scouting + raids** (finalized plan in the Stage-4 block below;
+  **1a shipped 2026-07-13** — next is 1b/1c/1d in any order, then Part 2 raids).
+  **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore`
+  erode `fortDurability` mid-battle so the placeholder goes live) is resequenced AFTER
+  scouting/raids (user, 2026-07-13).
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
@@ -271,6 +273,35 @@ on branch `chore/windows-docker-makefile`; item 2 last, on `main`, unblocked by 
    - **DEFERRED (still open):** worker replenishment + workers eating food — see
      [[TODO — worker replenishment + workers eating food (paired)]] in the Deferred design
      backlog below (kept there, not duplicated here, so there's one place to update).
+
+### Stage 4 sub-piece 1a — scouting coverage/band foundation ✅ SHIPPED 2026-07-13
+
+First slice of the finalized Stage-4 plan (see the "PLAN FINALIZED 2026-07-13" block in
+Stage 4 below). No schema bump — the band is derived at view time like `foodNeedPerTurn`.
+
+- **Engine:** signed `reconTag` on `AUnit` (default 0; **LightCavalry +4**, **Warhorse −2**,
+  set in their ctors), exported in `unitCatalogJson()` stats — same SSOT workflow as
+  `ballisticSkill` (tripwires in `test_unit_catalog.cpp`: field-shape, live-instance match,
+  pinned per-type values). `buildInfoJson()` placement units now also export **`speed`**
+  (`UnitRegistry.cpp`) for the upcoming raid party-builder; tripwire in `test_server_api.cpp`.
+- **Campaign-server:** `unitType.js` statsSchema += required `reconTag`; fixture catalog
+  updated (values match the engine pins). `capabilities.js`: unused `scoutValue` REPLACED by
+  `reconValue(stats) = speed² + ⌊ballisticSkill/2⌋ + reconTag`, plus
+  `scoutingCoverage(army, catalog) = Σ(count·reconValue) / Σ(count·size)` (the ÷size
+  denominator is the anti-blob rule) and `scoutingBand(playerCov, enemyCov)` →
+  Overwhelming/Superior/Contested/Outmatched/Blind via `SCOUTING_BAND_THRESHOLDS`
+  (`campaignConfig.js`: 2.0 / 1.3 / 0.75 / 0.4; both-zero → Contested, enemy-zero →
+  Overwhelming). `campaignView` exposes `scouting: {band}` — ONLY the label crosses the
+  hidden-info boundary; `campaigns.test.js`'s `expectNoHiddenInfo` now also rejects raw
+  `"coverage"`/`"ratio"` keys and pins `scouting` to exactly `{band}`.
+- **Starting-armies sanity:** player 1494/4000 ≈ 0.374 vs enemy 2882/7410 ≈ 0.389 → ratio
+  ≈ 0.96 → **Contested** from turn 1 (pinned in the create-campaign test).
+- **Verified 2026-07-13 (this machine, WSL via dev.sh):** C++ `make test-serial` green (332
+  cases, 3705 assertions); campaign-server vitest 160/162 (the 2 `engine.integration` fails
+  are the documented Windows-node ENOENT, and `./game dump-units`/`info` were hand-verified
+  to export `reconTag`/`speed` correctly — CI/Docker covers the sync); frontend 160/160.
+- **Next Stage-4 slices:** 1b graduated enemy reveal / 1c event rungs / 1d forage posture
+  (any order), then Part 2 raids — one per fresh session, per the finalized block.
 
 ### Working conventions (carry these to the new machine)
 
@@ -667,7 +698,8 @@ the enemy assault eat the penalty.
 > Work ships as **two parts, four sub-pieces**, each independently shippable (one per fresh
 > session); 1a must land first, 1b/1c/1d in any order, Part 2 (raids) after 1a.
 >
-> **1a. Scouting coverage/band foundation.**
+> **1a. Scouting coverage/band foundation. ✅ SHIPPED 2026-07-13** (see the handoff entry
+> "Stage 4 sub-piece 1a" above for what landed and the verified test runs).
 > - Engine: signed stat `reconTag` on `AUnit` (default 0; LightCavalry positive, Warhorse/heavy
 >   negative), exported in `unitCatalogJson()` — same SSOT workflow as `ballisticSkill`
 >   (tripwire in `test_unit_catalog.cpp`). ALSO add `"speed"` to `buildInfoJson()`'s placement

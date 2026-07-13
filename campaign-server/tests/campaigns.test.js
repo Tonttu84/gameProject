@@ -71,6 +71,12 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"baseAccuracy"')
   if (body.campaign?.enemy) expect(body.campaign.enemy.army).toBeUndefined()
   if (body.enemy) expect(body.enemy.army).toBeUndefined()
+  // Scouting crosses the boundary as the banded label ONLY — a raw coverage
+  // or ratio number would let the client solve for the enemy composition.
+  expect(raw).not.toContain('"coverage"')
+  expect(raw).not.toContain('"ratio"')
+  for (const scouting of [body.scouting, body.campaign?.scouting])
+    if (scouting) expect(Object.keys(scouting)).toEqual(['band'])
 }
 
 // Pinned augury states for deterministic assertions. QUIET is a no-op truth
@@ -136,6 +142,9 @@ describe('POST /api/campaigns', () => {
     expect(res.body.forage.capacityKg).toBe(0)
     expect(res.body.forage.kgPerUnit.Soldier).toBe(30)
     expect(res.body.forage.kgPerUnit.LightCavalry).toBe(90)
+    // Fixture-catalog scouting coverages: player 1494/4000 ≈ 0.374 vs enemy
+    // 2882/7410 ≈ 0.389 → ratio ≈ 0.96, squarely Contested from turn 1.
+    expect(res.body.scouting).toEqual({ band: 'Contested' })
     expectNoHiddenInfo(res.body)
   })
 

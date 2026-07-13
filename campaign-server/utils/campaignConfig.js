@@ -71,6 +71,20 @@ export const AUGURY_REROLLS_PER_DAY = 1 // rerolling a slot REPLACES that fate: 
 export const AUGURY_DEBUG_SHOW_TRUTH = true
 export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)))
 
+// ── Scouting (Stage 4) ───────────────────────────────────────────────────────
+// The player/enemy scoutingCoverage ratio collapses to one of five bands —
+// Overwhelming / Superior / Contested / Outmatched / Blind — and ONLY that
+// label ever reaches the client. Each key is the minimum ratio for its band;
+// below Outmatched is Blind. On the starting armies the ratio is ~0.96
+// (Contested): the enemy's 20 LightCavalry match the player's 12 + better
+// infantry quality, so scouting is a real contest from turn 1.
+export const SCOUTING_BAND_THRESHOLDS = {
+  Overwhelming: 2.0,
+  Superior: 1.3,
+  Contested: 0.75,
+  Outmatched: 0.4,
+}
+
 // The shadowing enemy host (hidden from the player; scouting reveals it).
 export const ENEMY_ARMY = {
   Soldier: 540,
