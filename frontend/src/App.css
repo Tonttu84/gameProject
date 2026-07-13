@@ -105,15 +105,17 @@ body {
 }
 .camp-workers-readout {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 0.3rem;
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.6rem 1rem;
 }
+.camp-workers-row { display: flex; justify-content: space-between; align-items: baseline; }
 .camp-workers-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #7777aa; }
 .camp-workers-count { font-size: 1.1rem; color: var(--gold); font-weight: bold; }
+.camp-workers-committed { font-size: 10px; color: #888; }
 .camp-box {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -251,6 +253,7 @@ body {
   text-align: right;
 }
 .reach-capacity         { font-size: 11px; color: #7777aa; margin-bottom: 0.6rem; }
+.reach-capacity-over    { color: #cc6666; font-weight: 600; }
 .reach-row-forbidden    { opacity: 0.35; }
 .reach-commit           { width: 100%; margin-top: 0.6rem; }
 

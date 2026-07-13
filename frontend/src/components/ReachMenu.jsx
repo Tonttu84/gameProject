@@ -21,11 +21,30 @@ const ReachMenu = ({
 
   const isForbidden = (unit) => unit.forbiddenTerrain?.includes(hexTerrain)
 
+  // A squad occupies real capacity on the hex exactly like loose troops —
+  // both the loose "Troops" cap and a squad's own Place/Move buttons must
+  // account for whatever squads already sit on THIS hex, or a hex can be
+  // silently overstacked (the engine drops the overflow at battle time
+  // instead of fighting with it).
+  const sizeOf = (type) => units.find(u => u.type === type)?.placementSize ?? 1
+  const squadSizePoints = (squad) =>
+    Object.entries(squad.composition).reduce((sum, [type, n]) => sum + n * sizeOf(type), 0)
+  const squadsHereExcluding = (excludeId) =>
+    squads.filter(sq => sq.id !== excludeId
+      && squadPlacements[sq.id]?.col === hex.col
+      && squadPlacements[sq.id]?.row === hex.row)
+  const squadSizeUsedHere = squadsHereExcluding(null)
+    .reduce((sum, sq) => sum + squadSizePoints(sq), 0)
+
+  const looseSizeUsed = units.reduce(
+    (sum, u) => sum + (counts[u.type] ?? 0) * (u.placementSize ?? 1), 0
+  )
+
   const sizeUsedByOthers = (type) =>
     units.reduce((sum, u) => {
       if (u.type === type) return sum
       return sum + (counts[u.type] ?? 0) * (u.placementSize ?? 1)
-    }, 0)
+    }, 0) + squadSizeUsedHere
 
   const maxCount = (unit) => {
     if (isForbidden(unit)) return 0
@@ -33,9 +52,15 @@ const ReachMenu = ({
     return Math.min(roster[unit.type] ?? 0, Math.max(0, cap))
   }
 
-  const totalSizeUsed = units.reduce(
-    (sum, u) => sum + (counts[u.type] ?? 0) * (u.placementSize ?? 1), 0
-  )
+  const totalSizeUsed = looseSizeUsed + squadSizeUsedHere
+
+  // Remaining room for a squad NOT already counted as "here" — excludes its
+  // own footprint so re-evaluating a squad already on this hex (moving it
+  // to itself is a no-op) doesn't double-count it.
+  const remainingCapacityFor = (squadId) =>
+    hexCapacity - looseSizeUsed
+      - squadsHereExcluding(squadId).reduce((sum, sq) => sum + squadSizePoints(sq), 0)
+  const squadFits = (squad) => squadSizePoints(squad) <= remainingCapacityFor(squad.id)
 
   const handleChange = (unit, rawVal) => {
     if (isForbidden(unit)) return
@@ -77,7 +102,10 @@ const ReachMenu = ({
         <span>({hex.col},{hex.row}) {hexTerrain}</span>
         <button className="reach-close" onClick={onClose}>×</button>
       </div>
-      <div className="reach-capacity">
+      <div
+        className={`reach-capacity${totalSizeUsed > hexCapacity ? ' reach-capacity-over' : ''}`}
+        data-testid="reach-capacity"
+      >
         {totalSizeUsed} / {hexCapacity}
       </div>
 
@@ -121,6 +149,11 @@ const ReachMenu = ({
                     className="reach-squad-place"
                     data-testid={`squad-place-${squad.id}`}
                     onClick={() => onPlaceSquad(hex.col, hex.row, squad.id, squad.name, 0)}
+                    disabled={!squadFits(squad)}
+                    title={!squadFits(squad)
+                      ? `Won't fit — needs ${squadSizePoints(squad)}, `
+                        + `${Math.max(0, remainingCapacityFor(squad.id))} free on this hex`
+                      : undefined}
                   >
                     {elsewhere ? 'Move here' : 'Place here'}
                   </button>
