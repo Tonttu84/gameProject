@@ -157,9 +157,10 @@ notes below over the git history if they ever disagree — the commits win.
 
 First campaign playtest on the new Docker-only Windows flow (`make serve` → auto `docker-up`;
 Makefile OS shim + boot login banner landed on branch `chore/windows-docker-makefile`). Sample
-battle runs + rewatches fine. Five items found. **Item 5 (fort aid + workers) is ✅ DONE**
-(2026-07-13, done first). **Remaining: items 3 & 4 are simple, independent frontend fixes; item 1
-(campaign squads) is the big one and unblocks item 2.** Precondition fact: the campaign has **no
+battle runs + rewatches fine. Five items found. **Items 3, 4 & 5 are ✅ DONE** (all on branch
+`chore/windows-docker-makefile`; item 5 first on 2026-07-13, then items 3 & 4 the same session).
+**Remaining: item 1 (campaign squads) — the big one — then item 2 (hold-order), which depends on
+it.** Precondition fact: the campaign has **no
 player-facing squad concept yet** — placement stacks only group same-hex same-type into engine
 `Squad`s inside `./game battle` (`buildSquadsFromArmy`, UnitRegistry); the orders UI shows
 per-unit-TYPE rows in a hex.
@@ -174,21 +175,26 @@ per-unit-TYPE rows in a hex.
    carries its own hold order; every non-squad unit in a square shares **one** hold order for the
    whole square — not one per type. Order UI = the deployment-orders panel
    (`frontend` placement orders; `deploymentOrders.test.jsx`).
-3. **Militia UX polish — pure frontend (`components/CampPanel.jsx`).** The commit button + resource
-   validation ALREADY exist (`militia-button`, `canBuyMilitia`), so this is polish, not new
-   function: (a) clamp the numeric input to max-affordable `min(floor(food/2), floor(materials/1))`
-   (it currently accepts `99999999`), and (b) add a `title` explaining *why* the button is disabled
-   (mirror the fortify button's `title` pattern a few lines up). Keep the server-side cap as the
-   real guard.
-4. **Omen header vs shown flavor — decide + fix (`components/AuguryPanel.jsx`).** The severity label
-   ("A gentle/troubling/dire omen") comes from `vision.severity`, which currently tracks the **true**
-   omen, so it mismatches the shown (false) flavor: *Harsh Weather* shows "gentle" (its truth is
-   Supply Cache); *Reinforcements* shows "troubling" (its truth is Desertion). **DECISION (user
-   leaned a):** (a) label the SHOWN flavor — severity should come from the displayed omen, preserving
-   the bluff; vs (b) keep header = true omen as a deliberate truth-tell. Root cause is server-side —
-   check where `severity` is set in `campaign-server/services/augury.js` (+ the omen pool in
-   `services/events.js`): fix is likely sourcing severity from the *displayed* event, or auditing
-   each omen definition so its own severity matches its own flavor.
+3. **Militia UX polish — ✅ DONE 2026-07-13** (`components/CampPanel.jsx`, commit `d9e654e`). The
+   count input now clamps to the most the camp can pay for — `clampMilitia` caps at
+   `min(floor(food/2), floor(materials/1), floor(workersFree/1))` (workers added since the plan was
+   written), so the previewed cost never outruns the stores (it used to accept `99999999`); the
+   disabled button gains a `title` naming the short resource, mirroring the fortify button. Server
+   per-turn cap stays the real guard. Tests in `campPanel.test.jsx`.
+4. **Omen header vs shown flavor — ✅ DONE 2026-07-13** (commit `3238cd2`). **Finding that resolved
+   the design:** sourcing severity "from the displayed omen" was already true and a no-op — the decoy
+   is drawn from the SAME severity tier as the truth (`augury.js` `drawSlot`), so shown/true severity
+   are always equal. The real defect was that the words (gentle/troubling/**dire**) carry good→bad
+   *valence* while severity is pure *magnitude*, so a bad minor card ("Harsh Weather") read as "a
+   gentle omen". Fix (user chose "match the shown flavour", + asked for neutral events too): new
+   `eventValence(effect)` in `services/events.js` → `good|bad|neutral` (the ONE classifier the
+   leak-guards and the header share); `campaignView` exposes it per vision card (derived, no leak);
+   `AuguryPanel` maps `(valence, severity)` → wording. Added a real third mood **neutral** with three
+   `type:'none'` no-op events (quiet fortnight / rains that foul both sides / passing comet — one per
+   magnitude) so all three neutral labels appear; `applyEffect` gains a `none` branch. No schema bump
+   (`effect` is Mixed, nothing new persisted). Future option noted: genuinely *mixed* (+food/−materials
+   in one event) neutral fates would need multi-effect support. Tests: `augury.test.js` (valence
+   classifier + neutral tripwire), `auguryLabel.test.jsx`, `campaignFlow.test.jsx`.
 
 5. **Fortification playtest aid + workers-resource — ✅ DONE 2026-07-13** (`CAMPAIGN_SCHEMA_VERSION`
    7 → 8; done out of order, before 1–4, on branch `chore/windows-docker-makefile`).
