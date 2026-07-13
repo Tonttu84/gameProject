@@ -294,6 +294,28 @@ body {
   text-align: right;
 }
 
+.reach-squad-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.reach-squad-name        { font-weight: 600; color: var(--accent2); }
+.reach-squad-composition { flex: 1; font-size: 11px; color: #99a; }
+.reach-squad-elsewhere   { font-size: 10px; color: #666; width: 100%; }
+.reach-squad-place, .reach-squad-remove {
+  background: #0e0e18;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.reach-squad-place:hover  { border-color: var(--accent2); }
+.reach-squad-remove:hover { border-color: #cc6666; }
+
 .result-screen {
   display: flex;
   flex-direction: column;

@@ -24,6 +24,7 @@ const App = () => {
   const [map,          setMap]          = useState(null)
   const [phase,        setPhase]        = useState('setup')
   const [placements,   setPlacements]   = useState([])
+  const [squadPlacements, setSquadPlacements] = useState({}) // {squadId: {col,row,holdTurns}}
   const [battleResult, setBattleResult] = useState(null)
   const [dayReport,    setDayReport]    = useState(null)
   const [error,        setError]        = useState(null)
@@ -105,6 +106,7 @@ const App = () => {
       } else if (e.response?.status === 404) {
         setAuthNotice('This campaign is gone (a new build wiped old saves) — start a fresh one.')
         setPlacements([])
+        setSquadPlacements({})
         setBattleResult(null)
         setDayReport(null)
         setPhase('setup')
@@ -127,19 +129,36 @@ const App = () => {
 
   const musterForBattle = () => {
     setPlacements([])
+    setSquadPlacements({})
     setPhase('placement')
   }
 
   const startBattle = guarded(async () => {
-    if (placements.length === 0) return
+    if (placements.length === 0 && Object.keys(squadPlacements).length === 0) return
     setPhase('battling')
 
     const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
-    const playerPlacement = placements.flatMap(p => {
+    const loosePlacement = placements.flatMap(p => {
       const { q, r } = toAxial(p.col, p.row)
       const holdTurns = p.holdTurns ?? 0
       return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r, hold_turns: holdTurns }))
     })
+    // Each placed squad expands into one entry per member, all tagged with
+    // its squad_id/squad_name so the engine groups them into one formation
+    // (Stage A) and the campaign server can regroup survivors after battle.
+    const squads = campaign.squads ?? []
+    const squadPlacement = Object.entries(squadPlacements).flatMap(([id, p]) => {
+      const sq = squads.find(s => String(s.id) === String(id))
+      if (!sq) return []
+      const { q, r } = toAxial(p.col, p.row)
+      const holdTurns = p.holdTurns ?? 0
+      return Object.entries(sq.composition).flatMap(([unit_type, n]) =>
+        Array.from({ length: n }, () => ({
+          unit_type, q, r, hold_turns: holdTurns, squad_id: sq.id, squad_name: sq.name,
+        })),
+      )
+    })
+    const playerPlacement = [...loosePlacement, ...squadPlacement]
 
     const result = await fight(playerPlacement)
     if (!result) {
@@ -155,6 +174,7 @@ const App = () => {
   const nextDay = guarded(async () => {
     const report = await endDay()
     setPlacements([])
+    setSquadPlacements({})
     setBattleResult(null)
     setDayReport(report)
     setPhase('report')
@@ -310,17 +330,32 @@ const App = () => {
   // ── Active campaign ───────────────────────────────────────────────────────
   const roster = campaign.roster
   const totalUnits = Object.values(roster).reduce((a, b) => a + b, 0)
-  // Units out foraging are unavailable for this turn's battle line.
+  const squads = campaign.squads ?? []
+  // Units out foraging are unavailable for this turn's battle line. Squad
+  // members are earmarked to their squad and aren't offered individually
+  // under "Troops" — a squad is placed as a whole (HexGrid/ReachMenu), not
+  // built up unit-by-unit like loose stock.
   const forageAssignment = campaign.forage?.assignment ?? {}
+  const squadCommitted = {}
+  squads.forEach(sq => Object.entries(sq.composition).forEach(([type, n]) => {
+    squadCommitted[type] = (squadCommitted[type] ?? 0) + n
+  }))
   const availableRoster = Object.fromEntries(
-    Object.entries(roster).map(([type, n]) => [type, n - (forageAssignment[type] ?? 0)]),
+    Object.entries(roster).map(([type, n]) =>
+      [type, n - (forageAssignment[type] ?? 0) - (squadCommitted[type] ?? 0)]),
   )
   // Battle commits the WHOLE army (user, 2026-07-05): only foragers stay
-  // behind. Fight unlocks when every available unit is on the field; the
-  // server enforces the same rule.
+  // behind. Fight unlocks when every available unit — loose stock AND every
+  // squad — is on the field; the server enforces the same rule.
   const placedCount = placements.reduce((s, p) => s + p.count, 0)
-  const availableCount = Object.values(availableRoster).reduce((a, b) => a + b, 0)
-  const inCamp = availableCount - placedCount
+  const squadPlacedCount = Object.keys(squadPlacements).reduce((sum, id) => {
+    const sq = squads.find(s => String(s.id) === String(id))
+    if (!sq) return sum
+    return sum + Object.values(sq.composition).reduce((a, b) => a + b, 0)
+  }, 0)
+  const totalAvailableCount = Object.values(roster).reduce((a, b) => a + b, 0)
+    - Object.values(forageAssignment).reduce((a, b) => a + b, 0)
+  const inCamp = totalAvailableCount - placedCount - squadPlacedCount
 
   return (
     <div className="app">
@@ -441,10 +476,15 @@ const App = () => {
             roster={availableRoster}
             disabled={phase === 'battling'}
             fortifiedSides={campaign.fortification?.sides ?? []}
+            squads={squads}
+            squadPlacements={squadPlacements}
+            onSquadPlacementsChange={setSquadPlacements}
           />
           <div className="placement-bar">
             <span>
-              {placedCount} units placed in {placements.length} hex{placements.length !== 1 ? 'es' : ''}
+              {placedCount + squadPlacedCount} units placed in {placements.length} hex{placements.length !== 1 ? 'es' : ''}
+              {Object.keys(squadPlacements).length > 0 &&
+                ` + ${Object.keys(squadPlacements).length} squad${Object.keys(squadPlacements).length !== 1 ? 's' : ''}`}
               {inCamp > 0 && (
                 <span className="placement-in-camp" data-testid="placement-in-camp">
                   {' '}— {inCamp} still in camp
@@ -456,7 +496,7 @@ const App = () => {
                 <button
                   className="btn-primary"
                   onClick={startBattle}
-                  disabled={placedCount === 0 || inCamp > 0 || campaign.battleFoughtToday}
+                  disabled={(placedCount === 0 && squadPlacedCount === 0) || inCamp > 0 || campaign.battleFoughtToday}
                   title={inCamp > 0 ? `Deploy your whole army — ${inCamp} still in camp` : undefined}
                 >
                   Fight!

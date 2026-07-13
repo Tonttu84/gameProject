@@ -62,7 +62,10 @@ const blendColor = (hex, oR, oG, oB, alpha) => {
   return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`
 }
 
-const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled, fortifiedSides = [] }) => {
+const HexGrid = ({
+  info, map, placements, onPlacementsChange, roster, disabled, fortifiedSides = [],
+  squads = [], squadPlacements = {}, onSquadPlacementsChange,
+}) => {
   const [selectedHex, setSelectedHex] = useState(null)
 
   const { grid, playerZone, enemyZone } = info
@@ -127,6 +130,22 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled, 
     })
   }
 
+  // Squads are atomic: one placement (whole formation on one hex) and one
+  // hold order, applied immediately rather than staged behind a commit
+  // button — there's no per-type quantity to type, just where and how long.
+  const handlePlaceSquad = (col, row, squadId, squadName, holdTurns = 0) => {
+    onSquadPlacementsChange(prev => ({ ...prev, [squadId]: { col, row, holdTurns, squadName } }))
+  }
+  const handleRemoveSquad = (squadId) => {
+    onSquadPlacementsChange(prev => {
+      const { [squadId]: _removed, ...rest } = prev
+      return rest
+    })
+  }
+
+  const squadsAt = (col, row) =>
+    squads.filter(sq => squadPlacements[sq.id]?.col === col && squadPlacements[sq.id]?.row === row)
+
   const hexElements = []
   for (let row = 0; row < grid.height; row++) {
     for (let col = 0; col < grid.width; col++) {
@@ -135,6 +154,7 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled, 
       const inEnemy    = inEnemyZone(row)
       const isSelected = selectedHex?.col === col && selectedHex?.row === row
       const stack      = placementsAt(col, row)
+      const hexSquads  = squadsAt(col, row)
       const hexData    = getHexData(col, row)
       const baseColor  = terrainColorMap[hexData.terrain] ?? '#5a6441'
 
@@ -183,6 +203,37 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled, 
                     fill="#ffcc66"
                   >
                     ⌛{p.holdTurns}
+                  </text>
+                )}
+              </React.Fragment>
+            )
+          })}
+          {hexSquads.map((sq, i) => {
+            const rowY = y + (stack.length + i - (stack.length + hexSquads.length - 1) / 2) * 9
+            const holdTurns = squadPlacements[sq.id]?.holdTurns ?? 0
+            return (
+              <React.Fragment key={`squad-${sq.id}`}>
+                <text
+                  data-testid={`squad-marker-${col}-${row}-${sq.id}`}
+                  x={x}
+                  y={rowY}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize="8"
+                  fill="#ffaa44"
+                >
+                  {sq.name}
+                </text>
+                {holdTurns > 0 && (
+                  <text
+                    x={x + HEX_SIZE * 0.55}
+                    y={rowY}
+                    textAnchor="start"
+                    dominantBaseline="middle"
+                    fontSize="7"
+                    fill="#ffcc66"
+                  >
+                    ⌛{holdTurns}
                   </text>
                 )}
               </React.Fragment>
@@ -245,6 +296,10 @@ const HexGrid = ({ info, map, placements, onPlacementsChange, roster, disabled, 
           hexCapacity={grid.hexCapacity}
           onPlace={handlePlace}
           onClose={() => setSelectedHex(null)}
+          squads={squads}
+          squadPlacements={squadPlacements}
+          onPlaceSquad={handlePlaceSquad}
+          onRemoveSquad={handleRemoveSquad}
         />
       )}
     </div>

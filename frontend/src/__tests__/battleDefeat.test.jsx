@@ -41,8 +41,9 @@ const info = {
 }
 
 // Fight requires the whole army on the field; this campaign owns exactly the
-// 3 Soldiers the test places.
-const campaign = { ...campaignFixture, augury: consultedAugury, roster: { Soldier: 3 } }
+// 3 Soldiers the test places. No squads — the fixture's STARTING_SQUADS
+// would otherwise reference units this shrunk roster doesn't have.
+const campaign = { ...campaignFixture, augury: consultedAugury, roster: { Soldier: 3 }, squads: [] }
 
 const lostCampaign = {
   ...campaign,

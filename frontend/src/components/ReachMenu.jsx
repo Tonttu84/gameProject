@@ -1,6 +1,13 @@
 import React, { useState } from 'react'
 
-const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, onPlace, onClose }) => {
+// One line per squad: "40 Soldier" or "6 Cavalry, 6 LightCavalry".
+const compositionSummary = (composition) =>
+  Object.entries(composition).map(([type, n]) => `${n} ${type}`).join(', ')
+
+const ReachMenu = ({
+  hex, placements, roster, units, hexTerrain, hexCapacity, onPlace, onClose,
+  squads = [], squadPlacements = {}, onPlaceSquad, onRemoveSquad,
+}) => {
   const stackCounts    = Object.fromEntries(placements.map(p => [p.type, p.count]))
   const stackHoldTurns = Object.fromEntries(placements.map(p => [p.type, p.holdTurns ?? 0]))
 
@@ -73,6 +80,61 @@ const ReachMenu = ({ hex, placements, roster, units, hexTerrain, hexCapacity, on
       <div className="reach-capacity">
         {totalSizeUsed} / {hexCapacity}
       </div>
+
+      {squads.length > 0 && (
+        <>
+          <div className="reach-section-title">Squads</div>
+          {squads.map(squad => {
+            const here = squadPlacements[squad.id]?.col === hex.col
+              && squadPlacements[squad.id]?.row === hex.row
+            const elsewhere = squadPlacements[squad.id] && !here
+            return (
+              <div key={squad.id} className="reach-squad-row" data-testid={`squad-row-${squad.id}`}>
+                <span className="reach-squad-name">{squad.name}</span>
+                <span className="reach-squad-composition">{compositionSummary(squad.composition)}</span>
+                {here ? (
+                  <>
+                    <label className="reach-order-field">
+                      Hold (turns)
+                      <input
+                        type="number"
+                        min={0}
+                        value={squadPlacements[squad.id]?.holdTurns ?? 0}
+                        onChange={e => onPlaceSquad(
+                          hex.col, hex.row, squad.id, squad.name,
+                          Math.max(0, parseInt(e.target.value) || 0),
+                        )}
+                        className="reach-hold-input"
+                        data-testid={`squad-hold-${squad.id}`}
+                      />
+                    </label>
+                    <button
+                      className="reach-squad-remove"
+                      data-testid={`squad-remove-${squad.id}`}
+                      onClick={() => onRemoveSquad(squad.id)}
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="reach-squad-place"
+                    data-testid={`squad-place-${squad.id}`}
+                    onClick={() => onPlaceSquad(hex.col, hex.row, squad.id, squad.name, 0)}
+                  >
+                    {elsewhere ? 'Move here' : 'Place here'}
+                  </button>
+                )}
+                {elsewhere && (
+                  <span className="reach-squad-elsewhere">
+                    at ({squadPlacements[squad.id].col},{squadPlacements[squad.id].row})
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </>
+      )}
 
       <div className="reach-section-title">Troops</div>
       {units.map(u => {

@@ -9,6 +9,13 @@ export const campaignFixture = {
   battleFoughtToday: false,
   resources: { food: 50000, materials: 0, foodNeedPerTurn: 12432 },
   roster: { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10, LightCavalry: 12 },
+  // Persistent player-facing squads (playtest item 1) — a subset of roster
+  // organized into named formations; the remainder stays loose.
+  squads: [
+    { id: 1, name: '1st Cohort', composition: { Soldier: 40 } },
+    { id: 2, name: 'Skirmishers', composition: { Archer: 30 } },
+    { id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 } },
+  ],
   // Civilian labour pool: available = total − used. Forts + militia spend it.
   workers: { total: 2000, used: 0, available: 2000 },
   // Own info (not hidden): fort level + next-level material/worker cost + the

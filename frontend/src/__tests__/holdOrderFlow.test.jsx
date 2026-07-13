@@ -66,8 +66,9 @@ beforeEach(() => {
 
 const placeSoldiers = async ({ count, holdTurns }) => {
   // Fight requires the whole army on the field, so the roster is exactly
-  // what this test places.
-  getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: count } }])
+  // what this test places. No squads — the fixture's STARTING_SQUADS would
+  // otherwise reference units this shrunk roster doesn't have.
+  getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: count }, squads: [] }])
   render(<App />)
   await screen.findByText(/War Council/)
   fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
@@ -86,7 +87,7 @@ const placeSoldiers = async ({ count, holdTurns }) => {
 
 describe('full-deployment gate', () => {
   it('Fight stays disabled while units remain in camp', async () => {
-    getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: 3 } }])
+    getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: 3 }, squads: [] }])
     render(<App />)
     await screen.findByText(/War Council/)
     fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
