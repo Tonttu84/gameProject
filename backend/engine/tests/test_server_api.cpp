@@ -50,9 +50,9 @@ TEST_CASE("buildInfoJson: every unit entry exports its movement speed") {
         FAIL("missing type: " << type);
         return -1;
     };
-    REQUIRE(speedOf("Soldier") == 1);
-    REQUIRE(speedOf("Cavalry") == 2);
-    REQUIRE(speedOf("LightCavalry") == 3);
+    REQUIRE(speedOf("Soldier") == 10);
+    REQUIRE(speedOf("Cavalry") == 28);
+    REQUIRE(speedOf("LightCavalry") == 28);
 }
 
 TEST_CASE("buildInfoJson: Cavalry placementSize equals Horse::SIZE (mount size)") {

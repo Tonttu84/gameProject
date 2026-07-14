@@ -39,9 +39,10 @@ afterEach(clearRolls)
 
 describe('forage capacity and allocation', () => {
   it('capacity is forageValue points × kg per point', () => {
-    // Soldier speed 1 → 2 points → 30 kg each; LightCavalry speed 3 → 6 → 90 kg.
+    // Soldier speed 10 → factor 1 → 2 points → 30 kg each; LightCavalry
+    // speed 28 → factor 2.8 → 5.6 points → 84 kg.
     expect(forageCapacityKg({ Soldier: 100 }, catalog)).toBe(3000)
-    expect(forageCapacityKg({ LightCavalry: 10 }, catalog)).toBe(900)
+    expect(forageCapacityKg({ LightCavalry: 10 }, catalog)).toBe(840)
     expect(forageCapacityKg({}, catalog)).toBe(0)
   })
 

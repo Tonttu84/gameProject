@@ -587,42 +587,80 @@ TEST_CASE("moveToward: unit does not cross blocked hexside") {
     field.extractResult();
 }
 
-// ── Movement debt (terrain cost) ──────────────────────────────────────────────
+// ── Movement debt (terrain cost charges the points bank) ─────────────────────
 
-TEST_CASE("moveToward: entering forest applies spentMove debt and holds next turn") {
+TEST_CASE("moveTeam: entering forest charges the bank into debt and stalls until it recovers") {
     Battlefield& field = Utility::getBattlefield();
 
-    // Red at {0,5}, Blue at {2,3}. Only NE closes distance → {1,4}.
-    // {1,4} is Forest (cost 2). After first call: unit at {1,4}, spentMove=1.
-    // Second call: debt consumed, unit stays at {1,4}.
+    // Red at {0,5}, Blue at {3,2}. Only NE closes distance → {1,4}, which is
+    // Forest (cost 24). A positive bank affords any single step, going into
+    // debt on the step that empties it; debt recovers at movementSpeed (10)
+    // per tick. Tick 1: regen to 10, enter forest, bank -14. Tick 2: regen to
+    // -4 — still in debt, hold. Tick 3: regen to 6 — moves on. Same
+    // three-tick cadence the old spentMove debt produced for cost-2 terrain.
     Hex* forestHex = field.hexGrid.getHex({1, 4});
     forestHex->terrain = TerrainType::Forest;
 
     auto redPtr = std::make_unique<Soldier>(REDTEAM);
     auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
     redPtr->setHex(field.hexGrid.getHex({0, 5}));
-    bluePtr->setHex(field.hexGrid.getHex({2, 3}));
+    bluePtr->setHex(field.hexGrid.getHex({3, 2}));
 
     Army red, blue;
     red.push_back(std::move(redPtr));
     blue.push_back(std::move(bluePtr));
     field.loadArmies(std::move(red), std::move(blue));
 
-    Hex* targetHex = field.hexGrid.getHex({2, 3});
-
-    field.moveToward(field.getTeam(REDTEAM)[0], targetHex);
     AUnit* unit = field.getTeam(REDTEAM)[0].get();
-    REQUIRE(unit->getHex()->coord.q == 1);
-    REQUIRE(unit->getHex()->coord.r == 4);
-    REQUIRE(unit->getSpentMove() == 1);
 
-    // Second call: debt decrements, no move
-    field.moveToward(field.getTeam(REDTEAM)[0], targetHex);
-    REQUIRE(unit->getHex()->coord.q == 1);
-    REQUIRE(unit->getHex()->coord.r == 4);
-    REQUIRE(unit->getSpentMove() == 0);
+    field.moveTeam(field.getTeamData(REDTEAM));
+    REQUIRE(unit->getHex()->coord == HexCoord{1, 4});
+    REQUIRE(unit->getMovePoints() == -14);
+
+    field.moveTeam(field.getTeamData(REDTEAM));
+    REQUIRE(unit->getHex()->coord == HexCoord{1, 4}); // still paying off the forest
+    REQUIRE(unit->getMovePoints() == -4);
+
+    field.moveTeam(field.getTeamData(REDTEAM));
+    REQUIRE(unit->getHex()->coord == HexCoord{2, 3}); // debt cleared — moves again
 
     forestHex->terrain = TerrainType::Open;
+    field.extractResult();
+}
+
+TEST_CASE("moveTeam: a foot soldier crossing marsh stalls two extra ticks") {
+    Battlefield& field = Utility::getBattlefield();
+
+    // Marsh costs 36 for Foot: enter on tick 1 (bank 10-36 = -26), recover
+    // through -16 / -6, move again on tick 4 — the old cost-3 stall cadence.
+    Hex* marshHex = field.hexGrid.getHex({1, 4});
+    marshHex->terrain = TerrainType::Marsh;
+
+    auto redPtr = std::make_unique<Soldier>(REDTEAM);
+    auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
+    redPtr->setHex(field.hexGrid.getHex({0, 5}));
+    bluePtr->setHex(field.hexGrid.getHex({3, 2}));
+
+    Army red, blue;
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(bluePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+
+    field.moveTeam(field.getTeamData(REDTEAM));
+    REQUIRE(unit->getHex()->coord == HexCoord{1, 4});
+    REQUIRE(unit->getMovePoints() == -26);
+
+    for (int tick = 2; tick <= 3; ++tick) {
+        field.moveTeam(field.getTeamData(REDTEAM));
+        REQUIRE(unit->getHex()->coord == HexCoord{1, 4}); // ticks 2-3: recovering
+    }
+
+    field.moveTeam(field.getTeamData(REDTEAM));
+    REQUIRE(unit->getHex()->coord == HexCoord{2, 3}); // tick 4: moves again
+
+    marshHex->terrain = TerrainType::Open;
     field.extractResult();
 }
 
@@ -832,23 +870,59 @@ TEST_CASE("moveSquad: squad routes around impassable wall to reach the other sid
     field.extractResult();
 }
 
-// ── Per-unit movement speed ──────────────────────────────────────────────────
-// movementSpeed N = up to N one-hex steps per tick, re-evaluating target and
-// engagement between steps. Terrain move-cost debt is paid one step at a time;
-// fresh enemy contact ends the tick's movement.
+// ── Per-unit movement points ─────────────────────────────────────────────────
+// Each tick a unit regains movementSpeed points — never banking above that
+// base — then takes one-hex steps while its bank is positive, paying each
+// entered hex's terrain cost and going into debt on the step that empties it.
+// Humans (speed 10) on open ground (cost 12) move five ticks out of six; a
+// Horse (28) rides a 3/2/2-hex three-tick cycle. Fresh enemy contact ends
+// the tick's movement.
 
 namespace {
-// Soldier with an overridden movement speed — for testing the step loop
+// Soldier with an overridden movement speed — for testing the points loop
 // without depending on any particular unit type's stats.
 struct FastSoldier : Soldier {
     FastSoldier(int t, int speed) : Soldier(t) { movementSpeed = speed; }
 };
 }
 
-TEST_CASE("moveTeam: speed-3 LightCavalry covers three hexes in one tick", "[movement][speed]") {
+TEST_CASE("moveTeam: a foot soldier on open ground moves five ticks out of six", "[movement][speed]") {
     Battlefield& field = Utility::getBattlefield();
 
-    auto cav = std::make_unique<LightCavalry>(REDTEAM);
+    auto redPtr = std::make_unique<Soldier>(REDTEAM); // speed 10 vs open cost 12
+    redPtr->setHex(field.hexGrid.getHex({0, 5}));
+    auto enemy = std::make_unique<ImmobileDummy>(BLUETEAM);
+    enemy->setHex(field.hexGrid.getHex({12, 5})); // distance 12 — never reached
+
+    Army red, blue;
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(enemy));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    AUnit* unit = field.getTeam(REDTEAM)[0].get();
+
+    // Bank after each tick: -2, -4, -6, -8, -10 … sixth regen only reaches 0.
+    for (int tick = 1; tick <= 5; ++tick) {
+        Hex* before = unit->getHex();
+        field.moveTeam(field.getTeamData(REDTEAM));
+        REQUIRE(unit->getHex() != before); // ticks 1-5: one hex each
+    }
+    Hex* before = unit->getHex();
+    field.moveTeam(field.getTeamData(REDTEAM));
+    REQUIRE(unit->getHex() == before);     // tick 6: the skip tick
+    REQUIRE(unit->getMovePoints() == 0);
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {12, 5}) == 7); // 5 hexes covered
+
+    field.moveTeam(field.getTeamData(REDTEAM)); // tick 7: cycle restarts
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {12, 5}) == 6);
+
+    field.extractResult();
+}
+
+TEST_CASE("moveTeam: LightCavalry covers three open hexes on a full bank", "[movement][speed]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    auto cav = std::make_unique<LightCavalry>(REDTEAM); // horse pace — 28 points
     cav->setHex(field.hexGrid.getHex({0, 5}));
     auto enemy = std::make_unique<Soldier>(BLUETEAM);
     enemy->setHex(field.hexGrid.getHex({8, 5})); // distance 8 — no contact this tick
@@ -858,29 +932,40 @@ TEST_CASE("moveTeam: speed-3 LightCavalry covers three hexes in one tick", "[mov
     blue.push_back(std::move(enemy));
     field.loadArmies(std::move(red), std::move(blue));
 
-    field.moveTeam(field.getTeamData(REDTEAM)); // blue never moves
+    field.moveTeam(field.getTeamData(REDTEAM)); // 28 → 16 → 4 → -8: three steps
     AUnit* unit = field.getTeam(REDTEAM)[0].get();
     REQUIRE(HexGrid::distance(unit->getHex()->coord, {8, 5}) == 5);
 
     field.extractResult();
 }
 
-TEST_CASE("moveTeam: heavy Cavalry moves at the mount's pace of two", "[movement][speed]") {
+TEST_CASE("moveTeam: heavy Cavalry rides the mount's 3/2/2 three-tick cycle", "[movement][speed]") {
     Battlefield& field = Utility::getBattlefield();
 
-    auto cav = std::make_unique<Cavalry>(REDTEAM); // Soldier on a plain Horse — speed 2
-    cav->setHex(field.hexGrid.getHex({0, 10}));
-    auto enemy = std::make_unique<Soldier>(BLUETEAM);
-    enemy->setHex(field.hexGrid.getHex({8, 10}));
+    auto cav = std::make_unique<Cavalry>(REDTEAM); // Soldier on a plain Horse — speed 28
+    cav->setHex(field.hexGrid.getHex({-5, 10}));
+    auto enemy = std::make_unique<ImmobileDummy>(BLUETEAM);
+    enemy->setHex(field.hexGrid.getHex({7, 10})); // distance 12
 
     Army red, blue;
     red.push_back(std::move(cav));
     blue.push_back(std::move(enemy));
     field.loadArmies(std::move(red), std::move(blue));
 
-    field.moveTeam(field.getTeamData(REDTEAM));
     AUnit* unit = field.getTeam(REDTEAM)[0].get();
-    REQUIRE(HexGrid::distance(unit->getHex()->coord, {8, 10}) == 6);
+
+    field.moveTeam(field.getTeamData(REDTEAM)); // 28: three steps, bank -8
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {7, 10}) == 9);
+
+    field.moveTeam(field.getTeamData(REDTEAM)); // regen to 20: two steps, bank -4
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {7, 10}) == 7);
+
+    field.moveTeam(field.getTeamData(REDTEAM)); // regen to 24: two steps, bank 0
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {7, 10}) == 5);
+    REQUIRE(unit->getMovePoints() == 0);
+
+    field.moveTeam(field.getTeamData(REDTEAM)); // full 28 again: three steps
+    REQUIRE(HexGrid::distance(unit->getHex()->coord, {7, 10}) == 2);
 
     field.extractResult();
 }
@@ -888,8 +973,9 @@ TEST_CASE("moveTeam: heavy Cavalry moves at the mount's pace of two", "[movement
 TEST_CASE("moveTeam: a fast unit stops stepping on fresh enemy contact", "[movement][speed]") {
     Battlefield& field = Utility::getBattlefield();
 
-    // Distance 3 with speed 3: two steps reach adjacency; the third step must
-    // NOT happen (no sliding along the front in the tick contact was made).
+    // Distance 3 with a 28-point bank: two steps reach adjacency; a third
+    // step would still be affordable but must NOT happen (no sliding along
+    // the front in the tick contact was made).
     auto cav = std::make_unique<LightCavalry>(REDTEAM);
     cav->setHex(field.hexGrid.getHex({0, 5}));
     auto enemy = std::make_unique<Soldier>(BLUETEAM);
@@ -908,16 +994,16 @@ TEST_CASE("moveTeam: a fast unit stops stepping on fresh enemy contact", "[movem
     field.extractResult();
 }
 
-TEST_CASE("moveTeam: speed-2 unit pays forest move-cost debt within its own tick", "[movement][speed]") {
+TEST_CASE("moveTeam: a 24-point unit absorbs the whole forest cost within its own tick", "[movement][speed]") {
     Battlefield& field = Utility::getBattlefield();
 
-    // Red at {0,5}, Blue at {3,2}: NE into forest {1,4} (cost 2) is the
-    // decreasing move. Step 1 enters the forest and takes 1 debt; step 2 pays
-    // it off — so next tick the unit moves immediately instead of stalling.
+    // Red at {0,5}, Blue at {3,2}: NE into forest {1,4} (cost 24) is the
+    // decreasing move. A speed-24 unit pays the full cost from this tick's
+    // bank (24 → 0) — no debt, so next tick it moves immediately.
     Hex* forestHex = field.hexGrid.getHex({1, 4});
     forestHex->terrain = TerrainType::Forest;
 
-    auto redPtr = std::make_unique<FastSoldier>(REDTEAM, 2);
+    auto redPtr = std::make_unique<FastSoldier>(REDTEAM, 24);
     auto bluePtr = std::make_unique<Soldier>(BLUETEAM);
     redPtr->setHex(field.hexGrid.getHex({0, 5}));
     bluePtr->setHex(field.hexGrid.getHex({3, 2}));
@@ -930,7 +1016,10 @@ TEST_CASE("moveTeam: speed-2 unit pays forest move-cost debt within its own tick
     field.moveTeam(field.getTeamData(REDTEAM));
     AUnit* unit = field.getTeam(REDTEAM)[0].get();
     REQUIRE(unit->getHex()->coord == HexCoord{1, 4});
-    REQUIRE(unit->getSpentMove() == 0);
+    REQUIRE(unit->getMovePoints() == 0);
+
+    field.moveTeam(field.getTeamData(REDTEAM)); // no stall — straight on
+    REQUIRE(unit->getHex()->coord == HexCoord{2, 3});
 
     forestHex->terrain = TerrainType::Open;
     field.extractResult();
@@ -947,7 +1036,7 @@ TEST_CASE("moveUnits: a squad advances at its slowest member's speed", "[movemen
 
     Army red, blue;
 
-    // Pure cavalry squad (all speed 2) at row 10.
+    // Pure cavalry squad (all speed 28) at row 10.
     for (int i = 0; i < 2; ++i) {
         auto u = std::make_unique<Cavalry>(REDTEAM);
         u->setHex(field.hexGrid.getHex({0, 10}));
@@ -981,7 +1070,10 @@ TEST_CASE("moveUnits: a squad advances at its slowest member's speed", "[movemen
 
     field.moveUnits();
 
-    REQUIRE(HexGrid::distance(fastSq->getFlagBearer()->getHex()->coord,  {8, 10}) == 6); // 2 steps
+    // Pure cavalry: 28 points buy three open hexes (28 → 16 → 4 → -8). The
+    // mixed squad is gated by the Soldier: one hex takes his bank to -2 and
+    // a squad never advances while any member is at zero or below.
+    REQUIRE(HexGrid::distance(fastSq->getFlagBearer()->getHex()->coord,  {8, 10}) == 5); // 3 steps
     REQUIRE(HexGrid::distance(mixedSq->getFlagBearer()->getHex()->coord, {6, 18}) == 5); // 1 step
 
     field.extractResult();
@@ -996,16 +1088,16 @@ TEST_CASE("moveUnits: richer squad members aid a drained straggler at 3:1", "[mo
     Army red, blue;
     std::vector<AUnit*> cavs;
     for (int i = 0; i < 2; ++i) {
-        auto u = std::make_unique<LightCavalry>(REDTEAM); // base 3 — can afford aid
+        auto u = std::make_unique<LightCavalry>(REDTEAM); // base 28 — can afford aid
         u->setHex(field.hexGrid.getHex({0, 10}));
         cavs.push_back(u.get());
         sq->addMember(u.get());
         red.push_back(std::move(u));
     }
-    auto slowPtr = std::make_unique<Soldier>(REDTEAM); // base 1
+    auto slowPtr = std::make_unique<Soldier>(REDTEAM); // base 10
     AUnit* slow = slowPtr.get();
     slow->setHex(field.hexGrid.getHex({0, 10}));
-    slow->setMovePoints(-3); // deep in debt, e.g. after a marsh crossing
+    slow->setMovePoints(-30); // deep in debt, e.g. after a marsh crossing
     sq->addMember(slow);
     red.push_back(std::move(slowPtr));
 
@@ -1017,15 +1109,16 @@ TEST_CASE("moveUnits: richer squad members aid a drained straggler at 3:1", "[mo
     field.loadArmies(std::move(red), std::move(blue));
     field.getTeamData(REDTEAM).squads.push_back(std::move(sqOwned));
 
-    // Tick 1: regain → cavs 3/3, straggler -2. Aid fires once (richest pays
-    // 1 point three times → straggler +1 = -1), then nobody has 3 left, so
-    // the squad waits in place.
+    // Tick 1: regain → cavs 28/28, straggler -20. Aid runs 18 rounds (each:
+    // richest pays 1 point three times → straggler +1) until the donors are
+    // drained below 3 — straggler reaches -2, squad still waits in place.
     field.moveUnits();
     REQUIRE(HexGrid::distance(slow->getHex()->coord, {8, 10}) == 8);
-    REQUIRE(slow->getMovePoints() == -1);
+    REQUIRE(slow->getMovePoints() == -2);
 
-    // Tick 2: regain → cavs 3/3, straggler 0. Aid lifts him to +1 and the
-    // squad finally advances a hex. Without aid he'd still be at 0, blocking.
+    // Tick 2: regain → cavs back to 28 (capped at base), straggler 8 —
+    // positive, so the squad advances a hex. Without tick 1's aid he'd have
+    // regenned only to -10 and still be blocking the squad.
     field.moveUnits();
     REQUIRE(HexGrid::distance(slow->getHex()->coord, {8, 10}) == 7);
 

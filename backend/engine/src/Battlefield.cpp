@@ -101,21 +101,22 @@ static bool sidePassable(const HexSide* side, UnitCategory cat) {
     return true;
 }
 
-// Ticks required to fully enter dest (1 = one tick = no debt).
-// Caller must verify the side is passable before calling.
+// Movement points spent to enter dest (see the TERRAIN_COST_* block in
+// Defines.hpp for the banking model). Caller must verify the side is
+// passable before calling.
 static int terrainMoveCost(const Hex* dest, const HexSide* side, UnitCategory cat) {
-    if (!dest) return 1;
+    if (!dest) return TERRAIN_COST_OPEN;
     int cost;
     switch (dest->terrain) {
         case TerrainType::Forest: cost = TERRAIN_COST_FOREST; break;
         case TerrainType::Marsh:
             cost = (cat == UnitCategory::Beast || cat == UnitCategory::Skirmisher)
-                   ? 2 : TERRAIN_COST_MARSH;
+                   ? TERRAIN_COST_MARSH_LOOSE : TERRAIN_COST_MARSH;
             break;
         case TerrainType::Rubble: cost = TERRAIN_COST_RUBBLE; break;
         default:                  cost = TERRAIN_COST_OPEN;   break;
     }
-    // Climbing a slope adds one extra tick
+    // Climbing a slope costs extra
     if (side && side->hexA && side->hexB) {
         const Hex* from = (side->hexA == dest) ? side->hexB : side->hexA;
         if (dest->elevation > from->elevation)
@@ -373,6 +374,10 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
 {
     AUnit& unit = *unitPtr;
     if (!target || !unit.getHex()) return;
+    // Action recovery (archer fire), not terrain debt — terrain costs charge
+    // the movement-points bank at the move sites below. One recovery tick is
+    // consumed per moveToward call; moveTeam's step loop stops on a
+    // stationary step, so this burns at most one per tick.
     if (unit.getSpentMove()) {
         unit.setSpentMove(unit.getSpentMove() - 1);
         return;
@@ -402,7 +407,7 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     // Prefer a decreasing move — clears the lateral flag.
     if (choice.decrDir >= 0) {
         moveAUnit(unit, choice.decrCoord);
-        if (choice.decrCost > 1) unit.setSpentMove(static_cast<size_t>(choice.decrCost - 1));
+        unit.setMovePoints(unit.getMovePoints() - choice.decrCost);
         unit.setTookLateral(false);
         return;
     }
@@ -412,7 +417,7 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     if (!engaged) {
         if (choice.latDir >= 0 && !mustDecrease) {
             moveAUnit(unit, choice.latCoord);
-            if (choice.latCost > 1) unit.setSpentMove(static_cast<size_t>(choice.latCost - 1));
+            unit.setMovePoints(unit.getMovePoints() - choice.latCost);
             unit.setTookLateral(true);
         }
         return;
@@ -429,7 +434,7 @@ void Battlefield::moveToward(std::unique_ptr<AUnit>& unitPtr, const Hex* target)
     ReinforceChoice reinforce = bestReinforceNeighbor(hexGrid, fromHex, unit);
     if (reinforce.hex) {
         moveAUnit(unit, reinforce.coord);
-        if (reinforce.cost > 1) unit.setSpentMove(static_cast<size_t>(reinforce.cost - 1));
+        unit.setMovePoints(unit.getMovePoints() - reinforce.cost);
         unit.setTookLateral(true);
     }
 }
@@ -495,7 +500,7 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
 
     if (found) {
         moveAUnit(*unit, best.coord);
-        if (best.cost > 1) unit->setSpentMove(static_cast<size_t>(best.cost - 1));
+        unit->setMovePoints(unit->getMovePoints() - best.cost);
         unit->setTookLateral(false);
         return;
     }
@@ -512,14 +517,14 @@ void Battlefield::flee(std::unique_ptr<AUnit>& unit)
 
     if (choice.decrDir >= 0) {
         moveAUnit(*unit, choice.decrCoord);
-        if (choice.decrCost > 1) unit->setSpentMove(static_cast<size_t>(choice.decrCost - 1));
+        unit->setMovePoints(unit->getMovePoints() - choice.decrCost);
         unit->setTookLateral(false);
         return;
     }
 
     if (!mustDecrease && choice.latDir >= 0) {
         moveAUnit(*unit, choice.latCoord);
-        if (choice.latCost > 1) unit->setSpentMove(static_cast<size_t>(choice.latCost - 1));
+        unit->setMovePoints(unit->getMovePoints() - choice.latCost);
         unit->setTookLateral(true);
         return;
     }
@@ -535,12 +540,14 @@ void Battlefield::moveUnits()
     // member regains its movementSpeed per tick — never banking above that
     // base — and every member pays each entered hex's terrain cost, going
     // negative if it must. A member at zero or below blocks the whole squad.
-    // A blocked squad pools help: the currently-richest member pays 1 point,
-    // re-evaluated after each payment, until 3 points are spent — buying the
-    // most-drained straggler +1. That repeats until everyone is positive or
-    // nobody has 3 points left — faster members finding the path for a slow
-    // one and carrying his gear. Squads therefore follow their slowest
-    // member, minus whatever the fast ones can carry.
+    // A blocked squad pools help once per tick, before moving: the
+    // currently-richest member pays 1 point, re-evaluated after each payment,
+    // until 3 points are spent — buying the most-drained straggler +1. That
+    // repeats until everyone is positive or nobody has 3 points left — faster
+    // members finding the path for a slow one and carrying his gear. Aid
+    // never fires again mid-tick after a move: it pays off a straggler's
+    // debt, it doesn't let a squad outpace what its slowest member could
+    // ever walk.
     constexpr int SQUAD_AID_COST = 3;
     auto advanceSquad = [&](Squad& sq) {
         if (sq.tickHold()) return;
@@ -552,10 +559,11 @@ void Battlefield::moveUnits()
         if (members.empty()) return;
 
         for (AUnit* m : members) {
-            // Fold lone-unit debt (e.g. an archer's firing recovery) into the
-            // bank, then regain — capped at base so nothing accrues above a
-            // unit's normal speed.
-            int pts = m->getMovePoints() - static_cast<int>(m->getSpentMove());
+            // Fold action recovery (an archer's firing recovery, in ticks)
+            // into the bank at the member's own per-tick rate, then regain —
+            // capped at base so nothing banks above its normal speed.
+            int pts = m->getMovePoints()
+                      - static_cast<int>(m->getSpentMove()) * m->getMovementSpeed();
             m->setSpentMove(0);
             m->setMovePoints(std::min(pts + m->getMovementSpeed(),
                                       m->getMovementSpeed()));
@@ -567,19 +575,18 @@ void Battlefield::moveUnits()
         auto poorest = [&]() { return *std::min_element(members.begin(), members.end(), byPoints); };
         auto richest = [&]() { return *std::max_element(members.begin(), members.end(), byPoints); };
 
-        while (true) {
-            // Aid phase — see the block comment above.
-            while (poorest()->getMovePoints() <= 0
-                   && richest()->getMovePoints() >= SQUAD_AID_COST) {
-                AUnit* straggler = poorest();
-                for (int paid = 0; paid < SQUAD_AID_COST; ++paid) {
-                    AUnit* donor = richest();
-                    donor->setMovePoints(donor->getMovePoints() - 1);
-                }
-                straggler->setMovePoints(straggler->getMovePoints() + 1);
+        // Aid phase — once per tick, see the block comment above.
+        while (poorest()->getMovePoints() <= 0
+               && richest()->getMovePoints() >= SQUAD_AID_COST) {
+            AUnit* straggler = poorest();
+            for (int paid = 0; paid < SQUAD_AID_COST; ++paid) {
+                AUnit* donor = richest();
+                donor->setMovePoints(donor->getMovePoints() - 1);
             }
-            if (poorest()->getMovePoints() <= 0) return; // still blocked — squad waits
+            straggler->setMovePoints(straggler->getMovePoints() + 1);
+        }
 
+        while (poorest()->getMovePoints() > 0) {
             int cost = moveSquad(sq);
             if (cost <= 0) return;
             for (AUnit* m : members)
@@ -628,7 +635,7 @@ void Battlefield::retreatToRange(std::unique_ptr<AUnit>& unitPtr)
         moveAUnit(unit, destCoord);
         int cost = terrainMoveCost(hexGrid.getHex(destCoord), hexGrid.getSide(from, dir),
                                    unit.getCategory());
-        if (cost > 1) unit.setSpentMove(static_cast<size_t>(cost - 1));
+        unit.setMovePoints(unit.getMovePoints() - cost);
     }
     // If no retreat hex is available the unit holds its position.
 }
@@ -722,12 +729,19 @@ void Battlefield::moveTeam(Team& team)
         int speed = u.getMovementSpeed();
         if (speed == 0) continue; // immobile unit — never moves
 
+        // Regain this tick's movement points, never banking above base.
+        // Debt from earlier hexes recovers here at `speed` per tick.
+        auto regain = [&]() {
+            u.setMovePoints(std::min(u.getMovePoints() + speed, speed));
+        };
+
         if (u.getBroken()) {
-            // Broken units flee at full speed — each step re-checks the
-            // map-edge escape and rally outcomes inside flee(). Stop when
+            // Broken units flee on the same points bank — each step re-checks
+            // the map-edge escape and rally outcomes inside flee(). Stop when
             // the unit escaped, rallied, or made no progress (blocked or
             // recovering from exhaustion — never more than one recover()).
-            for (int step = 0; step < speed; ++step) {
+            regain();
+            while (u.getMovePoints() > 0) {
                 if (!u.getAlive() || !u.getBroken() || !u.getHex()) break;
                 Hex* before = u.getHex();
                 flee(unit);
@@ -735,16 +749,23 @@ void Battlefield::moveTeam(Team& team)
             }
             continue;
         }
-        // Non-broken squad members already moved in the squad pre-pass.
+        // Non-broken squad members already moved in the squad pre-pass
+        // (which also handles their regen — don't bank them twice).
         if (u.getSquad()) continue;
         if (u.tickHold()) continue; // holding position (ticks once per tick, not per hex)
 
-        // Speed >1 units take several one-hex steps, re-evaluating target and
-        // engagement between steps so they can't charge past a contact made
-        // mid-tick. A step that pays off terrain move-cost debt counts as a
-        // step; stop as soon as a step makes no progress.
-        for (int step = 0; step < speed; ++step)
-            if (!moveUnitStep(unit)) break;
+        // Step while the bank is positive, re-evaluating target and
+        // engagement between steps so a fast unit can't charge past a
+        // contact made mid-tick. A stationary step (blocked, holding at
+        // preferred range, engaged shuffle, or burning a tick of action
+        // recovery) always ends the tick's movement.
+        regain();
+        while (u.getMovePoints() > 0) {
+            Hex* before = u.getHex();
+            bool more = moveUnitStep(unit);
+            if (!u.getAlive() || u.getHex() == before) break;
+            if (!more) break;
+        }
     }
 }
 
@@ -756,8 +777,8 @@ bool Battlefield::moveUnitStep(std::unique_ptr<AUnit>& unit)
 
     Hex*   before     = u.getHex();
     size_t debtBefore = u.getSpentMove();
-    // Progress = changed hex or paid down move-cost debt; anything else means
-    // this unit is done moving for the tick.
+    // Progress = changed hex or burned a tick of action recovery (archer
+    // fire); anything else means this unit is done moving for the tick.
     auto progressed = [&]() {
         return u.getHex() != before || u.getSpentMove() < debtBefore;
     };

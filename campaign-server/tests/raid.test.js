@@ -132,14 +132,13 @@ const BAD_FATE = {
 
 // ── Capacity formula ─────────────────────────────────────────────────────────
 describe('raidCapacityCost', () => {
-  // User formula, kept literally: size × (40 − speed) / 40. With today's
-  // speed range 1–3 the cost is ≈ size; the deferred movement-speed rework
-  // makes the speed term meaningful through this one seam.
-  test('foot: 10 × (40 − 1) / 40 = 9.75', () => {
-    expect(raidCapacityCost({ speed: 1 }, 10)).toBe(9.75)
+  // User formula, kept literally: size × (40 − speed) / 40, on RAW movement
+  // points (foot 10, horse 28) — the scale this formula was designed for.
+  test('foot: 10 × (40 − 10) / 40 = 7.5', () => {
+    expect(raidCapacityCost({ speed: 10 }, 10)).toBe(7.5)
   })
-  test('light cavalry: 20 × (40 − 3) / 40 = 18.5', () => {
-    expect(raidCapacityCost({ speed: 3 }, 20)).toBe(18.5)
+  test('cavalry: 20 × (40 − 28) / 40 = 6', () => {
+    expect(raidCapacityCost({ speed: 28 }, 20)).toBe(6)
   })
   test('clamps at zero for absurd future speeds', () => {
     expect(raidCapacityCost({ speed: 50 }, 10)).toBe(0)
@@ -275,8 +274,8 @@ describe('POST /api/campaigns/:id/raids/:raidId/launch', () => {
   test('party capacity is enforced (Σ size × (40 − speed) / 40 ≤ capacity)', async () => {
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [OPP({ capacity: 100 })])
-    // 11 Soldiers cost 107.25 > 100; 10 cost 97.5 would fit.
-    const res = await launch(c.id, 'd1-0', { Soldier: 11 })
+    // Soldiers (speed 10) cost 7.5 each: 14 cost 105 > 100; 13 cost 97.5 would fit.
+    const res = await launch(c.id, 'd1-0', { Soldier: 14 })
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/capacity/)
     expect(engine.runBattle).not.toHaveBeenCalled()

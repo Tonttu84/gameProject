@@ -81,12 +81,17 @@ constexpr int BATTLEFIELD_HEIGHT = 16;  // visual height — hex columns (q), ba
 constexpr int DEFAULT_MAX_BATTLE_TICKS = 400;
 constexpr int MAX_BATTLE_TICKS_CAP     = 5000;
 
-// Terrain movement costs (total ticks to enter; 1 = one tick = no debt)
-constexpr int TERRAIN_COST_OPEN       = 1;
-constexpr int TERRAIN_COST_FOREST     = 2;  // Mounted: impassable
-constexpr int TERRAIN_COST_MARSH      = 3;  // Mounted: impassable; Beast/Skirmisher: 2
-constexpr int TERRAIN_COST_RUBBLE     = 2;
-constexpr int TERRAIN_COST_SLOPE      = 1;  // added when climbing 1 elevation tier
+// Terrain movement costs, in movement points spent to enter a hex. Each tick
+// a unit banks movementSpeed points (never above that base) and steps while
+// its bank is positive, going into debt on the step that empties it — debt
+// then recovers at movementSpeed per tick. A normal human banks 10/tick, so
+// open ground (12) means one hex most ticks with every 6th tick skipped.
+constexpr int TERRAIN_COST_OPEN        = 12;
+constexpr int TERRAIN_COST_FOREST      = 24;  // Mounted: impassable
+constexpr int TERRAIN_COST_MARSH       = 36;  // Mounted: impassable
+constexpr int TERRAIN_COST_MARSH_LOOSE = 24;  // Marsh for Beast/Skirmisher (surer footing)
+constexpr int TERRAIN_COST_RUBBLE      = 24;
+constexpr int TERRAIN_COST_SLOPE       = 12;  // added when climbing 1 elevation tier
 
 // Terrain combat modifiers (d6 system — each +1 is significant)
 constexpr int ELEV_MELEE_BONUS        = 1;  // per tier height advantage in melee (capped at ±1)

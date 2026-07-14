@@ -5,17 +5,18 @@ import { SCOUTING_BAND_THRESHOLDS } from '../utils/campaignConfig.js'
 // Stats as exported by the engine (see backend/engine/tests/test_unit_catalog.cpp
 // "movement speed and ballistic skill pinned per type" + "reconTag pinned per
 // type" for the pinned inputs).
-const soldier = { maxHP: 10, attack: 11, defence: 12, armour: 5, speed: 1, ballisticSkill: 4, reconTag: 0 }
-const archer = { maxHP: 10, attack: 10, defence: 12, armour: 2, speed: 1, ballisticSkill: 10, reconTag: 0 }
-const cavalry = { maxHP: 10, attack: 11, defence: 12, armour: 5, speed: 2, ballisticSkill: 4, reconTag: 0 }
-const lightCavalry = { maxHP: 10, attack: 10, defence: 11, armour: 2, speed: 3, ballisticSkill: 8, reconTag: 4 }
-const horse = { maxHP: 15, attack: 0, defence: 12, armour: 0, speed: 2, ballisticSkill: 1, reconTag: 0 }
-const warhorse = { maxHP: 15, attack: 9, defence: 12, armour: 2, speed: 2, ballisticSkill: 1, reconTag: -2 }
+const soldier = { maxHP: 10, attack: 11, defence: 12, armour: 5, speed: 10, ballisticSkill: 4, reconTag: 0 }
+const archer = { maxHP: 10, attack: 10, defence: 12, armour: 2, speed: 10, ballisticSkill: 10, reconTag: 0 }
+const cavalry = { maxHP: 10, attack: 11, defence: 12, armour: 5, speed: 28, ballisticSkill: 4, reconTag: 0 }
+const lightCavalry = { maxHP: 10, attack: 10, defence: 11, armour: 2, speed: 28, ballisticSkill: 8, reconTag: 4 }
+const horse = { maxHP: 15, attack: 0, defence: 12, armour: 0, speed: 28, ballisticSkill: 1, reconTag: 0 }
+const warhorse = { maxHP: 15, attack: 9, defence: 12, armour: 2, speed: 28, ballisticSkill: 1, reconTag: -2 }
 
 describe('derived campaign capabilities', () => {
   it('recon is super-linear in speed: light cavalry dominates, foot barely registers', () => {
-    // speed² + ⌊ballisticSkill/2⌋ + reconTag
-    expect(reconValue(lightCavalry)).toBe(17)
+    // (speed/10)² + ⌊ballisticSkill/2⌋ + reconTag — engine speed is movement
+    // points/tick, normalized so foot = 1.0 and a horse = 2.8.
+    expect(reconValue(lightCavalry)).toBeCloseTo(15.84)
     expect(reconValue(soldier)).toBe(3)
     expect(reconValue(lightCavalry)).toBeGreaterThan(reconValue(cavalry))
     expect(reconValue(lightCavalry)).toBeGreaterThan(reconValue(archer))
@@ -30,7 +31,9 @@ describe('derived campaign capabilities', () => {
   })
 
   it('foraging scales with speed, minimum 1', () => {
-    expect(forageValue(lightCavalry)).toBeGreaterThan(forageValue(cavalry))
+    // Light and heavy cavalry ride the same Horse (speed 28) until barding
+    // lands, so they forage identically — both far ahead of foot.
+    expect(forageValue(lightCavalry)).toBe(forageValue(cavalry))
     expect(forageValue(cavalry)).toBeGreaterThan(forageValue(soldier))
     expect(forageValue({ ...soldier, speed: 0 })).toBe(1)
   })
@@ -48,9 +51,9 @@ describe('scoutingCoverage', () => {
   ])
 
   it('is Σ(count·reconValue) / Σ(count·size), Map or plain object', () => {
-    // 12 LightCavalry: (12·17) / (12·20) = 0.85
-    expect(scoutingCoverage({ LightCavalry: 12 }, catalog)).toBeCloseTo(0.85)
-    expect(scoutingCoverage(new Map([['LightCavalry', 12]]), catalog)).toBeCloseTo(0.85)
+    // 12 LightCavalry: (12·15.84) / (12·20) = 0.792
+    expect(scoutingCoverage({ LightCavalry: 12 }, catalog)).toBeCloseTo(0.792)
+    expect(scoutingCoverage(new Map([['LightCavalry', 12]]), catalog)).toBeCloseTo(0.792)
   })
 
   it('a blob dilutes its own coverage: adding infantry LOWERS the ratio', () => {

@@ -150,8 +150,10 @@ notes below over the git history if they ever disagree — the commits win.
 - **Stage 4 — scouting + raids: ✅ COMPLETE 2026-07-14** (finalized plan in the Stage-4 block
   below; 1a–1b shipped 2026-07-13, 1c–1d and Part 2 raid opportunities shipped 2026-07-14 —
   see the per-slice handoff entries). Open decisions recorded in the finalized block stand:
-  raid-vs-main-battle sequencing (independent for now), movement-speed rework, staged
-  deployment commits.
+  raid-vs-main-battle sequencing (independent for now), staged deployment commits.
+- **Movement-speed rework: ✅ SHIPPED 2026-07-14** (was a deferred-backlog TODO; see the
+  "SHIPPED — movement-speed rework" record in the deferred backlog for the numbers and the
+  campaign-seam normalization).
 - **Then (NEXT):** **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make
   `HexSide.combatScore` erode `fortDurability` mid-battle so the placeholder goes live),
   resequenced AFTER scouting/raids (user, 2026-07-13) — that's now.
@@ -1205,15 +1207,23 @@ scaling really bites. Sits directly after Stage 3 fortifications; see the Stage 
 note. (Mirrored as an auto-memory todo, but this repo entry is the SSOT — it travels between
 machines; the memory pointer may not.)
 
-**TODO — movement-speed rework (scale + terrain-flexible cost).** From the 2026-07-13 raid
-planning session (user): today's `movementSpeed` is 1–3 (foot/heavy cav/light cav), which makes
-the raid capacity formula `size × (40 − speed) / 40` barely differentiate units — the user chose
-to ship the formula literally anyway and fix the STAT later. Rework: movement on a bigger scale
-(something like ~10 basic infantry, ~20 cavalry), with per-terrain movement cost made flexible at
-the same time. When it lands, the raid formula (one seam: `raidCapacityCost` in
-`campaign-server/utils/capabilities.js`) becomes meaningful without a raid-side rewrite. Engine
-`getMovementSpeed()` consumers (movement loop steps/tick, squad min-speed, `reconValue`'s speed²)
-must be rescaled together.
+**✅ SHIPPED 2026-07-14 — movement-speed rework (points bank + per-hex terrain cost).**
+`movementSpeed` is now **movement points banked per tick** (capped at that base); every unit —
+loner or squad member — spends each entered hex's terrain cost from the signed `_movePoints`
+bank, going into debt on the step that empties it (the old lone-unit `spentMove` terrain debt is
+gone; `spentMove` survives only as the archer's fire-recovery tick counter). User-chosen numbers:
+**human 10, giant Scorpion 18, Horse/Warhorse 28** (Cavalry AND LightCavalry both ride a standard
+Horse → 28; the heavy/light gap returns when **barding** charges heavies movement/defence/enc
+costs — that's the deferred armor-cost follow-up). Terrain: **Open 12, Forest 24, Marsh 36
+(Beast/Skirmisher 24), Rubble 24, climbing +12** (`TERRAIN_COST_*`, still terrain-derived — no
+authored per-hex cost field). Deliberate pacing signature: foot moves 5 ticks out of 6 in the
+open (10 vs 12 — visible correctness check); a horse rides a 3/2/2 three-tick cycle. Squad aid
+(3:1) now fires once per tick before moving, so a squad can pay off a straggler's debt but never
+outpace its slowest walker. Campaign seams: `raidCapacityCost` uses **raw** points (the 40-scale
+was designed for this — foot ¾·size, rider ³⁄₁₀·size); recon/forage/screen normalize via
+`speedFactor = speed / 10` in `utils/capabilities.js` (one seam, values shift only where 28/18
+don't map onto old 2/3 — e.g. LightCavalry forage 90→84 kg); retuning those formulas to exploit
+the finer granularity is deferred until a playtest wants it.
 
 **TODO — raid vs. main-battle turn sequencing (open DECISION, could go either way).** For the
 first raid implementation, raiding is INDEPENDENT of the main battle — the same units may raid

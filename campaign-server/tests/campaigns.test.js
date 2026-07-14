@@ -177,9 +177,9 @@ describe('POST /api/campaigns', () => {
     expect(res.body.forage.assignment).toEqual({})
     expect(res.body.forage.capacityKg).toBe(0)
     expect(res.body.forage.kgPerUnit.Soldier).toBe(30)
-    expect(res.body.forage.kgPerUnit.LightCavalry).toBe(90)
-    // Fixture-catalog scouting coverages: player 1494/4000 ≈ 0.374 vs enemy
-    // 2882/7410 ≈ 0.389 → ratio ≈ 0.96, squarely Contested from turn 1.
+    expect(res.body.forage.kgPerUnit.LightCavalry).toBe(84)
+    // Fixture-catalog scouting coverages come out near parity (ratio ≈ 1),
+    // squarely Contested from turn 1.
     expect(res.body.scouting).toEqual({ band: 'Contested' })
     expectNoHiddenInfo(res.body)
   })
@@ -198,7 +198,7 @@ describe('POST /api/campaigns', () => {
       expect(slot.falseEvent.severity).toBe(slot.trueEvent.severity)
       expect(slot.shownTrue).toBeNull()
     }
-    expect(doc.forage.enemyPlan).toBe(9132)
+    expect(doc.forage.enemyPlan).toBe(9084)
     // Placement only covers types present in the (test) catalog, but it must
     // exist and be axial-shaped.
     expect(Array.isArray(doc.enemy.plannedPlacement)).toBe(true)
@@ -653,12 +653,12 @@ describe('POST /api/campaigns/:id/forage', () => {
     const res = await assign(c.id, { Soldier: 100, LightCavalry: 5 })
     expect(res.status).toBe(200)
     expect(res.body.forage.assignment).toEqual({ Soldier: 100, LightCavalry: 5 })
-    expect(res.body.forage.capacityKg).toBe(100 * 30 + 5 * 90)
+    expect(res.body.forage.capacityKg).toBe(100 * 30 + 5 * 84)
     expectNoHiddenInfo(res.body)
 
     const replaced = await assign(c.id, { Cavalry: 4 })
     expect(replaced.body.forage.assignment).toEqual({ Cavalry: 4 })
-    expect(replaced.body.forage.capacityKg).toBe(4 * 60) // speed 2 → 4 pts × 15 kg
+    expect(replaced.body.forage.capacityKg).toBe(4 * 84) // speed 28 → 5.6 pts × 15 kg
   })
 
   test('rejects overdrafts, bad counts, and missing bodies', async () => {
@@ -1168,7 +1168,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
 
     // The enemy foraged the near ring even though we sent nobody out.
     expect(res.body.report.forage.harvested).toEqual({ food: 0, materials: 0 })
-    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 9132)
+    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 9084)
     expect(res.body.report.forage.clashes).toEqual([])
   })
 
@@ -1209,7 +1209,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expectNoHiddenInfo(res.body)
 
     expect(res.body.report.forage.harvested).toEqual({ food: 2400, materials: 600 })
-    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 3000 - 9132)
+    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 3000 - 9084)
     expect(res.body.campaign.resources.food).toBe(50000 + 2400 - 12432)
     expect(res.body.campaign.resources.materials).toBe(200 + 600) // 200 starting + 0.2 × 3000 forage
     expect(res.body.campaign.forage.assignment).toEqual({})

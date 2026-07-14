@@ -40,10 +40,11 @@ const info = {
   enemyZone: { rowMin: 22, rowMax: 29 },
   terrain: [{ name: 'Open', color: '#5a6441' }],
   // speed/placementSize are the engine-exported stats the party-builder costs
-  // units with: Soldier 10 × 39/40 = 9.75, LightCavalry 20 × 37/40 = 18.5.
+  // units with (speed = movement points/tick: foot 10, horse 28):
+  // Soldier 10 × 30/40 = 7.5, LightCavalry 20 × 12/40 = 6.
   units: [
-    { type: 'Soldier', symbol: 'X', placementSize: 10, category: 'Foot', forbiddenTerrain: [], speed: 1 },
-    { type: 'LightCavalry', symbol: 'l', placementSize: 20, category: 'Mounted', forbiddenTerrain: ['Forest', 'Marsh'], speed: 3 },
+    { type: 'Soldier', symbol: 'X', placementSize: 10, category: 'Foot', forbiddenTerrain: [], speed: 10 },
+    { type: 'LightCavalry', symbol: 'l', placementSize: 20, category: 'Mounted', forbiddenTerrain: ['Forest', 'Marsh'], speed: 28 },
   ],
 }
 
@@ -107,17 +108,17 @@ describe('raid panel — opportunities', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    // 11 Soldiers cost 107.25 > 100: over budget, launch disabled.
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '11' } })
-    expect(screen.getByTestId('raid-cost-d1-0')).toHaveTextContent('Party cost: 108 / 100')
+    // 14 Soldiers (7.5 each) cost 105 > 100: over budget, launch disabled.
+    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '14' } })
+    expect(screen.getByTestId('raid-cost-d1-0')).toHaveTextContent('Party cost: 105 / 100')
     expect(screen.getByTestId('raid-launch-d1-0')).toBeDisabled()
 
-    // 10 cost 97.5: within budget — the launch posts exactly the party.
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '10' } })
+    // 13 cost 97.5: within budget — the launch posts exactly the party.
+    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '13' } })
     expect(screen.getByTestId('raid-cost-d1-0')).toHaveTextContent('Party cost: 98 / 100')
     fireEvent.click(screen.getByTestId('raid-launch-d1-0'))
     await waitFor(() =>
-      expect(postCampaignRaid).toHaveBeenCalledWith('c1', 'd1-0', { Soldier: 10 }),
+      expect(postCampaignRaid).toHaveBeenCalledWith('c1', 'd1-0', { Soldier: 13 }),
     )
 
     // The refreshed view resolves the card: outcome + replay button.

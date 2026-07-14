@@ -83,7 +83,9 @@ AUnit* Archer::findArcherTarget()
         findShot, shotCalculator, getTeam());
 }
 
-// Returns the spentMove cost (3) if a shot was fired, 0 otherwise.
+// Returns the action-recovery cost in ticks (3) if a shot was fired, 0
+// otherwise. Recovery blocks firing and approach movement (moveToward);
+// special() wipes any leftover on the next tick the unit can't fire.
 int Archer::fireBow()
 {
     if (broken || !alive || spentMove || ammunition == 0)

@@ -14,7 +14,7 @@ const RAID_CAPACITY_SPEED_SCALE = 40
 const unitCost = (unit) =>
   Math.max(
     0,
-    (unit.placementSize * (RAID_CAPACITY_SPEED_SCALE - (unit.speed ?? 1))) /
+    (unit.placementSize * (RAID_CAPACITY_SPEED_SCALE - (unit.speed ?? 10))) /
       RAID_CAPACITY_SPEED_SCALE,
   )
 

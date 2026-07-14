@@ -10,7 +10,7 @@ Scorpion::Scorpion(int setTeam): AUnit::AUnit(setTeam)
     defence   = 8;            // armored but not especially evasive
     attackPWR = 8;
     unitValue = 6;
-    movementSpeed = 2;
+    movementSpeed = 18;       // a scuttling giant animal — quicker than foot (10), no horse (28)
     setBallisticSkill(1);
     addWeapon(MeleeWeapons::Stinger);
     size      = SIZE;

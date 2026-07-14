@@ -27,6 +27,8 @@ LightCavalry::LightCavalry(int setTeam)
 : Cavalry(setTeam, std::make_unique<LightRider>(setTeam), std::make_unique<Horse>(setTeam))
 {
     printSymbol   = 'l';
-    movementSpeed = 3; // light load — outpaces heavy Cavalry's 2
+    // Rides a standard Horse and keeps its pace (28) — the composite already
+    // took the mount's speed. The gap to heavy Cavalry opens up later when
+    // barding charges heavies a movement cost.
     reconTag      = 4; // trained outriders — scouting is this unit's job
 }

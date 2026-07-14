@@ -295,14 +295,14 @@ public:
     int  getReconTag()       const  { return reconTag; }
     int  getAccuracy()       const  { return accuracy; }
 
-    // ── Squad movement points ─────────────────────────────────────────────────
-    // Signed bank used only by squad movement (Battlefield::moveUnits): each
-    // tick a member regains movementSpeed, never banking above that base;
-    // every member pays each hex's terrain cost; zero-or-negative blocks the
-    // whole squad (richer members can aid — see moveUnits). Lone units use
-    // spentMove debt instead; Squad::removeMember/disband convert a negative
-    // bank back into spentMove so a straggler can't shed debt by losing its
-    // squad.
+    // ── Movement points ───────────────────────────────────────────────────────
+    // Signed bank every unit moves on: each tick it regains movementSpeed,
+    // never banking above that base, then steps while the bank is positive,
+    // paying each entered hex's terrain cost (TERRAIN_COST_*) and going into
+    // debt on the step that empties it. Loners regen/spend in moveTeam();
+    // squads pool theirs in moveUnits() — any member at zero or below blocks
+    // the whole squad, and richer members can aid the straggler at 3:1.
+    // The bank travels unchanged when a unit joins or leaves a squad.
     int  getMovePoints() const { return _movePoints; }
     void setMovePoints(int p)  { _movePoints = p; }
     int  getAmmunition()     const  { return ammunition; }
@@ -372,7 +372,10 @@ protected:
     int fatigueCost = 4;
     int fatigueRecovery = FATIGUERECOVERY;
     int preferredRange  = 0; // 0/1 = advance to melee; >1 = try to hold this hex distance
-    int movementSpeed   = 1; // hexes moved per tick; 0 = immobile (never moves)
+    int movementSpeed   = 10; // movement points banked per tick (cap = this base);
+                              // 0 = immobile (never moves). 10 = normal human vs
+                              // TERRAIN_COST_OPEN 12 — one hex most ticks, every
+                              // 6th skipped. See getMovePoints().
     // Signed scouting adjustment, unused by the battle engine itself: the
     // campaign layer's reconValue = speed² + ⌊ballisticSkill/2⌋ + reconTag.
     // Set only where a unit's scouting worth diverges from what speed and
@@ -396,8 +399,10 @@ protected:
     bool placed = false;
     bool undead = false;
     bool battleSummon = false;
-    size_t spentMove = 0;
-    int _movePoints = 0; // squad movement bank — see getMovePoints()
+    size_t spentMove = 0; // action recovery in ticks (archer fire), NOT terrain debt:
+                          // blocks fireBow and one moveToward call per tick; special()
+                          // wipes it on any tick the unit can't fire
+    int _movePoints = 0;  // movement-points bank — see getMovePoints()
 
     int _attacksReceivedThisTurn = 0;
     int repelMalus = 0;

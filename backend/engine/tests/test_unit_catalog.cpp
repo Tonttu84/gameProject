@@ -121,11 +121,14 @@ TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable seven
 // from speed + ballisticSkill, so pin the values that give each type its role.
 TEST_CASE("unit catalog: movement speed and ballistic skill pinned per type") {
     auto j = json::parse(unitCatalogJson());
-    REQUIRE(findUnit(j, "Soldier")["stats"]["speed"].get<int>()        == 1);
-    REQUIRE(findUnit(j, "Cavalry")["stats"]["speed"].get<int>()        == 2);
-    REQUIRE(findUnit(j, "LightCavalry")["stats"]["speed"].get<int>()   == 3);
-    REQUIRE(findUnit(j, "Horse")["stats"]["speed"].get<int>()          == 2);
-    REQUIRE(findUnit(j, "Scorpion")["stats"]["speed"].get<int>()       == 2);
+    // Movement-points-per-tick scale: normal human 10, horse 28 (Cavalry and
+    // LightCavalry both ride a standard Horse until barding lands), giant
+    // scorpion 18. Open ground costs 12 to enter — see TERRAIN_COST_* .
+    REQUIRE(findUnit(j, "Soldier")["stats"]["speed"].get<int>()        == 10);
+    REQUIRE(findUnit(j, "Cavalry")["stats"]["speed"].get<int>()        == 28);
+    REQUIRE(findUnit(j, "LightCavalry")["stats"]["speed"].get<int>()   == 28);
+    REQUIRE(findUnit(j, "Horse")["stats"]["speed"].get<int>()          == 28);
+    REQUIRE(findUnit(j, "Scorpion")["stats"]["speed"].get<int>()       == 18);
 
     REQUIRE(findUnit(j, "Archer")["stats"]["ballisticSkill"].get<int>()       == 10);
     REQUIRE(findUnit(j, "Mage")["stats"]["ballisticSkill"].get<int>()         == 12);

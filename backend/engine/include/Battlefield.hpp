@@ -142,15 +142,15 @@ class Battlefield
         void moveToward(std::unique_ptr<AUnit> &unit, const Hex* target);
         void moveTeam(Team& team);
         // One one-hex step of the squad's advance. Hold ticking, the per-tick
-        // step loop, and the pooled movement-points bookkeeping all live in
-        // moveUnits(). Returns the terrain cost of the hex entered (>= 1), or
-        // 0 if the squad did not move (blocked, engaged-with-no-advance, no
-        // target).
+        // points loop, and the pooled movement-points bookkeeping all live in
+        // moveUnits(). Returns the terrain cost of the hex entered in
+        // movement points (>= TERRAIN_COST_OPEN), or 0 if the squad did not
+        // move (blocked, engaged-with-no-advance, no target).
         int moveSquad(Squad& squad);
-        // One one-hex movement step for a lone unit — exactly what a whole
-        // tick's movement was before per-unit movementSpeed existed. Same
-        // return convention as moveSquad(). Steps stop at enemy contact so a
-        // fast unit can't slide along a front it only just reached mid-tick.
+        // One one-hex movement step for a lone unit; moveTeam() drives it
+        // while the unit's points bank is positive. Returns false to end the
+        // tick's movement — steps stop at enemy contact so a fast unit can't
+        // slide along a front it only just reached mid-tick.
         bool moveUnitStep(std::unique_ptr<AUnit> &unit);
         void flee(std::unique_ptr<AUnit> &unit);
         void retreatToRange(std::unique_ptr<AUnit> &unit);
