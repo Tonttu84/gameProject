@@ -102,6 +102,17 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"ratio"')
   for (const scouting of [body.scouting, body.campaign?.scouting])
     if (scouting) expect(Object.keys(scouting)).toEqual(['band'])
+  // Raid opportunities (Stage 4 Part 2): the hidden target slice and the
+  // reward (counter_event's reward.slot would out which fate is bad) never
+  // cross; each opportunity's key set is pinned exactly.
+  expect(raw).not.toContain('"targetForce"')
+  expect(raw).not.toContain('"reward"')
+  for (const c of [body, body.campaign]) {
+    for (const o of c?.raid?.opportunities ?? [])
+      expect(Object.keys(o).sort()).toEqual(
+        ['capacity', 'description', 'id', 'outcome', 'resolved', 'strengthBand', 'title', 'type'],
+      )
+  }
 }
 
 // Pinned augury states for deterministic assertions. QUIET is a no-op truth
@@ -1146,6 +1157,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
         odds: null,
         actual: { id: 'quiet', title: 'Quiet Fortnight', description: 'Nothing stirs.', severity: 1 },
         wasAccurate: null,
+        countered: false, // no counter_event raid unmade this fate
       })),
     )
     expect(res.body.campaign.augury).toEqual({

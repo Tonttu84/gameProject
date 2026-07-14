@@ -31,6 +31,10 @@ export const campaignFixture = {
     capacityKg: 0,
     kgPerUnit: { Soldier: 30, Archer: 30, Mage: 30, Priest: 30, Cavalry: 60, LightCavalry: 90 },
   },
+  // Raid opportunities (Stage 4 Part 2): public projection only — the hidden
+  // target slice is stripped to its strength band; outcome appears once
+  // resolved. Empty by default so tests opt in per case.
+  raid: { opportunities: [] },
   augury: { consulted: false, rerollsRemaining: 1, visions: null },
   // Only the banded label crosses the boundary — never coverage numbers.
   scouting: { band: 'Contested' },

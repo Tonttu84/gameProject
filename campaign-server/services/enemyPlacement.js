@@ -1,25 +1,15 @@
 import { getInfo } from './engine.js'
 import UnitType from '../models/unitType.js'
 
-// Build a concrete enemy_placement array from the campaign's hidden enemy
-// army: a random spread over the enemy zone, capacity-aware so the engine
-// never rejects it. Stored on the campaign (HIDDEN) so that (a) the engine
-// receives exactly it, and (b) a scouting reveal can show the player the
-// truth rather than a guess.
+// Capacity-aware random spread of an army over a deployment zone — the shared
+// auto-placement core (Stage 4 Part 2 extraction): the enemy's daily plan and
+// BOTH sides of a raid use this one function, so auto-placement can't drift
+// between them. `army` is {type: count} (object or Map); `zone` carries
+// {rowMin, rowMax, width, hexCapacity}; `sizeOf` is a Map name → size.
 //
 // Placement entries are AXIAL {unit_type, q, r} — same convention the
 // frontend uses: q = col - floor(row / 2).
-export async function buildEnemyPlacement(army) {
-  const info = await getInfo()
-  const { width } = info.grid
-  const hexCapacity = info.grid.hexCapacity
-  const { rowMin, rowMax } = info.enemyZone
-
-  // Sizes for ALL types (info.units only lists placeable ones; the enemy
-  // fields spawnable-only types like Necromancer too).
-  const types = await UnitType.find({})
-  const sizeOf = new Map(types.map((t) => [t.name, t.size]))
-
+export function spreadPlacement(army, { rowMin, rowMax, width, hexCapacity }, sizeOf) {
   // Candidate hexes with remaining capacity, shuffled per placement call.
   const cells = []
   for (let row = rowMin; row <= rowMax; row++)
@@ -50,4 +40,23 @@ export async function buildEnemyPlacement(army) {
     }
   }
   return placement
+}
+
+// Build a concrete enemy_placement array from the campaign's hidden enemy
+// army: a random spread over the enemy zone. Stored on the campaign (HIDDEN)
+// so that (a) the engine receives exactly it, and (b) a scouting reveal can
+// show the player the truth rather than a guess.
+export async function buildEnemyPlacement(army) {
+  const info = await getInfo()
+
+  // Sizes for ALL types (info.units only lists placeable ones; the enemy
+  // fields spawnable-only types like Necromancer too).
+  const types = await UnitType.find({})
+  const sizeOf = new Map(types.map((t) => [t.name, t.size]))
+
+  return spreadPlacement(
+    army,
+    { ...info.enemyZone, width: info.grid.width, hexCapacity: info.grid.hexCapacity },
+    sizeOf,
+  )
 }

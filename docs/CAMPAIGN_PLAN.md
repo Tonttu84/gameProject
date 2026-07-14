@@ -147,11 +147,14 @@ notes below over the git history if they ever disagree — the commits win.
     `campaign.fortification.sides` (perpendicular-bisector geometry, robust to the axis swap) so
     the player deploys behind the wall. 122 frontend tests green; oxlint clean.
   - Also added a `dev.sh fe-lint` task + allow-rule (`afbe495`) so oxlint runs prompt-free.
-- **Then (NEXT):** **Stage 4 — scouting + raids** (finalized plan in the Stage-4 block below;
-  **1a–1b shipped 2026-07-13, 1c–1d shipped 2026-07-14** — next is Part 2 raid opportunities).
-  **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore`
-  erode `fortDurability` mid-battle so the placeholder goes live) is resequenced AFTER
-  scouting/raids (user, 2026-07-13).
+- **Stage 4 — scouting + raids: ✅ COMPLETE 2026-07-14** (finalized plan in the Stage-4 block
+  below; 1a–1b shipped 2026-07-13, 1c–1d and Part 2 raid opportunities shipped 2026-07-14 —
+  see the per-slice handoff entries). Open decisions recorded in the finalized block stand:
+  raid-vs-main-battle sequencing (independent for now), movement-speed rework, staged
+  deployment commits.
+- **Then (NEXT):** **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make
+  `HexSide.combatScore` erode `fortDurability` mid-battle so the placeholder goes live),
+  resequenced AFTER scouting/raids (user, 2026-07-13) — that's now.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 
@@ -425,6 +428,63 @@ micro-manages group size.
   change, so no C++ run needed.
 - **Next:** Part 2 — raid opportunities (schema v9→10, real short engine battles through the
   existing pipeline; full spec in the finalized block).
+
+### Stage 4 Part 2 — raid opportunities ✅ SHIPPED 2026-07-14
+
+Final Stage-4 slice, per the finalized block (schema v9→10). Raids are real short engine
+battles through the one battle pipeline — watchable in ReplayView, that's the point.
+
+- **Model (v10):** `raid.opportunities []` of `{id ('d<day>-<i>'), type: destroy_detachment|
+  loot_supplies|rescue_troops|counter_event, title, description, targetForce (Map, HIDDEN),
+  strengthBand, capacity, reward (Mixed, HIDDEN — a counter_event's `{slot}` would out which
+  vision is true), resolved, outcome}`; augury slots gain `countered` (default false).
+- **Generation** (`services/raid.js`, dealt at campaign creation AND end-day step 7 beside
+  buildEnemyPlacement, keyed off the band recomputed from the post-attrition hosts + the
+  FRESH augury): count = `RAID_OPPORTUNITIES_PER_DAY` (Blind/Outmatched 1, Contested/Superior
+  2, Overwhelming 3); `targetForce` = jittered `RAID_TARGET_FRACTION` (0.05) slice of
+  `enemy.army`, NOT pre-subtracted; `capacity` = target size-points × `RAID_CAPACITY_RATIO`
+  (1.25); `strengthBand` from new detachment-scale `RAID_STRENGTH_BANDS`; a counter_event is
+  dealt exactly when some slot's sealed truth is bad (`eventValence === 'bad'`), reward
+  naming that slot. Generation uses Math.random (drawSlot rule — never the dice queue).
+- **Capacity seam:** `raidCapacityCost(stats, size) = max(0, size × (40 − speed) / 40)` in
+  `utils/capabilities.js` with the movement-speed-rework TODO comment on it (user formula
+  kept literally; cost ≈ size until speeds rescale).
+- **Placement:** `buildEnemyPlacement`'s zone-spread core extracted to shared
+  `spreadPlacement(army, {rowMin,rowMax,width,hexCapacity}, sizeOf)` — both raid sides are
+  auto-placed with it (no raid placement UI in v1).
+- **Route** `POST /:id/raids/:raidId/launch {party}`: guards mirror the battle route (roster
+  minus foragers, placeable-only, Σcost ≤ capacity); input `{map, both spreads, max_turns:
+  RAID_MAX_TURNS (60)}`, NO fortified_sides; `runAndPersistBattle`; party reconciled to
+  survivors; on WIN `applyRaidReward` (destroy → subtract targetForce clamped ≥0; loot →
+  +food/materials; rescue → +roster; counter → `slots[slot].countered = true`); resolved +
+  `outcome {winner, battleId}`, battle pushed to `campaign.battles`, `checkAnnihilation`
+  (a destroy can win the campaign), log, `{...summary, campaign: view}`. NO battleFoughtToday
+  gate — raid/main-battle sequencing stays the recorded open decision.
+- **End-day:** a countered slot SKIPS its effect at every rung ("Averted: … your raiders
+  unmade it."); `auguryReveal` carries `countered` per slot to the report.
+- **campaignView:** `raid.opportunities` stripped to `{id,type,title,description,
+  strengthBand,capacity,resolved,outcome(resolved-only)}`; `expectNoHiddenInfo` now rejects
+  `"targetForce"`/`"reward"` and pins that exact key set on every response.
+- **Frontend:** `RaidPanel.jsx` in council-main beside ForagePanel — band label header,
+  one card per opportunity (strength phrase + budget), per-card party-builder clamped live
+  vs roster−foragers and the capacity budget (client mirrors the cost formula off
+  `info.units` speed/placementSize, the 1a export made for this), Launch via new
+  `postCampaignRaid`/`useCampaign.launchRaid`; resolved cards show outcome + "Watch the
+  raid" → App fetches `getBattle(battleId)` for tickCount and plays the one `ReplayView`
+  (raid replay takes over the screen, Back returns to the council).
+- **Tests:** `tests/raid.test.js` (20: cost formula pins, generation scaling/completeness,
+  counter_event conditionality both ways, capacity/roster/forager/malformed 400s, per-type
+  reward application with mocked engine, loss path, end-day redeal + band scaling, hidden
+  info) + `raidPanel.test.jsx` (6). One existing pin updated: the end-day report's augury
+  slots now carry `countered: false`.
+- **dev.sh:** new `-tN` tail override INSIDE the single-token command line (`dev.sh -t60
+  cs-test …`) — a `TAIL=N wsl …` env prefix breaks the exact permission rule and prompts
+  (user-flagged this session); never use the prefix form.
+- **Verified 2026-07-14 (WSL via dev.sh):** campaign-server vitest 207/209 (the 2 fails are
+  the documented Windows-node `engine.integration` ENOENT; raid.test.js red-first, then
+  green); frontend 181/181; oxlint clean (one pre-existing warning in an untouched test).
+  No engine change, so no C++ run needed.
+- **Next:** combat-score-per-hexside (fortDurability erosion), per the resequenced backlog.
 
 ### Working conventions (carry these to the new machine)
 
@@ -864,7 +924,9 @@ the enemy assault eat the penalty.
 > forageValue/screenValue/reconValue overlap check (non-blocking; verdict recorded in the 1d
 > handoff — no consolidation needed yet).
 >
-> **Part 2 — RAID OPPORTUNITIES (new, user design 2026-07-13).** A raid phase: capacity-limited
+> **Part 2 — RAID OPPORTUNITIES (new, user design 2026-07-13). ✅ SHIPPED 2026-07-14** (see
+> the handoff entry "Stage 4 Part 2" above for what landed and the verified runs; the open
+> decisions at the end of this block stand). A raid phase: capacity-limited
 > parties hit scouted targets, resolved as REAL short engine battles through the existing
 > pipeline (watchable in ReplayView — that's the point; NOT the abstract resolveClash formula).
 > - **Model** (`CAMPAIGN_SCHEMA_VERSION` 9→10): `raid.opportunities []` of `{id, type:

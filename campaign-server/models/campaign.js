@@ -22,6 +22,31 @@ const auguryEventSchema = new mongoose.Schema(
   { _id: false },
 )
 
+// One raid opportunity (Stage 4 Part 2): a scouted, capacity-limited target
+// resolved as a real short engine battle. targetForce (the slice of the
+// hidden host the raid fights) and reward (counter_event's slot index would
+// out which vision was true) are HIDDEN; campaignView exposes the strength
+// band and, once resolved, the outcome — the replay is the reveal.
+const raidOpportunitySchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true },
+    type: {
+      type: String,
+      enum: ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event'],
+      required: true,
+    },
+    title: { type: String, required: true },
+    description: { type: String, default: '' },
+    targetForce: { type: Map, of: Number, required: true }, // HIDDEN
+    strengthBand: { type: String, required: true },
+    capacity: { type: Number, required: true },
+    reward: { type: mongoose.Schema.Types.Mixed, default: null }, // HIDDEN
+    resolved: { type: Boolean, default: false },
+    outcome: { type: mongoose.Schema.Types.Mixed, default: null }, // {winner, battleId} once resolved
+  },
+  { _id: false },
+)
+
 // Forage rings around the shared camp area: near/mid/far, near depletes
 // first, no regrowth — the emptying land is the campaign clock.
 const ringSchema = new mongoose.Schema(
@@ -39,7 +64,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 9 // v9: persistent player-facing squads (composition subset of roster)
+export const CAMPAIGN_SCHEMA_VERSION = 10 // v10: raid opportunities + countered augury slots (Stage 4 Part 2)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -119,6 +144,10 @@ const campaignSchema = new mongoose.Schema({
             odds: { type: Number, default: null },
             // null until consulted; then whether the vision showed the truth — HIDDEN
             shownTrue: { type: Boolean, default: null },
+            // A won counter_event raid unmade this fate: end-day skips its
+            // effect and the reveal reports it averted. Own info once set —
+            // the player earned it with a raid.
+            countered: { type: Boolean, default: false },
           },
           { _id: false },
         ),
@@ -137,6 +166,12 @@ const campaignSchema = new mongoose.Schema({
     // Forage capacity (in kg) the enemy commits this turn — HIDDEN (knowing
     // the enemy's forage effort is scouting intel, not free information).
     enemyPlan: { type: Number, default: 0 },
+  },
+
+  // The day's raid opportunities — redealt every new turn (step 7), count
+  // scaling with the scouting band. See raidOpportunitySchema above.
+  raid: {
+    opportunities: { type: [raidOpportunitySchema], default: [] },
   },
 
   enemy: {

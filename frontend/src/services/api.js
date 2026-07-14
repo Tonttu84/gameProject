@@ -63,6 +63,11 @@ export const spendCampaign = (id, body) =>
 // Returns the battle summary plus the refreshed campaign view.
 export const postCampaignBattle = (id, payload) =>
   axios.post(`/api/campaigns/${id}/battles`, payload, authed()).then(r => r.data)
+// Launch a raid party ({unitType: count}) at one opportunity; a real short
+// battle runs server-side and the opportunity resolves either way. Returns
+// the battle summary plus the refreshed campaign view.
+export const postCampaignRaid = (id, raidId, party) =>
+  axios.post(`/api/campaigns/${id}/raids/${raidId}/launch`, { party }, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

@@ -2,6 +2,7 @@ import {
   FOOD_KG_PER_SIZE_SQ_PER_DAY,
   DAYS_PER_TURN,
   SCOUTING_BAND_THRESHOLDS,
+  RAID_CAPACITY_SPEED_SCALE,
 } from './campaignConfig.js'
 
 // Campaign-layer unit capabilities, DERIVED from the engine-exported combat
@@ -58,6 +59,15 @@ export const scoutingBand = (playerCoverage, enemyCoverage) => {
   if (ratio >= t.Outmatched) return 'Outmatched'
   return 'Blind'
 }
+
+// Raid party budget cost of ONE unit (Stage 4 Part 2): size × (40 − speed) /
+// RAID_CAPACITY_SPEED_SCALE — the user's formula (2026-07-13), kept literally.
+// TODO(movement-speed rework): with today's speed scale (1–3) the speed term
+// barely differentiates units, so cost ≈ size; that is KNOWN and accepted.
+// The deferred movement-speed rework (docs/CAMPAIGN_PLAN.md backlog) rescales
+// speed so this ONE seam becomes meaningful — don't "fix" the formula here.
+export const raidCapacityCost = (stats, size) =>
+  Math.max(0, (size * (RAID_CAPACITY_SPEED_SCALE - stats.speed)) / RAID_CAPACITY_SPEED_SCALE)
 
 // Foraging: covering ground is what matters — riders sweep a wide area dry
 // long before infantry could.

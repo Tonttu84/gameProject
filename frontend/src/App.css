@@ -115,6 +115,54 @@ body {
 .scout-report h3 { color: var(--gold); font-size: 0.95rem; margin-bottom: 0.3rem; }
 .scout-report p  { font-size: 0.85rem; margin: 0.2rem 0; }
 
+/* Raid opportunities (Stage 4 Part 2): one card per scouted target, with a
+   party-builder against the capacity budget. Same box treatment as the
+   scouting report. */
+.raid-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.raid-panel h3 { color: var(--gold); font-size: 0.95rem; margin-bottom: 0; }
+.raid-band { font-size: 0.8rem; color: #8888aa; margin: 0; }
+.raid-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.raid-card p { font-size: 0.85rem; margin: 0; }
+.raid-builder { display: flex; flex-direction: column; gap: 0.3rem; }
+.raid-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.raid-row input { width: 4.5rem; }
+.raid-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.raid-outcome {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
 .camp-workers-readout {
   display: flex;
   flex-direction: column;

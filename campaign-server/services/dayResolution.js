@@ -5,6 +5,7 @@ import { applyEffect, firedRung, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
+import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging } from './forage.js'
 
 // End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
@@ -68,6 +69,13 @@ export async function endDay(campaign) {
   // records what actually happened.
   report.augury = auguryReveal(campaign)
   campaign.augury.slots.forEach((slot, i) => {
+    // A countered fate (a won counter_event raid, Stage 4 Part 2) never
+    // fires at any rung: the raid unmade it before the fortnight ended.
+    // auguryReveal already carries the flag to the report.
+    if (slot.countered) {
+      entries.push(`Averted: ${slot.trueEvent.title} — your raiders unmade it.`)
+      return
+    }
     const fired = firedRung(slot.trueEvent, band)
     if (fired.reconSensitive) {
       report.augury[i].fired = {
@@ -119,6 +127,18 @@ export async function endDay(campaign) {
     campaign.forage.assignment = new Map()
     campaign.augury = drawAugury()
     campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
+    // Tomorrow's raids are cut from tomorrow's contest: the band is
+    // recomputed against the hosts as the day's attrition left them (the
+    // same derivation the next campaignView shows), and counter_event keys
+    // off the FRESH augury drawn just above.
+    campaign.raid.opportunities = generateRaidOpportunities(
+      campaign,
+      catalog,
+      scoutingBand(
+        scoutingCoverage(campaign.roster, catalog),
+        scoutingCoverage(campaign.enemy.army, catalog),
+      ),
+    )
   }
 
   campaign.log.push({ day: report.day, entries })

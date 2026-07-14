@@ -196,6 +196,25 @@ export async function campaignView(campaign) {
         ]),
       ),
     },
+    // Raid opportunities (Stage 4 Part 2): the hidden targetForce is stripped
+    // to its strength band, and the reward stays server-side (a counter_event
+    // reward's slot index would out which vision was true — the card's text
+    // carries the promise instead). A resolved opportunity shows its outcome;
+    // the battle replay is the reveal of what the party actually met.
+    raid: {
+      opportunities: campaign.raid.opportunities.map(
+        ({ id, type, title, description, strengthBand, capacity, resolved, outcome }) => ({
+          id,
+          type,
+          title,
+          description,
+          strengthBand,
+          capacity,
+          resolved,
+          outcome: resolved ? outcome : null,
+        }),
+      ),
+    },
     // Scouting: derived at view time (like foodNeedPerTurn), no schema field.
     // ONLY the banded label crosses the hidden-info boundary — the raw
     // coverage/ratio would let the client solve for the enemy composition.

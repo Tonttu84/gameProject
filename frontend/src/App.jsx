@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { getInfo, getMap, setToken, launchSampleBattle } from './services/api'
+import { getInfo, getMap, setToken, launchSampleBattle, getBattle } from './services/api'
 import useCampaign from './hooks/useCampaign'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
 import DayReport from './components/DayReport'
 import ForagePanel from './components/ForagePanel'
+import RaidPanel from './components/RaidPanel'
 import CampPanel from './components/CampPanel'
 import CampaignHUD from './components/CampaignHUD'
 import ScoutReport from './components/ScoutReport'
@@ -27,6 +28,7 @@ const App = () => {
   const [placements,   setPlacements]   = useState([])
   const [squadPlacements, setSquadPlacements] = useState({}) // {squadId: {col,row,holdTurns}}
   const [battleResult, setBattleResult] = useState(null)
+  const [raidBattle,   setRaidBattle]   = useState(null) // watching a raid replay: { id, tickCount }
   const [dayReport,    setDayReport]    = useState(null)
   const [error,        setError]        = useState(null)
   const [user,         setUser]         = useState(null) // { token, username, name }
@@ -37,7 +39,7 @@ const App = () => {
     () => window.localStorage.getItem('tutorialEnabled') !== 'off',
   )
 
-  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, endDay, reload } = useCampaign(user)
+  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaid, endDay, reload } = useCampaign(user)
 
   // authNotice is a transient toast, not a persistent state — it must not
   // stay on screen forever. Fullstack Open-style: showing a new notice
@@ -132,6 +134,7 @@ const App = () => {
         setPlacements([])
         setSquadPlacements({})
         setBattleResult(null)
+        setRaidBattle(null)
         setDayReport(null)
         setPhase('setup')
         await reload().catch(() => {})
@@ -193,6 +196,14 @@ const App = () => {
     setPhase('result')
   })
 
+  // Watch a raid's replay: raids resolve server-side, so the view only knows
+  // the battle id — fetch the battle doc for its tick count, then play it
+  // through the same ReplayView every battle uses.
+  const watchRaid = guarded(async (battleId) => {
+    const battle = await getBattle(battleId)
+    setRaidBattle({ id: battleId, tickCount: battle.tickCount })
+  })
+
   // End the turn and show the fortnight's report — the augury reveal lives
   // there, so the report gets its own beat before the next council.
   const nextDay = guarded(async () => {
@@ -200,6 +211,7 @@ const App = () => {
     setPlacements([])
     setSquadPlacements({})
     setBattleResult(null)
+    setRaidBattle(null)
     setDayReport(report)
     setPhase('report')
   })
@@ -381,6 +393,24 @@ const App = () => {
     - Object.values(forageAssignment).reduce((a, b) => a + b, 0)
   const inCamp = totalAvailableCount - placedCount - squadPlacedCount
 
+  // Watching a raid replay takes over the screen; Back returns to whatever
+  // phase the player was in (the phase state is untouched underneath).
+  if (raidBattle) {
+    return (
+      <div className="app">
+        {authBar}
+        <ReplayView
+          battleId={raidBattle.id}
+          tickCount={raidBattle.tickCount}
+          info={info}
+          map={map}
+          backLabel="Back to the council"
+          onBack={() => setRaidBattle(null)}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <CampaignHUD
@@ -428,6 +458,19 @@ const App = () => {
                 forage={campaign.forage}
                 roster={roster}
                 onAssign={guarded(assignForagers)}
+                tutorial={tutorial}
+              />
+            )}
+            {campaign.raid && (
+              <RaidPanel
+                key={`raids-${campaign.day}`}
+                raid={campaign.raid}
+                scouting={campaign.scouting}
+                roster={roster}
+                forageAssignment={forageAssignment}
+                units={info.units}
+                onLaunch={guarded(launchRaid)}
+                onWatch={watchRaid}
                 tutorial={tutorial}
               />
             )}

@@ -109,6 +109,8 @@ export function rerollAugurySlot(campaign, index) {
 // The end-of-turn reveal for the day report, one entry per slot: what was
 // foretold at which odds vs what came to pass. `wasAccurate` is whether the
 // shown card was the truth, null if the augur was never consulted.
+// `countered` marks a fate a won counter_event raid unmade (Stage 4 Part 2) —
+// its effect never fired.
 export function auguryReveal(campaign) {
   const card = ({ id, title, description, severity }) => ({ id, title, description, severity })
   const { consulted, slots } = campaign.augury
@@ -117,5 +119,6 @@ export function auguryReveal(campaign) {
     odds: consulted ? slot.odds : null,
     actual: card(slot.trueEvent),
     wasAccurate: consulted ? slot.shownTrue === true : null,
+    countered: slot.countered === true,
   }))
 }

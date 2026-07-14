@@ -120,6 +120,45 @@ export const FORAGE_CLASH_DAMPER_BY_BAND = {
   Blind: 1.5,
 }
 
+// ── Raids (Stage 4 Part 2) ───────────────────────────────────────────────────
+// Each turn deals a hand of raid OPPORTUNITIES — capacity-limited parties
+// hitting scouted targets, resolved as real short engine battles. Scouting
+// pays out here as COUNT: better eyes find more openings (the other Stage-4
+// benefits are deterministic by band; raids stay somewhat random).
+export const RAID_OPPORTUNITIES_PER_DAY = {
+  Overwhelming: 3,
+  Superior: 2,
+  Contested: 2,
+  Outmatched: 1,
+  Blind: 1,
+}
+// The slice of the enemy host a raid targets (jittered per opportunity), and
+// the party budget relative to the target's size-points — raids are small
+// detachment actions, not the main battle by another door.
+export const RAID_TARGET_FRACTION = 0.05
+export const RAID_CAPACITY_RATIO = 1.25
+// The user's party-cost formula (2026-07-13): one unit costs
+// size × (40 − speed) / RAID_CAPACITY_SPEED_SCALE. See raidCapacityCost.
+export const RAID_CAPACITY_SPEED_SCALE = 40
+// Raids are short battles: the engine's max_turns for a raid input.
+export const RAID_MAX_TURNS = 60
+// Reward ranges ([lo, hi], rolled at generation): loot_supplies pays stores,
+// rescue_troops frees bodies. destroy_detachment's reward IS the destruction
+// (the target force leaves the hidden host); counter_event unmakes a sealed
+// bad fate (reward = {slot}, hidden — it would out which vision was true).
+export const RAID_LOOT_FOOD = [2000, 5000] // kg
+export const RAID_LOOT_MATERIALS = [10, 30]
+export const RAID_RESCUE_UNIT = 'Soldier'
+export const RAID_RESCUE_COUNT = [10, 25]
+// What the scouts SAY a raid target is — detachment-scale phrases (the whole
+// host uses ENEMY_STRENGTH_BANDS below), by unit count, descending.
+export const RAID_STRENGTH_BANDS = [
+  { min: 60, label: 'a strong detachment' },
+  { min: 25, label: 'a full company' },
+  { min: 10, label: 'a small band' },
+  { min: 0, label: 'a handful' },
+]
+
 // What a scouting report may SAY about the hidden enemy at each reveal tier
 // (Stage 4 1b) — bucketed phrases only, never a number the client could
 // invert back into the composition. Ordered descending; the first entry whose
