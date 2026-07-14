@@ -64,7 +64,7 @@ const blendColor = (hex, oR, oG, oB, alpha) => {
 
 const HexGrid = ({
   info, map, placements, onPlacementsChange, roster, disabled, fortifiedSides = [],
-  squads = [], squadPlacements = {}, onSquadPlacementsChange,
+  squads = [], squadPlacements = {}, onSquadPlacementsChange, enemyPlacements = [],
 }) => {
   const [selectedHex, setSelectedHex] = useState(null)
 
@@ -91,6 +91,20 @@ const HexGrid = ({
     const { q, r } = toAxial(col, row)
     return terrainByAxial[`${q},${r}`] ?? { terrain: 'Open', impassable: false }
   }
+
+  // Revealed enemy stacks (Overwhelming scouting band), grouped per hex so
+  // several types on one hex stack vertically like the player's own glyphs.
+  // Entries are AXIAL {type, q, r, count}; the grid draws in offset coords.
+  const enemyByHex = useMemo(() => {
+    const m = new Map()
+    for (const p of enemyPlacements) {
+      const { col, row } = toOffset(p.q, p.r)
+      const key = `${col},${row}`
+      if (!m.has(key)) m.set(key, [])
+      m.get(key).push(p)
+    }
+    return m
+  }, [enemyPlacements])
 
   const inPlayerZone = (row) => row >= playerZone.rowMin && row <= playerZone.rowMax
   const inEnemyZone  = (row) => row >= enemyZone.rowMin  && row <= enemyZone.rowMax
@@ -276,6 +290,26 @@ const HexGrid = ({
                 strokeLinecap="round"
               />
             )
+          })}
+          {/* Revealed enemy stacks: red glyphs on the hexes the enemy will
+              actually hold — the Overwhelming scouting band's payoff. */}
+          {[...enemyByHex.entries()].map(([key, stack]) => {
+            const [col, row] = key.split(',').map(Number)
+            const { x, y } = hexCenter(col, row)
+            return stack.map((p, i) => (
+              <text
+                key={`enemy-${key}-${p.type}`}
+                data-testid={`enemy-glyph-${col}-${row}-${p.type}`}
+                x={x}
+                y={y + (i - (stack.length - 1) / 2) * 9}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="8"
+                fill="#ff6666"
+              >
+                {p.type[0]}{p.count}
+              </text>
+            ))
           })}
           <text x={playerLabelX} y={svgH / 2} textAnchor="middle" fontSize="10" fill="#5566bb" opacity="0.7"
                 transform={`rotate(-90, ${playerLabelX}, ${svgH / 2})`}>

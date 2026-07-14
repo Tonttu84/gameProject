@@ -32,7 +32,17 @@ export const campaignFixture = {
     kgPerUnit: { Soldier: 30, Archer: 30, Mage: 30, Priest: 30, Cavalry: 60, LightCavalry: 90 },
   },
   augury: { consulted: false, rerollsRemaining: 1, visions: null },
-  enemy: { stance: 'camp', battleOffer: false },
+  // Only the banded label crosses the boundary — never coverage numbers.
+  scouting: { band: 'Contested' },
+  // Band-gated enemy view (Stage 4 1b): at Contested the scouts add a
+  // bucketed strength phrase + supply state; higher bands add composition,
+  // exact counts and the revealed placement (see scoutingReveal.test.jsx).
+  enemy: {
+    stance: 'camp',
+    battleOffer: false,
+    strength: 'a large host',
+    supplies: 'well-provisioned',
+  },
   battles: [],
   log: [],
 }

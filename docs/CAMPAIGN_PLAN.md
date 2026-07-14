@@ -148,7 +148,7 @@ notes below over the git history if they ever disagree — the commits win.
     the player deploys behind the wall. 122 frontend tests green; oxlint clean.
   - Also added a `dev.sh fe-lint` task + allow-rule (`afbe495`) so oxlint runs prompt-free.
 - **Then (NEXT):** **Stage 4 — scouting + raids** (finalized plan in the Stage-4 block below;
-  **1a shipped 2026-07-13** — next is 1b/1c/1d in any order, then Part 2 raids).
+  **1a and 1b shipped 2026-07-13** — next is 1c/1d in either order, then Part 2 raids).
   **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore`
   erode `fortDurability` mid-battle so the placeholder goes live) is resequenced AFTER
   scouting/raids (user, 2026-07-13).
@@ -302,6 +302,39 @@ Stage 4 below). No schema bump — the band is derived at view time like `foodNe
   to export `reconTag`/`speed` correctly — CI/Docker covers the sync); frontend 160/160.
 - **Next Stage-4 slices:** 1b graduated enemy reveal / 1c event rungs / 1d forage posture
   (any order), then Part 2 raids — one per fresh session, per the finalized block.
+
+### Stage 4 sub-piece 1b — graduated enemy reveal ✅ SHIPPED 2026-07-13
+
+Second Stage-4 slice (same session pattern as 1a). No schema change — the reveal is derived
+in the view from the 1a band; `campaignView.js` stays the single leak gate.
+
+- **Campaign-server:** new `enemyView(enemy, band, catalog)` in `campaignView.js` — keys
+  ACCUMULATE with band rank (`SCOUTING_BANDS` ladder exported from `capabilities.js`):
+  Blind → `{stance, battleOffer}` (as before); Outmatched/Contested → + `strength` (bucketed
+  `armyTotal` phrase, `ENEMY_STRENGTH_BANDS`) and `supplies` (turns-of-food left =
+  `enemy.supplies ÷ armyFoodPerTurn`, `ENEMY_SUPPLY_BANDS` — both descending `{min,label}`
+  tables in `campaignConfig.js`, phrases only, nothing invertible); Superior → + `composition`
+  (category → rounded headcount %); Overwhelming → + `units` (exact counts) and `placements`
+  (the REAL `enemy.plannedPlacement`, aggregated per hex to `{type,q,r,count}` — the model
+  field's reserved "HIDDEN until a scouting reveal" moment). Default turn-1 read (Contested):
+  "a large host" (721) / "well-provisioned" (~4.1 turns).
+- **Tests:** `campaigns.test.js` `expectNoHiddenInfo` now pins the enemy view's key set per
+  band (`ENEMY_KEYS_BY_BAND`) on every response — including day-report summaries (stance-only)
+  — and a new "scouting-graduated enemy reveal (1b)" describe forces each band by pinning
+  armies on the doc and asserts each tier's exact fields (placement reveal checked against the
+  stored plan, aggregated).
+- **Frontend:** new `ScoutReport.jsx` (war council + placement screen) renders the band plus
+  ONLY the intel fields present on `campaign.enemy` — same component serves every band.
+  `HexGrid.jsx` takes optional `enemyPlacements` (axial `{type,q,r,count}`) and draws red
+  stacked glyphs on the enemy-zone hexes via the inverse-axial offset (`toOffset`); App passes
+  `campaign.enemy.placements ?? []`. Fixture updated to the Contested shape.
+- **Verified 2026-07-13 (this machine, WSL via dev.sh):** campaign-server vitest 166/168 (the
+  2 fails are the documented Windows-node `engine.integration` ENOENT); frontend 169/169;
+  oxlint clean (one pre-existing unused-var warning in an untouched test). No engine change,
+  so no C++ run needed.
+- **Deferred within 1b (per the finalized block):** staged/sequential deployment commits —
+  the Overwhelming `plannedPlacement` reveal IS the tempo mechanic for now; revisit only if
+  it doesn't satisfy once played.
 
 ### Working conventions (carry these to the new machine)
 
@@ -715,7 +748,8 @@ the enemy assault eat the penalty.
 >   `campaignConfig.js`. `campaignView` exposes `scouting: {band}` — ONLY the band label ever
 >   crosses the hidden-info boundary (never raw ratio/enemy composition); no schema change
 >   (derived at view time like foodNeedPerTurn).
-> **1b. Graduated enemy reveal** = old Phase A keyed off the 1a band: Blind → stance only (as
+> **1b. Graduated enemy reveal. ✅ SHIPPED 2026-07-13** (see the handoff entry "Stage 4
+> sub-piece 1b" above) = old Phase A keyed off the 1a band: Blind → stance only (as
 > today); Outmatched/Contested → + strength band (bucket `armyTotal(enemy.army)` into named
 > ranges) + supplies trend; Superior → + composition by category % (reuse the catalog `category`);
 > Overwhelming → + exact counts AND `enemy.plannedPlacement` (the model field's reserved "HIDDEN

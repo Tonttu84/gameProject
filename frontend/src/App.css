@@ -103,6 +103,18 @@ body {
   position: sticky;
   top: 1rem;
 }
+/* Scouting report (Stage 4): what the scouts can say of the enemy this turn.
+   Same self-contained box treatment as the camp menu. */
+.scout-report {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  max-width: 420px;
+}
+.scout-report h3 { color: var(--gold); font-size: 0.95rem; margin-bottom: 0.3rem; }
+.scout-report p  { font-size: 0.85rem; margin: 0.2rem 0; }
+
 .camp-workers-readout {
   display: flex;
   flex-direction: column;

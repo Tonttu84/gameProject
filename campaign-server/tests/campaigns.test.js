@@ -60,6 +60,17 @@ afterEach(clearRolls)
 // enemy's forage plan. Checked on every response the tests receive. Keys are
 // matched quoted so e.g. the day report's public `wasAccurate` reveal doesn't
 // trip a hidden-key check.
+// What the enemy view may expose at each scouting band (Stage 4 1b). Keys
+// accumulate as the band climbs and NOTHING beyond the band's set may appear;
+// day-report enemy summaries (no scouting sibling) stay stance-only.
+const ENEMY_KEYS_BY_BAND = {
+  Blind: ['battleOffer', 'stance'],
+  Outmatched: ['battleOffer', 'stance', 'strength', 'supplies'],
+  Contested: ['battleOffer', 'stance', 'strength', 'supplies'],
+  Superior: ['battleOffer', 'composition', 'stance', 'strength', 'supplies'],
+  Overwhelming: ['battleOffer', 'composition', 'placements', 'stance', 'strength', 'supplies', 'units'],
+}
+
 const expectNoHiddenInfo = (body) => {
   const raw = JSON.stringify(body)
   expect(raw).not.toContain('plannedPlacement')
@@ -69,8 +80,14 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"falseEvent"')
   expect(raw).not.toContain('"shownTrue"')
   expect(raw).not.toContain('"baseAccuracy"')
-  if (body.campaign?.enemy) expect(body.campaign.enemy.army).toBeUndefined()
-  if (body.enemy) expect(body.enemy.army).toBeUndefined()
+  // The enemy view never carries the raw army, and its keys are pinned to
+  // exactly what the current scouting band licenses.
+  for (const c of [body, body.campaign, body.report]) {
+    if (!c?.enemy) continue
+    expect(c.enemy.army).toBeUndefined()
+    const allowed = c.scouting ? ENEMY_KEYS_BY_BAND[c.scouting.band] : ['battleOffer', 'stance']
+    expect(Object.keys(c.enemy).sort()).toEqual(allowed)
+  }
   // Scouting crosses the boundary as the banded label ONLY — a raw coverage
   // or ratio number would let the client solve for the enemy composition.
   expect(raw).not.toContain('"coverage"')
@@ -172,6 +189,105 @@ describe('POST /api/campaigns', () => {
 
   test('401 without a token', async () => {
     expect((await api.post('/api/campaigns').send({})).status).toBe(401)
+  })
+})
+
+// ── Stage 4 (1b): scouting-graduated enemy reveal ────────────────────────────
+// The scouting band decides how much of the hidden enemy crosses the boundary;
+// campaignView stays the single gate. Armies are pinned straight on the doc to
+// force each band (fixture-catalog coverages; the default player roster sits
+// at 1494/4000 ≈ 0.374).
+const pinArmies = async (id, { roster, enemyArmy, enemySupplies } = {}) => {
+  const doc = await Campaign.findById(id)
+  if (roster) doc.roster = new Map(Object.entries(roster))
+  if (enemyArmy) doc.enemy.army = new Map(Object.entries(enemyArmy))
+  if (enemySupplies !== undefined) doc.enemy.supplies = enemySupplies
+  await doc.save()
+}
+
+const getView = async (id) => {
+  const res = await auth(api.get(`/api/campaigns/${id}`))
+  expect(res.status).toBe(200)
+  expectNoHiddenInfo(res.body)
+  return res.body
+}
+
+describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
+  test('Blind: stance only, as before the stage', async () => {
+    const { body } = await createCampaign()
+    // player 300/1000 = 0.30 vs enemy 850/1000 = 0.85 → ratio 0.35 → Blind
+    await pinArmies(body.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
+    const view = await getView(body.id)
+    expect(view.scouting.band).toBe('Blind')
+    expect(view.enemy).toEqual({ stance: 'camp', battleOffer: false })
+  })
+
+  test('Outmatched: adds the strength phrase and supply state, nothing more', async () => {
+    const { body } = await createCampaign()
+    // default player 0.374 vs riders-only 0.85 → ratio 0.44 → Outmatched
+    await pinArmies(body.id, { enemyArmy: { LightCavalry: 50 } })
+    const view = await getView(body.id)
+    expect(view.scouting.band).toBe('Outmatched')
+    // 50 riders → 'a modest company'; 90,000 kg over 5,600 kg/turn ≈ 16 turns.
+    expect(view.enemy.strength).toBe('a modest company')
+    expect(view.enemy.supplies).toBe('well-provisioned')
+    expect(view.enemy.composition).toBeUndefined()
+    expect(view.enemy.units).toBeUndefined()
+    expect(view.enemy.placements).toBeUndefined()
+  })
+
+  test('Contested (the turn-1 default): strength + supplies on the create response', async () => {
+    const res = await createCampaign()
+    // armyTotal 721 → 'a large host'; 90,000 kg over 21,868 kg/turn ≈ 4.1 turns.
+    expect(res.body.scouting.band).toBe('Contested')
+    expect(res.body.enemy).toEqual({
+      stance: 'camp',
+      battleOffer: false,
+      strength: 'a large host',
+      supplies: 'well-provisioned',
+    })
+  })
+
+  test('supply state degrades as the enemy stores run out', async () => {
+    const { body } = await createCampaign()
+    // 25,000 kg over 21,868 kg/turn ≈ 1.1 turns → the host is nearly starving.
+    await pinArmies(body.id, { enemySupplies: 25000 })
+    const view = await getView(body.id)
+    expect(view.enemy.supplies).toBe('near starving')
+  })
+
+  test('Superior: adds composition by category percent', async () => {
+    const { body } = await createCampaign()
+    // enemy 1400/6000 = 0.233 vs player 0.374 → ratio 1.60 → Superior
+    await pinArmies(body.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    const view = await getView(body.id)
+    expect(view.scouting.band).toBe('Superior')
+    expect(view.enemy.strength).toBe('a large host') // 600 is the band's lower edge
+    expect(view.enemy.composition).toEqual({ Foot: 100 })
+    expect(view.enemy.units).toBeUndefined()
+    expect(view.enemy.placements).toBeUndefined()
+  })
+
+  test('Overwhelming: exact counts and the real planned placement', async () => {
+    const { body } = await createCampaign()
+    // enemy 620/4700 = 0.132 vs player 0.374 → ratio 2.83 → Overwhelming
+    await pinArmies(body.id, { enemyArmy: { Zombie: 450, LightCavalry: 10 } })
+    const view = await getView(body.id)
+    expect(view.scouting.band).toBe('Overwhelming')
+    expect(view.enemy.units).toEqual({ Zombie: 450, LightCavalry: 10 })
+    expect(view.enemy.composition).toEqual({ Foot: 98, Mounted: 2 })
+    // The reveal is the REAL hidden plan the engine will receive — aggregated
+    // per hex for the placement grid, never a guess.
+    const doc = await Campaign.findById(body.id)
+    const agg = {}
+    for (const p of doc.enemy.plannedPlacement) {
+      const k = `${p.unit_type}|${p.q}|${p.r}`
+      agg[k] = (agg[k] ?? 0) + 1
+    }
+    expect(view.enemy.placements.length).toBeGreaterThan(0)
+    expect(
+      Object.fromEntries(view.enemy.placements.map((p) => [`${p.type}|${p.q}|${p.r}`, p.count])),
+    ).toEqual(agg)
   })
 })
 

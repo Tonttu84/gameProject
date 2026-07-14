@@ -40,6 +40,10 @@ export const scoutingCoverage = (army, catalog) => {
   return sizeSum > 0 ? recon / sizeSum : 0
 }
 
+// Band order, weakest eyes first — reveal tiers (campaignView's enemy view)
+// compare a band's rank against this ladder.
+export const SCOUTING_BANDS = ['Blind', 'Outmatched', 'Contested', 'Superior', 'Overwhelming']
+
 // The player-vs-enemy coverage comparison, collapsed to the banded label that
 // is the ONLY scouting fact allowed across the hidden-info boundary (the raw
 // ratio would leak enemy composition). Degenerate cases: eyes against a blind

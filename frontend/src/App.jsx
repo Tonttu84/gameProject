@@ -7,6 +7,7 @@ import DayReport from './components/DayReport'
 import ForagePanel from './components/ForagePanel'
 import CampPanel from './components/CampPanel'
 import CampaignHUD from './components/CampaignHUD'
+import ScoutReport from './components/ScoutReport'
 import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
 import LoginForm from './components/LoginForm'
@@ -418,6 +419,9 @@ const App = () => {
             {campaign.enemy.battleOffer && (
               <p className="warning">Enemy banners are formed up — they offer battle this turn.</p>
             )}
+            {campaign.scouting && (
+              <ScoutReport scouting={campaign.scouting} enemy={campaign.enemy} />
+            )}
             {campaign.forage && (
               <ForagePanel
                 key={campaign.day}
@@ -491,6 +495,9 @@ const App = () => {
               'Fight when ready — or end the turn without battle.',
             ]}
           />
+          {campaign.scouting && (
+            <ScoutReport scouting={campaign.scouting} enemy={campaign.enemy} />
+          )}
           <HexGrid
             info={info}
             map={map}
@@ -502,6 +509,7 @@ const App = () => {
             squads={squads}
             squadPlacements={squadPlacements}
             onSquadPlacementsChange={setSquadPlacements}
+            enemyPlacements={campaign.enemy.placements ?? []}
           />
           <div className="placement-bar">
             <span>

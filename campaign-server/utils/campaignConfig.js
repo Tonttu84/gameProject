@@ -85,6 +85,27 @@ export const SCOUTING_BAND_THRESHOLDS = {
   Outmatched: 0.4,
 }
 
+// What a scouting report may SAY about the hidden enemy at each reveal tier
+// (Stage 4 1b) — bucketed phrases only, never a number the client could
+// invert back into the composition. Ordered descending; the first entry whose
+// `min` the value meets wins. armyTotal → strength phrase (the default host
+// of 721 reads as 'a large host').
+export const ENEMY_STRENGTH_BANDS = [
+  { min: 1200, label: 'a vast horde' },
+  { min: 600, label: 'a large host' },
+  { min: 250, label: 'a strong warband' },
+  { min: 50, label: 'a modest company' },
+  { min: 0, label: 'a scattered few' },
+]
+// Turns of food the enemy has left (supplies ÷ its per-turn need) → supply
+// phrase. 'near starving' brackets ENEMY_LOW_SUPPLIES — a host read as
+// starving is about to be forced into a battle offer.
+export const ENEMY_SUPPLY_BANDS = [
+  { min: 3, label: 'well-provisioned' },
+  { min: 1.5, label: 'strained' },
+  { min: 0, label: 'near starving' },
+]
+
 // The shadowing enemy host (hidden from the player; scouting reveals it).
 export const ENEMY_ARMY = {
   Soldier: 540,

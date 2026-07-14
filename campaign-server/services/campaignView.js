@@ -1,6 +1,19 @@
 import { getCatalog } from '../utils/catalog.js'
-import { armyFoodPerTurn, forageValue, scoutingCoverage, scoutingBand } from '../utils/capabilities.js'
-import { FORAGE_KG_PER_POINT, AUGURY_DEBUG_SHOW_TRUTH, MAP_NAME } from '../utils/campaignConfig.js'
+import {
+  armyFoodPerTurn,
+  forageValue,
+  scoutingCoverage,
+  scoutingBand,
+  SCOUTING_BANDS,
+} from '../utils/capabilities.js'
+import {
+  FORAGE_KG_PER_POINT,
+  AUGURY_DEBUG_SHOW_TRUTH,
+  MAP_NAME,
+  ENEMY_STRENGTH_BANDS,
+  ENEMY_SUPPLY_BANDS,
+} from '../utils/campaignConfig.js'
+import { armyTotal } from './enemyAi.js'
 import { forageCapacityKg } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValence } from './events.js'
@@ -40,6 +53,55 @@ const auguryView = (augury) => {
   }
 }
 
+// Descending {min, label} table → the first phrase the value qualifies for.
+const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
+
+// The graduated enemy reveal (Stage 4 1b): the scouting band decides how much
+// of the hidden enemy the serializer lets through, keys ACCUMULATING with
+// rank — Blind: stance only; Outmatched/Contested: + bucketed strength phrase
+// and supply state; Superior: + composition by category %; Overwhelming:
+// + exact counts and the REAL planned placement (aggregated per hex for the
+// placement grid). Everything stays a phrase or a band until the top rung —
+// tests/campaigns.test.js pins the exact key set per band.
+const enemyView = (enemy, band, catalog) => {
+  const view = { stance: enemy.stance, battleOffer: enemy.stance === 'offering_battle' }
+  const rank = SCOUTING_BANDS.indexOf(band)
+  if (rank >= SCOUTING_BANDS.indexOf('Outmatched')) {
+    view.strength = bandLabel(armyTotal(enemy.army), ENEMY_STRENGTH_BANDS)
+    view.supplies = bandLabel(
+      enemy.supplies / Math.max(1, armyFoodPerTurn(enemy.army, catalog)),
+      ENEMY_SUPPLY_BANDS,
+    )
+  }
+  if (rank >= SCOUTING_BANDS.indexOf('Superior')) {
+    // Category shares by headcount, rounded — "mostly foot, a little horse".
+    const counts = {}
+    let total = 0
+    for (const [type, count] of enemy.army) {
+      if (count <= 0) continue
+      const category = catalog.get(type)?.category ?? 'Unknown'
+      counts[category] = (counts[category] ?? 0) + count
+      total += count
+    }
+    view.composition = Object.fromEntries(
+      Object.entries(counts).map(([category, n]) => [category, Math.round((100 * n) / total)]),
+    )
+  }
+  if (rank >= SCOUTING_BANDS.indexOf('Overwhelming')) {
+    view.units = Object.fromEntries(enemy.army)
+    const perHex = new Map()
+    for (const { unit_type, q, r } of enemy.plannedPlacement ?? []) {
+      const key = `${unit_type}|${q}|${r}`
+      perHex.set(key, (perHex.get(key) ?? 0) + 1)
+    }
+    view.placements = [...perHex.entries()].map(([key, count]) => {
+      const [type, q, r] = key.split('|')
+      return { type, q: Number(q), r: Number(r), count }
+    })
+  }
+  return view
+}
+
 const visionCard = ({ id, title, description, severity, effect }) => ({
   id,
   title,
@@ -54,6 +116,10 @@ const visionCard = ({ id, title, description, severity, effect }) => ({
 
 export async function campaignView(campaign) {
   const catalog = await getCatalog()
+  const band = scoutingBand(
+    scoutingCoverage(campaign.roster, catalog),
+    scoutingCoverage(campaign.enemy.army, catalog),
+  )
   return {
     id: campaign.id,
     day: campaign.day,
@@ -120,17 +186,11 @@ export async function campaignView(campaign) {
     // Scouting: derived at view time (like foodNeedPerTurn), no schema field.
     // ONLY the banded label crosses the hidden-info boundary — the raw
     // coverage/ratio would let the client solve for the enemy composition.
-    scouting: {
-      band: scoutingBand(
-        scoutingCoverage(campaign.roster, catalog),
-        scoutingCoverage(campaign.enemy.army, catalog),
-      ),
-    },
+    scouting: { band },
     augury: auguryView(campaign.augury),
-    enemy: {
-      stance: campaign.enemy.stance,
-      battleOffer: campaign.enemy.stance === 'offering_battle',
-    },
+    // What the band licenses the player to know about the enemy — see
+    // enemyView above.
+    enemy: enemyView(campaign.enemy, band, catalog),
     battles: campaign.battles.map(String),
     log: campaign.log.slice(-10),
   }
