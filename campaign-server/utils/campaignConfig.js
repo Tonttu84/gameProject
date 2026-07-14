@@ -98,6 +98,28 @@ export const EVENT_RUNG_BY_BAND = {
   Overwhelming: 'anticipated',
 }
 
+// Forage posture (Stage 4 1d): the band sets HOW the host forages. Owning the
+// field lets foragers work in small dispersed parties — more ground swept
+// (yield ×) and enemy parties screened off (clash odds ×, applied before
+// CLASH_CAP). Losing it forces large defensive columns: less ground, and the
+// enemy's riders pick the moments of contact. Outmatched you can STILL forage
+// — just less of it — and Contested is exactly today's numbers. "Group size"
+// is the fluff for these two multipliers; the player never micro-manages it.
+export const FORAGE_YIELD_BY_BAND = {
+  Overwhelming: 1.25,
+  Superior: 1.1,
+  Contested: 1,
+  Outmatched: 0.85,
+  Blind: 0.7,
+}
+export const FORAGE_CLASH_DAMPER_BY_BAND = {
+  Overwhelming: 0.5,
+  Superior: 0.75,
+  Contested: 1,
+  Outmatched: 1.25,
+  Blind: 1.5,
+}
+
 // What a scouting report may SAY about the hidden enemy at each reveal tier
 // (Stage 4 1b) — bucketed phrases only, never a number the client could
 // invert back into the composition. Ordered descending; the first entry whose

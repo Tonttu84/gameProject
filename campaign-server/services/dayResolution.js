@@ -9,9 +9,13 @@ import { resolveForaging } from './forage.js'
 
 // End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
 // later stages splice into it:
-//   1. forage            (both hosts strip the rings)
-//   2. forager clashes   (inside the forage step — contested rings)
-//   2.5 scouting band    (read once — picks each recon-sensitive fate's rung)
+//   0.5 scouting band    (read once, against the hosts as they stand at dawn —
+//                         the same band campaignView showed when the player
+//                         committed orders; sets the forage POSTURE in 1–2 and
+//                         picks each recon-sensitive fate's RUNG in 3)
+//   1. forage            (both hosts strip the rings; player yield × posture)
+//   2. forager clashes   (inside the forage step — contested rings, clash
+//                         odds × posture damper)
 //   3. apply true event  (regardless of what the augur foretold — the reveal;
 //                         the band decides WHICH RUNG of the fate fires)
 //   4. enemy turn        (upkeep, stance, tomorrow's offer + forage plan)
@@ -41,18 +45,20 @@ export async function endDay(campaign) {
   const entries = []
   const report = { day: campaign.day }
 
-  // 1–2. Foraging and forager clashes
-  const foraging = resolveForaging(campaign, catalog)
-  entries.push(...foraging.entries)
-  report.forage = foraging.forage
-
-  // 2.5. Scouting: the fortnight's recon contest, read once (same derivation
-  // campaignView uses) — it decides which rung of each recon-sensitive fate
-  // actually lands in step 3.
+  // 0.5. Scouting: the fortnight's recon contest, read once against the hosts
+  // as they stand at dawn — the same derivation (and so the same band)
+  // campaignView showed while the player was committing orders. It sets the
+  // forage posture in steps 1–2 and picks each recon-sensitive fate's rung
+  // in step 3.
   const band = scoutingBand(
     scoutingCoverage(campaign.roster, catalog),
     scoutingCoverage(campaign.enemy.army, catalog),
   )
+
+  // 1–2. Foraging and forager clashes, at the band's posture
+  const foraging = resolveForaging(campaign, catalog, band)
+  entries.push(...foraging.entries)
+  report.forage = foraging.forage
 
   // 3. Every slot's true event comes to pass — foretold or not — but the
   // scouting band picks the RUNG that fires (Stage 4 1c): Blind → the full

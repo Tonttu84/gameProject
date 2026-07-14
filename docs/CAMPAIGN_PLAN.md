@@ -148,7 +148,7 @@ notes below over the git history if they ever disagree — the commits win.
     the player deploys behind the wall. 122 frontend tests green; oxlint clean.
   - Also added a `dev.sh fe-lint` task + allow-rule (`afbe495`) so oxlint runs prompt-free.
 - **Then (NEXT):** **Stage 4 — scouting + raids** (finalized plan in the Stage-4 block below;
-  **1a and 1b shipped 2026-07-13** — next is 1c/1d in either order, then Part 2 raids).
+  **1a–1b shipped 2026-07-13, 1c–1d shipped 2026-07-14** — next is Part 2 raid opportunities).
   **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore`
   erode `fortDurability` mid-battle so the placeholder goes live) is resequenced AFTER
   scouting/raids (user, 2026-07-13).
@@ -379,6 +379,52 @@ touch is the additive, defaulted `enemy.revealedUntilDay` (old v9 docs read 0 = 
   change, so no C++ run needed.
 - **Next Stage-4 slices:** 1d forage posture multipliers, then Part 2 raids (per the
   finalized block). The forageValue/screenValue/reconValue overlap check rides with 1d.
+
+### Stage 4 sub-piece 1d — forage posture multipliers ✅ SHIPPED 2026-07-14
+
+Fourth and last Part-1 slice (same session pattern). No schema change — the posture is the
+1a band applied as two passive multipliers in the existing forage math; the player never
+micro-manages group size.
+
+- **Campaign-server:** `FORAGE_YIELD_BY_BAND` (Overwhelming→Blind: 1.25 / 1.1 / 1 / 0.85 /
+  0.7) + `FORAGE_CLASH_DAMPER_BY_BAND` (0.5 / 0.75 / 1 / 1.25 / 1.5) in `campaignConfig.js`
+  — Contested is exactly the pre-1d numbers, and Outmatched/Blind can STILL forage, just
+  less of it. `forage.js`: `forageYieldMultiplier(band)` (unknown/absent band degrades to
+  ×1, the usual guard convention) and `effectiveForageCapacityKg(assignment, catalog, band)`;
+  `resolveForaging` now takes the band and scales the player capacity — so allocation,
+  contention pressure AND ring depletion all follow (clumped defensive columns reach less
+  land) — and the clash chance becomes `min(CLASH_CAP, (CLASH_BASE + pressure) × damper)`.
+  The forage report block gains `posture`. **The `endDay` band read moved from step 2.5 to
+  0.5** (before foraging): the posture must be the same band `campaignView` showed while the
+  player was committing the assignment (pre-clash rosters, same derivation — view and
+  resolution can't disagree); the 1c event rungs now also key off this dawn band, identical
+  in practice unless a forager clash itself swings the band. `campaignView` scales
+  `forage.capacityKg` (via the shared `effectiveForageCapacityKg`) and `kgPerUnit` (rounded
+  per type) by the SAME multiplier — the ForagePanel preview the player plans against is
+  what end-day delivers.
+- **Tests:** `forage.test.js` — a table tripwire (both tables carry exactly the five
+  `SCOUTING_BANDS`, Contested neutral, unknown → ×1), Blind/Overwhelming yield + depletion
+  math, and a damper contrast pair pinning the direction (the same d1000 roll springs a
+  clash at Contested but is screened off at Superior; a roll safe at Contested still springs
+  at Blind). `campaigns.test.js` — Blind posture scales the view preview (`kgPerUnit`
+  21 = round(30 × 0.7), `capacityKg` floor-scaled), and an end-day pipeline test pinning
+  `report.forage.posture: 'Blind'` plus the exact harvest/upkeep arithmetic.
+- **Frontend:** no code change — the panel's preview math flows entirely from the view's
+  values ("server owns the formulas").
+- **Capability-overlap check (non-blocking, per the finalized block):** all three knobs
+  share `speed`, but each is dominated by a distinct term — forage = pure mobility
+  (`2×speed`), recon = mobility² + senses + designer tag, screen = armour-led. Fixture
+  readout: LightCavalry 17 recon / 6 forage / 6 screen vs heavy Cavalry 6 / 4 / 8 — the
+  intended identity split (light cavalry wins the field: eyes + sweep; heavy escorts) holds,
+  and 1d itself now couples the knobs at the band level (recon superiority buys forage
+  efficiency and safety). **Verdict: no consolidation needed yet.** If/when it happens
+  (deferred backlog item 3, unchanged), derive `forageValue` from the same mobile-arm scalar
+  as `reconValue`'s speed term — one mobile-arm value + one combat-screen value.
+- **Verified 2026-07-14 (WSL via dev.sh):** campaign-server vitest 187/189 (the 2 fails are
+  the documented Windows-node `engine.integration` ENOENT); frontend 175/175. No engine
+  change, so no C++ run needed.
+- **Next:** Part 2 — raid opportunities (schema v9→10, real short engine battles through the
+  existing pipeline; full spec in the finalized block).
 
 ### Working conventions (carry these to the new machine)
 
@@ -612,7 +658,7 @@ Starting values in `campaign-server/utils/campaignConfig.js` (STARTING_ROSTER + 
 
 **Services:** `battleRunner.js` (extracted); `events.js` (EVENT_POOL moved from `App.jsx:11-20`; `enemy_advance` now sets `enemy.stance='offering_battle'`); `enemyAi.js` (supplies upkeep `ceil(size/10)`; stance machine: camp → shadowing after day 3 → offering_battle on low supplies or every 5th day → withdrawing = campaign won at <20% strength); `enemyPlacement.js` (random spread over enemy zone from cached `getInfo()`, axial conversion `q = col - floor(row/2)` as `App.jsx:126`); `dayResolution.js` — ordered pipeline, stages append steps:
 
-1. forage (S2) → 2. clashes (S2) → 2.5 scouting accrual (S4) → 3. apply true event (S5; in S1 effect applies at pick time) → 4. enemyTurn (upkeep, stance, tomorrow's offer + forage plan) → 5. playerUpkeep (`food -= ceil(units/10)`; food 0 → 10% desertion, making `App.jsx:202` real) → 6. checkEnd → 7. newDay (draw events, regenerate plannedPlacement).
+0.5 scouting band read (S4; as of 1d it precedes forage — it sets the forage posture AND picks event rungs) → 1. forage (S2; × posture yield, S4 1d) → 2. clashes (S2; × posture damper, S4 1d) → 3. apply true event (S5; in S1 effect applies at pick time) → 4. enemyTurn (upkeep, stance, tomorrow's offer + forage plan) → 5. playerUpkeep (`food -= ceil(units/10)`; food 0 → 10% desertion, making `App.jsx:202` real) → 6. checkEnd → 7. newDay (draw events, regenerate plannedPlacement).
 
 **Routes `campaign-server/routes/campaigns.js`** (all `userExtractor`, ownership → 404):
 ```
@@ -811,10 +857,12 @@ the enemy assault eat the penalty.
 > arms `enemy_losses` + free-reveal). `dayResolution` step 3 picks the rung; the augur still
 > foretells the Blind rung; day report names the FIRED rung + "scouts intervened" flag. The
 > blueprint events below (Enemy Ambush / Forage Raiders / Night Raid) stand.
-> **1d. Forage posture multipliers** = old Phase C: band-keyed `FORAGE_YIELD_BY_BAND` +
+> **1d. Forage posture multipliers ✅ SHIPPED 2026-07-14** (see the handoff entry "Stage 4
+> sub-piece 1d" above) = old Phase C: band-keyed `FORAGE_YIELD_BY_BAND` +
 > `FORAGE_CLASH_DAMPER_BY_BAND` tables in `campaignConfig.js`, applied as two `×` insertions in
 > `forage.js` yield + `skirmish.js`/forage clash chance. Includes the
-> forageValue/screenValue/reconValue overlap check (non-blocking).
+> forageValue/screenValue/reconValue overlap check (non-blocking; verdict recorded in the 1d
+> handoff — no consolidation needed yet).
 >
 > **Part 2 — RAID OPPORTUNITIES (new, user design 2026-07-13).** A raid phase: capacity-limited
 > parties hit scouted targets, resolved as REAL short engine battles through the existing

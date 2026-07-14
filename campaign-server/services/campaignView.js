@@ -14,7 +14,7 @@ import {
   ENEMY_SUPPLY_BANDS,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
-import { forageCapacityKg } from './forage.js'
+import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValence } from './events.js'
 
@@ -179,14 +179,20 @@ export async function campaignView(campaign) {
         initialRichness,
       })),
       assignment: Object.fromEntries(campaign.forage.assignment),
-      capacityKg: forageCapacityKg(campaign.forage.assignment, catalog),
+      capacityKg: effectiveForageCapacityKg(campaign.forage.assignment, catalog, band),
       // kg one unit of each roster type gathers per turn, so the client can
       // preview capacity while the player drags steppers — values come from
-      // the server, the formula stays here.
+      // the server, the formula stays here. Both carry the scouting band's
+      // forage-posture multiplier (Stage 4 1d), the SAME one end-day applies:
+      // the preview the player plans against is what the resolution delivers.
       kgPerUnit: Object.fromEntries(
         [...campaign.roster.keys()].map((type) => [
           type,
-          (catalog.get(type) ? forageValue(catalog.get(type).stats) : 0) * FORAGE_KG_PER_POINT,
+          Math.round(
+            (catalog.get(type) ? forageValue(catalog.get(type).stats) : 0) *
+              FORAGE_KG_PER_POINT *
+              forageYieldMultiplier(band),
+          ),
         ]),
       ),
     },

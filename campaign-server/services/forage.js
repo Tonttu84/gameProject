@@ -5,6 +5,8 @@ import {
   FORAGE_KG_PER_POINT,
   FORAGE_FOOD_SHARE,
   FORAGE_MATERIALS_SHARE,
+  FORAGE_YIELD_BY_BAND,
+  FORAGE_CLASH_DAMPER_BY_BAND,
   CLASH_BASE,
   CLASH_CONTEST_FACTOR,
   CLASH_CAP,
@@ -30,6 +32,16 @@ export const forageCapacityKg = (assignment, catalog) => {
   }
   return points * FORAGE_KG_PER_POINT
 }
+
+// Forage posture (Stage 4 1d): the scouting band's yield multiplier, ×1 for
+// an unknown/absent band (same degrade-safely convention as the catalog
+// guards). Shared with campaignView so the panel's preview values carry the
+// exact multiplier the resolution applies — promise and delivery can't drift.
+export const forageYieldMultiplier = (band) => FORAGE_YIELD_BY_BAND[band] ?? 1
+
+// What the committed assignment will actually gather at this posture.
+export const effectiveForageCapacityKg = (assignment, catalog, band) =>
+  Math.floor(forageCapacityKg(assignment, catalog) * forageYieldMultiplier(band))
 
 // Fill rings nearest-first, spilling leftover capacity outward. Returns the
 // kg wanted from each ring (before contention with the other side).
@@ -62,12 +74,16 @@ const applyLosses = (armyMap, losses) => {
 const total = (obj) => Object.values(obj).reduce((a, b) => a + b, 0)
 
 // Mutates the campaign (rings, resources, roster, enemy army/supplies) and
-// returns { forage: <report block>, entries: [log lines] }.
-export function resolveForaging(campaign, catalog) {
+// returns { forage: <report block>, entries: [log lines] }. `band` is the
+// turn's scouting band — the forage posture (Stage 4 1d): it scales how much
+// ground the player's parties sweep and how often the enemy's riders catch
+// them. Omitted (older tests) it behaves as Contested, the neutral posture.
+export function resolveForaging(campaign, catalog, band) {
   const rings = campaign.forage.rings
   const richness = rings.map((r) => r.richness)
 
-  const playerCapacity = forageCapacityKg(campaign.forage.assignment, catalog)
+  const playerCapacity = effectiveForageCapacityKg(campaign.forage.assignment, catalog, band)
+  const clashDamper = FORAGE_CLASH_DAMPER_BY_BAND[band] ?? 1
   const enemyCapacity = campaign.forage.enemyPlan
 
   const wantP = allocateNearFirst(playerCapacity, richness)
@@ -98,7 +114,7 @@ export function resolveForaging(campaign, catalog) {
     const pressure =
       (CLASH_CONTEST_FACTOR * Math.min(harvestP[i], harvestE[i])) /
       (harvestP[i] + harvestE[i])
-    const p = Math.min(CLASH_CAP, CLASH_BASE[i] + pressure)
+    const p = Math.min(CLASH_CAP, (CLASH_BASE[i] + pressure) * clashDamper)
     if (!chanceRoll(p)) continue
 
     const playerParty = Object.fromEntries(campaign.forage.assignment)
@@ -137,6 +153,7 @@ export function resolveForaging(campaign, catalog) {
 
   return {
     forage: {
+      posture: band ?? 'Contested',
       capacity: playerCapacity,
       harvested: { food, materials },
       rings: rings.map((r) => ({ ring: r.ring, richness: r.richness, initialRichness: r.initialRichness })),

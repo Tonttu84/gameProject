@@ -2,11 +2,17 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import {
   forageCapacityKg,
+  forageYieldMultiplier,
   allocateNearFirst,
   enemyForageParty,
   resolveForaging,
 } from '../services/forage.js'
 import { resolveClash } from '../services/skirmish.js'
+import { SCOUTING_BANDS } from '../utils/capabilities.js'
+import {
+  FORAGE_YIELD_BY_BAND,
+  FORAGE_CLASH_DAMPER_BY_BAND,
+} from '../utils/campaignConfig.js'
 import { catalogFixture } from './fixtures/catalog.js'
 
 // Pure campaign math against the fixture catalog — no DB, no engine. All
@@ -101,6 +107,90 @@ describe('resolveForaging', () => {
     expect(c.resources.food).toBe(2400)
     // The land is stripped by everything gathered, forfeited or not.
     expect(forage.rings[0].richness).toBe(14000)
+  })
+})
+
+// ── Stage 4 (1d): forage posture ─────────────────────────────────────────────
+// The scouting band sets HOW you forage: dispersed efficient sweeps when your
+// riders own the field (higher yield, fewer clashes), clumped defensive
+// columns when theirs do (lower yield, more clashes). Two passive multipliers
+// on the existing math — the player never micro-manages group size.
+describe('forage posture (Stage 4 1d)', () => {
+  it('both tables carry exactly the five bands; Contested is neutral; unknown degrades to ×1', () => {
+    // Pins the tables to the band ladder so a renamed band can't silently
+    // fall back to ×1, and Contested stays the no-op baseline.
+    expect(Object.keys(FORAGE_YIELD_BY_BAND).sort()).toEqual([...SCOUTING_BANDS].sort())
+    expect(Object.keys(FORAGE_CLASH_DAMPER_BY_BAND).sort()).toEqual([...SCOUTING_BANDS].sort())
+    expect(FORAGE_YIELD_BY_BAND.Contested).toBe(1)
+    expect(FORAGE_CLASH_DAMPER_BY_BAND.Contested).toBe(1)
+    expect(forageYieldMultiplier(undefined)).toBe(1)
+    expect(forageYieldMultiplier('NoSuchBand')).toBe(1)
+  })
+
+  it('yield multiplier scales capacity, harvest, and depletion: Blind ×0.7, Overwhelming ×1.25', () => {
+    // Blind: 100 Soldiers raw 3000 kg → 2100 effective; the land is only
+    // stripped of what the clumped columns actually reach.
+    const blind = makeCampaign({ assignment: { Soldier: 100 }, rings: [20000, 35000, 55000] })
+    const b = resolveForaging(blind, catalog, 'Blind')
+    expect(b.forage.capacity).toBe(2100)
+    expect(b.forage.posture).toBe('Blind')
+    expect(blind.resources.food).toBe(1680) // 0.8 × 2100
+    expect(blind.resources.materials).toBe(420)
+    expect(b.forage.rings[0].richness).toBe(17900)
+
+    // Overwhelming: dispersed sweeps cover more ground than the raw points.
+    const over = makeCampaign({ assignment: { Soldier: 100 }, rings: [20000, 35000, 55000] })
+    const o = resolveForaging(over, catalog, 'Overwhelming')
+    expect(o.forage.capacity).toBe(3750) // floor(3000 × 1.25)
+    expect(over.resources.food).toBe(3000)
+  })
+
+  it('the same clash roll springs at Contested but is screened off at Superior', () => {
+    // Equal harvests → pressure 0.15. Contested: p = 0.2 (threshold 200);
+    // Superior damps it ×0.75 → 0.15 (threshold 150). Roll 160 sits between.
+    const contested = makeCampaign({
+      assignment: { Soldier: 100 }, // capacity 3000
+      enemyPlan: 3000,
+      rings: [20000],
+      army: { Soldier: 100 },
+    })
+    pushRoll(160) // clash
+    pushRoll(1); pushRoll(1) // player strength die → 676
+    pushRoll(1); pushRoll(1) // enemy strength die → 271, player wins
+    pushRoll(6) // loser casualties
+    pushRoll(2) // winner casualties
+    const c = resolveForaging(contested, catalog, 'Contested')
+    expect(c.forage.clashes).toHaveLength(1)
+
+    const superior = makeCampaign({
+      assignment: { Soldier: 100 }, // capacity floor(3000 × 1.1) = 3300
+      enemyPlan: 3300,
+      rings: [20000],
+      army: { Soldier: 100 },
+    })
+    pushRoll(160) // same roll — the damped 0.15 no longer reaches it
+    const s = resolveForaging(superior, catalog, 'Superior')
+    expect(s.forage.clashes).toEqual([])
+    expect(superior.resources.food).toBe(2640) // 0.8 × 3300 — and the yield bonus rode along
+  })
+
+  it('Blind heightens clash risk: a roll safe at Contested still springs', () => {
+    // Capacity 2100, enemyPlan 2100 → pressure 0.15; Blind: p = 0.2 × 1.5 =
+    // 0.3 (threshold 300). Roll 250 would be safe at Contested (200).
+    const blind = makeCampaign({
+      assignment: { Soldier: 100 },
+      enemyPlan: 2100,
+      rings: [20000],
+      army: { Soldier: 100 },
+    })
+    pushRoll(250) // clash only because Blind raised the odds
+    pushRoll(1); pushRoll(1) // player strength die → 676
+    pushRoll(1); pushRoll(1) // enemy strength die → 271, player wins
+    pushRoll(6) // loser casualties
+    pushRoll(2) // winner casualties
+    const { forage } = resolveForaging(blind, catalog, 'Blind')
+    expect(forage.clashes).toHaveLength(1)
+    expect(forage.clashes[0].winner).toBe('player')
   })
 })
 

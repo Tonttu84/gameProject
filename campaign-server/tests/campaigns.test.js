@@ -668,6 +668,42 @@ describe('POST /api/campaigns/:id/forage', () => {
     expect(c.forage.kgPerUnit.Necromancer).toBeUndefined()
   })
 
+  // Stage 4 1d: the scouting band sets the forage posture. The view's preview
+  // values (kgPerUnit, capacityKg) carry the same multiplier the resolution
+  // applies, so what the panel promises is what end-day delivers.
+  test('Blind posture scales the forage preview the player plans against', async () => {
+    const { body: c } = await createCampaign()
+    // Same Blind pin as the 1b reveal tests: 0.30 vs 0.85 → ratio 0.35.
+    await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
+    const view = await getView(c.id)
+    expect(view.scouting.band).toBe('Blind')
+    expect(view.forage.kgPerUnit.Priest).toBe(21) // round(30 × 0.7)
+    const res = await assign(c.id, { Priest: 40 })
+    expect(res.body.forage.capacityKg).toBe(840) // floor(40 × 30 × 0.7)
+    expectNoHiddenInfo(res.body)
+  })
+
+  test('end-day forages at that posture and the report names it', async () => {
+    const { body: c } = await createCampaign()
+    await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
+    await pinAugury(c.id) // QUIET ±0 keeps the food math exact
+    const doc = await Campaign.findById(c.id)
+    doc.forage.assignment = new Map([['Priest', 100]])
+    doc.forage.enemyPlan = 0 // uncontested rings → no clash roll → deterministic
+    await doc.save()
+
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(res.status).toBe(200)
+    expect(res.body.report.forage.posture).toBe('Blind')
+    expect(res.body.report.forage.capacity).toBe(2100) // floor(100 × 30 × 0.7)
+    expect(res.body.report.forage.harvested).toEqual({ food: 1680, materials: 420 })
+    expectNoHiddenInfo(res.body)
+
+    // 50,000 + 1,680 forage − 2,800 upkeep (100 Priests at 28 kg/turn).
+    expect(res.body.campaign.resources.food).toBe(48880)
+    expect(res.body.campaign.resources.materials).toBe(620) // 200 + 420
+  })
+
   test('foragers are unavailable for the battle line', async () => {
     const { body: c } = await createCampaign()
     await assign(c.id, { Soldier: 300 })
