@@ -27,6 +27,9 @@
 #   cs-test [args]      campaign-server Vitest suite
 #   info                build + ./game info
 # Env: TAIL=N trims output to the last N lines (default 40; 0 = no trim).
+# NOTE for Claude Code: pass the override as `dev.sh -tN <task>` (INSIDE the
+# quoted wsl argument), never as a `TAIL=N wsl …` env prefix — the prefix
+# changes the command's first token and no allow rule matches it → prompt.
 set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root (…/gameProject)
 
@@ -34,6 +37,13 @@ tail_n="${TAIL:-40}"
 _run() { if [ "$tail_n" = "0" ]; then "$@"; else "$@" 2>&1 | tail -n "$tail_n"; fi; }
 
 task="${1:-help}"; shift || true
+# Optional tail override carried INSIDE the single-token command line
+# (`dev.sh -t60 cs-test …`) so the permission rule still matches — a TAIL=N
+# env prefix before `wsl` would force a prompt (see NOTE above).
+if [[ "$task" =~ ^-t([0-9]+)$ ]]; then
+  tail_n="${BASH_REMATCH[1]}"
+  task="${1:-help}"; shift || true
+fi
 case "$task" in
   build)    _run make "$@" ;;
   re)       _run make re ;;
