@@ -63,8 +63,15 @@ const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
 // + exact counts and the REAL planned placement (aggregated per hex for the
 // placement grid). Everything stays a phrase or a band until the top rung —
 // tests/campaigns.test.js pins the exact key set per band.
-const enemyView = (enemy, band, catalog) => {
+const enemyView = (enemy, band, catalog, revealed = false) => {
   const view = { stance: enemy.stance, battleOffer: enemy.stance === 'offering_battle' }
+  // A free reveal (Stage 4 1c, the anticipated Night Raid's prisoners) opens
+  // the full Overwhelming tier for the turn regardless of the band; the
+  // `revealed` flag tells the client (and the hidden-info tests) why.
+  if (revealed) {
+    band = 'Overwhelming'
+    view.revealed = true
+  }
   const rank = SCOUTING_BANDS.indexOf(band)
   if (rank >= SCOUTING_BANDS.indexOf('Outmatched')) {
     view.strength = bandLabel(armyTotal(enemy.army), ENEMY_STRENGTH_BANDS)
@@ -189,8 +196,15 @@ export async function campaignView(campaign) {
     scouting: { band },
     augury: auguryView(campaign.augury),
     // What the band licenses the player to know about the enemy — see
-    // enemyView above.
-    enemy: enemyView(campaign.enemy, band, catalog),
+    // enemyView above. A live free-reveal window (prisoners taken) trumps
+    // the band for the turn; scouting.band above still reports the real
+    // contest.
+    enemy: enemyView(
+      campaign.enemy,
+      band,
+      catalog,
+      (campaign.enemy.revealedUntilDay ?? 0) >= campaign.day,
+    ),
     battles: campaign.battles.map(String),
     log: campaign.log.slice(-10),
   }

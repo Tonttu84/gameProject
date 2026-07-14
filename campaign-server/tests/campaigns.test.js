@@ -7,6 +7,7 @@ import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { fortifiedSidesFor } from '../services/fortification.js'
+import { EVENT_POOL } from '../services/events.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
 // C++ binary. getInfo feeds buildEnemyPlacement's zone geometry.
@@ -85,7 +86,14 @@ const expectNoHiddenInfo = (body) => {
   for (const c of [body, body.campaign, body.report]) {
     if (!c?.enemy) continue
     expect(c.enemy.army).toBeUndefined()
-    const allowed = c.scouting ? ENEMY_KEYS_BY_BAND[c.scouting.band] : ['battleOffer', 'stance']
+    // A free reveal (Stage 4 1c, anticipated Night Raid) may exceed the band
+    // for one turn — flagged by `revealed`, opening exactly the Overwhelming
+    // set and nothing more.
+    const allowed = c.enemy.revealed
+      ? [...ENEMY_KEYS_BY_BAND.Overwhelming, 'revealed'].sort()
+      : c.scouting
+        ? ENEMY_KEYS_BY_BAND[c.scouting.band]
+        : ['battleOffer', 'stance']
     expect(Object.keys(c.enemy).sort()).toEqual(allowed)
   }
   // Scouting crosses the boundary as the banded label ONLY — a raw coverage
@@ -288,6 +296,133 @@ describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
     expect(
       Object.fromEntries(view.enemy.placements.map((p) => [`${p.type}|${p.q}|${p.r}`, p.count])),
     ).toEqual(agg)
+  })
+})
+
+// ── Stage 4 (1c): recon-sensitive event rungs ────────────────────────────────
+// The scouting band picks which rung of a recon-sensitive fate actually lands:
+// Blind → the full event; Outmatched/Contested → warned (lesser blow);
+// Superior/Overwhelming → anticipated (neutral or reversed). The augur always
+// foretells the Blind rung — prophecy says what's coming, scouting decides
+// whether it lands — and the day report names the FIRED rung plus the scouts'
+// hand, so a mitigated threat reads as the same event downgraded, never a
+// silent swap. Armies pin the band exactly as in the 1b describe above.
+describe('recon-sensitive event rungs (Stage 4 1c)', () => {
+  const NIGHT_RAID = EVENT_POOL.find((e) => e.id === 'night_raid')
+  const AMBUSH = EVENT_POOL.find((e) => e.id === 'ambush')
+
+  test('Contested (the turn-1 default): the warned rung fires and is named in the report', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, NIGHT_RAID, QUIET)
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+
+    // Warned Night Raid: −500 kg per slot instead of the blind rung's
+    // −2,000 kg − 2% Soldier desertion; the ranks hold.
+    expect(res.body.campaign.resources.food).toBe(50000 - 3 * 500 - 12432)
+    expect(res.body.campaign.roster.Soldier).toBe(300)
+    for (const slot of res.body.report.augury) {
+      expect(slot.actual.id).toBe('night_raid') // the fate as foretold (Blind rung)
+      expect(slot.fired.rung).toBe('warned')
+      expect(slot.fired.title).toBe(NIGHT_RAID.rungs.warned.title)
+      expect(slot.scoutsIntervened).toBe(true)
+    }
+    expect(res.body.report.entries).toContain('Your scouts saw it coming.')
+  })
+
+  test('Blind: the full event lands and no intervention is flagged', async () => {
+    const { body: c } = await createCampaign()
+    // player 300/1000 = 0.30 vs enemy 850/1000 = 0.85 → ratio 0.35 → Blind
+    await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
+    await pinAugury(c.id, NIGHT_RAID, QUIET)
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expectNoHiddenInfo(res.body)
+
+    // Blind rung, 3 slots: 3 × −2,000 kg; upkeep for 100 Priests is 2,800 kg.
+    // (The desertion part hits the empty Soldier line — nothing to take.)
+    expect(res.body.campaign.resources.food).toBe(50000 - 3 * 2000 - 2800)
+    for (const slot of res.body.report.augury) {
+      expect(slot.fired.rung).toBe('blind')
+      expect(slot.fired.title).toBe('Night Raid')
+      expect(slot.scoutsIntervened).toBe(false)
+    }
+    expect(res.body.report.entries).not.toContain('Your scouts saw it coming.')
+  })
+
+  test('a plain event carries no rung machinery in the report', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id) // QUIET — not recon-sensitive
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    for (const slot of res.body.report.augury) {
+      expect(slot.fired).toBeUndefined()
+      expect(slot.scoutsIntervened).toBeUndefined()
+    }
+  })
+
+  test('Superior: the anticipated Counter-Ambush reverses the fate onto the enemy', async () => {
+    const { body: c } = await createCampaign()
+    // enemy 1400/6000 = 0.233 vs player 0.374 → ratio 1.60 → Superior
+    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    await pinAugury(c.id, AMBUSH, QUIET)
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expectNoHiddenInfo(res.body)
+
+    // The blind rung would have set the host on the camp; anticipated must not.
+    expect(res.body.campaign.enemy.stance).not.toBe('offering_battle')
+    for (const slot of res.body.report.augury) {
+      expect(slot.fired.rung).toBe('anticipated')
+      expect(slot.fired.title).toBe(AMBUSH.rungs.anticipated.title)
+      expect(slot.scoutsIntervened).toBe(true)
+    }
+    // Three ×0.93 floors on every hidden enemy line — in the DB, never the response.
+    const doc = await Campaign.findById(c.id)
+    expect(doc.enemy.army.get('Soldier')).toBe(320) // 400 → 372 → 345 → 320
+    expect(doc.enemy.army.get('Zombie')).toBe(159) // 200 → 186 → 172 → 159
+  })
+
+  test('anticipated Night Raid: prisoners lay the enemy bare for exactly one turn', async () => {
+    const { body: c } = await createCampaign()
+    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } }) // Superior
+    await pinAugury(c.id, NIGHT_RAID, QUIET)
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expectNoHiddenInfo(res.body)
+
+    // Superior alone licenses composition at most — the reveal opens the
+    // Overwhelming-tier facts (exact counts + the real placement) for the turn.
+    expect(res.body.campaign.scouting.band).toBe('Superior')
+    expect(res.body.campaign.enemy.revealed).toBe(true)
+    expect(res.body.campaign.enemy.units).toEqual({ Soldier: 400, Zombie: 200 })
+    expect(res.body.campaign.enemy.placements.length).toBeGreaterThan(0)
+
+    // A plain GET during the revealed turn sees the same open book.
+    const view = await getView(c.id)
+    expect(view.enemy.revealed).toBe(true)
+
+    // The next end-day expires it: back to what the band licenses.
+    await pinAugury(c.id) // quiet fates so nothing re-reveals
+    const next = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expectNoHiddenInfo(next.body)
+    expect(next.body.campaign.enemy.revealed).toBeUndefined()
+    expect(next.body.campaign.enemy.units).toBeUndefined()
+  })
+
+  test('the augur foretells the Blind rung even when the scouts will intervene', async () => {
+    const { body: c } = await createCampaign()
+    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } }) // Superior
+    await pinAugury(c.id, NIGHT_RAID, QUIET)
+    // [4,1] readings: (4 + base 2 + mage 1 + pool-2 legibility 1) × 0.05 =
+    // 0.40 → threshold 400; a 400 vision roll shows the truth.
+    pushRoll(4); pushRoll(1); pushRoll(400)
+    pushRoll(4); pushRoll(1); pushRoll(400)
+    pushRoll(4); pushRoll(1); pushRoll(400)
+    const res = await auth(api.post(`/api/campaigns/${c.id}/augury/consult`)).send({})
+    expect(res.status).toBe(200)
+    for (const vision of res.body.augury.visions) {
+      expect(vision.id).toBe('night_raid')
+      expect(vision.title).toBe('Night Raid') // the fate if the scouts do nothing
+      expect(vision.valence).toBe('bad')
+    }
   })
 })
 

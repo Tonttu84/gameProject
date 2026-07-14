@@ -211,6 +211,9 @@ body {
 }
 .augury-true    { color: #88cc88; }
 .augury-false   { color: var(--danger); }
+/* Stage 4 1c: the scouts downgraded/reversed a recon-sensitive fate. */
+.scout-intervened { color: #88cc88; font-style: italic; }
+.scout-report .scout-revealed { color: var(--gold); font-style: italic; }
 .report-entries { list-style: none; padding: 0; color: #8888aa; font-size: 13px; text-align: center; }
 
 .phase-placement {

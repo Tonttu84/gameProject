@@ -8,29 +8,40 @@ const DayReport = ({ report, onContinue }) => (
 
     {report.augury?.length > 0 && (
       <div className="report-augury" data-testid="report-augury">
-        {report.augury.map((slot, i) => (
-          <div className="report-augury-slot" key={i}>
-            {slot.predicted ? (
-              <>
+        {report.augury.map((slot, i) => {
+          // Recon-sensitive fates (Stage 4 1c): the scouting band may have
+          // downgraded (or reversed) the foretold event — what came to pass
+          // is the FIRED rung; the augur always foretold the blind one.
+          const came = slot.fired ?? slot.actual
+          return (
+            <div className="report-augury-slot" key={i}>
+              {slot.predicted ? (
+                <>
+                  <p>
+                    The augur foretold: <strong>{slot.predicted.title}</strong>
+                  </p>
+                  <p>
+                    What came to pass: <strong>{came.title}</strong>
+                    {came.description && ` — ${came.description}`}
+                  </p>
+                  <p className={slot.wasAccurate ? 'augury-true' : 'augury-false'}>
+                    {slot.wasAccurate ? 'The augur spoke true.' : 'The augur was wrong.'}
+                  </p>
+                </>
+              ) : (
                 <p>
-                  The augur foretold: <strong>{slot.predicted.title}</strong>
+                  Unconsulted, fate struck anyway: <strong>{came.title}</strong>
+                  {came.description && ` — ${came.description}`}
                 </p>
-                <p>
-                  What came to pass: <strong>{slot.actual.title}</strong>
-                  {slot.actual.description && ` — ${slot.actual.description}`}
+              )}
+              {slot.scoutsIntervened && (
+                <p className="scout-intervened" data-testid="scout-intervened">
+                  Your scouts saw it coming — the blow was turned.
                 </p>
-                <p className={slot.wasAccurate ? 'augury-true' : 'augury-false'}>
-                  {slot.wasAccurate ? 'The augur spoke true.' : 'The augur was wrong.'}
-                </p>
-              </>
-            ) : (
-              <p>
-                Unconsulted, fate struck anyway: <strong>{slot.actual.title}</strong>
-                {slot.actual.description && ` — ${slot.actual.description}`}
-              </p>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          )
+        })}
       </div>
     )}
 

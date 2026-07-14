@@ -1,7 +1,7 @@
 import { DESERTION_FRACTION } from '../utils/campaignConfig.js'
 import { getCatalog } from '../utils/catalog.js'
-import { armyFoodPerTurn } from '../utils/capabilities.js'
-import { applyEffect, rosterTotal } from './events.js'
+import { armyFoodPerTurn, scoutingCoverage, scoutingBand } from '../utils/capabilities.js'
+import { applyEffect, firedRung, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
@@ -11,8 +11,9 @@ import { resolveForaging } from './forage.js'
 // later stages splice into it:
 //   1. forage            (both hosts strip the rings)
 //   2. forager clashes   (inside the forage step — contested rings)
-//   2.5 scouting accrual (scouting stage)
-//   3. apply true event  (regardless of what the augur foretold — the reveal)
+//   2.5 scouting band    (read once — picks each recon-sensitive fate's rung)
+//   3. apply true event  (regardless of what the augur foretold — the reveal;
+//                         the band decides WHICH RUNG of the fate fires)
 //   4. enemy turn        (upkeep, stance, tomorrow's offer + forage plan)
 //   5. player upkeep     (food, desertion at zero)
 //   6. check end         (annihilation / enemy withdrawal)
@@ -45,15 +46,35 @@ export async function endDay(campaign) {
   entries.push(...foraging.entries)
   report.forage = foraging.forage
 
-  // 3. Every slot's true event comes to pass — foretold or not. The report
-  // carries the reveal (per slot: predicted vs actual); the log records what
-  // actually happened.
+  // 2.5. Scouting: the fortnight's recon contest, read once (same derivation
+  // campaignView uses) — it decides which rung of each recon-sensitive fate
+  // actually lands in step 3.
+  const band = scoutingBand(
+    scoutingCoverage(campaign.roster, catalog),
+    scoutingCoverage(campaign.enemy.army, catalog),
+  )
+
+  // 3. Every slot's true event comes to pass — foretold or not — but the
+  // scouting band picks the RUNG that fires (Stage 4 1c): Blind → the full
+  // event, Warned → a lesser blow, Anticipated → neutral or reversed. The
+  // report carries the reveal (per slot: predicted vs actual, plus the fired
+  // rung so a mitigated threat reads as the same event downgraded); the log
+  // records what actually happened.
   report.augury = auguryReveal(campaign)
-  for (const slot of campaign.augury.slots)
-    entries.push(
-      `Came to pass: ${slot.trueEvent.title}.`,
-      ...applyEffect(campaign, slot.trueEvent.effect),
-    )
+  campaign.augury.slots.forEach((slot, i) => {
+    const fired = firedRung(slot.trueEvent, band)
+    if (fired.reconSensitive) {
+      report.augury[i].fired = {
+        title: fired.title,
+        description: fired.description,
+        rung: fired.rung,
+      }
+      report.augury[i].scoutsIntervened = fired.intervened
+    }
+    entries.push(`Came to pass: ${fired.title}.`)
+    if (fired.intervened) entries.push('Your scouts saw it coming.')
+    entries.push(...applyEffect(campaign, fired.effect))
+  })
 
   // 4. Enemy turn
   entries.push(...enemyTurn(campaign, catalog))

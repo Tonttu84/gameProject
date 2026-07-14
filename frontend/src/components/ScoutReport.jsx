@@ -15,6 +15,11 @@ const ScoutReport = ({ scouting, enemy }) => {
       {!knowsAnything && (
         <p>Your riders see nothing beyond the enemy pickets — their strength and stores are unknown.</p>
       )}
+      {enemy.revealed && (
+        <p className="scout-revealed" data-testid="scout-revealed">
+          Prisoners have betrayed the enemy camp — their host is laid bare this turn.
+        </p>
+      )}
       {enemy.strength && (
         <p>
           The enemy musters <strong>{enemy.strength}</strong>.

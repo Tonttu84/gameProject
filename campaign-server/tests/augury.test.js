@@ -8,7 +8,13 @@ import {
   rollAuguryOdds,
   mageBonus,
 } from '../services/augury.js'
-import { EVENT_POOL, POOL_LEGIBILITY, eventValence } from '../services/events.js'
+import {
+  EVENT_POOL,
+  POOL_LEGIBILITY,
+  eventValence,
+  applyEffect,
+  firedRung,
+} from '../services/events.js'
 import {
   AUGURY_SLOTS,
   AUGURY_ODDS_MAX,
@@ -147,6 +153,27 @@ describe('EVENT_POOL structure', () => {
     for (const e of EVENT_POOL)
       expect(['good', 'bad', 'neutral']).toContain(eventValence(e.effect))
   })
+
+  // Stage 4 1c: recon-sensitive events carry the full three-rung ladder in
+  // the POOL (the stored slot copy keeps only display fields — firedRung
+  // looks the ladder up by id). The event itself IS the Blind rung and must
+  // be a genuine threat; the anticipated rung is the scouts' reversal and
+  // must not be.
+  test('recon-sensitive events: complete ladders, bad when blind, defused when anticipated', () => {
+    const sensitives = EVENT_POOL.filter((e) => e.reconSensitive)
+    expect(sensitives.map((e) => e.id).sort()).toEqual(['ambush', 'forage_raiders', 'night_raid'])
+    for (const e of sensitives) {
+      expect(isBad(e)).toBe(true) // the base event is the full-bad Blind rung
+      for (const name of ['warned', 'anticipated']) {
+        const rung = e.rungs[name]
+        expect(rung.title).toBeTruthy()
+        expect(rung.description).toBeTruthy()
+        expect(rung.effect).toBeTruthy()
+      }
+      // Anticipated: neutral or reversed to positive — never still a blow.
+      expect(eventValence(e.rungs.anticipated.effect)).not.toBe('bad')
+    }
+  })
 })
 
 // The augur's header labels the SHOWN card's flavour (user, 2026-07-13): the
@@ -166,6 +193,19 @@ describe('eventValence', () => {
     expect(eventValence({ type: 'enemy_advance' })).toBe('bad')
     expect(eventValence({ type: 'none' })).toBe('neutral')
     expect(eventValence(undefined)).toBe('neutral')
+    // Stage 4 1c arms: the enemy's losses and betrayed secrets are our gain.
+    expect(eventValence({ type: 'enemy_losses', factor: 0.93 })).toBe('good')
+    expect(eventValence({ type: 'enemy_reveal' })).toBe('good')
+  })
+
+  test('multi effects: agreeing parts share their mood, mixed parts read neutral', () => {
+    const food = (delta) => ({ type: 'food', delta })
+    expect(
+      eventValence({ type: 'multi', effects: [food(-2000), { type: 'roster', unit: 'Soldier', factor: 0.98 }] }),
+    ).toBe('bad')
+    expect(eventValence({ type: 'multi', effects: [food(3000), { type: 'materials', delta: 25 }] })).toBe('good')
+    expect(eventValence({ type: 'multi', effects: [food(3000), { type: 'materials', delta: -15 }] })).toBe('neutral')
+    expect(eventValence({ type: 'multi', effects: [{ type: 'none' }] })).toBe('neutral')
   })
 
   test('the pool carries neutral events so all three moods appear in play', () => {
@@ -255,5 +295,101 @@ describe('auguryReveal', () => {
     // machinery — display fields only.
     expect(reveal[0].actual.baseAccuracy).toBeUndefined()
     expect(reveal[0].actual.effect).toBeUndefined()
+  })
+})
+
+// ── Stage 4 1c: recon-sensitive event rungs ─────────────────────────────────
+
+describe('applyEffect — recon-rung arms (Stage 4 1c)', () => {
+  const makeTarget = () => ({
+    day: 1,
+    resources: { food: 10000, materials: 100 },
+    roster: new Map([['Soldier', 100]]),
+    enemy: { army: new Map([['Soldier', 400], ['Zombie', 200]]), stance: 'camp' },
+  })
+
+  test('enemy_losses thins every enemy line, telling the player only a phrase', () => {
+    const c = makeTarget()
+    const log = applyEffect(c, { type: 'enemy_losses', factor: 0.93 })
+    expect(c.enemy.army.get('Soldier')).toBe(372)
+    expect(c.enemy.army.get('Zombie')).toBe(186)
+    // The log is player-visible: no enemy numbers may leak through it.
+    expect(log.length).toBeGreaterThan(0)
+    expect(log.join(' ')).not.toMatch(/\d/)
+  })
+
+  test('enemy_reveal lays the enemy bare for the coming turn', () => {
+    const c = makeTarget()
+    const log = applyEffect(c, { type: 'enemy_reveal' })
+    // Applied during end-of-day N, the reveal covers the new day N+1.
+    expect(c.enemy.revealedUntilDay).toBe(2)
+    expect(log.length).toBeGreaterThan(0)
+  })
+
+  test('multi applies every part in order and concatenates the logs', () => {
+    const c = makeTarget()
+    const log = applyEffect(c, {
+      type: 'multi',
+      effects: [
+        { type: 'food', delta: -2000 },
+        { type: 'roster', unit: 'Soldier', factor: 0.98 },
+      ],
+    })
+    expect(c.resources.food).toBe(8000)
+    expect(c.roster.get('Soldier')).toBe(98)
+    expect(log).toHaveLength(2)
+  })
+})
+
+describe('firedRung (Stage 4 1c)', () => {
+  // An event as an augury slot stores it: the schema keeps only the display
+  // fields, so the ladder must come from EVENT_POOL by id, never from the
+  // stored copy.
+  const stored = (id) => {
+    const { title, description, severity, effect } = EVENT_POOL.find((e) => e.id === id)
+    return { id, title, description, severity, effect }
+  }
+
+  test('Blind: the event fires exactly as foretold', () => {
+    const fired = firedRung(stored('ambush'), 'Blind')
+    expect(fired).toMatchObject({
+      rung: 'blind',
+      intervened: false,
+      reconSensitive: true,
+      title: 'Enemy Ambush',
+    })
+    expect(fired.effect).toEqual({ type: 'enemy_advance' })
+  })
+
+  test('Outmatched/Contested: the warned rung fires, flagged as intervention', () => {
+    for (const band of ['Outmatched', 'Contested']) {
+      const fired = firedRung(stored('ambush'), band)
+      expect(fired.rung).toBe('warned')
+      expect(fired.intervened).toBe(true)
+      expect(fired.title).toBeTruthy()
+      expect(fired.title).not.toBe('Enemy Ambush') // the downgraded rung has its own card
+    }
+  })
+
+  test('Superior/Overwhelming: the anticipated rung fires', () => {
+    for (const band of ['Superior', 'Overwhelming']) {
+      const fired = firedRung(stored('night_raid'), band)
+      expect(fired.rung).toBe('anticipated')
+      expect(fired.intervened).toBe(true)
+      expect(fired.effect).toEqual({ type: 'enemy_reveal' })
+    }
+  })
+
+  test('plain events and unknown ids pass through untouched at any band', () => {
+    const supply = stored('supply')
+    const fired = firedRung(supply, 'Overwhelming')
+    expect(fired).toMatchObject({ rung: 'blind', intervened: false, reconSensitive: false })
+    expect(fired.title).toBe(supply.title)
+    expect(fired.effect).toEqual(supply.effect)
+    // DOOMED is not in the pool — a stale id degrades to the stored card.
+    const doom = firedRung(DOOMED, 'Overwhelming')
+    expect(doom.rung).toBe('blind')
+    expect(doom.intervened).toBe(false)
+    expect(doom.title).toBe('Doom')
   })
 })

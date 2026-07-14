@@ -336,6 +336,50 @@ in the view from the 1a band; `campaignView.js` stays the single leak gate.
   the Overwhelming `plannedPlacement` reveal IS the tempo mechanic for now; revisit only if
   it doesn't satisfy once played.
 
+### Stage 4 sub-piece 1c — recon-sensitive event rungs ✅ SHIPPED 2026-07-14
+
+Third Stage-4 slice (same session pattern). No schema-version bump: rung ladders live in
+`EVENT_POOL` (looked up by event `id` at apply time — the augury slot schema stores display
+fields only, so a mid-campaign pool edit changes rungs, never a sealed fate); the only model
+touch is the additive, defaulted `enemy.revealedUntilDay` (old v9 docs read 0 = no reveal).
+
+- **Campaign-server:** recon-sensitive events (`reconSensitive: true` + `rungs.{warned,
+  anticipated}` — the base event IS the Blind rung) per the blueprint: **Enemy Ambush**
+  (warned = same `enemy_advance`, different telling — no surprise mechanic exists yet;
+  anticipated = Counter-Ambush, `enemy_losses` ×0.93), new **Forage Raiders** (sev 2; blind =
+  multi food −4t/materials −20/Soldier ×0.97; warned = food −1t; anticipated = destroy the
+  detachment, `enemy_losses` ×0.95), new **Night Raid** (sev 2; blind = multi food −2t/Soldier
+  ×0.98; warned = food −0.5t; anticipated = `enemy_reveal`). New `applyEffect` arms:
+  `enemy_losses` (floors every enemy line; log is a PHRASE — no numbers leak), `enemy_reveal`
+  (sets `revealedUntilDay = day + 1`), and `multi` (bundled parts, recursing — this is the
+  multi-effect support the 1b omen work predicted). `eventValence`: enemy_losses/enemy_reveal
+  → good; multi = its parts' shared mood, mixed → neutral. `firedRung(event, band)` in
+  `events.js` + `EVENT_RUNG_BY_BAND` in `campaignConfig.js` (Blind → blind; Outmatched/
+  Contested → warned; Superior/Overwhelming → anticipated). `dayResolution` step 2.5 reads
+  the band once (same derivation as `campaignView`); step 3 applies the fired rung, logs
+  `Came to pass: <fired title>.` + `Your scouts saw it coming.` when intervened, and attaches
+  `fired {title,description,rung}` + `scoutsIntervened` to the report's augury slots
+  (recon-sensitive fates only — plain events carry no rung machinery). The **augur still
+  foretells the Blind rung** (visions/reveal `actual` untouched — knowledge vs agency).
+  `campaignView`: a live free-reveal window widens `enemyView` to the full Overwhelming tier
+  with a `revealed: true` flag; `scouting.band` keeps reporting the real contest.
+- **Tests:** `augury.test.js` — valence arms, multi bundles, applyEffect arms (incl.
+  no-digits-in-log leak guard), `firedRung` per band, EVENT_POOL ladder tripwire (blind rung
+  bad, anticipated not bad, complete cards); `campaigns.test.js` — new 1c describe (warned at
+  the Contested default, blind full-bad, anticipated Counter-Ambush thins the DB army only,
+  free reveal lasts exactly one turn then expires, augur foretells blind at Superior, plain
+  events unadorned), `expectNoHiddenInfo` now allows exactly Overwhelming-keys + `revealed`
+  when `enemy.revealed` is set.
+- **Frontend:** `DayReport` shows the FIRED rung as "what came to pass" (`slot.fired ??
+  slot.actual`) + a `scout-intervened` badge; `ScoutReport` explains an open book via
+  `scout-revealed` ("prisoners have betrayed the enemy camp"). New
+  `dayReportRungs.test.jsx`.
+- **Verified 2026-07-14 (WSL via dev.sh):** campaign-server vitest 181/183 (the 2 fails are
+  the documented Windows-node `engine.integration` ENOENT); frontend 175/175. No engine
+  change, so no C++ run needed.
+- **Next Stage-4 slices:** 1d forage posture multipliers, then Part 2 raids (per the
+  finalized block). The forageValue/screenValue/reconValue overlap check rides with 1d.
+
 ### Working conventions (carry these to the new machine)
 
 - **Build is Linux-only.** On Windows use **WSL (Ubuntu)** or Docker. One dev machine has WSL
@@ -760,7 +804,8 @@ the enemy assault eat the penalty.
 > mechanic (the enemy's placement is already fixed at new-turn; a well-scouted player reacts to
 > it) — literal staged/sequential deployment commits were considered and DEFERRED (needs
 > multi-round placement plumbing; revisit only if 1b doesn't satisfy once played).
-> **1c. Recon-sensitive event rungs** = old Phase B keyed off the band: `EVENT_POOL` entries get
+> **1c. Recon-sensitive event rungs. ✅ SHIPPED 2026-07-14** (see the handoff entry "Stage 4
+> sub-piece 1c" above) = old Phase B keyed off the band: `EVENT_POOL` entries get
 > `reconSensitive: true` + a 3-rung ladder (Blind → full bad; Warned = Outmatched/Contested →
 > lesser; Anticipated = Superior/Overwhelming → neutral/reversed-positive; new `applyEffect`
 > arms `enemy_losses` + free-reveal). `dayResolution` step 3 picks the rung; the augur still

@@ -151,6 +151,11 @@ const campaignSchema = new mongoose.Schema({
     // Exact placement the engine will receive today — HIDDEN until a
     // scouting reveal is purchased (later stage).
     plannedPlacement: { type: [mongoose.Schema.Types.Mixed], default: null },
+    // Free-reveal window (Stage 4 1c, the anticipated Night Raid): while
+    // day ≤ this, campaignView widens the enemy view to the full
+    // Overwhelming tier regardless of the scouting band. Additive with a
+    // default, so no schema-version bump — older docs read as 0 (no reveal).
+    revealedUntilDay: { type: Number, default: 0 },
   },
 
   // Placeholder for the character system: augury reads

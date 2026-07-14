@@ -85,6 +85,19 @@ export const SCOUTING_BAND_THRESHOLDS = {
   Outmatched: 0.4,
 }
 
+// Which rung of a recon-sensitive event actually fires at each scouting band
+// (Stage 4 1c). 'blind' is the event itself (the full blow, and always what
+// the augur foretells); 'warned' and 'anticipated' live on the event's
+// `rungs` ladder in services/events.js. Prophecy tells you what's coming —
+// scouting decides whether it lands.
+export const EVENT_RUNG_BY_BAND = {
+  Blind: 'blind',
+  Outmatched: 'warned',
+  Contested: 'warned',
+  Superior: 'anticipated',
+  Overwhelming: 'anticipated',
+}
+
 // What a scouting report may SAY about the hidden enemy at each reveal tier
 // (Stage 4 1b) — bucketed phrases only, never a number the client could
 // invert back into the composition. Ordered descending; the first entry whose
