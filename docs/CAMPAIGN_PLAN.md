@@ -991,6 +991,15 @@ the enemy assault eat the penalty.
 > before the main battle); (2) the movement-speed rework (see deferred backlog); (3) staged
 > deployment commits (see 1b note). Enemy-reinforcement detection stays deferred (needs the
 > reinforcement mechanic first, see below).
+>
+> **Playtest finding (2026-07-15, DEFERRED — user): troops can join MULTIPLE raids the same
+> turn.** Not the same thing as open decision (1) above (raid-vs-MAIN-battle, independent on
+> purpose): the launch route validates the party against `roster − forage.assignment` only, so
+> units already committed to an earlier raid this turn are never subtracted and one detachment
+> can fight every opportunity. Fix sketch (user): the raid should RUN at the moment of the
+> single assign-and-launch click (no lingering assignment state to double-spend), the UI must
+> not allow double-assignment, and the server must verify assignment legality (party ≤ roster −
+> forage − troops already raiding this turn).
 
 > ### ⚠️ PENDING REVISION (2026-07-09, user) — resolved by the 2026-07-13 finalized plan above;
 > kept for the reasoning. Original steer:
