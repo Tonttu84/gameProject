@@ -3,6 +3,10 @@ BUILD/
 game
 game_clang
 run_tests
+# Leftover from the retired SFML renderer (2026-07-07): its Linux symlinks
+# break `docker build` when the context is sent from a Windows-side CLI,
+# and it bloats the context by ~36MB. Not used by any build stage.
+backend/SFML-2.6.0/
 frontend/dist/
 frontend/node_modules/
 campaign-server/node_modules/
