@@ -64,10 +64,27 @@ const App = () => {
     if (authNoticeTimeout.current) window.clearTimeout(authNoticeTimeout.current)
   }, [])
 
+  // The campaign server boots slower than Vite (mongod spawn, catalog sync),
+  // so the first fetches of a fresh `make serve` can land in that gap. Retry
+  // through the boot window before declaring the server unreachable.
   useEffect(() => {
-    Promise.all([getInfo(), getMap()])
-      .then(([infoData, mapData]) => { setInfo(infoData); setMap(mapData) })
-      .catch(() => setError('Could not reach game server. Start it with: ./game server'))
+    let cancelled = false
+    const attempt = (triesLeft) => {
+      Promise.all([getInfo(), getMap()])
+        .then(([infoData, mapData]) => {
+          if (cancelled) return
+          setInfo(infoData)
+          setMap(mapData)
+          setError(null)
+        })
+        .catch(() => {
+          if (cancelled) return
+          if (triesLeft > 0) setTimeout(() => attempt(triesLeft - 1), 2000)
+          else setError('Could not reach the campaign server — start the stack with "make serve" and wait for its "campaign server on …" line.')
+        })
+    }
+    attempt(10)
+    return () => { cancelled = true }
   }, [])
 
   // Rehydrate a stored session; the token may be stale (1h expiry) — the
@@ -221,6 +238,7 @@ const App = () => {
       <div className="error-screen">
         <h2>Connection Error</h2>
         <p>{error}</p>
+        <button onClick={() => window.location.reload()}>Retry</button>
       </div>
     )
   }
