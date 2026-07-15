@@ -2,7 +2,7 @@
 # MongoDB. On any machine with Docker (Windows: Docker Desktop):
 #
 #   docker compose up --build
-#   → open http://localhost:3001 and log in as testuser / test
+#   → open http://localhost:5173 and log in as testuser / test
 #
 # Campaigns persist in the named volume; `docker compose down -v` wipes them.
 services:
@@ -16,9 +16,14 @@ services:
 
   game:
     build: .
+    # The game lives at 5173 on EVERY machine: natively that's the Vite dev
+    # server, in Docker this one server is UI + API, so it listens on 5173
+    # directly (PORT override) and the banner it prints stays truthful.
+    # CI runs the image without this override, on the Dockerfile's 3001.
     ports:
-      - "3001:3001"
+      - "5173:5173"
     environment:
+      PORT: 5173
       MONGODB_URI: mongodb://mongo:27017
       DB_NAME: gamedb
       # Local-only convenience login (testuser/test). Remove both this and

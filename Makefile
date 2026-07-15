@@ -218,7 +218,9 @@ docker-check:
 docker-build: docker-check
 	docker build -t gameproject .
 
-# Build + start everything → http://localhost:3001, log in as testuser/test.
+# Build + start everything → http://localhost:5173, log in as testuser/test.
+# (5173 = the same port the Vite dev server uses natively, so the game URL is
+# identical on every machine; the compose file sets the PORT override.)
 # Campaigns persist in the `gamedb` volume across restarts.
 docker-up: docker-check
 	docker compose up --build

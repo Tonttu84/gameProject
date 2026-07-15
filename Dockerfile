@@ -1,6 +1,8 @@
 # Full game stack in one image: C++ battle engine + Node campaign server +
-# built React frontend, served together on port 3001. Pair with an external
-# MongoDB (docker-compose.yml provides one) via MONGODB_URI.
+# built React frontend, served together on one port (PORT, default 3001 —
+# CI uses the default; docker-compose overrides to 5173 so the game URL
+# matches native Vite dev). Pair with an external MongoDB
+# (docker-compose.yml provides one) via MONGODB_URI.
 #
 # This is the LINUX build in a box — the way to run/test the game on any
 # machine with Docker (including Windows via Docker Desktop/WSL2), not a

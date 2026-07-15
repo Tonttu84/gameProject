@@ -80,8 +80,9 @@ The simplest way to see the game end-to-end. Requires Docker (Docker Desktop on 
 make docker-up          # or: docker compose up --build
 ```
 
-Then open **http://localhost:3001** and log in as **`testuser` / `test`** (a dev-only seeded
+Then open **http://localhost:5173** and log in as **`testuser` / `test`** (a dev-only seeded
 login). Battles run headless inside the container and stream back to the browser replay.
+(5173 is also where the Vite dev server runs natively — the game URL is the same everywhere.)
 
 ```sh
 make docker-down        # stop (campaign DB volume survives)

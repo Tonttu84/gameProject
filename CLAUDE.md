@@ -28,7 +28,7 @@ Makefile has an OS shim: on Windows (`OS=Windows_NT`) it forwards every goal int
 (`serve` / `server-node` / `frontend`) **cannot** run when driven from Windows — WSL's
 Windows-PATH interop launches Windows `node.exe`, which then can't spawn the Linux `game`
 binary (`spawn C:\…\game ENOENT`). So on Windows those targets are **redirected to
-`make docker-up`**, which runs the whole stack in Linux containers on http://localhost:3001.
+`make docker-up`**, which runs the whole stack in Linux containers on http://localhost:5173.
 (On a real Linux/WSL dev box with native node, `make serve` runs the stack directly — the shim
 and redirect only apply when `make` is invoked from Windows itself.)
 
@@ -67,7 +67,8 @@ make frontend-test     # npm --prefix frontend test (vitest run), via the pinned
 
 make docker-up         # docker compose up --build: the WHOLE stack (engine + campaign
                         # server + built frontend + MongoDB) in containers on
-                        # http://localhost:3001, login testuser/test. For machines with
+                        # http://localhost:5173 (the game's one URL on every machine —
+                        # natively it's Vite's port), login testuser/test. For machines with
                         # Docker (e.g. Windows via Docker Desktop). Battles are headless
                         # (no X server), so the image is plain node + the engine binary.
                         # CI's "docker" job builds this image and smokes a full campaign

@@ -27,8 +27,15 @@ const start = async () => {
     console.log(`campaign server on http://localhost:${config.PORT} (pid ${process.pid})`)
     console.log(`  mounted: ${apiRoutes.map(([route]) => route).join('  ')}`)
     console.log('  (endpoint details: API.md)')
-    if (devLoginAvailable())
-      console.log(`\nReady: open http://localhost:${config.PORT} and log in as ${config.DEV_USER} / ${config.DEV_PASSWORD}`)
+    // Point at where the GAME actually is: this server serves the UI only
+    // when FRONTEND_DIST is set (container). In native dev the UI is the Vite
+    // dev server on its default port 5173 (vite.config.js sets only the proxy).
+    if (devLoginAvailable()) {
+      const gameUrl = config.FRONTEND_DIST
+        ? `http://localhost:${config.PORT}`
+        : 'http://localhost:5173 (the Vite dev server — this port is the API only)'
+      console.log(`\nReady: open ${gameUrl} and log in as ${config.DEV_USER} / ${config.DEV_PASSWORD}`)
+    }
   })
   // A failed bind must kill the boot loudly. Without this, EADDRINUSE leaves
   // a lame-duck process that logs nothing and serves nothing while another
