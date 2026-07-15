@@ -494,15 +494,31 @@ battles through the one battle pipeline — watchable in ReplayView, that's the 
   but no Docker; the other (2026-07-05 playtest machine) runs the stack via **Docker Desktop**
   (`make docker-up-display` puts SFML battle windows on the Windows desktop via WSLg; GNU make
   installed via `winget install ezwinports.make`).
-- **Docker-Desktop machine specifics (learned 2026-07-06):** its WSL Ubuntu has g++/make and a
-  working WSLg display (`DISPLAY=:0`), so engine build/tests AND windowed `./game battle` runs
-  work directly in WSL — no Docker needed for engine work. `make test`'s `run_parallel.sh`
-  fails there (`bash\r`: CRLF checkout); use `make test-serial`. WSL has **no native node** —
-  `npm` falls through interop to **Windows node 25**, so frontend/campaign-server tests run
-  from PowerShell with `NODE_OPTIONS=--no-experimental-webstorage`; first campaign-server run
-  needs a one-off `MongoMemoryServer.create()` warm-up (mongod download outlives the 10s hook
-  timeout), and the 2 `engine.integration` tests always fail natively (Windows node can't spawn
-  the Linux `./game` ELF — they pass in WSL/Docker/CI).
+- **Docker-Desktop machine specifics (learned 2026-07-06, UPDATED 2026-07-15):** its WSL
+  Ubuntu has g++/make, so engine build/tests run directly in WSL. **Docker is currently NOT
+  available in its WSL** (`docker` not found — Desktop gone or integration off); that's fine:
+  `make serve` is the fully native path (nothing in it touches Docker), and docker-only
+  targets now fail fast via the Makefile `docker-check` guard. **WSL now HAS working node**
+  (2026-07-15: campaign-server suite green incl. `engine.integration`, frontend suite green,
+  all run via plain `npm test` in WSL) — the 2026-07-06 "no native node / PowerShell +
+  NODE_OPTIONS" dance is obsolete on this machine; the 2 `engine.integration` tests still
+  fail only under native *Windows* node (can't spawn the Linux `./game` ELF).
+- **2026-07-15 zombie-server incident (resolved; guards ported onto latest main as
+  `feature/frontend-resilience`, commits `c6c0b96` + `aca8008`):** a root-owned
+  campaign-server from an old checkout (01:32, own mongod + own `/root/.gameproject/db`)
+  squatted port 3001; the fresh boot sat beside it as a silent lame duck. Symptoms: demo
+  battle 404 (`/api/sample-battle` absent in the old code) and a login crash
+  (`campaign.augury.consulted` of undefined — foreign campaign shape). Guards now in:
+  EADDRINUSE kills the boot loudly, banner prints pid + the REAL mount table, frontend
+  retries through the boot window, error screen advises `make serve` (not the retired
+  `./game server`) with a Retry button, and an ErrorBoundary shows render crashes readably.
+  Lesson: leftover backgrounded processes also hold the mongod dbpath lock — if a boot dies
+  on Mongo, `ps aux | grep -E 'node index.js|mongod'` and kill leftovers first.
+  **Verified server-side 2026-07-15:** clean boot, `POST /api/sample-battle` → 201, full
+  battle persisted. **PENDING user retest in browser:** demo-battle button + login.
+  These guards were first written on the now-dead `feature/campaign-mode` laptop branch
+  (`d4c4e60` + `0aa7852`) and cherry-picked onto main @ `47613bc`; the old branch's third
+  commit (this handoff text) was carried by hand — do not merge that branch.
 - **Node 25 gotcha:** its built-in `localStorage` shadows jsdom's and breaks the frontend
   tests (`window.localStorage.clear is not a function`). Run them with
   `NODE_OPTIONS=--no-experimental-webstorage` (the pinned nvm node in `make frontend-test`
