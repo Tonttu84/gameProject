@@ -1,11 +1,14 @@
 /**
- * Login-screen demo battle.
+ * Demo battle (login screen AND logged-in start screen).
  *
- * A logged-out visitor can launch the hardcoded sample battle and watch it in
- * the SAME ReplayView a campaign battle uses. The button hits the unauth
+ * Anyone can launch the hardcoded sample battle and watch it in the SAME
+ * ReplayView a campaign battle uses. The button hits the unauth
  * POST /api/sample-battle (launchSampleBattle), which runs the scenario through
  * the engine→DB pipeline and returns a summary; ReplayView then reads the ticks
  * back from the DB (getTicks) — the browser is the only renderer.
+ * The demo needs no login, so it is offered on the logged-in no-campaign
+ * screen too — trapping it behind logout made it "vanish" for a returning
+ * player (2026-07-15 playtest finding).
  */
 
 import React from 'react'
@@ -29,7 +32,7 @@ vi.mock('../services/api', () => ({
   endCampaignDay: vi.fn(),
 }))
 
-import { getInfo, getMap, getTicks, launchSampleBattle } from '../services/api'
+import { getInfo, getMap, getTicks, launchSampleBattle, getCampaigns } from '../services/api'
 import App from '../App'
 
 const info = {
@@ -91,5 +94,35 @@ describe('login-screen demo battle', () => {
 
     expect(await screen.findByTestId('auth-notice')).toHaveTextContent(/demo battle/i)
     expect(screen.getByText(/The Campaign Awaits/)).toBeInTheDocument()
+  })
+})
+
+describe('logged-in start-screen demo battle', () => {
+  const sessionUser = { token: 'jwt-token', username: 'tonttu', name: 'Tonttu T' }
+
+  // Stored session + no campaigns — a returning player on the start screen.
+  const renderLoggedIn = async () => {
+    getCampaigns.mockResolvedValue([])
+    window.localStorage.setItem('loggedGameUser', JSON.stringify(sessionUser))
+    render(<App />)
+    await screen.findByText(/No Campaign In Progress/)
+  }
+
+  it('offers "Watch a battle" on the no-campaign start screen', async () => {
+    await renderLoggedIn()
+    expect(screen.getByTestId('watch-demo')).toBeInTheDocument()
+  })
+
+  it('plays the demo and returns to the start screen, still logged in', async () => {
+    launchSampleBattle.mockResolvedValue(sampleSummary)
+    await renderLoggedIn()
+
+    fireEvent.click(screen.getByTestId('watch-demo'))
+    await screen.findByText(/Battle Replay/)
+    expect(launchSampleBattle).toHaveBeenCalledOnce()
+    await waitFor(() => expect(getTicks).toHaveBeenCalledWith('demo-battle-1', 0, 49))
+
+    fireEvent.click(await screen.findByTestId('replay-back'))
+    expect(await screen.findByText(/No Campaign In Progress/)).toBeInTheDocument()
   })
 })

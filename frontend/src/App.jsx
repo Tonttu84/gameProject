@@ -279,25 +279,27 @@ const App = () => {
   )
 
   // ── Pre-campaign screens ──────────────────────────────────────────────────
+  // The demo battle plays through the very same ReplayView a campaign battle
+  // uses, fed by the DB. It needs no login, so it must not be trapped behind
+  // one: both the login screen and the logged-in no-campaign screen offer it
+  // (hiding it after login is how it "vanished" in the 2026-07-15 playtest).
+  if (demoBattle) {
+    return (
+      <div className="app">
+        {authBar}
+        <ReplayView
+          battleId={demoBattle.id}
+          tickCount={demoBattle.tickCount}
+          info={info}
+          map={map}
+          autoPlay
+          backLabel={user ? 'Back to camp' : 'Back to login'}
+          onBack={() => setDemoBattle(null)}
+        />
+      </div>
+    )
+  }
   if (!user) {
-    // The demo battle plays through the very same ReplayView a campaign battle
-    // uses, fed by the DB — a visitor can watch the engine before signing up.
-    if (demoBattle) {
-      return (
-        <div className="app">
-          {authBar}
-          <ReplayView
-            battleId={demoBattle.id}
-            tickCount={demoBattle.tickCount}
-            info={info}
-            map={map}
-            autoPlay
-            backLabel="Back to login"
-            onBack={() => setDemoBattle(null)}
-          />
-        </div>
-      )
-    }
     return (
       <div className="app">
         {authBar}
@@ -354,6 +356,15 @@ const App = () => {
           />
           <button className="btn-primary" data-testid="start-campaign" onClick={startCampaign}>
             Start Campaign
+          </button>
+          <p>Or watch the engine fight a demo battle first:</p>
+          <button
+            className="btn-primary"
+            data-testid="watch-demo"
+            onClick={watchDemo}
+            disabled={demoLoading}
+          >
+            {demoLoading ? 'Mustering the armies…' : 'Watch a battle'}
           </button>
         </div>
       </div>
