@@ -8,6 +8,9 @@
 services:
   mongo:
     image: mongo:7
+    # Don't stream mongo's (very chatty) logs into `compose up` — they drown
+    # the game server's boot banner. Still recorded: `docker compose logs mongo`.
+    attach: false
     volumes:
       - gamedb:/data/db
 
