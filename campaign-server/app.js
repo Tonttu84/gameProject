@@ -34,15 +34,22 @@ app.use((_req, res, next) => {
 // happens where a route opts in via userExtractor (middleware/auth.js).
 app.use(tokenExtractor)
 
-app.use('/api/units', unitsRouter)
-app.use('/api/info', infoRouter)
-app.use('/api/map', mapsRouter)
-app.use('/api/battles', battlesRouter)
-app.use('/api/sample-battle', sampleBattleRouter)
-app.use('/api/campaigns', campaignsRouter)
-app.use('/api/bug-reports', bugReportsRouter)
-app.use('/api/users', usersRouter)
-app.use('/api/login', loginRouter)
+// Route table as data: the boot banner (index.js) prints THIS array, so what
+// it advertises is by construction what is mounted. The previous hardcoded
+// banner list silently drifted (no sample-battle/bug-reports) and sent a
+// debugging session chasing the wrong server.
+export const apiRoutes = [
+  ['/api/units', unitsRouter],
+  ['/api/info', infoRouter],
+  ['/api/map', mapsRouter],
+  ['/api/battles', battlesRouter],
+  ['/api/sample-battle', sampleBattleRouter],
+  ['/api/campaigns', campaignsRouter],
+  ['/api/bug-reports', bugReportsRouter],
+  ['/api/users', usersRouter],
+  ['/api/login', loginRouter],
+]
+for (const [route, router] of apiRoutes) app.use(route, router)
 
 // Container/production mode: serve the built React app from the same origin
 // (FRONTEND_DIST set by the Dockerfile), with an SPA fallback for non-API

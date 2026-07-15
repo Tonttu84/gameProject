@@ -112,7 +112,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial clang serve server-node frontend frontend-test db-clean docker-build docker-up docker-down docker-clean docker-logs
+.PHONY: all clean fclean re test test-serial clang serve server-node frontend frontend-test db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(NAME)
@@ -203,25 +203,36 @@ serve: $(NAME)
 # the stack natively via `make serve`); the CI "docker" job builds and
 # smoke-tests the image on every push. Battles are headless (no X server).
 
+# All docker targets fail fast with a real explanation when docker is absent
+# (fresh laptop, plain WSL without Docker Desktop) instead of a bare
+# "docker: command not found" — the native no-docker path is `make serve`.
+docker-check:
+	@command -v docker >/dev/null 2>&1 || { \
+	  echo "error: docker is not installed (or not on PATH in this shell)."; \
+	  echo "  - On Windows: install Docker Desktop with the WSL2 backend, and enable"; \
+	  echo "    WSL integration for this distro (Settings > Resources > WSL integration)."; \
+	  echo "  - No Docker needed for development: 'make serve' runs the full stack natively."; \
+	  exit 1; }
+
 # Build just the game image (no containers started).
-docker-build:
+docker-build: docker-check
 	docker build -t gameproject .
 
 # Build + start everything → http://localhost:3001, log in as testuser/test.
 # Campaigns persist in the `gamedb` volume across restarts.
-docker-up:
+docker-up: docker-check
 	docker compose up --build
 
 # Stop the stack; campaign DB volume survives for the next docker-up.
-docker-down:
+docker-down: docker-check
 	docker compose down
 
 # Stop the stack AND wipe the campaign DB volume — the Docker twin of db-clean.
-docker-clean:
+docker-clean: docker-check
 	docker compose down -v
 
 # Follow the game server's logs (battle tick counts, boot messages).
-docker-logs:
+docker-logs: docker-check
 	docker compose logs -f game
 
 endif  # Windows shim: end of Unix (else) branch
