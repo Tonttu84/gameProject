@@ -42,7 +42,7 @@ boundary crossing.
 |---|---|---|
 | **Battle engine** | C++20, `make` (g++/clang++) | Headless. Bundled `httplib` + `nlohmann/json`; Catch2 tests. No SFML/X11/font deps. |
 | **Campaign server** | Node, Express 5, Mongoose 8 / MongoDB | BFF: auth (JWT + bcrypt), campaign state, runs the engine, stores per-tick replays. Vitest + `mongodb-memory-server`. |
-| **Front end** | React 19, Vite 8 | Placement UI + browser replay renderer. oxlint, Vitest + Testing Library. |
+| **Front end** | React 19, Vite 8, Zustand | Placement UI + browser replay renderer. oxlint, Vitest + Testing Library. |
 | **Packaging** | Docker Compose | One command brings up engine + server + built front end + MongoDB. |
 
 **Build target is Linux.** On Windows, use WSL (Ubuntu) or Docker — there is no native Windows

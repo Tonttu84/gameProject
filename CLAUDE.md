@@ -139,7 +139,16 @@ engagement/frontage/formation system it describes is only partially built in
 - `maps/` — JSON map files (terrain/elevation/impassable/deployment zones), read by
   `HexGrid::fromJson` / written by `HexGrid::toJson`.
 - `frontend/` — React (Vite) campaign UI. `frontend/src/services/api.js` is the only place HTTP
-  calls to the C++ server are made.
+  calls to the C++ server are made. `frontend/src/stores/` holds Zustand state: one store per
+  concern (`useAuthStore`/`useNoticeStore`/`useCampaignStore`/`usePlacementStore`/`useUiStore`),
+  `selectors.js` for derived values (one canonical computation site — don't re-derive
+  roster/placement math inline in a component), and `guarded.js`/`flows.js` for action
+  orchestration that spans stores. `App.jsx` is a thin composer (screen routing + wiring);
+  most panel components read their campaign data straight from the stores rather than via props.
+  Stores are module singletons — tests reset them via `resetAllStores()` (a global `beforeEach`
+  in `__tests__/setup.js`), and any `??` fallback in a store selector must use a shared constant,
+  not a fresh `{}`/`[]` literal, or `useSyncExternalStore` treats every render as "changed" and
+  infinite-loops.
 
 **Per-tick flow** (`Battlefield::tick()`): `triggerSpecialPhase()` (archers/mages/priests/
 necromancers act) → `moveUnits()` (squad pre-pass, then per-unit movement/flee/preferred-range
