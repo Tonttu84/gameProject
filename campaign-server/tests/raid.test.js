@@ -59,8 +59,11 @@ afterEach(clearRolls)
 
 const auth = (req) => req.set('Authorization', `Bearer ${token}`)
 const createCampaign = () => auth(api.post('/api/campaigns')).send({})
-const launch = (id, raidId, party) =>
-  auth(api.post(`/api/campaigns/${id}/raids/${raidId}/launch`)).send({ party })
+// Batch launch: {parties: {raidId: {type: count}}}. A single-raid convenience
+// wrapper covers the common one-opportunity case used by most tests below.
+const launchBatch = (id, parties) =>
+  auth(api.post(`/api/campaigns/${id}/raids/launch`)).send({ parties })
+const launch = (id, raidId, party) => launchBatch(id, { [raidId]: party })
 
 // What an opportunity may look like on the wire. targetForce (the hidden
 // slice the raid fights) and reward (counter_event's reward.slot would out
@@ -214,7 +217,7 @@ describe('generateRaidOpportunities', () => {
 })
 
 // ── The launch route ─────────────────────────────────────────────────────────
-describe('POST /api/campaigns/:id/raids/:raidId/launch', () => {
+describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
   test('a fresh campaign carries public opportunities; the target slice stays in the DB', async () => {
     const res = await createCampaign()
     expect(res.status).toBe(201)
@@ -235,7 +238,7 @@ describe('POST /api/campaigns/:id/raids/:raidId/launch', () => {
 
     const res = await launch(c.id, 'd1-0', { Soldier: 10 })
     expect(res.status).toBe(201)
-    expect(res.body.winner).toBe('blue')
+    expect(res.body.results).toEqual([expect.objectContaining({ raidId: 'd1-0', winner: 'blue' })])
     expectPublicOpportunities(res.body)
 
     // Both sides auto-placed in their own zones; a short battle, no walls.
@@ -263,8 +266,8 @@ describe('POST /api/campaigns/:id/raids/:raidId/launch', () => {
     // Resolved, and the replay is the reveal.
     const [opportunity] = res.body.campaign.raid.opportunities
     expect(opportunity.resolved).toBe(true)
-    expect(opportunity.outcome).toEqual({ winner: 'blue', battleId: res.body.id })
-    expect(res.body.campaign.battles).toContain(res.body.id)
+    expect(opportunity.outcome).toEqual({ winner: 'blue', battleId: res.body.results[0].id })
+    expect(res.body.campaign.battles).toContain(res.body.results[0].id)
 
     // The enemy host was NOT pre-subtracted for a loot raid.
     const doc = await Campaign.findById(c.id)
@@ -414,5 +417,78 @@ describe('POST /api/campaigns/:id/raids/:raidId/launch', () => {
     await pinArmies(over.id, { enemyArmy: { Zombie: 450, LightCavalry: 10 } })
     const resOver = await auth(api.post(`/api/campaigns/${over.id}/end-day`)).send({})
     expect(resOver.body.campaign.raid.opportunities).toHaveLength(RAID_OPPORTUNITIES_PER_DAY.Overwhelming)
+  })
+})
+
+// ── Double-assignment (playtest finding, 2026-07-15) ─────────────────────────
+// Troops can't join two raids the same day: neither by overlapping within one
+// batch, nor across separate batch calls the same turn. The frontend clamps
+// its own party-builder against a shared pool, but these hit the route
+// directly — a hostile or buggy client must be denied exactly the same way.
+describe('raid double-assignment is rejected (server-side, not just the UI)', () => {
+  test('one batch cannot double-book the same troops across two raids', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [
+      OPP({ id: 'd1-0', capacity: 5000 }),
+      OPP({ id: 'd1-1', capacity: 5000 }),
+    ])
+
+    // 300 Soldiers in the roster; 200 + 150 = 350 requested across the batch.
+    const res = await launchBatch(c.id, { 'd1-0': { Soldier: 200 }, 'd1-1': { Soldier: 150 } })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/not enough Soldier in the roster/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+
+    // Nothing was applied: both opportunities are still open, roster intact.
+    const doc = await Campaign.findById(c.id)
+    expect(doc.raid.opportunities.every((o) => !o.resolved)).toBe(true)
+    expect(doc.roster.get('Soldier')).toBe(300)
+    expect(doc.raid.assignment.size).toBe(0)
+  })
+
+  test('a later, separate batch is rejected against troops an earlier batch already committed', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [
+      OPP({ id: 'd1-0', capacity: 5000 }),
+      OPP({ id: 'd1-1', capacity: 5000 }),
+    ])
+
+    // First raid alone is well within the 300-Soldier roster.
+    const first = await launchBatch(c.id, { 'd1-0': { Soldier: 250 } })
+    expect(first.status).toBe(201)
+    expect(first.body.campaign.raid.assignment).toEqual({ Soldier: 250 })
+
+    // Roster still shows 300 − 250 + 2 survivors = 52 available — but the
+    // SECOND raid asks for 60, which the roster alone would allow were it
+    // not for the 250 already committed to the first raid today.
+    expect(first.body.campaign.roster.Soldier).toBe(52)
+    const second = await launchBatch(c.id, { 'd1-1': { Soldier: 60 } })
+    expect(second.status).toBe(400)
+    expect(second.body.error).toMatch(/already committed to a raid today/)
+    expect(engine.runBattle).toHaveBeenCalledTimes(1) // only the first raid ran
+
+    const doc = await Campaign.findById(c.id)
+    expect(doc.raid.opportunities.find((o) => o.id === 'd1-1').resolved).toBe(false)
+  })
+
+  test('raid.assignment clears at day rollover, freeing yesterday\'s raiders', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, QUIET)
+    await pinRaid(c.id, [OPP({ id: 'd1-0', capacity: 5000 })])
+
+    const day1 = await launchBatch(c.id, { 'd1-0': { Soldier: 250 } })
+    expect(day1.status).toBe(201)
+    expect(day1.body.campaign.roster.Soldier).toBe(52) // 300 − 250 + 2 survivors
+
+    const endDay = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(endDay.body.campaign.raid.assignment).toEqual({})
+
+    // The 52 remaining Soldiers can raid again today — if assignment hadn't
+    // reset, 52 available minus a stale 250 committed would still reject.
+    await pinRaid(c.id, [OPP({ id: 'd2-0', capacity: 5000 })])
+    const day2 = await launchBatch(c.id, { 'd2-0': { Soldier: 52 } })
+    expect(day2.status).toBe(201)
   })
 })

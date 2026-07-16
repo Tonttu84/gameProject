@@ -125,6 +125,7 @@ export async function endDay(campaign) {
     campaign.battleFoughtToday = false
     campaign.militiaBoughtToday = 0
     campaign.forage.assignment = new Map()
+    campaign.raid.assignment = new Map()
     campaign.augury = drawAugury()
     campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
     // Tomorrow's raids are cut from tomorrow's contest: the band is

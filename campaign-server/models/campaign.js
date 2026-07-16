@@ -172,6 +172,15 @@ const campaignSchema = new mongoose.Schema({
   // scaling with the scouting band. See raidOpportunitySchema above.
   raid: {
     opportunities: { type: [raidOpportunitySchema], default: [] },
+    // This turn's cumulative committed-to-a-raid party, unit-type -> count —
+    // the raid twin of forage.assignment. A unit sent on ANY raid this turn
+    // (win or lose) stays counted here for the rest of the day even though it
+    // isn't removed from `roster` (survivors rejoin immediately): otherwise
+    // the same living roster count is free to join every raid opportunity the
+    // same day. Cleared at newDay alongside forage.assignment. Deliberately
+    // does NOT gate the day's main battle (open decision, raids stay
+    // independent of it) or foraging — only further raids.
+    assignment: { type: Map, of: Number, default: {} },
   },
 
   enemy: {

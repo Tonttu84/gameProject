@@ -307,58 +307,88 @@ router.post('/:id/battles', async (req, res) => {
   res.status(201).json({ ...summary, campaign: await campaignView(campaign) })
 })
 
-// Launch a raid on one scouted opportunity (Stage 4 Part 2): a capacity-
-// limited party fights a REAL short engine battle against the opportunity's
-// hidden target force, both sides auto-placed (no raid placement UI in v1).
-// Raiding is INDEPENDENT of the day's main battle for now — no
-// battleFoughtToday gate; explicitly a provisional call, see
+// Launch a batch of raids on scouted opportunities (Stage 4 Part 2): each
+// capacity-limited party fights a REAL short engine battle against its
+// opportunity's hidden target force, both sides auto-placed (no raid
+// placement UI in v1). Raiding is INDEPENDENT of the day's main battle for
+// now — no battleFoughtToday gate; explicitly a provisional call, see
 // docs/CAMPAIGN_PLAN.md Stage 4 open decisions.
-router.post('/:id/raids/:raidId/launch', async (req, res) => {
+//
+// The whole batch is ONE request (not one call per opportunity) so overlap
+// between raids launched together is caught in one place: a unit type can't
+// be double-booked across two opportunities in the same click just because
+// each was validated in isolation. `campaign.raid.assignment` extends that
+// guarantee across SEPARATE requests within the same day (see the schema
+// comment) — a unit already sent on an earlier raid this turn is unavailable
+// to a later batch too, even if the roster count alone would look sufficient.
+// Validation runs to completion BEFORE any battle is spawned: battles are
+// external subprocesses that can't be rolled back, so a bad request must be
+// rejected wholesale, never partially applied.
+router.post('/:id/raids/launch', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
-  const opportunity = campaign.raid.opportunities.find((o) => o.id === req.params.raidId)
-  if (!opportunity) return res.status(404).json({ error: 'raid opportunity not found' })
-  if (opportunity.resolved)
-    return res.status(400).json({ error: 'this opportunity is already resolved' })
+  const parties = req.body?.parties
+  if (parties === null || typeof parties !== 'object' || Array.isArray(parties))
+    return res.status(400).json({ error: 'parties required' })
+  const raidIds = Object.keys(parties)
+  if (raidIds.length === 0) return res.status(400).json({ error: 'parties required' })
 
-  const party = req.body?.party
-  if (party === null || typeof party !== 'object' || Array.isArray(party))
-    return res.status(400).json({ error: 'party required' })
-
-  // The party comes from the roster minus today's foragers (same availability
-  // rule as the battle route), and its capacity cost — Σ count ×
-  // raidCapacityCost — must fit the opportunity's budget.
   const catalog = await getCatalog()
-  const cleaned = {}
-  let cost = 0
-  for (const [type, count] of Object.entries(party)) {
-    if (!Number.isInteger(count) || count < 0)
-      return res.status(400).json({ error: `bad count for ${type}` })
-    if (count === 0) continue
-    const unitType = catalog.get(type)
-    if (!unitType?.placeable)
-      return res.status(400).json({ error: `not a placeable unit type: ${type}` })
+  const cleanedByRaid = {}
+  const requested = {} // Σ count per unit type, across every raid in this batch
+  for (const raidId of raidIds) {
+    const opportunity = campaign.raid.opportunities.find((o) => o.id === raidId)
+    if (!opportunity) return res.status(404).json({ error: `raid opportunity not found: ${raidId}` })
+    if (opportunity.resolved)
+      return res.status(400).json({ error: `this opportunity is already resolved: ${raidId}` })
+
+    const party = parties[raidId]
+    if (party === null || typeof party !== 'object' || Array.isArray(party))
+      return res.status(400).json({ error: `party required for ${raidId}` })
+
+    const cleaned = {}
+    let cost = 0
+    for (const [type, count] of Object.entries(party)) {
+      if (!Number.isInteger(count) || count < 0)
+        return res.status(400).json({ error: `bad count for ${type}` })
+      if (count === 0) continue
+      const unitType = catalog.get(type)
+      if (!unitType?.placeable)
+        return res.status(400).json({ error: `not a placeable unit type: ${type}` })
+      cleaned[type] = count
+      requested[type] = (requested[type] ?? 0) + count
+      cost += count * raidCapacityCost(unitType.stats, unitType.size)
+    }
+    if (Object.keys(cleaned).length === 0)
+      return res.status(400).json({ error: `party required for ${raidId}` })
+    if (cost > opportunity.capacity)
+      return res.status(400).json({
+        error: `party for ${raidId} exceeds the raid's capacity: ${Math.ceil(cost)}/${opportunity.capacity}`,
+      })
+    cleanedByRaid[raidId] = cleaned
+  }
+
+  // Availability: roster minus today's foragers minus troops already
+  // committed to a raid this turn — checked against the BATCH TOTAL per type,
+  // so two raids in the same request can't each claim the same soldiers.
+  for (const [type, count] of Object.entries(requested)) {
     const foraging = campaign.forage.assignment.get(type) ?? 0
-    if (count > (campaign.roster.get(type) ?? 0) - foraging)
+    const raiding = campaign.raid.assignment.get(type) ?? 0
+    if (count > (campaign.roster.get(type) ?? 0) - foraging - raiding)
       return res.status(400).json({
         error: foraging > 0
           ? `not enough ${type} in camp (${foraging} out foraging)`
-          : `not enough ${type} in the roster`,
+          : raiding > 0
+            ? `not enough ${type} in camp (${raiding} already committed to a raid today)`
+            : `not enough ${type} in the roster`,
       })
-    cleaned[type] = count
-    cost += count * raidCapacityCost(unitType.stats, unitType.size)
   }
-  if (Object.keys(cleaned).length === 0)
-    return res.status(400).json({ error: 'party required' })
-  if (cost > opportunity.capacity)
-    return res.status(400).json({
-      error: `party exceeds the raid's capacity: ${Math.ceil(cost)}/${opportunity.capacity}`,
-    })
 
-  // Both sides ride the shared zone spread (the same core the enemy's daily
-  // plan uses); a raid is a short battle with no fortifications.
+  // Everything validated — now the irreversible part. Both sides of each
+  // raid ride the shared zone spread (the same core the enemy's daily plan
+  // uses); a raid is a short battle with no fortifications.
   const info = await getInfo()
   const sizeOf = new Map([...catalog.values()].map((t) => [t.name, t.size]))
   const zoneOf = (zone) => ({
@@ -366,43 +396,55 @@ router.post('/:id/raids/:raidId/launch', async (req, res) => {
     width: info.grid.width,
     hexCapacity: info.grid.hexCapacity,
   })
-  const input = {
-    map: MAP_NAME,
-    player_placement: spreadPlacement(cleaned, zoneOf(info.playerZone), sizeOf),
-    enemy_placement: spreadPlacement(
-      Object.fromEntries(opportunity.targetForce),
-      zoneOf(info.enemyZone),
-      sizeOf,
-    ),
-    max_turns: RAID_MAX_TURNS,
+
+  const results = []
+  for (const raidId of raidIds) {
+    const opportunity = campaign.raid.opportunities.find((o) => o.id === raidId)
+    const cleaned = cleanedByRaid[raidId]
+    const input = {
+      map: MAP_NAME,
+      player_placement: spreadPlacement(cleaned, zoneOf(info.playerZone), sizeOf),
+      enemy_placement: spreadPlacement(
+        Object.fromEntries(opportunity.targetForce),
+        zoneOf(info.enemyZone),
+        sizeOf,
+      ),
+      max_turns: RAID_MAX_TURNS,
+    }
+    const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
+    if (error) return res.status(400).json({ error })
+
+    // The party is replaced by its survivors (same reconciliation as the main
+    // battle route). The target force was never pre-subtracted from the
+    // enemy host, so a lost raid leaves it untouched — only a
+    // destroy_detachment WIN makes the slice real (and dead) via
+    // applyRaidReward. The committed troops stay in raid.assignment for the
+    // rest of the day regardless of survivors — they already spent today's
+    // raid on this opportunity.
+    for (const [type, count] of Object.entries(cleaned)) {
+      campaign.roster.set(type, (campaign.roster.get(type) ?? 0) - count + (summary.blue_survivors[type] ?? 0))
+      campaign.raid.assignment.set(type, (campaign.raid.assignment.get(type) ?? 0) + count)
+    }
+
+    const won = summary.winner === 'blue'
+    const entries = [
+      won
+        ? `Raid on ${opportunity.title}: victory after ${summary.tickCount} turns.`
+        : `Raid on ${opportunity.title}: the party is ${
+            summary.winner === 'red' ? 'beaten back' : 'fought to a standstill'
+          } after ${summary.tickCount} turns.`,
+    ]
+    if (won) entries.push(...applyRaidReward(campaign, opportunity))
+    opportunity.resolved = true
+    opportunity.outcome = { winner: summary.winner, battleId: battle.id }
+    campaign.battles.push(battle._id)
+    entries.push(...checkAnnihilation(campaign))
+    campaign.log.push({ day: campaign.day, entries })
+    results.push({ raidId, ...summary })
   }
-  const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
-  if (error) return res.status(400).json({ error })
 
-  // The party is replaced by its survivors (same reconciliation as the main
-  // battle route). The target force was never pre-subtracted from the enemy
-  // host, so a lost raid leaves it untouched — only a destroy_detachment WIN
-  // makes the slice real (and dead) via applyRaidReward.
-  for (const [type, count] of Object.entries(cleaned))
-    campaign.roster.set(type, (campaign.roster.get(type) ?? 0) - count + (summary.blue_survivors[type] ?? 0))
-
-  const won = summary.winner === 'blue'
-  const entries = [
-    won
-      ? `Raid on ${opportunity.title}: victory after ${summary.tickCount} turns.`
-      : `Raid on ${opportunity.title}: the party is ${
-          summary.winner === 'red' ? 'beaten back' : 'fought to a standstill'
-        } after ${summary.tickCount} turns.`,
-  ]
-  if (won) entries.push(...applyRaidReward(campaign, opportunity))
-  opportunity.resolved = true
-  opportunity.outcome = { winner: summary.winner, battleId: battle.id }
-  campaign.battles.push(battle._id)
-  entries.push(...checkAnnihilation(campaign))
-  campaign.log.push({ day: campaign.day, entries })
   await campaign.save()
-
-  res.status(201).json({ ...summary, campaign: await campaignView(campaign) })
+  res.status(201).json({ results, campaign: await campaignView(campaign) })
 })
 
 // Spend stores at the camp. {action:'fortify'} raises the fortification level

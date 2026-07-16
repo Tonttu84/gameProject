@@ -214,6 +214,10 @@ export async function campaignView(campaign) {
           outcome: resolved ? outcome : null,
         }),
       ),
+      // Troops already committed to a raid today (own resources — no hidden
+      // info here), so the party-builder can share one pool across every
+      // still-open opportunity. See the schema comment on raid.assignment.
+      assignment: Object.fromEntries(campaign.raid.assignment),
     },
     // Scouting: derived at view time (like foodNeedPerTurn), no schema field.
     // ONLY the banded label crosses the hidden-info boundary — the raw

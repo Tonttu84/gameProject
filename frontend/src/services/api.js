@@ -63,11 +63,14 @@ export const spendCampaign = (id, body) =>
 // Returns the battle summary plus the refreshed campaign view.
 export const postCampaignBattle = (id, payload) =>
   axios.post(`/api/campaigns/${id}/battles`, payload, authed()).then(r => r.data)
-// Launch a raid party ({unitType: count}) at one opportunity; a real short
-// battle runs server-side and the opportunity resolves either way. Returns
-// the battle summary plus the refreshed campaign view.
-export const postCampaignRaid = (id, raidId, party) =>
-  axios.post(`/api/campaigns/${id}/raids/${raidId}/launch`, { party }, authed()).then(r => r.data)
+// Launch a batch of raid parties ({raidId: {unitType: count}}) together in
+// one request — real short battles run server-side and every opportunity in
+// the batch resolves either way. One request (not one call per opportunity)
+// so the server can validate the whole batch's troop usage at once; see
+// docs/CAMPAIGN_PLAN.md's raid double-assignment fix. Returns
+// { results: [{raidId, ...battleSummary}], campaign }.
+export const postCampaignRaids = (id, parties) =>
+  axios.post(`/api/campaigns/${id}/raids/launch`, { parties }, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

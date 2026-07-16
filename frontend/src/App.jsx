@@ -39,7 +39,7 @@ const App = () => {
     () => window.localStorage.getItem('tutorialEnabled') !== 'off',
   )
 
-  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaid, endDay, reload } = useCampaign(user)
+  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaids, endDay, reload } = useCampaign(user)
 
   // authNotice is a transient toast, not a persistent state — it must not
   // stay on screen forever. Fullstack Open-style: showing a new notice
@@ -498,7 +498,7 @@ const App = () => {
                 roster={roster}
                 forageAssignment={forageAssignment}
                 units={info.units}
-                onLaunch={guarded(launchRaid)}
+                onLaunchAll={guarded(launchRaids)}
                 onWatch={watchRaid}
                 tutorial={tutorial}
               />

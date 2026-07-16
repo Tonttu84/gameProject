@@ -7,7 +7,7 @@ import {
   setCampaignForage,
   spendCampaign,
   postCampaignBattle,
-  postCampaignRaid,
+  postCampaignRaids,
   endCampaignDay,
 } from '../services/api'
 
@@ -68,8 +68,8 @@ export default function useCampaign(user) {
     return res
   }
 
-  const launchRaid = async (raidId, party) => {
-    const res = await postCampaignRaid(campaign.id, raidId, party)
+  const launchRaids = async (parties) => {
+    const res = await postCampaignRaids(campaign.id, parties)
     setCampaign(res.campaign)
     return res
   }
@@ -80,5 +80,5 @@ export default function useCampaign(user) {
     return res.report
   }
 
-  return { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaid, endDay, reload }
+  return { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaids, endDay, reload }
 }
