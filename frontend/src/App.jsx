@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { getInfo, getMap, setToken, launchSampleBattle, getBattle } from './services/api'
-import useCampaign from './hooks/useCampaign'
+import React, { useState, useEffect } from 'react'
+import { getInfo, getMap, launchSampleBattle, getBattle } from './services/api'
+import useAuthStore from './stores/useAuthStore'
+import useNoticeStore from './stores/useNoticeStore'
+import useCampaignStore from './stores/useCampaignStore'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
 import DayReport from './components/DayReport'
@@ -31,38 +33,32 @@ const App = () => {
   const [raidBattle,   setRaidBattle]   = useState(null) // watching a raid replay: { id, tickCount }
   const [dayReport,    setDayReport]    = useState(null)
   const [error,        setError]        = useState(null)
-  const [user,         setUser]         = useState(null) // { token, username, name }
-  const [authNotice,   setAuthNotice]   = useState(null)
   const [demoBattle,   setDemoBattle]   = useState(null) // login-screen sample: { id, tickCount }
   const [demoLoading,  setDemoLoading]  = useState(false)
   const [tutorial,     setTutorial]     = useState(
     () => window.localStorage.getItem('tutorialEnabled') !== 'off',
   )
 
-  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaids, endDay, reload } = useCampaign(user)
+  const user = useAuthStore((s) => s.user)
+  const authLogin = useAuthStore((s) => s.login)
+  const authLogout = useAuthStore((s) => s.logout)
 
-  // authNotice is a transient toast, not a persistent state — it must not
-  // stay on screen forever. Fullstack Open-style: showing a new notice
-  // (re)starts a timer that clears it; a manual clear cancels any pending
-  // timer so an old one can't wipe out a newer message set right after.
-  const authNoticeTimeout = useRef(null)
-  const AUTH_NOTICE_TIMEOUT_MS = 10000 // debugging value — keep short in prod too, never forever
-  const showAuthNotice = (message, timeoutMs = AUTH_NOTICE_TIMEOUT_MS) => {
-    if (authNoticeTimeout.current) window.clearTimeout(authNoticeTimeout.current)
-    setAuthNotice(message)
-    authNoticeTimeout.current = window.setTimeout(() => {
-      setAuthNotice(null)
-      authNoticeTimeout.current = null
-    }, timeoutMs)
-  }
-  const clearAuthNotice = () => {
-    if (authNoticeTimeout.current) window.clearTimeout(authNoticeTimeout.current)
-    authNoticeTimeout.current = null
-    setAuthNotice(null)
-  }
-  useEffect(() => () => {
-    if (authNoticeTimeout.current) window.clearTimeout(authNoticeTimeout.current)
-  }, [])
+  const authNotice = useNoticeStore((s) => s.message)
+  const showAuthNotice = useNoticeStore((s) => s.show)
+  const clearAuthNotice = useNoticeStore((s) => s.clear)
+
+  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaids, endDay, reload } = useCampaignStore()
+
+  // Server-side campaign state reacts to the login session: reload it when a
+  // user logs in, drop it when they log out. Was useCampaign(user)'s internal
+  // effect before campaign moved into its own store.
+  useEffect(() => {
+    if (!user) {
+      useCampaignStore.getState().clear()
+      return
+    }
+    reload().catch(() => useCampaignStore.getState().clear())
+  }, [user, reload])
 
   // The campaign server boots slower than Vite (mongod spawn, catalog sync),
   // so the first fetches of a fresh `make serve` can land in that gap. Retry
@@ -90,25 +86,16 @@ const App = () => {
   // Rehydrate a stored session; the token may be stale (1h expiry) — the
   // first protected call after expiry gets a 401 and logs back out.
   useEffect(() => {
-    const stored = window.localStorage.getItem('loggedGameUser')
-    if (stored) {
-      const u = JSON.parse(stored)
-      setToken(u.token)
-      setUser(u)
-    }
+    useAuthStore.getState().rehydrate()
   }, [])
 
   const handleLogin = (u) => {
-    window.localStorage.setItem('loggedGameUser', JSON.stringify(u))
-    setToken(u.token)
-    setUser(u)
     clearAuthNotice()
+    authLogin(u)
   }
 
   const handleLogout = () => {
-    window.localStorage.removeItem('loggedGameUser')
-    setToken(null)
-    setUser(null)
+    authLogout()
     setPhase('setup')
   }
 
