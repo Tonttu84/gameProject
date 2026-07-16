@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { getInfo, getMap, launchSampleBattle, getBattle } from './services/api'
+import { getInfo, getMap } from './services/api'
 import useAuthStore from './stores/useAuthStore'
 import useNoticeStore from './stores/useNoticeStore'
 import useCampaignStore from './stores/useCampaignStore'
+import usePlacementStore from './stores/usePlacementStore'
+import useUiStore from './stores/useUiStore'
+import { guarded } from './stores/guarded'
+import {
+  handleLogin, handleLogout, startCampaign, musterForBattle, startBattle,
+  watchRaid, nextDay, watchDemo,
+} from './stores/flows'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
 import DayReport from './components/DayReport'
@@ -24,30 +31,21 @@ import './App.css'
 // which screen is showing, in-progress placements, and the auth session.
 
 const App = () => {
-  const [info,         setInfo]         = useState(null)
-  const [map,          setMap]          = useState(null)
-  const [phase,        setPhase]        = useState('setup')
-  const [placements,   setPlacements]   = useState([])
-  const [squadPlacements, setSquadPlacements] = useState({}) // {squadId: {col,row,holdTurns}}
-  const [battleResult, setBattleResult] = useState(null)
-  const [raidBattle,   setRaidBattle]   = useState(null) // watching a raid replay: { id, tickCount }
-  const [dayReport,    setDayReport]    = useState(null)
-  const [error,        setError]        = useState(null)
-  const [demoBattle,   setDemoBattle]   = useState(null) // login-screen sample: { id, tickCount }
-  const [demoLoading,  setDemoLoading]  = useState(false)
-  const [tutorial,     setTutorial]     = useState(
-    () => window.localStorage.getItem('tutorialEnabled') !== 'off',
-  )
+  const [info, setInfo] = useState(null)
+  const [map,  setMap]  = useState(null)
+
+  const {
+    phase, setPhase, battleResult, setBattleResult, raidBattle, setRaidBattle,
+    dayReport, setDayReport, demoBattle, setDemoBattle, demoLoading,
+    tutorial, toggleTutorial, connectionError, setConnectionError,
+  } = useUiStore()
+
+  const { placements, squadPlacements, setPlacements, setSquadPlacements } = usePlacementStore()
 
   const user = useAuthStore((s) => s.user)
-  const authLogin = useAuthStore((s) => s.login)
-  const authLogout = useAuthStore((s) => s.logout)
-
   const authNotice = useNoticeStore((s) => s.message)
-  const showAuthNotice = useNoticeStore((s) => s.show)
-  const clearAuthNotice = useNoticeStore((s) => s.clear)
 
-  const { campaign, loading, create, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, fight, launchRaids, endDay, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, launchRaids, reload } = useCampaignStore()
 
   // Server-side campaign state reacts to the login session: reload it when a
   // user logs in, drop it when they log out. Was useCampaign(user)'s internal
@@ -71,17 +69,17 @@ const App = () => {
           if (cancelled) return
           setInfo(infoData)
           setMap(mapData)
-          setError(null)
+          setConnectionError(null)
         })
         .catch(() => {
           if (cancelled) return
           if (triesLeft > 0) setTimeout(() => attempt(triesLeft - 1), 2000)
-          else setError('Could not reach the campaign server — start the stack with "make serve" and wait for its "campaign server on …" line.')
+          else setConnectionError('Could not reach the campaign server — start the stack with "make serve" and wait for its "campaign server on …" line.')
         })
     }
     attempt(10)
     return () => { cancelled = true }
-  }, [])
+  }, [setConnectionError])
 
   // Rehydrate a stored session; the token may be stale (1h expiry) — the
   // first protected call after expiry gets a 401 and logs back out.
@@ -89,142 +87,13 @@ const App = () => {
     useAuthStore.getState().rehydrate()
   }, [])
 
-  const handleLogin = (u) => {
-    clearAuthNotice()
-    authLogin(u)
-  }
-
-  const handleLogout = () => {
-    authLogout()
-    setPhase('setup')
-  }
-
-  const toggleTutorial = () => {
-    const next = !tutorial
-    window.localStorage.setItem('tutorialEnabled', next ? 'on' : 'off')
-    setTutorial(next)
-  }
-
-  // Login-screen demo: launch the hardcoded sample battle through the SAME
-  // engine→DB pipeline a real battle uses, then play it in ReplayView (the only
-  // renderer — it reads ticks back from the DB). No login needed.
-  const watchDemo = async () => {
-    setDemoLoading(true)
-    clearAuthNotice()
-    try {
-      setDemoBattle(await launchSampleBattle())
-    } catch {
-      showAuthNotice('Could not launch the demo battle — is the game server running?')
-    } finally {
-      setDemoLoading(false)
-    }
-  }
-
-  // Campaign calls share one error path: an expired token drops back to the
-  // login screen instead of the fatal connection-error screen, and a 404 —
-  // the campaign no longer exists server-side, e.g. wiped by a redeploy's
-  // build-version purge while this tab was open — reloads the campaign list
-  // (finishing the purge) and lands on the start screen instead of leaving a
-  // zombie UI whose every action fails.
-  const guarded = (fn) => async (...args) => {
-    try {
-      return await fn(...args)
-    } catch (e) {
-      if (e.response?.status === 401) {
-        handleLogout()
-        showAuthNotice('Session expired — log in again.')
-      } else if (e.response?.status === 404) {
-        showAuthNotice('This campaign is gone (a new build wiped old saves) — start a fresh one.')
-        setPlacements([])
-        setSquadPlacements({})
-        setBattleResult(null)
-        setRaidBattle(null)
-        setDayReport(null)
-        setPhase('setup')
-        await reload().catch(() => {})
-      } else if (e.response?.data?.error) {
-        showAuthNotice(e.response.data.error)
-      } else {
-        setError('Campaign server call failed. Check that it is running.')
-      }
-      return undefined
-    }
-  }
-
-  const startCampaign = guarded(async () => {
-    await create()
-    setPhase('setup')
-  })
-
   const startAugury = () => setPhase('augury')
 
-  const musterForBattle = () => {
-    setPlacements([])
-    setSquadPlacements({})
-    setPhase('placement')
-  }
-
-  const startBattle = guarded(async () => {
-    if (placements.length === 0 && Object.keys(squadPlacements).length === 0) return
-    setPhase('battling')
-
-    const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
-    const loosePlacement = placements.flatMap(p => {
-      const { q, r } = toAxial(p.col, p.row)
-      const holdTurns = p.holdTurns ?? 0
-      return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r, hold_turns: holdTurns }))
-    })
-    // Each placed squad expands into one entry per member, all tagged with
-    // its squad_id/squad_name so the engine groups them into one formation
-    // (Stage A) and the campaign server can regroup survivors after battle.
-    const squads = campaign.squads ?? []
-    const squadPlacement = Object.entries(squadPlacements).flatMap(([id, p]) => {
-      const sq = squads.find(s => String(s.id) === String(id))
-      if (!sq) return []
-      const { q, r } = toAxial(p.col, p.row)
-      const holdTurns = p.holdTurns ?? 0
-      return Object.entries(sq.composition).flatMap(([unit_type, n]) =>
-        Array.from({ length: n }, () => ({
-          unit_type, q, r, hold_turns: holdTurns, squad_id: sq.id, squad_name: sq.name,
-        })),
-      )
-    })
-    const playerPlacement = [...loosePlacement, ...squadPlacement]
-
-    const result = await fight(playerPlacement)
-    if (!result) {
-      setPhase('placement') // guarded() already surfaced the error
-      return
-    }
-    setBattleResult(result)
-    setPhase('result')
-  })
-
-  // Watch a raid's replay: raids resolve server-side, so the view only knows
-  // the battle id — fetch the battle doc for its tick count, then play it
-  // through the same ReplayView every battle uses.
-  const watchRaid = guarded(async (battleId) => {
-    const battle = await getBattle(battleId)
-    setRaidBattle({ id: battleId, tickCount: battle.tickCount })
-  })
-
-  // End the turn and show the fortnight's report — the augury reveal lives
-  // there, so the report gets its own beat before the next council.
-  const nextDay = guarded(async () => {
-    const report = await endDay()
-    setPlacements([])
-    setSquadPlacements({})
-    setBattleResult(null)
-    setRaidBattle(null)
-    setDayReport(report)
-    setPhase('report')
-  })
-
-  if (error) {
+  if (connectionError) {
     return (
       <div className="error-screen">
         <h2>Connection Error</h2>
-        <p>{error}</p>
+        <p>{connectionError}</p>
         <button onClick={() => window.location.reload()}>Retry</button>
       </div>
     )
