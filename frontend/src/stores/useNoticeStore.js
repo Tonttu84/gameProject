@@ -10,7 +10,7 @@ const DEFAULT_TIMEOUT_MS = 10000 // debugging value — keep short in prod too, 
 // singleton for the app's lifetime, so there's nothing to attach a ref to.
 let timeoutId = null
 
-const useNoticeStore = create((set) => ({
+const useNoticeStore = create((set, get) => ({
   message: null,
 
   show: (message, timeoutMs = DEFAULT_TIMEOUT_MS) => {
@@ -28,11 +28,9 @@ const useNoticeStore = create((set) => ({
     set({ message: null })
   },
 
-  reset: () => {
-    if (timeoutId) window.clearTimeout(timeoutId)
-    timeoutId = null
-    set({ message: null })
-  },
+  // Teardown is the same operation as a manual clear: cancel any pending
+  // timer and blank the message. Delegate so the two can't drift apart.
+  reset: () => get().clear(),
 }))
 
 export default useNoticeStore

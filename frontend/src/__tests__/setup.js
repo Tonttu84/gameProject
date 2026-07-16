@@ -9,7 +9,11 @@ import { beforeEach } from 'vitest'
 // module resolution until each test runs, by which point the current test
 // file's own mock is already in place.
 beforeEach(async () => {
+  // Clear localStorage FIRST: resetAllStores() → useUiStore.reset() calls
+  // initialTutorial(), which reads window.localStorage. If a prior test left
+  // tutorialEnabled='off' behind, resetting before the clear would seed the
+  // "clean" store from that stale value — reset must land on a blank slate.
+  window.localStorage.clear()
   const { resetAllStores } = await import('../stores')
   resetAllStores()
-  window.localStorage.clear()
 })

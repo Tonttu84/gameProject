@@ -3,10 +3,11 @@ import { create } from 'zustand'
 const TUTORIAL_KEY = 'tutorialEnabled'
 const initialTutorial = () => window.localStorage.getItem(TUTORIAL_KEY) !== 'off'
 
-// UI-only campaign state: which screen is showing, in-progress battle
-// results/replays, and the tutorial toggle. Everything server-authoritative
-// lives in useCampaignStore instead.
-const useUiStore = create((set) => ({
+// The store's initial (and post-reset) state. A factory, not a constant, so
+// `tutorial` re-reads localStorage each time — one definition site both the
+// create() defaults and reset() draw from, so a new field can't be added to
+// one and forgotten in the other (which would silently break test isolation).
+const initialState = () => ({
   phase: 'setup',
   battleResult: null,
   raidBattle: null,
@@ -15,6 +16,13 @@ const useUiStore = create((set) => ({
   demoLoading: false,
   tutorial: initialTutorial(),
   connectionError: null,
+})
+
+// UI-only campaign state: which screen is showing, in-progress battle
+// results/replays, and the tutorial toggle. Everything server-authoritative
+// lives in useCampaignStore instead.
+const useUiStore = create((set) => ({
+  ...initialState(),
 
   setPhase: (phase) => set({ phase }),
   setBattleResult: (battleResult) => set({ battleResult }),
@@ -36,17 +44,7 @@ const useUiStore = create((set) => ({
   resetBattleUI: () =>
     set({ battleResult: null, raidBattle: null, dayReport: null, phase: 'setup' }),
 
-  reset: () =>
-    set({
-      phase: 'setup',
-      battleResult: null,
-      raidBattle: null,
-      dayReport: null,
-      demoBattle: null,
-      demoLoading: false,
-      tutorial: initialTutorial(),
-      connectionError: null,
-    }),
+  reset: () => set(initialState()),
 }))
 
 export default useUiStore

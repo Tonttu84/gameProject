@@ -12,8 +12,8 @@ import usePlacementStore from './usePlacementStore'
 // literal in a selector's `??` branch is a NEW object on every call, which
 // useSyncExternalStore treats as "changed" every render — an infinite
 // render loop. Fall back to one shared empty instance instead.
-const EMPTY_OBJECT = {}
-const EMPTY_ARRAY = []
+export const EMPTY_OBJECT = {}
+export const EMPTY_ARRAY = []
 
 export const useRoster = () => useCampaignStore((s) => s.campaign?.roster ?? EMPTY_OBJECT)
 
@@ -68,12 +68,9 @@ export const useSquadPlacedCount = () => {
 // behind. Fight unlocks when every available unit — loose stock AND every
 // squad — is on the field; the server enforces the same rule.
 export const useTotalAvailableCount = () => {
-  const roster = useRoster()
+  const totalUnits = useTotalUnits()
   const forageAssignment = useForageAssignment()
-  return (
-    Object.values(roster).reduce((a, b) => a + b, 0) -
-    Object.values(forageAssignment).reduce((a, b) => a + b, 0)
-  )
+  return totalUnits - Object.values(forageAssignment).reduce((a, b) => a + b, 0)
 }
 
 export const useInCamp = () => {

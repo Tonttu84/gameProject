@@ -3,16 +3,10 @@ import ReachMenu from './ReachMenu'
 import usePlacementStore from '../stores/usePlacementStore'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
-import { useAvailableRoster, useSquads } from '../stores/selectors'
+import { useAvailableRoster, useSquads, EMPTY_ARRAY } from '../stores/selectors'
 
 const HEX_SIZE = 20
 const SQRT3 = Math.sqrt(3)
-
-// Stable fallback references for the zustand selectors below: a fresh
-// `[]` literal in a selector's `??` branch is a NEW array on every call,
-// which useSyncExternalStore treats as "changed" every render — an
-// infinite render loop. Fall back to one shared empty instance instead.
-const EMPTY_ARRAY = []
 
 // row → x (left-to-right), col → y (top-to-bottom) so the map matches combat orientation.
 const hexCenter = (col, row) => ({
