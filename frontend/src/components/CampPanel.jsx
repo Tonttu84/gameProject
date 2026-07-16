@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
 
 // Camp spending — the materials + labour sink, laid out as a right-side stack
 // of self-contained boxes (fortifications on top, militia below). Raising the
@@ -14,7 +16,11 @@ const MILITIA_FOOD_COST = 2
 const MILITIA_MATERIAL_COST = 1
 const MILITIA_WORKER_COST = 1
 
-const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia, tutorial }) => {
+// fortification/resources/workers come straight from the campaign store;
+// onFortify/onBuyMilitia are still props (guarded actions).
+const CampPanel = ({ onFortify, onBuyMilitia }) => {
+  const { fortification, resources, workers } = useCampaignStore((s) => s.campaign)
+  const tutorial = useUiStore((s) => s.tutorial)
   const [militia, setMilitia] = useState(1)
 
   const { level, atCap, nextCost, nextWorkerCost } = fortification

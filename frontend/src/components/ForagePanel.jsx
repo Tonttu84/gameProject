@@ -1,17 +1,25 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
 import { tons } from '../utils/format'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
+import { useRoster } from '../stores/selectors'
 
 // Forager assignment for the turn: per-type steppers against the roster,
 // a live capacity preview from the server-provided kg-per-unit values, and
 // ring gauges showing how much the land has left. All math the client shows
-// comes from the campaign view — the server owns the formulas.
+// comes from the campaign view — the server owns the formulas. forage/roster
+// come straight from the campaign store; only onAssign (the guarded action)
+// is still a prop.
 //
 // Mount with key={campaign.day} so a new turn resets the local draft.
 
 const RING_NAMES = ['Near', 'Middle', 'Far']
 
-const ForagePanel = ({ forage, roster, onAssign, tutorial }) => {
+const ForagePanel = ({ onAssign }) => {
+  const forage = useCampaignStore((s) => s.campaign.forage)
+  const roster = useRoster()
+  const tutorial = useUiStore((s) => s.tutorial)
   const [assignment, setAssignment] = useState({ ...forage.assignment })
   const [saved, setSaved] = useState(true)
 

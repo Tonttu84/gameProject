@@ -1,10 +1,16 @@
 import React from 'react'
 import { tons } from '../utils/format'
+import useCampaignStore from '../stores/useCampaignStore'
+import { useRoster } from '../stores/selectors'
 
 // Top bar of the active campaign. One turn = two weeks; the server computes
 // food in kg (resources.foodNeedPerTurn comes from the view — the client
-// never re-derives campaign math), the player reads tonnes.
-const CampaignHUD = ({ day, food, foodNeed, materials, fortLevel, roster, forage }) => {
+// never re-derives campaign math), the player reads tonnes. Reads straight
+// from the campaign store — only ever mounted once a campaign exists.
+const CampaignHUD = () => {
+  const { day, resources, fortification, forage } = useCampaignStore((s) => s.campaign)
+  const roster = useRoster()
+
   const landLeft = forage?.rings?.reduce((s, r) => s + r.richness, 0) ?? 0
   const landTotal = forage?.rings?.reduce((s, r) => s + r.initialRichness, 0) ?? 0
   const landPct = landTotal > 0 ? Math.round((100 * landLeft) / landTotal) : 0
@@ -13,10 +19,10 @@ const CampaignHUD = ({ day, food, foodNeed, materials, fortLevel, roster, forage
     <header className="hud">
       <span className="hud-day">Turn {day}</span>
       <span className="hud-food">
-        Food: {tons(food)} (−{tons(foodNeed)}/turn)
+        Food: {tons(resources.food)} (−{tons(resources.foodNeedPerTurn)}/turn)
       </span>
-      <span className="hud-materials">Materials: {materials}</span>
-      <span className="hud-forts" data-testid="hud-forts">Forts: Lv {fortLevel ?? 0}</span>
+      <span className="hud-materials">Materials: {resources.materials}</span>
+      <span className="hud-forts" data-testid="hud-forts">Forts: Lv {fortification?.level ?? 0}</span>
       <span className="hud-land" data-testid="hud-land">Land: {landPct}% left</span>
       <span className="hud-roster">
         {Object.entries(roster)

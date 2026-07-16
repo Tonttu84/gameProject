@@ -11,8 +11,7 @@ import {
   watchRaid, nextDay, watchDemo,
 } from './stores/flows'
 import {
-  useRoster, useTotalUnits, useForageAssignment,
-  usePlacedCount, useSquadPlacedCount, useInCamp,
+  useTotalUnits, usePlacedCount, useSquadPlacedCount, useInCamp,
 } from './stores/selectors'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
@@ -54,9 +53,7 @@ const App = () => {
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
   // in stores/selectors.js), so there's nothing to gate on.
-  const roster = useRoster()
   const totalUnits = useTotalUnits()
-  const forageAssignment = useForageAssignment()
   const placedCount = usePlacedCount()
   const squadPlacedCount = useSquadPlacedCount()
   const inCamp = useInCamp()
@@ -284,15 +281,7 @@ const App = () => {
 
   return (
     <div className="app">
-      <CampaignHUD
-        day={campaign.day}
-        food={campaign.resources.food}
-        foodNeed={campaign.resources.foodNeedPerTurn}
-        materials={campaign.resources.materials}
-        fortLevel={campaign.fortification?.level ?? 0}
-        roster={roster}
-        forage={campaign.forage}
-      />
+      <CampaignHUD />
       {authBar}
 
       {phase === 'setup' && (
@@ -326,23 +315,15 @@ const App = () => {
             {campaign.forage && (
               <ForagePanel
                 key={campaign.day}
-                forage={campaign.forage}
-                roster={roster}
                 onAssign={guarded(assignForagers)}
-                tutorial={tutorial}
               />
             )}
             {campaign.raid && (
               <RaidPanel
                 key={`raids-${campaign.day}`}
-                raid={campaign.raid}
-                scouting={campaign.scouting}
-                roster={roster}
-                forageAssignment={forageAssignment}
                 units={info.units}
                 onLaunchAll={guarded(launchRaids)}
                 onWatch={watchRaid}
-                tutorial={tutorial}
               />
             )}
             {!campaign.augury.consulted ? (
@@ -357,12 +338,8 @@ const App = () => {
           </div>
           {campaign.fortification && (
             <CampPanel
-              fortification={campaign.fortification}
-              resources={campaign.resources}
-              workers={campaign.workers}
               onFortify={guarded(fortify)}
               onBuyMilitia={guarded(buyMilitia)}
-              tutorial={tutorial}
             />
           )}
         </div>
@@ -381,7 +358,6 @@ const App = () => {
             ]}
           />
           <AuguryPanel
-            augury={campaign.augury}
             onConsult={guarded(consultAugur)}
             onReroll={guarded(rerollAugur)}
             onContinue={musterForBattle}

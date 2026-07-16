@@ -9,6 +9,7 @@ import React from 'react'
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import AuguryPanel from '../components/AuguryPanel'
+import useCampaignStore from '../stores/useCampaignStore'
 
 const vision = (over) => ({
   id: 'x',
@@ -18,15 +19,16 @@ const vision = (over) => ({
   ...over,
 })
 
-const panelWith = (visions) =>
-  render(
-    <AuguryPanel
-      augury={{ consulted: true, rerollsRemaining: 0, visions }}
-      onConsult={() => {}}
-      onReroll={() => {}}
-      onContinue={() => {}}
-    />,
+// AuguryPanel reads augury from the campaign store now, not a prop — see
+// docs/CAMPAIGN_PLAN.md's 2026-07-16 frontend state-management thread.
+const panelWith = (visions) => {
+  useCampaignStore.setState({
+    campaign: { id: 'c1', augury: { consulted: true, rerollsRemaining: 0, visions } },
+  })
+  return render(
+    <AuguryPanel onConsult={() => {}} onReroll={() => {}} onContinue={() => {}} />,
   )
+}
 
 describe('augury header labels the shown flavour', () => {
   it('crosses valence with magnitude for good and bad omens', () => {

@@ -1,5 +1,8 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
+import { useRoster, useForageAssignment } from '../stores/selectors'
 
 // Raid opportunities (Stage 4 Part 2): the scouts turn up capacity-limited
 // targets each turn — better scouting finds more of them — and launching one
@@ -28,7 +31,16 @@ const unitCost = (unit) =>
       RAID_CAPACITY_SPEED_SCALE,
   )
 
-const RaidPanel = ({ raid, scouting, roster, forageAssignment, units, onLaunchAll, onWatch, tutorial }) => {
+// raid/scouting/roster/forageAssignment come straight from the campaign
+// store; units stays a prop (it's the static /api/info catalog, not
+// campaign data). onLaunchAll/onWatch are still props (guarded actions).
+const RaidPanel = ({ units, onLaunchAll, onWatch }) => {
+  const raid = useCampaignStore((s) => s.campaign.raid)
+  const scouting = useCampaignStore((s) => s.campaign.scouting)
+  const roster = useRoster()
+  const forageAssignment = useForageAssignment()
+  const tutorial = useUiStore((s) => s.tutorial)
+
   // Party drafts per opportunity: {raidId: {unitType: count}}. Mount with
   // key={campaign.day} so a new turn's fresh opportunities reset the drafts.
   const [parties, setParties] = useState({})
