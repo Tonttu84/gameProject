@@ -159,6 +159,15 @@ notes below over the git history if they ever disagree — the commits win.
   resequenced AFTER scouting/raids (user, 2026-07-13) — that's now.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
+- **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
+  dated entries under the Stage-4 block and "Follow-ups" below. Not a new stage, bug fixes +
+  a follow-up item landing early.
+- **Open thread for the next session (2026-07-16, user): frontend state management.**
+  `App.jsx` currently hand-derives and prop-drills a lot of campaign state (`roster`,
+  `forageAssignment`, `availableRoster`, etc.) through half a dozen components — exactly the
+  kind of manual wiring that let the militia-assignment confusion happen unnoticed. Next
+  session: decide whether to introduce Zustand (or an equivalent) for campaign/UI state, scoped
+  as its own deliberate refactor — not bundled into a bugfix. Not yet decided; no code written.
 
 ### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  ✅ ALL DONE
 
