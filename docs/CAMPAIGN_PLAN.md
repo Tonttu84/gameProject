@@ -1309,10 +1309,33 @@ pattern) over new subclasses; the catalog+tripwire SSOT is the thing to preserve
 class count.
 
 ## Follow-ups (out of scope now)
-Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; **`Militia` unit (spear-armed levy — see the Stage 3 SHIPPED note; sequence
-after the `fortDurability` erosion step, then flip `MILITIA_UNIT` to it)**; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
+Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
 
-**Bug (2026-07-16, DEFERRED — user): freshly-bought militia can't be assigned.** `POST /:id/spend {action:'militia'}` does increment `campaign.roster.get(MILITIA_UNIT)` immediately (`campaign.js` `MILITIA_UNIT = 'Soldier'`, a Stage 3 placeholder — see the follow-up above, not the cause here) and `useCampaign.buyMilitia` sets the fresh `campaignView` straight into `campaign` state, so the roster count itself is live. Ruled out as the cause: the three obvious "assign" surfaces already derive their options reactively from live `roster` rather than a hardcoded type list — `App.jsx` `availableRoster` (`Object.entries(roster).map(...)`), `HexGrid.jsx` `ownedUnits` (`info.units.filter(u => (roster[u.type] ?? 0) > 0 || …)`), and `ForagePanel.jsx`'s roster list (`Object.entries(roster).filter(([, n]) => n > 0 …)`) all update immediately when `roster` changes. So the actual stale spot is still unfound — check squad-composition UI and any other assignment surface not yet audited. **User's constraint for whoever fixes it: deployable/assignable options must never be a hardcoded unit-type list — always map/filter over roster entries with count > 0**, matching the pattern the three ruled-out components already use.
+**`Militia` unit (spear-armed levy): ✅ SHIPPED 2026-07-16.** Real, distinct C++ unit type per
+`docs/ADDING_UNITS.md` — `backend/engine/{include,src}/units/Militia.{hpp,cpp}` (models `Human`,
+`MeleeWeapons::Spear` reach 3, `LIGHTARMOUR`, base 10/10 attack/defence — weaker than Soldier's
+boosted 11/12, one reach step short of Pikeman's `Pike`), registered placeable+spawnable in
+`UnitCatalog.cpp`. `campaignConfig.js`'s `MILITIA_UNIT` now points at it instead of `'Soldier'`.
+Catalog sync is fully automatic (confirmed via `engine.integration.test.js`'s dump-units→DB
+round-trip) — no frontend hand-editing needed; `RaidPanel`/`HexGrid`/`ForagePanel`/`CampaignHUD`
+all already derived their unit-type lists reactively from `roster`, so Militia appears everywhere
+immediately once purchased. Resolves the 2026-07-16 "militia can't be assigned" bug note below —
+the root cause was this placeholder, not a functional defect (Soldiers were always fully usable;
+they just weren't distinguishable from "real" Soldiers, which is what read as broken).
+
+**Bug (2026-07-16): freshly-bought militia can't be assigned — ✅ RESOLVED, see the Militia unit
+note above.** Turned out to be two things, not one: (1) the "can't be assigned" reports were the
+Stage-3 placeholder above — militia were fully usable, just invisibly folded into Soldier; (2) a
+real, separate bug surfaced alongside it — the workforce accounting. `campaignConfig.js`'s own
+comment said "each militiaman IS a worker taken off the civilian pool," but the route did
+`campaign.workers.used += workerCost`, so workers never left `workers.total`, they just
+accumulated forever under `used` (2000 total, 50 raised as militia showed "1950 free / 2000
+raised" instead of "1950 free / 1950 raised"). **Fixed**: `routes/campaigns.js`'s militia branch
+now does `campaign.workers.total -= workerCost` instead — those workers left the workforce
+entirely to become roster soldiers. Fort labour is unchanged (`workers.used += workerCost`): a
+fort worker is still around, just permanently busy, which is the correct model for that case, just
+not for militia. `CampPanel.jsx`'s "committed" line reworded to "N committed to fortification
+work — gone for good" (dropped "& militia" — only fort labour lives in `used` now).
 
 **Deferred test-infra cleanup:** extract the stationary-enemy dummy (`movementSpeed = 0`) into one shared test header/cpp under `backend/engine/tests/` and migrate the current copies onto it — `ImmobileDummy` now lives independently in both `test_movement.cpp` and `test_battle_length.cpp`, and `test_main.cpp` has a near-identical `HighArmorDummy`. Convention: tests that need the enemy to sit tight use this dummy rather than holding a real unit.
 
