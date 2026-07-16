@@ -189,12 +189,44 @@ notes below over the git history if they ever disagree — the commits win.
   render → infinite render loop — fallbacks now use a shared module-level empty constant.
   Zustand stores are also module singletons, so `stores/index.js` exports `resetAllStores()`,
   wired into a global `beforeEach` in `__tests__/setup.js`, to keep test-to-test isolation the
-  old per-mount `useState` gave for free. **Optional future polish (not scheduled):** the
-  `tutorial` boolean still threads through `CampPanel`/`ForagePanel`/`RaidPanel` as a prop even
-  though it's now store-backed internally — could read straight from `useUiStore` too, and
-  `TutorialIntro` itself could drop its `enabled` prop the same way, eliminating the last of the
-  App.jsx → panel prop fan-out. Deliberately out of scope for this refactor (not named in the
-  approved plan).
+  old per-mount `useState` gave for free. (The `tutorial` prop-threading noted here earlier as
+  "optional future polish" is **already done** in the shipped code — `CampPanel`/`ForagePanel`/
+  `RaidPanel` read `useUiStore((s) => s.tutorial)` directly and only forward it to
+  `TutorialIntro`'s `enabled` prop; single source of truth, no App→panel fan-out to remove.)
+
+### Upkeep pass 2026-07-16 (post-refactor code review + CI fix) — handoff
+
+Session after the Zustand refactor. **On `main`, all pushed.** Two commits:
+
+- **`fix(ci)`** — the docker CI build failed at `npm ci`: the committed
+  `frontend/package-lock.json` (written on another machine / older npm) was missing the hoisted
+  top-level `@emnapi/core`+`@emnapi/runtime` entries (optional wasm deps of
+  `@rolldown/binding-wasm32-wasi`), which CI's npm 11.16.0 rejects. Regenerated the lock with
+  npm 11.16.0; reproduced the failure and confirmed `npm ci` passes. **Root cause is
+  cross-machine lockfile drift** — see "not-yet-done" below.
+- **`frontend: fix test-isolation bug + cleanups`** — from a `/code-review` of the refactor.
+  - *Real bug:* `__tests__/setup.js` cleared `localStorage` **after** `resetAllStores()`, but
+    `useUiStore.reset()` re-reads `localStorage` for the tutorial flag — so a test that left
+    `tutorialEnabled='off'` leaked `tutorial=false` into the next test. Now clears first. Added
+    `__tests__/storeIsolation.test.js` (verified it fails on the old ordering, passes on the new).
+  - *Cleanups (no behaviour change):* shared `EMPTY_ARRAY`/`EMPTY_OBJECT` exported from
+    `selectors.js` (HexGrid imports it); `useTotalAvailableCount` composes `useTotalUnits`;
+    `reset`→`clear` delegation in `useNoticeStore`/`usePlacementStore`; `useUiStore` initial+reset
+    state from one `initialState()` factory.
+  - 191/191 frontend tests, build + lint clean.
+
+**Not-yet-done (start here next session):**
+1. **Pin the package manager** to stop the lockfile drift recurring — add
+   `"packageManager": "npm@11.16.0"` (or match CI) to `frontend/package.json`, consider
+   `engine-strict`. This is the durable fix for the CI failure above.
+2. **Deferred review items** (all latent/low-severity, left to avoid scope-creep mid-CI-fix):
+   panel selectors deref `s.campaign.X` without `?.` (safe under App's guard, but inconsistent
+   with `selectors.js`/`HexGrid`'s `?.` — a focused consistency pass, mind the render fallbacks);
+   `useNoticeStore` module-timer has no unmount cleanup (harmless single-root); `useInCamp`
+   double-subscribes to `usePlacedCount`/`useSquadPlacedCount` that App also calls (negligible).
+3. **Test-quality audit** — the original upkeep ask (mock tests that don't test real behaviour)
+   was only partially reached; the code review covered the Zustand store surface. Still worth a
+   dedicated sweep of `campaign-server` + engine Catch2 tests.
 
 ### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  ✅ ALL DONE
 
