@@ -992,14 +992,27 @@ the enemy assault eat the penalty.
 > deployment commits (see 1b note). Enemy-reinforcement detection stays deferred (needs the
 > reinforcement mechanic first, see below).
 >
-> **Playtest finding (2026-07-15, DEFERRED — user): troops can join MULTIPLE raids the same
-> turn.** Not the same thing as open decision (1) above (raid-vs-MAIN-battle, independent on
-> purpose): the launch route validates the party against `roster − forage.assignment` only, so
-> units already committed to an earlier raid this turn are never subtracted and one detachment
-> can fight every opportunity. Fix sketch (user): the raid should RUN at the moment of the
-> single assign-and-launch click (no lingering assignment state to double-spend), the UI must
-> not allow double-assignment, and the server must verify assignment legality (party ≤ roster −
-> forage − troops already raiding this turn).
+> **Playtest finding (2026-07-15) — troops joining MULTIPLE raids the same turn: ✅ FIXED
+> 2026-07-16.** Not the same thing as open decision (1) above (raid-vs-MAIN-battle, independent on
+> purpose): the launch route validated the party against `roster − forage.assignment` only, so
+> units already committed to an earlier raid this turn were never subtracted and one detachment
+> could fight every opportunity.
+>
+> **Fix**: `campaign.raid.assignment` (`models/campaign.js`) is a new persisted Map — the raid
+> twin of `forage.assignment` — incremented by every raid party's committed troops (win or lose)
+> and cleared at `newDay` alongside `forage.assignment`. The single-raid launch route
+> (`POST /:id/raids/:raidId/launch`) is replaced by a **batch** route,
+> `POST /:id/raids/launch` (`{parties: {raidId: {type:count}}}`), which validates the WHOLE
+> batch's combined troop usage against `roster − forage − raid.assignment` before running any
+> battle (all-or-nothing — battles are external subprocesses that can't be rolled back once
+> started) and only then resolves each raid in turn. The frontend's `RaidPanel.jsx` computes one
+> shared pool across every still-open opportunity card (roster − forage − raid.assignment − every
+> OTHER card's current draft) so two cards can never be drafted with overlapping troops in the
+> first place, and a single combined "Launch raids" button submits every drafted party together —
+> but the server re-validates independently regardless of what the frontend sends (illegal-attempt
+> tests hit the route directly on both sides: `campaign-server/tests/raid.test.js`'s "raid
+> double-assignment is rejected" block, `frontend/src/__tests__/raidPanel.test.jsx`'s shared-pool
+> clamp test).
 
 > ### ⚠️ PENDING REVISION (2026-07-09, user) — resolved by the 2026-07-13 finalized plan above;
 > kept for the reasoning. Original steer:
