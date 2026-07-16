@@ -33,7 +33,7 @@ TEST_CASE("unit catalog: lists every unit type in the engine") {
     for (const auto& u : j["units"])
         names.insert(u["name"].get<std::string>());
 
-    for (const char* expected : {"Soldier", "Pikeman", "Archer", "Mage", "Priest",
+    for (const char* expected : {"Soldier", "Pikeman", "Militia", "Archer", "Mage", "Priest",
                                  "Necromancer", "Cavalry", "LightCavalry", "Zombie",
                                  "Skeleton", "Scorpion", "Horse", "Warhorse"}) {
         INFO("missing type: " << expected);
@@ -107,14 +107,14 @@ TEST_CASE("unit catalog: exported values match a live instance of each type") {
     }
 }
 
-TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable seven") {
+TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable eight") {
     auto j = json::parse(unitCatalogJson());
     std::set<std::string> placeable;
     for (const auto& u : j["units"])
         if (u["placeable"].get<bool>())
             placeable.insert(u["name"].get<std::string>());
     REQUIRE(placeable == std::set<std::string>{
-        "Soldier", "Pikeman", "Archer", "Mage", "Priest", "Cavalry", "LightCavalry"});
+        "Soldier", "Pikeman", "Militia", "Archer", "Mage", "Priest", "Cavalry", "LightCavalry"});
 }
 
 // Campaign-relevant stats: the campaign layer derives scouting/foraging value

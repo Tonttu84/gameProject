@@ -269,20 +269,23 @@ export const FORTIFICATION_PRESETS = {
 }
 
 // Militia purchase: raw bodies bought with stores. Cost per head + a per-turn
-// cap so it's a steady trickle, not an instant army. (Added to Soldier for now;
-// a distinct Militia unit type is a later SSOT run.)
+// cap so it's a steady trickle, not an instant army.
 export const MILITIA_FOOD_COST = 2
 export const MILITIA_MATERIAL_COST = 1
 export const MILITIA_WORKER_COST = 1 // each militiaman IS a worker taken off the civilian pool
 export const MILITIA_DAILY_CAP = 50
-export const MILITIA_UNIT = 'Soldier'
+export const MILITIA_UNIT = 'Militia'
 
 // ── Workers (civilian labour pool, off the campaign map) ─────────────────────
 // A finite workforce that fortifications and militia both draw on. Tracked as
-// total + used; available = total − used. Spending (forts, militia) raises
-// `used` permanently — no replenishment yet (events / growth is a later SSOT
-// run; see docs/CAMPAIGN_PLAN.md item 5). Deliberately large relative to the
-// fighting roster. NOTE: the planned "workers eat food at 1/3 upkeep" step is
+// total + used; available = total − used. Fort labour raises `used` — the
+// worker is still around, just permanently busy maintaining the works.
+// Militia is different: those workers LEAVE the civilian pool entirely to
+// become roster soldiers, so buying militia decrements `total` instead (see
+// the militia branch of POST /:id/spend in routes/campaigns.js). Neither
+// direction replenishes yet (events / growth is a later SSOT run; see
+// docs/CAMPAIGN_PLAN.md item 5). Deliberately large relative to the fighting
+// roster. NOTE: the planned "workers eat food at 1/3 upkeep" step is
 // intentionally NOT wired yet — at this pool size it would dwarf army upkeep;
 // it waits on the replenishment design.
 export const STARTING_WORKERS = 2000

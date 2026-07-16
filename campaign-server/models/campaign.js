@@ -114,12 +114,15 @@ const campaignSchema = new mongoose.Schema({
   // fortifiedSidesFor), injected into the battle input. Own info, not hidden.
   fortificationLevel: { type: Number, default: 0 },
   // Militia bought this turn — caps the per-turn militia purchase; reset at
-  // newDay. (Militia are Soldiers for now; a distinct unit type lands later.)
+  // newDay.
   militiaBoughtToday: { type: Number, default: 0 },
 
-  // Civilian labour pool (off-map, not on the campaign map). Fortifications and
-  // militia both draw on it: `used` grows permanently as they're bought,
-  // available = total − used. No replenishment yet (later SSOT run). Own info.
+  // Civilian labour pool (off-map, not on the campaign map). Fortifications
+  // and militia both draw on it, but differently: fort labour permanently
+  // grows `used` (the worker is still around, just always busy); militia
+  // permanently shrinks `total` (the worker left to become a roster soldier).
+  // available = total − used either way. No replenishment yet (later SSOT
+  // run). Own info.
   workers: {
     total: { type: Number, default: 0 },
     used: { type: Number, default: 0 },

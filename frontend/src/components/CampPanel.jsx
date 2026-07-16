@@ -96,14 +96,15 @@ const CampPanel = ({ fortification, resources, workers, onFortify, onBuyMilitia,
           <span className="camp-workers-label">Workforce</span>
           <span className="camp-workers-count">{workersFree} free / {workersTotal} raised</span>
         </div>
-        {/* workersTotal is a fixed ceiling (the campaign's starting workforce),
-            never reduced — militia and fort labour are PERMANENT commitments
-            (see campaignConfig.js), so they never return to the pool. Spell
-            that out here instead of leaving "X / Y" to read as "X of Y
-            currently checked out, comes back later". */}
+        {/* Militia workers leave the workforce entirely (they become roster
+            soldiers), so raising militia shrinks workersTotal itself — "raised"
+            moves. Fort labour is different: the worker is still around, just
+            permanently busy, so that commitment lives in workersUsed and never
+            returns to the pool. Spell that out here instead of leaving "X / Y"
+            to read as "X of Y currently checked out, comes back later". */}
         {workersUsed > 0 && (
           <span className="camp-workers-committed" data-testid="camp-workers-committed">
-            {workersUsed} committed to militia &amp; works — gone for good
+            {workersUsed} committed to fortification work — gone for good
           </span>
         )}
       </div>

@@ -496,7 +496,10 @@ router.post('/:id/spend', async (req, res) => {
       return res.status(400).json({ error: 'not enough workers to muster militia' })
     campaign.resources.food -= foodCost
     campaign.resources.materials -= materialCost
-    campaign.workers.used += workerCost
+    // Unlike fort labour, these workers don't stay in the workforce busy —
+    // they leave it entirely to become roster soldiers, so they come off
+    // `total`, not `used` (see the campaignConfig.js STARTING_WORKERS comment).
+    campaign.workers.total -= workerCost
     campaign.roster.set(MILITIA_UNIT, (campaign.roster.get(MILITIA_UNIT) ?? 0) + count)
     campaign.militiaBoughtToday += count
     campaign.log.push({

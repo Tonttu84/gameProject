@@ -235,10 +235,23 @@ describe('camp panel — workers & side layout', () => {
     expect(screen.getByTestId('camp-workers')).toHaveTextContent('1500 free / 2000 raised')
   })
 
+  // Militia workers leave the workforce entirely (they become roster
+  // soldiers), so "raised" itself drops — unlike fort labour, which keeps the
+  // worker around but permanently busy (reflected in `used`, not `total`).
+  it('reflects militia musters as a drop in "raised", not a temporary dip', async () => {
+    getCampaigns.mockResolvedValue([
+      withMaterials({}, { total: 1950, used: 0, available: 1950 }),
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    expect(screen.getByTestId('camp-workers')).toHaveTextContent('1950 free / 1950 raised')
+  })
+
   // Playtest report: "2000 workers before, 2000 after, but only 1950
-  // available" read as if the pool itself shrank temporarily. It doesn't —
-  // "raised" is a fixed historical ceiling, militia/fort labour is a
-  // PERMANENT commitment (never returns). Spell that out explicitly.
+  // available" read as if the pool itself shrank temporarily. Now `used`
+  // reflects ONLY fort labour (a PERMANENT commitment, worker never returns);
+  // militia no longer touches `used` at all — it shrinks `total` instead
+  // (see the test above). Spell out what's actually gone for good.
   it('explains committed workers are permanent, not temporarily checked out', async () => {
     getCampaigns.mockResolvedValue([
       withMaterials({}, { total: 2000, used: 50, available: 1950 }),
@@ -246,7 +259,7 @@ describe('camp panel — workers & side layout', () => {
     render(<App />)
     await screen.findByText(/War Council/)
     expect(screen.getByTestId('camp-workers-committed')).toHaveTextContent(
-      '50 committed to militia & works — gone for good',
+      '50 committed to fortification work — gone for good',
     )
   })
 
