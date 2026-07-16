@@ -162,12 +162,30 @@ notes below over the git history if they ever disagree — the commits win.
 - **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
   dated entries under the Stage-4 block and "Follow-ups" below. Not a new stage, bug fixes +
   a follow-up item landing early.
-- **Open thread for the next session (2026-07-16, user): frontend state management.**
-  `App.jsx` currently hand-derives and prop-drills a lot of campaign state (`roster`,
-  `forageAssignment`, `availableRoster`, etc.) through half a dozen components — exactly the
-  kind of manual wiring that let the militia-assignment confusion happen unnoticed. Next
-  session: decide whether to introduce Zustand (or an equivalent) for campaign/UI state, scoped
-  as its own deliberate refactor — not bundled into a bugfix. Not yet decided; no code written.
+- **Frontend Zustand refactor (2026-07-16, in progress) — stages 1-4/5 ✅ SHIPPED, stage 5
+  next.** Decided: yes, introduce Zustand, as its own deliberate 5-stage refactor (one commit
+  per stage, tests green before each). `frontend/src/stores/` now holds
+  `useAuthStore`/`useNoticeStore`/`useCampaignStore`/`usePlacementStore`/`useUiStore` (state),
+  `selectors.js` (derived values — the actual fix for the scattered-re-derivation bug class:
+  one canonical computation site instead of App.jsx recomputing `roster`/`availableRoster`/etc
+  inline every render), `guarded.js`+`flows.js` (cross-store orchestration, replacing App.jsx's
+  local closures). `hooks/useCampaign.js` is deleted (folded into `useCampaignStore`).
+  `HexGrid.jsx`'s prop surface shrank from 11 props to 2 (`info`, `map`) — it now reads
+  placements/roster/squads/etc straight from the stores; `ReachMenu.jsx` is untouched (only
+  ever needed hex-scoped slices HexGrid computed for it). **Stage 5 (next session): convert
+  `RaidPanel`/`CampPanel`/`ForagePanel`/`AuguryPanel`/`CampaignHUD` to read their
+  campaign-derived props from the stores directly too (user chose full adoption over stopping
+  at stage 4), then slim `App.jsx` down to a thin composer.** Two gotchas hit and fixed along
+  the way, worth knowing if touching `stores/` again: (1) Vitest `setupFiles` run before a test
+  file's own `vi.mock('../services/api', ...)` is hoisted/applied — a static top-level import of
+  the stores barrel in `__tests__/setup.js` bound the stores to real, unmocked axios calls, fixed
+  by making that import dynamic inside `beforeEach`; (2) a zustand selector whose `??` fallback
+  returns a fresh `{}`/`[]` literal creates a new object every call, which
+  `useSyncExternalStore` reads as "changed" on every render → infinite render loop — fallbacks
+  now use a shared module-level empty constant. Zustand stores are also module singletons, so
+  `stores/index.js` exports `resetAllStores()`, wired into a global `beforeEach` in
+  `__tests__/setup.js`, to keep test-to-test isolation the old per-mount `useState` gave for
+  free.
 
 ### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  ✅ ALL DONE
 
