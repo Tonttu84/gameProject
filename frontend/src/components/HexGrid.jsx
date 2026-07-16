@@ -1,8 +1,18 @@
 import React, { useState, useMemo } from 'react'
 import ReachMenu from './ReachMenu'
+import usePlacementStore from '../stores/usePlacementStore'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
+import { useAvailableRoster, useSquads } from '../stores/selectors'
 
 const HEX_SIZE = 20
 const SQRT3 = Math.sqrt(3)
+
+// Stable fallback references for the zustand selectors below: a fresh
+// `[]` literal in a selector's `??` branch is a NEW array on every call,
+// which useSyncExternalStore treats as "changed" every render — an
+// infinite render loop. Fall back to one shared empty instance instead.
+const EMPTY_ARRAY = []
 
 // row → x (left-to-right), col → y (top-to-bottom) so the map matches combat orientation.
 const hexCenter = (col, row) => ({
@@ -62,11 +72,23 @@ const blendColor = (hex, oR, oG, oB, alpha) => {
   return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`
 }
 
-const HexGrid = ({
-  info, map, placements, onPlacementsChange, roster, disabled, fortifiedSides = [],
-  squads = [], squadPlacements = {}, onSquadPlacementsChange, enemyPlacements = [],
-}) => {
+// Everything but the static map catalog (info/map) is sourced straight from
+// the campaign/placement stores instead of being threaded down through App —
+// this used to be an 11-prop surface (placements/roster/squads/etc, each
+// reshaped once in App.jsx and again here) that made it easy for one call
+// site to fall out of sync with the others.
+const HexGrid = ({ info, map }) => {
   const [selectedHex, setSelectedHex] = useState(null)
+
+  const placements = usePlacementStore((s) => s.placements)
+  const setPlacements = usePlacementStore((s) => s.setPlacements)
+  const squadPlacements = usePlacementStore((s) => s.squadPlacements)
+  const setSquadPlacements = usePlacementStore((s) => s.setSquadPlacements)
+  const roster = useAvailableRoster()
+  const squads = useSquads()
+  const disabled = useUiStore((s) => s.phase === 'battling')
+  const fortifiedSides = useCampaignStore((s) => s.campaign?.fortification?.sides ?? EMPTY_ARRAY)
+  const enemyPlacements = useCampaignStore((s) => s.campaign?.enemy?.placements ?? EMPTY_ARRAY)
 
   const { grid, playerZone, enemyZone } = info
 
@@ -137,7 +159,7 @@ const HexGrid = ({
   }
 
   const handlePlace = (col, row, type, count, holdTurns = 0) => {
-    onPlacementsChange(prev => {
+    setPlacements(prev => {
       const filtered = prev.filter(p => !(p.col === col && p.row === row && p.type === type))
       if (count > 0) return [...filtered, { type, col, row, count, holdTurns }]
       return filtered
@@ -148,10 +170,10 @@ const HexGrid = ({
   // hold order, applied immediately rather than staged behind a commit
   // button — there's no per-type quantity to type, just where and how long.
   const handlePlaceSquad = (col, row, squadId, squadName, holdTurns = 0) => {
-    onSquadPlacementsChange(prev => ({ ...prev, [squadId]: { col, row, holdTurns, squadName } }))
+    setSquadPlacements(prev => ({ ...prev, [squadId]: { col, row, holdTurns, squadName } }))
   }
   const handleRemoveSquad = (squadId) => {
-    onSquadPlacementsChange(prev => {
+    setSquadPlacements(prev => {
       const { [squadId]: _removed, ...rest } = prev
       return rest
     })

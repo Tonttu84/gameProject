@@ -12,6 +12,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import HexGrid from '../components/HexGrid'
 import ReachMenu from '../components/ReachMenu'
+import usePlacementStore from '../stores/usePlacementStore'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
 
 // ---------------------------------------------------------------------------
 // Fixtures (same schema as zoneEnforcement.test.jsx)
@@ -31,21 +34,28 @@ const makeInfo = (overrides = {}) => ({
 
 const makeMap = (hexes = []) => ({ hexes })
 
+// HexGrid reads placements/roster/squads/etc straight from the campaign and
+// placement stores now (not props) — see docs/CAMPAIGN_PLAN.md's 2026-07-16
+// frontend state-management thread. `roster` here plays the same role the
+// old `roster` prop did: it's asserted to already be the AVAILABLE count
+// (no forage/squad commitments to subtract), so campaign.roster is set
+// directly with empty forage/squads.
 const renderGrid = (props = {}) => {
-  const onPlacementsChange = vi.fn()
-  return {
-    onPlacementsChange,
-    ...render(
-      <HexGrid
-        info={props.info ?? makeInfo()}
-        map={props.map ?? makeMap()}
-        placements={props.placements ?? []}
-        onPlacementsChange={props.onPlacementsChange ?? onPlacementsChange}
-        roster={props.roster ?? { Soldier: 10, Mage: 5 }}
-        disabled={props.disabled ?? false}
-      />
-    ),
-  }
+  useCampaignStore.setState({
+    campaign: {
+      id: 'c1',
+      roster: props.roster ?? { Soldier: 10, Mage: 5 },
+      squads: [],
+      forage: { assignment: {} },
+      fortification: { sides: [] },
+      enemy: { placements: [] },
+    },
+  })
+  usePlacementStore.setState({ placements: props.placements ?? [], squadPlacements: {} })
+  useUiStore.setState({ phase: props.disabled ? 'battling' : 'placement' })
+  return render(
+    <HexGrid info={props.info ?? makeInfo()} map={props.map ?? makeMap()} />
+  )
 }
 
 const renderMenu = (props = {}) => {
@@ -186,11 +196,9 @@ describe('P2: console.warn fires when placement exceeds available roster', () =>
   it('console.warn is called when handlePlace receives a count above remaining roster', () => {
     // Pre-place 8 Soldiers elsewhere; roster=10 → only 2 remain.
     // Then place 5 Soldiers on a new hex → over-budget.
-    const onPlacementsChange = vi.fn()
     renderGrid({
       roster: { Soldier: 10, Mage: 5 },
       placements: [{ type: 'Soldier', col: 0, row: 4, count: 8 }],
-      onPlacementsChange,
     })
     fireEvent.click(screen.getByTestId('hex-1-4'))
     // Set Soldier input to 5 (over the available 2)
@@ -200,23 +208,17 @@ describe('P2: console.warn fires when placement exceeds available roster', () =>
   })
 
   it('over-budget placement is capped to available units, not the requested amount', () => {
-    // Only 2 Soldiers available; placing 5 should result in 2 committed
-    const onPlacementsChange = vi.fn()
+    // Only 2 Soldiers available; placing 5 should result in 2 committed.
+    // HexGrid writes straight to usePlacementStore now — read the committed
+    // result back from there instead of inspecting an onPlacementsChange spy.
     renderGrid({
       roster: { Soldier: 10, Mage: 0 },
       placements: [{ type: 'Soldier', col: 0, row: 4, count: 8 }],
-      onPlacementsChange,
     })
     fireEvent.click(screen.getByTestId('hex-1-4'))
     fireEvent.change(screen.getByTestId('count-Soldier'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /place/i }))
-    // onPlacementsChange must not commit more than 2 Soldiers
-    const calls = onPlacementsChange.mock.calls
-    expect(calls.length).toBeGreaterThan(0)
-    // The updater fn is called with the previous placements; extract final result
-    const finalUpdater = calls[calls.length - 1][0]
-    const prevPlacements = [{ type: 'Soldier', col: 0, row: 4, count: 8 }]
-    const result = finalUpdater(prevPlacements)
+    const result = usePlacementStore.getState().placements
     const newHexEntry = result.find(p => p.col === 1 && p.row === 4 && p.type === 'Soldier')
     expect(newHexEntry?.count ?? 0).toBeLessThanOrEqual(2)
   })

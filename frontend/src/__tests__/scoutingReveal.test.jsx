@@ -15,6 +15,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import ScoutReport from '../components/ScoutReport'
 import HexGrid from '../components/HexGrid'
+import usePlacementStore from '../stores/usePlacementStore'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
 
 vi.mock('../services/api', () => ({
   getInfo: vi.fn(),
@@ -122,18 +125,24 @@ const gridInfo = {
   terrain: [{ name: 'Open', color: '#5a6441' }],
 }
 
-const renderGrid = (props = {}) =>
-  render(
-    <HexGrid
-      info={gridInfo}
-      map={{ hexes: [] }}
-      placements={[]}
-      onPlacementsChange={vi.fn()}
-      roster={{ Soldier: 10 }}
-      disabled={false}
-      {...props}
-    />,
-  )
+// HexGrid reads enemyPlacements/roster/etc from the campaign and placement
+// stores now, not props — see docs/CAMPAIGN_PLAN.md's 2026-07-16 frontend
+// state-management thread.
+const renderGrid = (props = {}) => {
+  useCampaignStore.setState({
+    campaign: {
+      id: 'c1',
+      roster: props.roster ?? { Soldier: 10 },
+      squads: [],
+      forage: { assignment: {} },
+      fortification: { sides: [] },
+      enemy: { placements: props.enemyPlacements ?? [] },
+    },
+  })
+  usePlacementStore.setState({ placements: props.placements ?? [], squadPlacements: {} })
+  useUiStore.setState({ phase: props.disabled ? 'battling' : 'placement' })
+  return render(<HexGrid info={gridInfo} map={{ hexes: [] }} />)
+}
 
 describe('HexGrid: enemyPlacements reveal', () => {
   it('draws a red glyph per revealed stack at the inverse-axial offset hex', () => {

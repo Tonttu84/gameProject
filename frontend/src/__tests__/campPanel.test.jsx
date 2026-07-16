@@ -30,6 +30,7 @@ vi.mock('../services/api', () => ({
 import { getInfo, getMap, getCampaigns, spendCampaign } from '../services/api'
 import App from '../App'
 import HexGrid from '../components/HexGrid'
+import useCampaignStore from '../stores/useCampaignStore'
 import { campaignFixture } from './fixtures/campaign'
 
 const info = {
@@ -306,16 +307,20 @@ describe('placement grid — fortified sides', () => {
       { q: 4, r: 7, dir: 'SW', durability: 100 },
       { q: 5, r: 7, dir: 'SE', durability: 100 },
     ]
-    render(
-      <HexGrid
-        info={info}
-        map={{ hexes: [] }}
-        placements={[]}
-        onPlacementsChange={() => {}}
-        roster={{}}
-        fortifiedSides={sides}
-      />,
-    )
+    // HexGrid reads fortifiedSides/roster/etc from the campaign store now,
+    // not props — see docs/CAMPAIGN_PLAN.md's 2026-07-16 frontend
+    // state-management thread.
+    useCampaignStore.setState({
+      campaign: {
+        id: 'c1',
+        roster: {},
+        squads: [],
+        forage: { assignment: {} },
+        fortification: { sides },
+        enemy: { placements: [] },
+      },
+    })
+    render(<HexGrid info={info} map={{ hexes: [] }} />)
     for (const s of sides)
       expect(screen.getByTestId(`fort-side-${s.q}-${s.r}-${s.dir}`)).toBeInTheDocument()
     // No stray walls when none are passed.

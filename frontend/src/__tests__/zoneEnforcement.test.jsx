@@ -18,6 +18,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import HexGrid from '../components/HexGrid'
 import ReachMenu from '../components/ReachMenu'
+import usePlacementStore from '../stores/usePlacementStore'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -49,20 +52,25 @@ const makeMap = (hexes = []) => ({ hexes })
 const defaultRoster = { Soldier: 10 }
 
 // Helper: render HexGrid with sane defaults; caller may override any prop.
+// HexGrid reads placements/roster/etc from the campaign and placement
+// stores now, not props — see docs/CAMPAIGN_PLAN.md's 2026-07-16 frontend
+// state-management thread.
 const renderGrid = (props = {}) => {
-  const onPlacementsChange = vi.fn()
   const info = props.info ?? makeInfo()
   const map  = props.map  ?? makeMap()
-  return render(
-    <HexGrid
-      info={info}
-      map={map}
-      placements={props.placements ?? []}
-      onPlacementsChange={props.onPlacementsChange ?? onPlacementsChange}
-      roster={props.roster ?? defaultRoster}
-      disabled={props.disabled ?? false}
-    />
-  )
+  useCampaignStore.setState({
+    campaign: {
+      id: 'c1',
+      roster: props.roster ?? defaultRoster,
+      squads: [],
+      forage: { assignment: {} },
+      fortification: { sides: [] },
+      enemy: { placements: [] },
+    },
+  })
+  usePlacementStore.setState({ placements: props.placements ?? [], squadPlacements: {} })
+  useUiStore.setState({ phase: props.disabled ? 'battling' : 'placement' })
+  return render(<HexGrid info={info} map={map} />)
 }
 
 // ---------------------------------------------------------------------------

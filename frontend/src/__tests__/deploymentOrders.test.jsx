@@ -13,6 +13,9 @@ import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import HexGrid from '../components/HexGrid'
+import usePlacementStore from '../stores/usePlacementStore'
+import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
 
 // ---------------------------------------------------------------------------
 // HexGrid hold indicators
@@ -30,17 +33,26 @@ const makeInfo = (overrides = {}) => ({
   ...overrides,
 })
 
-const renderGrid = (props = {}) =>
-  render(
-    <HexGrid
-      info={props.info ?? makeInfo()}
-      map={props.map ?? { hexes: [] }}
-      placements={props.placements ?? []}
-      onPlacementsChange={props.onPlacementsChange ?? vi.fn()}
-      roster={props.roster ?? { Soldier: 10, Mage: 5 }}
-      disabled={props.disabled ?? false}
-    />
+// HexGrid reads placements/roster/etc from the campaign and placement
+// stores now, not props — see docs/CAMPAIGN_PLAN.md's 2026-07-16 frontend
+// state-management thread.
+const renderGrid = (props = {}) => {
+  useCampaignStore.setState({
+    campaign: {
+      id: 'c1',
+      roster: props.roster ?? { Soldier: 10, Mage: 5 },
+      squads: [],
+      forage: { assignment: {} },
+      fortification: { sides: [] },
+      enemy: { placements: [] },
+    },
+  })
+  usePlacementStore.setState({ placements: props.placements ?? [], squadPlacements: {} })
+  useUiStore.setState({ phase: props.disabled ? 'battling' : 'placement' })
+  return render(
+    <HexGrid info={props.info ?? makeInfo()} map={props.map ?? { hexes: [] }} />
   )
+}
 
 describe('HexGrid: hold indicators on placed hexes', () => {
   it('draws a hold badge showing the turn count when a placement holds', () => {

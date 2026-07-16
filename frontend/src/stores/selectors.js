@@ -8,17 +8,24 @@ import usePlacementStore from './usePlacementStore'
 // Plain hooks, not a store: each composes reads from campaign/placement
 // state and has no state of its own.
 
-export const useRoster = () => useCampaignStore((s) => s.campaign?.roster ?? {})
+// Stable fallback references for zustand selectors below: a fresh `{}`/`[]`
+// literal in a selector's `??` branch is a NEW object on every call, which
+// useSyncExternalStore treats as "changed" every render — an infinite
+// render loop. Fall back to one shared empty instance instead.
+const EMPTY_OBJECT = {}
+const EMPTY_ARRAY = []
+
+export const useRoster = () => useCampaignStore((s) => s.campaign?.roster ?? EMPTY_OBJECT)
 
 export const useTotalUnits = () => {
   const roster = useRoster()
   return Object.values(roster).reduce((a, b) => a + b, 0)
 }
 
-export const useSquads = () => useCampaignStore((s) => s.campaign?.squads ?? [])
+export const useSquads = () => useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
 
 export const useForageAssignment = () =>
-  useCampaignStore((s) => s.campaign?.forage?.assignment ?? {})
+  useCampaignStore((s) => s.campaign?.forage?.assignment ?? EMPTY_OBJECT)
 
 export const useSquadCommitted = () => {
   const squads = useSquads()

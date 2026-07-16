@@ -10,6 +10,10 @@ import {
   handleLogin, handleLogout, startCampaign, musterForBattle, startBattle,
   watchRaid, nextDay, watchDemo,
 } from './stores/flows'
+import {
+  useRoster, useTotalUnits, useForageAssignment,
+  usePlacedCount, useSquadPlacedCount, useInCamp,
+} from './stores/selectors'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
 import DayReport from './components/DayReport'
@@ -40,12 +44,22 @@ const App = () => {
     tutorial, toggleTutorial, connectionError, setConnectionError,
   } = useUiStore()
 
-  const { placements, squadPlacements, setPlacements, setSquadPlacements } = usePlacementStore()
+  const { placements, squadPlacements } = usePlacementStore()
 
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
   const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, launchRaids, reload } = useCampaignStore()
+
+  // Hooks, so called unconditionally here rather than after the early-return
+  // guards below — each is safe against a null campaign (optional chaining
+  // in stores/selectors.js), so there's nothing to gate on.
+  const roster = useRoster()
+  const totalUnits = useTotalUnits()
+  const forageAssignment = useForageAssignment()
+  const placedCount = usePlacedCount()
+  const squadPlacedCount = useSquadPlacedCount()
+  const inCamp = useInCamp()
 
   // Server-side campaign state reacts to the login session: reload it when a
   // user logs in, drop it when they log out. Was useCampaign(user)'s internal
@@ -249,34 +263,6 @@ const App = () => {
   }
 
   // ── Active campaign ───────────────────────────────────────────────────────
-  const roster = campaign.roster
-  const totalUnits = Object.values(roster).reduce((a, b) => a + b, 0)
-  const squads = campaign.squads ?? []
-  // Units out foraging are unavailable for this turn's battle line. Squad
-  // members are earmarked to their squad and aren't offered individually
-  // under "Troops" — a squad is placed as a whole (HexGrid/ReachMenu), not
-  // built up unit-by-unit like loose stock.
-  const forageAssignment = campaign.forage?.assignment ?? {}
-  const squadCommitted = {}
-  squads.forEach(sq => Object.entries(sq.composition).forEach(([type, n]) => {
-    squadCommitted[type] = (squadCommitted[type] ?? 0) + n
-  }))
-  const availableRoster = Object.fromEntries(
-    Object.entries(roster).map(([type, n]) =>
-      [type, n - (forageAssignment[type] ?? 0) - (squadCommitted[type] ?? 0)]),
-  )
-  // Battle commits the WHOLE army (user, 2026-07-05): only foragers stay
-  // behind. Fight unlocks when every available unit — loose stock AND every
-  // squad — is on the field; the server enforces the same rule.
-  const placedCount = placements.reduce((s, p) => s + p.count, 0)
-  const squadPlacedCount = Object.keys(squadPlacements).reduce((sum, id) => {
-    const sq = squads.find(s => String(s.id) === String(id))
-    if (!sq) return sum
-    return sum + Object.values(sq.composition).reduce((a, b) => a + b, 0)
-  }, 0)
-  const totalAvailableCount = Object.values(roster).reduce((a, b) => a + b, 0)
-    - Object.values(forageAssignment).reduce((a, b) => a + b, 0)
-  const inCamp = totalAvailableCount - placedCount - squadPlacedCount
 
   // Watching a raid replay takes over the screen; Back returns to whatever
   // phase the player was in (the phase state is untouched underneath).
@@ -426,19 +412,7 @@ const App = () => {
           {campaign.scouting && (
             <ScoutReport scouting={campaign.scouting} enemy={campaign.enemy} />
           )}
-          <HexGrid
-            info={info}
-            map={map}
-            placements={placements}
-            onPlacementsChange={setPlacements}
-            roster={availableRoster}
-            disabled={phase === 'battling'}
-            fortifiedSides={campaign.fortification?.sides ?? []}
-            squads={squads}
-            squadPlacements={squadPlacements}
-            onSquadPlacementsChange={setSquadPlacements}
-            enemyPlacements={campaign.enemy.placements ?? []}
-          />
+          <HexGrid info={info} map={map} />
           <div className="placement-bar">
             <span>
               {placedCount + squadPlacedCount} units placed in {placements.length} hex{placements.length !== 1 ? 'es' : ''}
