@@ -80,6 +80,14 @@ body {
   justify-content: center;
   gap: 1.5rem;
   padding: 3rem 1rem;
+  /* .app is a locked 100vh viewport (overflow: hidden) — every full-screen
+     phase must scroll ITSELF, like .augury-phase/.day-report already do.
+     Without this the council clips once its panels outgrow the screen
+     (Stage 4 made that the normal case) and there is no way to scroll;
+     it also kept .camp-side's position:sticky from ever engaging. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .phase-setup h2 { color: var(--gold); font-size: 1.4rem; }
 /* Left column: the council flow (army/food, forage, augur/muster). */
