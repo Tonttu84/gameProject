@@ -162,9 +162,9 @@ notes below over the git history if they ever disagree — the commits win.
 - **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
   dated entries under the Stage-4 block and "Follow-ups" below. Not a new stage, bug fixes +
   a follow-up item landing early.
-- **Frontend Zustand refactor (2026-07-16, in progress) — stages 1-4/5 ✅ SHIPPED, stage 5
-  next.** Decided: yes, introduce Zustand, as its own deliberate 5-stage refactor (one commit
-  per stage, tests green before each). `frontend/src/stores/` now holds
+- **Frontend Zustand refactor: ✅ SHIPPED 2026-07-16, all 5 stages.** Decided: yes, introduce
+  Zustand, as its own deliberate 5-stage refactor (one commit per stage, tests green before
+  each — see git log for the 5 `frontend:` commits). `frontend/src/stores/` now holds
   `useAuthStore`/`useNoticeStore`/`useCampaignStore`/`usePlacementStore`/`useUiStore` (state),
   `selectors.js` (derived values — the actual fix for the scattered-re-derivation bug class:
   one canonical computation site instead of App.jsx recomputing `roster`/`availableRoster`/etc
@@ -172,20 +172,29 @@ notes below over the git history if they ever disagree — the commits win.
   local closures). `hooks/useCampaign.js` is deleted (folded into `useCampaignStore`).
   `HexGrid.jsx`'s prop surface shrank from 11 props to 2 (`info`, `map`) — it now reads
   placements/roster/squads/etc straight from the stores; `ReachMenu.jsx` is untouched (only
-  ever needed hex-scoped slices HexGrid computed for it). **Stage 5 (next session): convert
-  `RaidPanel`/`CampPanel`/`ForagePanel`/`AuguryPanel`/`CampaignHUD` to read their
-  campaign-derived props from the stores directly too (user chose full adoption over stopping
-  at stage 4), then slim `App.jsx` down to a thin composer.** Two gotchas hit and fixed along
-  the way, worth knowing if touching `stores/` again: (1) Vitest `setupFiles` run before a test
-  file's own `vi.mock('../services/api', ...)` is hoisted/applied — a static top-level import of
-  the stores barrel in `__tests__/setup.js` bound the stores to real, unmocked axios calls, fixed
-  by making that import dynamic inside `beforeEach`; (2) a zustand selector whose `??` fallback
-  returns a fresh `{}`/`[]` literal creates a new object every call, which
-  `useSyncExternalStore` reads as "changed" on every render → infinite render loop — fallbacks
-  now use a shared module-level empty constant. Zustand stores are also module singletons, so
-  `stores/index.js` exports `resetAllStores()`, wired into a global `beforeEach` in
-  `__tests__/setup.js`, to keep test-to-test isolation the old per-mount `useState` gave for
-  free.
+  ever needed hex-scoped slices HexGrid computed for it). `RaidPanel`/`CampPanel`/
+  `ForagePanel`/`AuguryPanel`/`CampaignHUD` (stage 5, user chose full adoption over stopping at
+  stage 4) now read their campaign-derived data straight from the stores too —
+  `CampaignHUD` takes no props at all; the others keep only local draft state (militia input,
+  assignment/parties drafts) and action callbacks (still `guarded()`-wrapped in App.jsx).
+  `App.jsx` is now a thin composer (649 → ~456 lines): screen routing + wiring flow functions +
+  mounting children with minimal data props. Manually verified in the browser post-refactor
+  (full turn: forage → augur → place incl. squad → fight → end day) — works.
+  Two gotchas hit and fixed along the way, worth knowing if touching `stores/` again: (1) Vitest
+  `setupFiles` run before a test file's own `vi.mock('../services/api', ...)` is
+  hoisted/applied — a static top-level import of the stores barrel in `__tests__/setup.js`
+  bound the stores to real, unmocked axios calls, fixed by making that import dynamic inside
+  `beforeEach`; (2) a zustand selector whose `??` fallback returns a fresh `{}`/`[]` literal
+  creates a new object every call, which `useSyncExternalStore` reads as "changed" on every
+  render → infinite render loop — fallbacks now use a shared module-level empty constant.
+  Zustand stores are also module singletons, so `stores/index.js` exports `resetAllStores()`,
+  wired into a global `beforeEach` in `__tests__/setup.js`, to keep test-to-test isolation the
+  old per-mount `useState` gave for free. **Optional future polish (not scheduled):** the
+  `tutorial` boolean still threads through `CampPanel`/`ForagePanel`/`RaidPanel` as a prop even
+  though it's now store-backed internally — could read straight from `useUiStore` too, and
+  `TutorialIntro` itself could drop its `enabled` prop the same way, eliminating the last of the
+  App.jsx → panel prop fan-out. Deliberately out of scope for this refactor (not named in the
+  approved plan).
 
 ### Playtest 2026-07-13 — pending items (Docker-on-Windows stack)  ✅ ALL DONE
 
