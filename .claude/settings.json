@@ -11,7 +11,10 @@
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh cs-test')",
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh info')",
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh help')",
-      "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh *')"
+      "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh *')",
+      "Bash(./run_tests*)",
+      "Bash(source ~/.nvm/nvm.sh*)",
+      "Bash(make frontend-test)"
     ]
   }
 }
