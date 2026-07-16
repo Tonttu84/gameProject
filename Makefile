@@ -50,6 +50,11 @@ endif
 # Compiler and flags
 CC      = g++
 
+# `serve` below relies on bash's `wait -n` (waits for whichever backgrounded
+# job exits first and returns its status) to detect a crashed dev server and
+# stop the other one; /bin/sh on Debian/Ubuntu is dash, which lacks it.
+SHELL   = /bin/bash
+
 MAKEFLAGS += --jobs=5
 
 .DEFAULT_GOAL := all
@@ -112,7 +117,8 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial clang serve server-node frontend frontend-test db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
+.PHONY: all clean fclean re test test-serial clang serve server-node frontend frontend-test \
+        db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(NAME)
@@ -179,22 +185,56 @@ re:
 	$(MAKE) all
 
 # ── Campaign dev ──────────────────────────────────────────────────────────────
+# node_modules is a build target, same idiom as `$(NAME): $(OBJS)` above: it's
+# rebuilt (npm install) whenever missing or older than package.json/
+# package-lock.json, and skipped otherwise. This is what actually fixes the
+# "Cannot find package 'X'" class of error instead of just detecting it --
+# a fresh checkout's `make serve` installs deps on the way up rather than
+# dying mid-launch. `touch` covers the case where npm decides nothing needs
+# installing and so leaves node_modules' mtime older than its prerequisites,
+# which would otherwise make this rule re-run on every invocation.
+campaign-server/node_modules: campaign-server/package.json campaign-server/package-lock.json
+	npm install --prefix campaign-server
+	@touch $@
+
+frontend/node_modules: frontend/package.json frontend/package-lock.json
+	npm install --prefix frontend
+	@touch $@
+
 # Node BFF (campaign-server/): DB + replay storage; spawns ./game itself.
 # This is what the frontend's /api proxy points at (port 3001).
-server-node: $(NAME)
+server-node: campaign-server/node_modules $(NAME)
 	cd campaign-server && npm start
 
-frontend:
+frontend: frontend/node_modules
 	cd frontend && npm run dev
 
 # Run React/Vitest tests. Uses whatever node/npm is on PATH (/usr/bin node v22 here).
-frontend-test:
+frontend-test: frontend/node_modules
 	npm --prefix frontend test
 
 # Launch campaign server (Node BFF) + Vite dev server side-by-side.
-serve: $(NAME)
-	cd campaign-server && npm start &
-	cd frontend && npm run dev
+#
+# Both run as background jobs of this one recipe shell so a crash in either
+# is visible and fatal to `make serve` instead of scrolling past silently (the
+# previous version backgrounded npm start with a bare `&`, so make never saw
+# its exit code -- the express ERR_MODULE_NOT_FOUND printed once and was
+# immediately buried under Vite's own banner). Either child exiting -- even
+# with code 0, since neither is expected to exit on its own -- tears down the
+# other and makes `make serve` exit with that code.
+serve: campaign-server/node_modules frontend/node_modules $(NAME)
+	@cleanup() { kill $$backend_pid $$frontend_pid 2>/dev/null; }; \
+	trap cleanup EXIT; \
+	trap 'cleanup; exit 130' INT TERM; \
+	(cd campaign-server && npm start) & backend_pid=$$!; \
+	(cd frontend && npm run dev) & frontend_pid=$$!; \
+	wait -n $$backend_pid $$frontend_pid; code=$$?; \
+	if kill -0 $$backend_pid 2>/dev/null; then who=frontend; else who=campaign-server; fi; \
+	echo; \
+	echo "############################################################"; \
+	echo "# make serve: $$who exited (code $$code) -- stopping the other process."; \
+	echo "############################################################"; \
+	exit $$code
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 # Full stack (engine + campaign server + built frontend + MongoDB) in
