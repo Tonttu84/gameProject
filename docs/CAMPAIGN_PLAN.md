@@ -246,11 +246,18 @@ Cleared the 07-16 "not-yet-done" list. On the laptop (LAPTOP-FGJQ8QNB), on `main
     exact clamp =2, not ≤2), `:266` redundant, `zoneEnforcement.test.jsx:81,88,121`,
     `campPanel.test.jsx:242` (fixture echo posing as militia-muster behaviour),
     `:276,284`, `deploymentOrders.test.jsx:132` (static tutorial copy).
-  - *USER DECISIONS pending:* (1) `Squad::updateMoraleState()`/`moraleModifier()` have
-    ZERO production callers despite `Squad.hpp:55-59` claiming Battlefield calls them each
-    tick — the whole test_squad collective-morale cluster green-lights an unwired feature;
-    wire it or mark planned? (2) squad `_prestige` accessors/tests: unconsumed placeholder —
-    keep or delete?
+  - *USER DECISIONS — resolved later the same session:* (1) squad collective morale
+    (`updateMoraleState()`/`moraleModifier()`/`attemptRally()`, zero production callers) is
+    **confirmed unwired — an unfinished feature, not doc-drift**; `Squad.hpp`'s lifecycle
+    comment now marks the morale/rally steps `[PLANNED — unwired]`, unit tests stay. Wiring
+    it into the tick pipeline is future feature work (goes with the cohesion/morale
+    missing-coverage items). (2) squad `_prestige` is a **placeholder for the roguelite
+    carry-over — kept**, tests stay. (3) the corpse red/blue asymmetry was **ruled a BUG
+    and fixed**: it was refactor drift (blue pruned by a hand-rolled counting loop, red by
+    the extracted non-counting `Team::pruneDeadUnits()`). `pruneDeadUnits()` now returns
+    the non-undead dead it pruned and `cleanup()` adds BOTH teams' into the shared corpse
+    pool; `test_corpses.cpp` flipped from pinning the asymmetry to asserting symmetry.
+    Engine suite + campaign-server 227/227 re-verified against the rebuilt `./game`.
   - *Top missing coverage (backlog, ranked):* engine — squad cohesion bonus in combat
     (the main mechanical reason squads exist; zero assertions), elevation effects, archer
     target-scoring internals, corpse economy from real deaths; campaign-server — enemy
