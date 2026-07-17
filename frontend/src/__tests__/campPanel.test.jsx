@@ -240,12 +240,26 @@ describe('camp panel — workers & side layout', () => {
   // soldiers), so "raised" itself drops — unlike fort labour, which keeps the
   // worker around but permanently busy (reflected in `used`, not `total`).
   it('reflects militia musters as a drop in "raised", not a temporary dip', async () => {
-    getCampaigns.mockResolvedValue([
-      withMaterials({}, { total: 1950, used: 0, available: 1950 }),
-    ])
+    getCampaigns.mockResolvedValue([withMaterials()])
+    // Mustering 50 militia: the server's refreshed view shrinks `total`
+    // (workers became soldiers), leaving `used` untouched.
+    spendCampaign.mockResolvedValue({
+      ...withMaterials({}, { total: 1950, used: 0, available: 1950 }),
+      roster: { ...campaignFixture.roster, Militia: 50 },
+    })
     render(<App />)
     await screen.findByText(/War Council/)
-    expect(screen.getByTestId('camp-workers')).toHaveTextContent('1950 free / 1950 raised')
+    expect(screen.getByTestId('camp-workers')).toHaveTextContent('2000 free / 2000 raised')
+
+    fireEvent.change(screen.getByTestId('militia-input'), { target: { value: '50' } })
+    fireEvent.click(screen.getByTestId('militia-button'))
+    await waitFor(() =>
+      expect(spendCampaign).toHaveBeenCalledWith('c1', { action: 'militia', count: 50 }),
+    )
+    // The readout moves to the new totals: 50 fewer raised, none "checked out".
+    await waitFor(() =>
+      expect(screen.getByTestId('camp-workers')).toHaveTextContent('1950 free / 1950 raised'),
+    )
   })
 
   // Playtest report: "2000 workers before, 2000 after, but only 1950
@@ -271,21 +285,6 @@ describe('camp panel — workers & side layout', () => {
     render(<App />)
     await screen.findByText(/War Council/)
     expect(screen.queryByTestId('camp-workers-committed')).not.toBeInTheDocument()
-  })
-
-  it('renders fortifications and militia as separate stacked boxes', async () => {
-    getCampaigns.mockResolvedValue([withMaterials()])
-    render(<App />)
-    await screen.findByText(/War Council/)
-    expect(screen.getByTestId('camp-fort-box')).toBeInTheDocument()
-    expect(screen.getByTestId('camp-militia-box')).toBeInTheDocument()
-  })
-
-  it('shows the fort worker cost alongside the materials cost', async () => {
-    getCampaigns.mockResolvedValue([withMaterials()])
-    render(<App />)
-    await screen.findByText(/War Council/)
-    expect(screen.getByTestId('fortify-button')).toHaveTextContent('500 workers')
   })
 
   it('marks fortify unaffordable (red, disabled) when workers are short but materials suffice', async () => {

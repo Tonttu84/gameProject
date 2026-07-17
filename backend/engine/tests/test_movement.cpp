@@ -1,8 +1,4 @@
 // Movement algorithm tests. Define DESIRED behavior.
-// Two known-failing cases (terrain-cost tiebreaking in moveToward/flee) live in
-// test_known_failures.cpp instead of here — tagged [.] so they don't fail
-// make test/make test-serial/CI, but are still tracked and runnable explicitly.
-// Migrate them back here once the underlying bug is fixed.
 // [.][debug] tests print the ASCII map each turn and are excluded from make test.
 
 #include "catch.hpp"

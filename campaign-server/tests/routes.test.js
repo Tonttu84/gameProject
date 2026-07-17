@@ -46,7 +46,12 @@ describe('GET /api/units', () => {
 })
 
 describe('GET /api/info', () => {
-  test('returns the cached engine info', async () => {
+  // routes/info.js is a one-line pass-through of services/engine.js getInfo(),
+  // which is mocked away here — so this can only prove the route is mounted
+  // and echoes the service value. The CACHING lives inside the real
+  // services/engine.js and is exercised by tests/engine.integration.test.js;
+  // asserting anything about it here would be theater.
+  test('is mounted and echoes the engine service response (smoke test)', async () => {
     engine.getInfo.mockResolvedValue({ grid: { width: 16, height: 30 }, units: [] })
     const res = await api.get('/api/info')
     expect(res.status).toBe(200)

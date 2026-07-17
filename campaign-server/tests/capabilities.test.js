@@ -1,16 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { reconValue, forageValue, screenValue, scoutingCoverage, scoutingBand } from '../utils/capabilities.js'
 import { SCOUTING_BAND_THRESHOLDS } from '../utils/campaignConfig.js'
+import { engineStatsFixture } from './fixtures/engineStats.js'
 
-// Stats as exported by the engine (see backend/engine/tests/test_unit_catalog.cpp
-// "movement speed and ballistic skill pinned per type" + "reconTag pinned per
-// type" for the pinned inputs).
-const soldier = { maxHP: 10, attack: 11, defence: 12, armour: 5, speed: 10, ballisticSkill: 4, reconTag: 0 }
-const archer = { maxHP: 10, attack: 10, defence: 12, armour: 2, speed: 10, ballisticSkill: 10, reconTag: 0 }
-const cavalry = { maxHP: 10, attack: 11, defence: 12, armour: 5, speed: 28, ballisticSkill: 4, reconTag: 0 }
-const lightCavalry = { maxHP: 10, attack: 10, defence: 11, armour: 2, speed: 28, ballisticSkill: 8, reconTag: 4 }
-const horse = { maxHP: 15, attack: 0, defence: 12, armour: 0, speed: 28, ballisticSkill: 1, reconTag: 0 }
-const warhorse = { maxHP: 15, attack: 9, defence: 12, armour: 2, speed: 28, ballisticSkill: 1, reconTag: -2 }
+// Stats as exported by the engine, shared through fixtures/engineStats.js so
+// tests/engine.integration.test.js can assert these exact values against a
+// real `./game dump-units` run — the fixture can't silently drift from the
+// C++ constructors on any machine with the binary built.
+const {
+  Soldier: soldier,
+  Archer: archer,
+  Cavalry: cavalry,
+  LightCavalry: lightCavalry,
+  Horse: horse,
+  Warhorse: warhorse,
+} = engineStatsFixture
 
 describe('derived campaign capabilities', () => {
   it('recon is super-linear in speed: light cavalry dominates, foot barely registers', () => {

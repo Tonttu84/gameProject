@@ -5,12 +5,19 @@ import { dumpUnits, getInfo } from '../services/engine.js'
 import { syncCatalog } from '../services/catalogSync.js'
 import UnitType from '../models/unitType.js'
 import { startTestDb, stopTestDb } from './helpers/db.js'
+import { engineStatsFixture } from './fixtures/engineStats.js'
 
 // Contract test against the real C++ binary: what dump-units emits must pass
 // the Mongoose schema unchanged, so the DB can never silently drift from the
 // engine. Skipped when ./game hasn't been built (e.g. plain `npm test` on a
 // fresh checkout).
 const hasEngine = fs.existsSync(config.ENGINE_BIN)
+if (!hasEngine)
+  // A skipIf'd suite is invisible in a green run — say out loud that the
+  // engine contract went unchecked so nobody mistakes "passed" for "covered".
+  console.warn(
+    `engine binary not built (${config.ENGINE_BIN}) — engine contract tests SKIPPED; run \`make\` to enable them`,
+  )
 
 describe.skipIf(!hasEngine)('real engine contract', () => {
   beforeAll(startTestDb)
@@ -45,5 +52,24 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
     expect(info.units.map((u) => u.type).sort()).toEqual(placeable)
     for (const u of info.units)
       expect(u).toMatchObject({ type: expect.any(String), placementSize: expect.any(Number) })
+  }, 30000)
+
+  // Closes the hand-copied-facts loophole: fixtures/engineStats.js (the
+  // inputs capabilities.test.js derives scouting/forage/raid math from) is
+  // hand-typed, so a C++ stat retune would otherwise leave those tests
+  // green while the campaign layer computes from stale numbers. Pin every
+  // fixture field to the live dump-units value, unit by unit.
+  test('capability stat fixtures match the real engine dump 1:1', async () => {
+    const catalog = await dumpUnits()
+    for (const [name, pinned] of Object.entries(engineStatsFixture)) {
+      const unit = catalog.units.find((u) => u.name === name)
+      expect(unit, `dump-units emits no unit named ${name}`).toBeDefined()
+      // Compare exactly the fields the fixture pins (it deliberately omits
+      // preferredRange — no campaign capability reads it).
+      const actual = Object.fromEntries(
+        Object.keys(pinned).map((field) => [field, unit.stats[field]]),
+      )
+      expect({ [name]: actual }).toEqual({ [name]: pinned })
+    }
   }, 30000)
 })

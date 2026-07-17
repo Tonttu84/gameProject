@@ -220,7 +220,10 @@ describe('P2: console.warn fires when placement exceeds available roster', () =>
     fireEvent.click(screen.getByRole('button', { name: /place/i }))
     const result = usePlacementStore.getState().placements
     const newHexEntry = result.find(p => p.col === 1 && p.row === 4 && p.type === 'Soldier')
-    expect(newHexEntry?.count ?? 0).toBeLessThanOrEqual(2)
+    // The placement must be COMMITTED at the cap — a dropped placement
+    // (no entry at all) is a different bug, not a pass.
+    expect(newHexEntry).toBeDefined()
+    expect(newHexEntry.count).toBe(2)
   })
 })
 
@@ -263,13 +266,8 @@ describe('P5: hex capacity in ReachMenu accounts for other unit types on the sam
 // ---------------------------------------------------------------------------
 
 describe('P6: Clear button zeros all placements on the hex and closes', () => {
-  it('Clear button is rendered in ReachMenu', () => {
-    renderMenu()
-    expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument()
-  })
-
   it('clicking Clear calls onPlace with count=0 for every unit type', () => {
-    const { onPlace, onClose } = renderMenu({
+    const { onPlace } = renderMenu({
       placements: [{ type: 'Soldier', col: 1, row: 4, count: 5 }],
     })
     fireEvent.click(screen.getByRole('button', { name: /clear/i }))

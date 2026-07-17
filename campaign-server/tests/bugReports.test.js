@@ -116,6 +116,25 @@ describe('POST /api/bug-reports', () => {
     expect(await BugReport.countDocuments()).toBe(5)
   })
 
+  test('the rate window ROLLS: reports older than an hour stop counting', async () => {
+    // Pins "5 per hour" against silently regressing to "5 per lifetime" —
+    // the route must count createdAt >= now − 1 h, not all of the user's
+    // reports ever.
+    for (let i = 0; i < 5; i++)
+      expect((await submit({ message: `report ${i}` })).status).toBe(201)
+    expect((await submit({ message: 'still inside the window' })).status).toBe(429)
+
+    // Age all five past the window with a raw driver op (the schema's
+    // timestamps are Mongoose-managed, so the update must bypass the model —
+    // same convention as campaigns.test.js's makeLegacy).
+    const overAnHourAgo = new Date(Date.now() - 61 * 60 * 1000)
+    await BugReport.collection.updateMany({}, { $set: { createdAt: overAnHourAgo } })
+
+    const sixth = await submit({ message: 'the window has rolled past the old five' })
+    expect(sixth.status).toBe(201)
+    expect(await BugReport.countDocuments()).toBe(6)
+  })
+
   test('stamps the trusted active-campaign context server-side', async () => {
     // Campaign creation consumes augury dice; pin a reading so create() is
     // deterministic (same pattern as campaigns.test.js).

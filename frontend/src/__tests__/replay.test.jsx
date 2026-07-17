@@ -12,7 +12,7 @@
  */
 
 import React from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act, waitFor, renderHook } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
@@ -108,6 +108,85 @@ describe('useReplay', () => {
     await waitFor(() =>
       expect(getTicks).toHaveBeenCalledWith('battle1', CHUNK_SIZE, 2 * CHUNK_SIZE - 1),
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Auto-advance (Play). Fake timers are installed from the start of each test
+// (authNoticeTimeout.test.jsx discipline) so the setInterval useReplay
+// schedules lives on the clock we advance; advanceTimersByTimeAsync drains
+// the mocked getTicks promises between ticks. PLAY_MS mirrors useReplay.js's
+// unexported interval constant.
+// ---------------------------------------------------------------------------
+
+const PLAY_MS = 250
+
+describe('useReplay auto-advance (Play)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  const advance = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+
+  const mountReplay = async (tickCount) => {
+    const rendered = renderHook(() => useReplay('battle1', tickCount))
+    await flush() // resolve the initial chunk fetch
+    expect(rendered.result.current.tick).not.toBeNull()
+    return rendered
+  }
+
+  it('playing advances one tick per interval', async () => {
+    const { result } = await mountReplay(3)
+    act(() => result.current.setPlaying(true))
+    await advance(PLAY_MS)
+    expect(result.current.current).toBe(1)
+    await advance(PLAY_MS)
+    expect(result.current.current).toBe(2)
+  })
+
+  it('pausing stops the advance where it stands', async () => {
+    const { result } = await mountReplay(3)
+    act(() => result.current.setPlaying(true))
+    await advance(PLAY_MS)
+    expect(result.current.current).toBe(1)
+    act(() => result.current.setPlaying(false))
+    await advance(4 * PLAY_MS)
+    expect(result.current.current).toBe(1)
+  })
+
+  it('playback stops at the final tick instead of wrapping around', async () => {
+    const { result } = await mountReplay(3)
+    act(() => result.current.setPlaying(true))
+    await advance(10 * PLAY_MS) // far past the end
+    expect(result.current.current).toBe(2)
+    expect(result.current.playing).toBe(false)
+  })
+
+  it('prefetches the next chunk as playback nears the boundary', async () => {
+    const total = CHUNK_SIZE + 10 // two chunks
+    getTicks.mockImplementation((_id, from, to) =>
+      Promise.resolve(
+        Array.from({ length: total }, (_, i) => ({ index: i, units: [], log: [] }))
+          .filter((t) => t.index >= from && t.index <= to),
+      ),
+    )
+    const { result } = await mountReplay(total)
+    // Park just outside the prefetch window (CHUNK_SIZE-5 … boundary).
+    act(() => result.current.seek(CHUNK_SIZE - 7))
+    expect(getTicks).toHaveBeenCalledTimes(1) // still only chunk 0
+
+    act(() => result.current.setPlaying(true))
+    await advance(PLAY_MS) // → CHUNK_SIZE-6: not yet in the window
+    expect(getTicks).toHaveBeenCalledTimes(1)
+
+    await advance(PLAY_MS) // → CHUNK_SIZE-5: prefetch fires
+    expect(getTicks).toHaveBeenCalledTimes(2)
+    expect(getTicks).toHaveBeenCalledWith('battle1', CHUNK_SIZE, 2 * CHUNK_SIZE - 1)
   })
 })
 
@@ -372,5 +451,34 @@ describe('ReplayView visual state cues', () => {
   it('an engaged off-rank unit falls back to RANK_ALPHA[0]', async () => {
     renderTick([{ id: 1, type: 'Soldier', team: 'red', q: 4, r: 4, hp: 10, side: 0, rank: 0, ox: 0, oy: 0, sz: 0.2 }])
     expect(Number((await screen.findByText('S')).getAttribute('fill-opacity'))).toBeCloseTo(140 / 255, 5)
+  })
+})
+
+// The Play button wires setPlaying into the view: label flips to Pause while
+// running, the slider tracks the auto-advance, and pausing halts it.
+describe('ReplayView Play button', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('Play runs the clock and moves the slider; Pause halts it', async () => {
+    renderView()
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) }) // initial chunk fetch
+    expect(screen.getByText('Z')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('replay-play'))
+    expect(screen.getByTestId('replay-play')).toHaveTextContent('Pause')
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(PLAY_MS) })
+    expect(screen.getByTestId('replay-slider')).toHaveValue('1')
+
+    fireEvent.click(screen.getByTestId('replay-play'))
+    expect(screen.getByTestId('replay-play')).toHaveTextContent('Play')
+    await act(async () => { await vi.advanceTimersByTimeAsync(4 * PLAY_MS) })
+    expect(screen.getByTestId('replay-slider')).toHaveValue('1')
   })
 })

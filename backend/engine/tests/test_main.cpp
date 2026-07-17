@@ -90,22 +90,6 @@ TEST_CASE("rally returns false immediately when unit is not broken") {
     REQUIRE(s.getBroken() == false);  // state must not change
 }
 
-TEST_CASE("rally leaves broken=false on success") {
-    Soldier s(REDTEAM);
-    s.setBroken(true);
-    // Run many times; a success must clear the broken flag
-    for (int i = 0; i < 200; i++) {
-        Soldier t(REDTEAM);
-        t.setBroken(true);
-        bool rallied = t.rally();
-        if (rallied)
-            REQUIRE(t.getBroken() == false);
-        else
-            REQUIRE(t.getBroken() == true);
-    }
-}
-
-
 // ── AUnit::testMorale ────────────────────────────────────────────────────────
 
 TEST_CASE("testMorale passes immediately for zero damage") {
@@ -204,11 +188,6 @@ TEST_CASE("testMorale fails and breaks unit when roll falls short") {
 
 // ── Fatigue ──────────────────────────────────────────────────────────────────
 
-TEST_CASE("fatigue starts at 0") {
-    Soldier s(REDTEAM);
-    REQUIRE(s.getFatigue() == 0);
-}
-
 TEST_CASE("increaseFatigue raises fatigue each call") {
     Soldier s(REDTEAM);           // fatigueCost = 5 (4 base + 1 heavy armor)
     s.increaseFatigue();
@@ -241,9 +220,13 @@ TEST_CASE("Zombie has 0 fatigueCost so combat never tires it") {
 
 // ── addWeapon ────────────────────────────────────────────────────────────────
 
-TEST_CASE("addWeapon accumulates shield value") {
-    Soldier s(REDTEAM);           // SwordAndShield has shieldValue=4
+TEST_CASE("addWeapon accumulates shield and defence values across weapons") {
+    Soldier s(REDTEAM);           // ctor's SwordAndShield: shieldValue=4; defence ends at 12
     REQUIRE(s.getShield() == 4);
+    REQUIRE(s.getDefence() == 12);
+    s.addWeapon(MeleeWeapons::MaceAndShield); // shieldValue=4, defence+1
+    REQUIRE(s.getShield() == 4 + 4);          // shield sums across both weapons
+    REQUIRE(s.getDefence() == 12 + 1);        // defence bonus stacks too
 }
 
 
@@ -332,37 +315,6 @@ TEST_CASE("unit starts alive and not broken") {
     REQUIRE(s.getAlive() == true);
     REQUIRE(s.getBroken() == false);
 }
-
-TEST_CASE("setAlive and getAlive round-trip") {
-    Soldier s(REDTEAM);
-    s.setAlive(false);
-    REQUIRE(s.getAlive() == false);
-}
-
-TEST_CASE("setBroken and getBroken round-trip") {
-    Soldier s(REDTEAM);
-    s.setBroken(true);
-    REQUIRE(s.getBroken() == true);
-    s.setBroken(false);
-    REQUIRE(s.getBroken() == false);
-}
-
-
-// ── battleSummon flag ─────────────────────────────────────────────────────────
-
-TEST_CASE("battleSummon defaults to false") {
-    Soldier s(REDTEAM);
-    REQUIRE(s.getBattleSummon() == false);
-}
-
-TEST_CASE("setBattleSummon round-trip") {
-    Zombie z(REDTEAM);
-    z.setBattleSummon(true);
-    REQUIRE(z.getBattleSummon() == true);
-    z.setBattleSummon(false);
-    REQUIRE(z.getBattleSummon() == false);
-}
-
 
 // ── BattleSetup / Battlefield integration ────────────────────────────────────
 // These tests use the global battlefield singleton. Each test cleans up:

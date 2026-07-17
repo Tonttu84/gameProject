@@ -4,7 +4,6 @@ import {
   MAP_NAME,
   FORTIFICATION_PRESETS,
   FORTIFICATION_MAX_LEVEL,
-  FORTIFY_COST_BASE,
 } from '../utils/campaignConfig.js'
 
 // Pure fortification math — the level→hexsides mapping the battle route and the
@@ -42,9 +41,12 @@ describe('fortifiedSidesFor', () => {
 })
 
 describe('fortifyCost / atFortCap', () => {
-  test('cost is FORTIFY_COST_BASE × (level+1)', () => {
-    expect(fortifyCost(0)).toBe(FORTIFY_COST_BASE) // L0→1
-    expect(fortifyCost(1)).toBe(FORTIFY_COST_BASE * 2) // L1→2
+  test('cost is 50 at level 0 and 100 at level 1', () => {
+    // Literal hand-pinned values, deliberately NOT restated from
+    // FORTIFY_COST_BASE: with the constant on both sides of the assertion, a
+    // wrong constant would pass. An intentional retune must update this test.
+    expect(fortifyCost(0)).toBe(50) // L0→1
+    expect(fortifyCost(1)).toBe(100) // L1→2
   })
 
   test('atFortCap is true only at the max level', () => {

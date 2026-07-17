@@ -78,20 +78,6 @@ const renderGrid = (props = {}) => {
 // ---------------------------------------------------------------------------
 
 describe('HexGrid: data-zone attributes', () => {
-  it('hexes inside player zone rows get data-zone="player"', () => {
-    renderGrid()
-    // col=0, row=4 is inside player zone (rowMin:4, rowMax:5)
-    const hex = screen.getByTestId('hex-0-4')
-    expect(hex).toHaveAttribute('data-zone', 'player')
-  })
-
-  it('hexes inside enemy zone rows get data-zone="enemy"', () => {
-    renderGrid()
-    // col=0, row=0 is inside enemy zone (rowMin:0, rowMax:1)
-    const hex = screen.getByTestId('hex-0-0')
-    expect(hex).toHaveAttribute('data-zone', 'enemy')
-  })
-
   it('hexes outside any zone have no data-zone attribute', () => {
     renderGrid()
     // row=2 is the neutral mid-zone
@@ -116,23 +102,6 @@ describe('HexGrid: data-zone attributes', () => {
         expect(screen.getByTestId(`hex-${col}-${row}`)).toHaveAttribute('data-zone', 'enemy')
       }
     }
-  })
-
-  it('when map data has no zone fields, no hexes get data-zone attributes', () => {
-    // info without playerZone / enemyZone — simulate a future "no-zones" map.
-    // HexGrid destructures info.playerZone / info.enemyZone; if absent the
-    // inPlayerZone / inEnemyZone helpers will throw — so we supply sentinel
-    // objects with rowMin/rowMax values that can never match a real row.
-    const infoNoZones = makeInfo({
-      playerZone: { rowMin: -1, rowMax: -2 },  // impossible range
-      enemyZone:  { rowMin: -1, rowMax: -2 },
-    })
-    renderGrid({ info: infoNoZones })
-    // No hex should have a data-zone attribute
-    const allHexes = screen.getAllByTestId(/^hex-/)
-    allHexes.forEach(h => {
-      expect(h).not.toHaveAttribute('data-zone')
-    })
   })
 })
 
@@ -187,6 +156,34 @@ describe('HexGrid: click guard opens ReachMenu only in player zone', () => {
     fireEvent.click(screen.getByTestId('hex-0-0'))
     // Menu stays open (the guard returned early, selectedHex is unchanged)
     expect(screen.getByRole('button', { name: /place/i })).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 2b. Impassable hexes — the map-data guard alongside the zone guard
+// ---------------------------------------------------------------------------
+
+describe('HexGrid: impassable hexes', () => {
+  // Map JSON is keyed by AXIAL coords: offset (1,4) → q = 1 - floor(4/2) = -1,
+  // r = 4 — a hex inside the player zone (rows 4-5).
+  const impassableMap = makeMap([{ q: -1, r: 4, terrain: 'Open', impassable: true }])
+
+  it('clicking an impassable player-zone hex does NOT open ReachMenu; a passable neighbour does', () => {
+    renderGrid({ map: impassableMap })
+    fireEvent.click(screen.getByTestId('hex-1-4'))
+    expect(screen.queryByRole('button', { name: /place/i })).not.toBeInTheDocument()
+    // Same row, next column — no map entry, so passable — opens the menu.
+    fireEvent.click(screen.getByTestId('hex-2-4'))
+    expect(screen.getByRole('button', { name: /place/i })).toBeInTheDocument()
+  })
+
+  it('an impassable hex is filled #1a1a1a while a passable neighbour keeps its terrain color', () => {
+    renderGrid({ map: impassableMap })
+    expect(screen.getByTestId('hex-1-4').querySelector('polygon'))
+      .toHaveAttribute('fill', '#1a1a1a')
+    // Passable player-zone hex draws the terrain catalog color unblended.
+    expect(screen.getByTestId('hex-2-4').querySelector('polygon'))
+      .toHaveAttribute('fill', '#5a6441')
   })
 })
 

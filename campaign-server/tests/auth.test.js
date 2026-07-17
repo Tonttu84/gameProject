@@ -93,6 +93,22 @@ describe('POST /api/login', () => {
     expect(decoded.id).toBe(stored._id.toString())
   })
 
+  test('the token expires one hour after issue', async () => {
+    // routes/login.js signs with expiresIn: '1h'. Deleting that option still
+    // yields a token every other test verifies happily — a non-expiring
+    // session forever. Pin the exp claim itself: it must exist and sit
+    // exactly 3600 s after iat (both are epoch seconds set at signing).
+    const res = await api.post('/api/login').send({ username: 'tonttu', password: 'salainen' })
+    expect(res.status).toBe(200)
+
+    const decoded = jwt.verify(res.body.token, config.SECRET)
+    expect(decoded.iat).toEqual(expect.any(Number))
+    expect(decoded.exp).toEqual(expect.any(Number))
+    expect(decoded.exp - decoded.iat).toBe(60 * 60)
+    // And the hour is in the future, not an already-dead token.
+    expect(decoded.exp * 1000).toBeGreaterThan(Date.now())
+  })
+
   test('401 with the same message for wrong password and unknown user', async () => {
     const wrongPw = await api.post('/api/login').send({ username: 'tonttu', password: 'nope' })
     expect(wrongPw.status).toBe(401)

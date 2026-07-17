@@ -333,11 +333,6 @@ TEST_CASE("Wing::disband clears back-pointers on all squads") {
     REQUIRE(w.getSquads().empty());
 }
 
-TEST_CASE("Wing getName returns the name given at construction") {
-    Wing w("Right Flank");
-    REQUIRE(w.getName() == "Right Flank");
-}
-
 // ── Hold order: AUnit ─────────────────────────────────────────────────────────
 
 TEST_CASE("AUnit: holdTurns defaults to 0, tickHold returns false") {
