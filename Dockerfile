@@ -25,7 +25,12 @@ RUN make
 # ── Stage 2: frontend ────────────────────────────────────────────────────────
 FROM node:24-bookworm-slim AS frontend-build
 WORKDIR /src/frontend
-COPY frontend/package.json frontend/package-lock.json ./
+# .npmrc's engine-strict + the engines.npm floor guard against lockfile drift:
+# this stage's npm (11.x) must satisfy them; the runtime stage below installs
+# campaign-server deps with NodeSource node 22's npm 10, so its .npmrc is
+# deliberately NOT copied before that npm ci — the floor is for machines that
+# WRITE package-lock.json, and the image only ever consumes it.
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build

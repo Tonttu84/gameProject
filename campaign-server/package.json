@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Campaign BFF: serves the unit catalog and maps, runs battles via the C++ engine, stores per-tick replays in MongoDB",
   "type": "module",
+  "packageManager": "npm@11.16.0",
+  "engines": {
+    "npm": ">=11"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
