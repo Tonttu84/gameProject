@@ -194,6 +194,68 @@ notes below over the git history if they ever disagree — the commits win.
   `RaidPanel` read `useUiStore((s) => s.tutorial)` directly and only forward it to
   `TutorialIntro`'s `enabled` prop; single source of truth, no App→panel fan-out to remove.)
 
+### Upkeep pass 2026-07-17 (deferred review items + npm pin + test-quality audit) — handoff
+
+Cleared the 07-16 "not-yet-done" list. On the laptop (LAPTOP-FGJQ8QNB), on `main`.
+
+- **npm pinned (the durable lockfile-drift fix):** `"packageManager": "npm@11.16.0"` +
+  `"engines": { "npm": ">=11" }` in BOTH `frontend/package.json` and
+  `campaign-server/package.json`, enforced by `engine-strict=true` in a committed `.npmrc`
+  next to each — an old npm now fails loudly at install instead of silently rewriting the
+  lock. Both lockfiles reconciled with npm 11.16.0 (3-line `engines` mirror each; the
+  campaign-server one also had a stale `"peer": true` npm-10-ism normalized away).
+  Dockerfile copies `frontend/.npmrc` into the frontend-build stage (its npm 11 passes);
+  campaign-server's `.npmrc` is deliberately NOT copied before that stage's `npm ci` — the
+  runtime stage installs with NodeSource node 22 (npm 10), which only *consumes* the lock;
+  the floor is for machines that *write* it. **Machine note:** each dev machine's WSL needs
+  npm ≥ 11 once: `sudo npm install -g npm@11.16.0` (done on the laptop this session; the
+  desktop will hit the engine-strict wall on its first `npm install` until upgraded).
+- **Panel selector `?.` pass (deferred review item — done):** `s.campaign.X` →
+  `s.campaign?.X` in `AuguryPanel` (+ `?? EMPTY_OBJECT`), `ForagePanel` (+ fallback-safe
+  body: `forage.rings ?? []`, `forage.kgPerUnit?.[type]`), `RaidPanel` (body was already
+  `raid?.`-safe). Matches `selectors.js`/`HexGrid`; a selector can now never throw during
+  the transient null-campaign window (e.g. logout while a panel is mounted).
+- **Two review items closed as no-change-needed:** the `useNoticeStore` module timer IS
+  cleaned up — `reset()` delegates to `clear()` (cancels the timeout) and `resetAllStores()`
+  resets the notice store first for exactly this reason; with a singleton store under a
+  single never-unmounted root there is no unmount to hook. `useInCamp`'s double-subscribe
+  with App's own `usePlacedCount`/`useSquadPlacedCount` is inherent to composing zustand
+  hooks; App needs both the parts and the whole, and inlining the subtraction in App is the
+  re-derivation the refactor banned. Cost is a few reduces per placement change.
+- **Test-quality audit (07-16 item 3 — DONE, via 3 parallel read-only subagents over
+  campaign-server Vitest, engine Catch2, frontend component tests).** Headline: **no mock
+  theater anywhere** — all three suites mock only at real trust boundaries (the `./game`
+  subprocess, `services/api.js`) and assert real behaviour; the campaign-server suite in
+  particular is exemplary (real HTTP + real in-memory Mongo + dice queue seam). Actionable
+  findings, pending as the NEXT batch (fix subagents + user decisions in flight this
+  session):
+  - *Weak/redundant tests to tighten or delete:* `test_main.cpp` getter/setter round-trips
+    (:207,336,342,353,358), addWeapon "accumulates" that doesn't accumulate (:244), rally
+    RNG-loop redundancy (:93); `test_squad.cpp` Wing getName (:336); empty husk
+    `test_known_failures.cpp` (0 TEST_CASEs — delete file + stale pointer comment at
+    `test_movement.cpp:1-6`); `routes.test.js` info-route test title claims caching it
+    never tests (rename to mount-smoke); `fortification.test.js` cost test restates the
+    constant (assert literal 50/100); frontend: `placementBudget.test.jsx:210` (assert
+    exact clamp =2, not ≤2), `:266` redundant, `zoneEnforcement.test.jsx:81,88,121`,
+    `campPanel.test.jsx:242` (fixture echo posing as militia-muster behaviour),
+    `:276,284`, `deploymentOrders.test.jsx:132` (static tutorial copy).
+  - *USER DECISIONS pending:* (1) `Squad::updateMoraleState()`/`moraleModifier()` have
+    ZERO production callers despite `Squad.hpp:55-59` claiming Battlefield calls them each
+    tick — the whole test_squad collective-morale cluster green-lights an unwired feature;
+    wire it or mark planned? (2) squad `_prestige` accessors/tests: unconsumed placeholder —
+    keep or delete?
+  - *Top missing coverage (backlog, ranked):* engine — squad cohesion bonus in combat
+    (the main mechanical reason squads exist; zero assertions), elevation effects, archer
+    target-scoring internals, corpse economy from real deaths; campaign-server — enemy
+    stance machine + withdrawal win (`services/enemyAi.js`, `dayResolution.js:117-120`),
+    bug-report rate-window expiry, `spreadPlacement` overstack property, engine↔JS stat
+    parity for `capabilities.test.js`'s hand-copied unit stats (violates the no-hand-copied
+    unit facts rule), token expiry issuance; frontend — battle VICTORY continuation flow,
+    replay auto-play/Play button, watch-replay round trip, connection-error screen,
+    impassable-hex behaviour.
+- 191/191 frontend tests, oxlint clean (one pre-existing test-file warning, queued in the
+  fix batch). C++ suite untouched this session.
+
 ### Upkeep pass 2026-07-16 (post-refactor code review + CI fix) — handoff
 
 Session after the Zustand refactor. **On `main`, all pushed.** Two commits:
