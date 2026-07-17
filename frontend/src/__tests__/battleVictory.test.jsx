@@ -112,6 +112,9 @@ describe('winning a battle', () => {
 
     await waitFor(() => expect(endCampaignDay).toHaveBeenCalledWith('c1'))
     await screen.findByTestId('day-report')
+    // Beats: upkeep first (no fates fired), then the summary card carries the
+    // log entries and the continue button.
+    fireEvent.click(screen.getByTestId('reveal-next'))
     expect(screen.getByText('The enemy host falls back in disorder.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('report-continue'))

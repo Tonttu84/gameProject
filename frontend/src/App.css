@@ -271,6 +271,17 @@ body {
 .scout-intervened { color: #88cc88; font-style: italic; }
 .scout-report .scout-revealed { color: var(--gold); font-style: italic; }
 .report-entries { list-style: none; padding: 0; color: #8888aa; font-size: 13px; text-align: center; }
+/* Event reveal screen: one card per report beat, dealt on click. */
+.reveal-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem 1.4rem;
+  text-align: center;
+  min-width: min(420px, 90vw);
+}
+.reveal-card h3 { color: var(--gold); font-size: 1.05rem; margin-bottom: 0.4rem; }
+.reveal-clash { color: var(--danger); font-size: 13px; }
 
 .phase-placement {
   display: flex;

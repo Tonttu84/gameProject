@@ -14,7 +14,7 @@
 import React from 'react'
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import DayReport from '../components/DayReport'
+import EventRevealScreen from '../components/EventRevealScreen'
 import ScoutReport from '../components/ScoutReport'
 
 const nightRaidSlot = {
@@ -28,10 +28,12 @@ const nightRaidSlot = {
   wasAccurate: true,
 }
 
+// A one-slot report's first beat IS the fate card — no clicking needed here;
+// the click-through sequencing itself is covered in eventReveal.test.jsx.
 const renderReport = (slots) =>
-  render(<DayReport report={{ day: 3, entries: [], augury: slots }} onContinue={() => {}} />)
+  render(<EventRevealScreen report={{ day: 3, entries: [], augury: slots }} onContinue={() => {}} />)
 
-describe('DayReport: recon-sensitive rungs', () => {
+describe('EventRevealScreen: recon-sensitive rungs', () => {
   it('shows the fired rung as what came to pass and badges the scouts', () => {
     renderReport([
       {
@@ -44,7 +46,7 @@ describe('DayReport: recon-sensitive rungs', () => {
         scoutsIntervened: true,
       },
     ])
-    const report = screen.getByTestId('report-augury')
+    const report = screen.getByTestId('reveal-beat-fate-0')
     // The downgraded rung is what came to pass…
     expect(report).toHaveTextContent('Pickets Hold')
     expect(report).toHaveTextContent('catch the raiders at the ditch')
@@ -65,7 +67,7 @@ describe('DayReport: recon-sensitive rungs', () => {
         scoutsIntervened: false,
       },
     ])
-    expect(screen.getByTestId('report-augury')).toHaveTextContent('Night Raid')
+    expect(screen.getByTestId('reveal-beat-fate-0')).toHaveTextContent('Night Raid')
     expect(screen.queryByTestId('scout-intervened')).not.toBeInTheDocument()
   })
 
@@ -77,7 +79,7 @@ describe('DayReport: recon-sensitive rungs', () => {
         wasAccurate: false,
       },
     ])
-    const report = screen.getByTestId('report-augury')
+    const report = screen.getByTestId('reveal-beat-fate-0')
     expect(report).toHaveTextContent('Supply Cache')
     expect(report).toHaveTextContent('The augur was wrong.')
     expect(screen.queryByTestId('scout-intervened')).not.toBeInTheDocument()
@@ -94,7 +96,7 @@ describe('DayReport: recon-sensitive rungs', () => {
         scoutsIntervened: true,
       },
     ])
-    const report = screen.getByTestId('report-augury')
+    const report = screen.getByTestId('reveal-beat-fate-0')
     expect(report).toHaveTextContent('Counter-Ambush')
     expect(screen.getByTestId('scout-intervened')).toBeInTheDocument()
   })

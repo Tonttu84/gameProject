@@ -188,14 +188,20 @@ describe('campaign flow', () => {
     fireEvent.click(screen.getByText('Muster for Battle'))
     fireEvent.click(await screen.findByTestId('end-day'))
 
-    // The reveal beat, per fate: the augur foretold Plague but Supply Cache
-    // came instead; the quiet fortnight was read true.
-    const report = await screen.findByTestId('report-augury')
-    expect(report).toHaveTextContent('Plague')
-    expect(report).toHaveTextContent('Supply Cache')
-    expect(report).toHaveTextContent('The augur was wrong.')
-    expect(report).toHaveTextContent('The augur spoke true.')
+    // The reveal deals one card per click: the first fate is on the table
+    // (the augur foretold Plague but Supply Cache came instead), the second
+    // (read true) only after a click, then upkeep, then the summary.
+    const fate0 = await screen.findByTestId('reveal-beat-fate-0')
+    expect(fate0).toHaveTextContent('Plague')
+    expect(fate0).toHaveTextContent('Supply Cache')
+    expect(fate0).toHaveTextContent('The augur was wrong.')
+    expect(screen.queryByTestId('reveal-beat-fate-1')).not.toBeInTheDocument()
     await waitFor(() => expect(endCampaignDay).toHaveBeenCalledWith('c1'))
+
+    fireEvent.click(screen.getByTestId('reveal-next'))
+    expect(screen.getByTestId('reveal-beat-fate-1')).toHaveTextContent('The augur spoke true.')
+    fireEvent.click(screen.getByTestId('reveal-next')) // upkeep
+    fireEvent.click(screen.getByTestId('reveal-next')) // summary
 
     fireEvent.click(screen.getByTestId('report-continue'))
     await screen.findByText(/Turn 2 — War Council/)

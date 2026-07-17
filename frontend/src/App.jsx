@@ -15,7 +15,7 @@ import {
 } from './stores/selectors'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
-import DayReport from './components/DayReport'
+import EventRevealScreen from './components/EventRevealScreen'
 import ForagePanel from './components/ForagePanel'
 import RaidPanel from './components/RaidPanel'
 import CampPanel from './components/CampPanel'
@@ -366,7 +366,7 @@ const App = () => {
       )}
 
       {phase === 'report' && dayReport && (
-        <DayReport
+        <EventRevealScreen
           report={dayReport}
           onContinue={() => { setDayReport(null); setPhase('setup') }}
         />
