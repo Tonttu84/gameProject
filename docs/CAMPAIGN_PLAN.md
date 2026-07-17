@@ -226,9 +226,16 @@ Cleared the 07-16 "not-yet-done" list. On the laptop (LAPTOP-FGJQ8QNB), on `main
   campaign-server Vitest, engine Catch2, frontend component tests).** Headline: **no mock
   theater anywhere** — all three suites mock only at real trust boundaries (the `./game`
   subprocess, `services/api.js`) and assert real behaviour; the campaign-server suite in
-  particular is exemplary (real HTTP + real in-memory Mongo + dice queue seam). Actionable
-  findings, pending as the NEXT batch (fix subagents + user decisions in flight this
-  session):
+  particular is exemplary (real HTTP + real in-memory Mongo + dice queue seam). The
+  fix/coverage batch below **LANDED later the same session** (3 parallel fix subagents, then
+  verified serially: engine test-par all green, campaign-server 227/227, frontend 198/198,
+  oxlint 0/0). New engine files `test_cohesion/test_elevation/test_archer/test_corpses.cpp`;
+  new campaign-server `enemyAi.test.js`/`enemyPlacement.test.js` + rate-window expiry, token
+  expiry, and an engine↔JS stat-parity check driven by a shared `tests/fixtures/engineStats.js`;
+  new frontend `battleVictory/watchReplay/connectionError.test.jsx` + replay auto-play +
+  impassable-hex tests and the flagged deletions/tightenings. **The parity check paid for
+  itself immediately: the hand-copied Warhorse defence was 12, the real engine says 13** —
+  exactly the drift class it exists to catch. Original findings list (now applied):
   - *Weak/redundant tests to tighten or delete:* `test_main.cpp` getter/setter round-trips
     (:207,336,342,353,358), addWeapon "accumulates" that doesn't accumulate (:244), rally
     RNG-loop redundancy (:93); `test_squad.cpp` Wing getName (:336); empty husk
@@ -1353,6 +1360,13 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 ---
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
+
+**TODO — event reveal screen + events with choices (user, 2026-07-17).** Two paired UI/design
+ideas for turn events: (1) a dedicated reveal screen where the turn's events are revealed **one
+by one on player click** (drama beat, replacing the all-at-once report dump), and (2) events may
+carry **choices** the player picks between (branching outcomes — needs server-side event schema
+support, hidden-information discipline for undisclosed branches, and augury interplay). Not
+scheduled; note the tutorial-flag convention applies when the screen is built.
 
 **TODO — worker replenishment + workers eating food (paired).** From the Stage-5 playtest-item
 notes (2026-07-13): `workers` (civilian labour pool, `campaignConfig.js` `STARTING_WORKERS =
