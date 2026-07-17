@@ -3,7 +3,7 @@ import TutorialIntro from './TutorialIntro'
 import { tons } from '../utils/format'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
-import { useRoster } from '../stores/selectors'
+import { useRoster, EMPTY_OBJECT } from '../stores/selectors'
 
 // Forager assignment for the turn: per-type steppers against the roster,
 // a live capacity preview from the server-provided kg-per-unit values, and
@@ -17,7 +17,7 @@ import { useRoster } from '../stores/selectors'
 const RING_NAMES = ['Near', 'Middle', 'Far']
 
 const ForagePanel = ({ onAssign }) => {
-  const forage = useCampaignStore((s) => s.campaign.forage)
+  const forage = useCampaignStore((s) => s.campaign?.forage ?? EMPTY_OBJECT)
   const roster = useRoster()
   const tutorial = useUiStore((s) => s.tutorial)
   const [assignment, setAssignment] = useState({ ...forage.assignment })
@@ -31,7 +31,7 @@ const ForagePanel = ({ onAssign }) => {
   }
 
   const capacity = Object.entries(assignment).reduce(
-    (sum, [type, count]) => sum + count * (forage.kgPerUnit[type] ?? 0),
+    (sum, [type, count]) => sum + count * (forage.kgPerUnit?.[type] ?? 0),
     0,
   )
   const assignedTotal = Object.values(assignment).reduce((a, b) => a + b, 0)
@@ -56,7 +56,7 @@ const ForagePanel = ({ onAssign }) => {
       />
       <h3>Foraging Parties</h3>
       <div className="forage-rings">
-        {forage.rings.map((r) => (
+        {(forage.rings ?? []).map((r) => (
           <div className="forage-ring" key={r.ring} data-testid={`forage-ring-${r.ring}`}>
             <span>{RING_NAMES[r.ring] ?? `Ring ${r.ring}`}</span>
             <meter min="0" max={r.initialRichness} value={r.richness} />
@@ -66,10 +66,10 @@ const ForagePanel = ({ onAssign }) => {
       </div>
       <div className="forage-assign">
         {Object.entries(roster)
-          .filter(([type, n]) => n > 0 && (forage.kgPerUnit[type] ?? 0) > 0)
+          .filter(([type, n]) => n > 0 && (forage.kgPerUnit?.[type] ?? 0) > 0)
           .map(([type, n]) => (
             <label key={type} className="forage-row">
-              {type} ({forage.kgPerUnit[type]} kg each, {n} available)
+              {type} ({forage.kgPerUnit?.[type]} kg each, {n} available)
               <input
                 type="number"
                 min="0"

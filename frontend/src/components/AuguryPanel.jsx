@@ -1,5 +1,6 @@
 import React from 'react'
 import useCampaignStore from '../stores/useCampaignStore'
+import { EMPTY_OBJECT } from '../stores/selectors'
 
 // The augur's tent. Each turn holds three independent fates; consulting shows
 // one vision per fate with the odds that it is true — the minigame is judging
@@ -27,7 +28,7 @@ const omenLabel = ({ valence, severity }) =>
 // augury comes straight from the campaign store; onConsult/onReroll/
 // onContinue are still props (guarded actions / a flow function).
 const AuguryPanel = ({ onConsult, onReroll, onContinue }) => {
-  const augury = useCampaignStore((s) => s.campaign.augury)
+  const augury = useCampaignStore((s) => s.campaign?.augury ?? EMPTY_OBJECT)
   const canReroll = augury.rerollsRemaining > 0
 
   return (

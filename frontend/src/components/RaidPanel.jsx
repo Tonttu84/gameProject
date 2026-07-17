@@ -35,8 +35,8 @@ const unitCost = (unit) =>
 // store; units stays a prop (it's the static /api/info catalog, not
 // campaign data). onLaunchAll/onWatch are still props (guarded actions).
 const RaidPanel = ({ units, onLaunchAll, onWatch }) => {
-  const raid = useCampaignStore((s) => s.campaign.raid)
-  const scouting = useCampaignStore((s) => s.campaign.scouting)
+  const raid = useCampaignStore((s) => s.campaign?.raid)
+  const scouting = useCampaignStore((s) => s.campaign?.scouting)
   const roster = useRoster()
   const forageAssignment = useForageAssignment()
   const tutorial = useUiStore((s) => s.tutorial)
