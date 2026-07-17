@@ -6,12 +6,10 @@
 
 // ── Corpse economy ───────────────────────────────────────────────────────────
 // cleanup() (run at the end of every tick) prunes the dead and tallies the
-// corpses the necromancer's raise_dead spends. PINNED AS-OBSERVED: only
-// BLUE-side, non-undead dead leave corpses — RED deaths never do, because
-// Battlefield::cleanup() walks only _blue.units for the tally and prunes
-// _red via Team::pruneDeadUnits without counting. Whether that asymmetry is
-// a bug or a design decision is an open question; these tests pin the current
-// behaviour so any change to it is a deliberate one.
+// corpses the necromancer's raise_dead spends. BOTH teams' non-undead dead
+// feed the one shared pool — a corpse is a corpse regardless of its banner;
+// only the undead leave nothing to reclaim. (An earlier blue-only tally was
+// refactor drift, ruled a bug by the user 2026-07-17.)
 
 TEST_CASE("corpses: a blue Soldier killed in melee leaves exactly one corpse after cleanup") {
     Battlefield bf;
@@ -63,7 +61,7 @@ TEST_CASE("corpses: a blue Soldier killed in melee leaves exactly one corpse aft
     CHECK(bf.countTeam(REDTEAM) == 1);  // the killer still stands
 }
 
-TEST_CASE("corpses: cleanup tallies blue non-undead only; undead and RED dead leave none") {
+TEST_CASE("corpses: cleanup tallies non-undead dead from BOTH teams; undead leave none") {
     Battlefield bf;
 
     auto redSoldier  = std::make_unique<Soldier>(REDTEAM);
@@ -94,10 +92,9 @@ TEST_CASE("corpses: cleanup tallies blue non-undead only; undead and RED dead le
 
     bf.cleanup();
 
-    // Three dead, one corpse: the blue Zombie is undead (nothing left to
-    // reclaim) and the red Soldier's death is ignored by the tally — the
-    // red/blue asymmetry pinned as-observed above.
-    CHECK(bf.getCorpses() == 1);
+    // Three dead, two corpses: the red and blue Soldiers each leave one;
+    // the blue Zombie is undead — nothing left to reclaim.
+    CHECK(bf.getCorpses() == 2);
     CHECK(bf.countTeam(REDTEAM) == 0);
     CHECK(bf.countTeam(BLUETEAM) == 0);
 }

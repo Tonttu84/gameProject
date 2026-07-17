@@ -66,9 +66,10 @@ public:
     // Declared after squads/wings so units are destroyed first (reverse order).
     std::vector<std::unique_ptr<AUnit>> units;
 
-    // Erase dead and fully-fled units from the vector each tick.
-    // Mirrors the erase loops currently inlined in Battlefield::makeBattle.
-    void pruneDeadUnits();
+    // Erase dead and fully-fled units from the vector each tick, returning
+    // how many of them were non-undead — the corpses they leave behind
+    // (Battlefield::cleanup adds both teams' into the shared corpse pool).
+    size_t pruneDeadUnits();
 
     // Count alive units (mirrors Battlefield::countTeam).
     size_t countAlive() const;

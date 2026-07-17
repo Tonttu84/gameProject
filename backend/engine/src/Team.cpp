@@ -1,13 +1,17 @@
 #include "Battlefield.hpp"
 
-void Team::pruneDeadUnits() {
+size_t Team::pruneDeadUnits() {
+    size_t corpsesLeft = 0;
     auto it = units.begin();
     while (it != units.end()) {
-        if (!(*it) || !(*it)->getAlive())
+        if (!(*it) || !(*it)->getAlive()) {
+            if (*it && !(*it)->getUndead()) ++corpsesLeft;
             it = units.erase(it);
-        else
+        } else {
             ++it;
+        }
     }
+    return corpsesLeft;
 }
 
 size_t Team::countAlive() const {

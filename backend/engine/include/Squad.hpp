@@ -56,8 +56,12 @@ enum class SquadType { Infantry, Cavalry, Flying, Mixed };
 //      once squad morale is fully implemented.
 //      (pruneDeadMembers() is superseded — members leave eagerly via leaveSquad()
 //       called from AUnit::setAlive(false) and ~AUnit().)
-//   3. Battlefield queries moraleModifier() when resolving individual morale checks.
-//   4. If the leader is alive, Battlefield calls attemptRally() during the rally phase.
+//   3. [PLANNED — unwired] Battlefield queries moraleModifier() when resolving
+//      individual morale checks. Like updateMoraleState()/attemptRally(), this has
+//      no production caller yet — the collective-morale machine is implemented and
+//      unit-tested but not hooked into the tick pipeline (confirmed 2026-07-17).
+//   4. [PLANNED — unwired] If the leader is alive, Battlefield calls attemptRally()
+//      during the rally phase.
 //   5. At battle end, Battlefield calls disband() before destroying each Squad.
 class Squad {
 public:

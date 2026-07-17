@@ -856,16 +856,10 @@ void Battlefield::cleanup()
     logDeaths(_red);
     logDeaths(_blue);
 
-    auto it = _blue.units.begin();
-    while (it != _blue.units.end()) {
-        if (!(*it) || !(*it)->getAlive()) {
-            if (*it && !(*it)->getUndead()) ++corpses;
-            it = _blue.units.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    _red.pruneDeadUnits();
+    // Both teams' non-undead dead feed the one shared corpse pool that
+    // raise_dead spends — a corpse is a corpse regardless of its banner.
+    corpses += _blue.pruneDeadUnits();
+    corpses += _red.pruneDeadUnits();
 }
 
 std::vector<std::unique_ptr<AUnit>>& Battlefield::getTeam(int team)
