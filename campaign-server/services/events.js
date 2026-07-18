@@ -219,21 +219,29 @@ export function applyEffect(campaign, effect) {
 // only) and looks its ladder up in EVENT_POOL by id — plain events, and ids
 // no longer in the pool, pass through as their own 'blind' rung. The
 // `intervened` flag is the day report's "scouts intervened" signal.
+// A specific rung by NAME — used when a deferred slot's recorded rung must
+// apply at end-day exactly as it was revealed at acceptance, even if the
+// scouting band has shifted since. Unknown names (or a plain event) degrade
+// to the blind rung of the stored card.
+export const rungOf = (event, rungName) => {
+  const pooled = EVENT_POOL.find((e) => e.id === event.id)
+  if (rungName !== 'blind' && pooled?.rungs?.[rungName])
+    return { rung: rungName, intervened: true, reconSensitive: true, ...pooled.rungs[rungName] }
+  return {
+    rung: 'blind',
+    intervened: false,
+    reconSensitive: !!pooled?.reconSensitive,
+    title: event.title,
+    description: event.description,
+    effect: event.effect,
+    // A choice-fate's branches ride along (from the pool, never the stored
+    // copy) so dayResolution can pend the decision instead of applying.
+    choices: pooled?.choices,
+  }
+}
+
 export const firedRung = (event, band) => {
   const pooled = EVENT_POOL.find((e) => e.id === event.id)
   const rungName = pooled?.reconSensitive ? (EVENT_RUNG_BY_BAND[band] ?? 'blind') : 'blind'
-  if (rungName === 'blind')
-    return {
-      rung: 'blind',
-      intervened: false,
-      reconSensitive: !!pooled?.reconSensitive,
-      title: event.title,
-      description: event.description,
-      effect: event.effect,
-      // A choice-fate's branches ride along (from the pool, never the stored
-      // copy) so dayResolution can pend the decision instead of applying.
-      choices: pooled?.choices,
-    }
-  const rung = pooled.rungs[rungName]
-  return { rung: rungName, intervened: true, reconSensitive: true, ...rung }
+  return rungOf(event, rungName)
 }

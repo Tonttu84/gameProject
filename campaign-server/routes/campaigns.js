@@ -4,7 +4,7 @@ import UnitType from '../models/unitType.js'
 import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
-import { endDay, checkAnnihilation } from '../services/dayResolution.js'
+import { endDay, acceptFates, checkAnnihilation } from '../services/dayResolution.js'
 import { applyEffect, choiceRung } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement, spreadPlacement } from '../services/enemyPlacement.js'
@@ -183,6 +183,8 @@ router.post('/:id/augury/reroll', async (req, res) => {
   if (rejectIfChoicePending(campaign, res)) return
   if (!campaign.augury.consulted)
     return res.status(400).json({ error: 'consult the augur before rerolling' })
+  if (campaign.augury.accepted)
+    return res.status(400).json({ error: 'the fates are sealed — nothing left to reroll' })
   if (campaign.augury.rerollsRemaining <= 0)
     return res.status(400).json({ error: 'no rerolls remaining' })
 
@@ -197,6 +199,24 @@ router.post('/:id/augury/reroll', async (req, res) => {
   })
   await campaign.save()
   res.json(await campaignView(campaign))
+})
+
+// Accept the fates: seal the reading (rerolled or not) and let the fortnight's
+// events come to pass right here at the tent — the reveal beat plays mid-turn,
+// while the player still remembers why they rerolled. Plain effects apply
+// immediately; a fate a live counter_event raid targets is deferred (see
+// acceptFates). Returns the same {report, campaign} envelope end-day uses.
+router.post('/:id/augury/accept', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (!campaign.augury.consulted)
+    return res.status(400).json({ error: 'consult the augur before accepting the fates' })
+  if (campaign.augury.accepted)
+    return res.status(400).json({ error: 'the fates have already come to pass' })
+
+  const report = await acceptFates(campaign)
+  res.json({ report, campaign: await campaignView(campaign) })
 })
 
 // Fight today's battle. The server owns the map and the enemy: the client
@@ -569,6 +589,23 @@ router.post('/:id/choices/:slot', async (req, res) => {
 
   const option = def.choices.find((c) => c.id === req.body?.choice)
   if (!option) return res.status(400).json({ error: 'choice required' })
+
+  // A deferred pending (its slot is counter-raid-targeted): record the pick
+  // on the slot — it comes to pass at end-day unless the raid unmakes it.
+  if (pending.deferred) {
+    const slotDoc = campaign.augury.slots[slot]
+    if (slotDoc) slotDoc.chosenChoice = option.id
+    campaign.pendingChoices.splice(idx, 1)
+    campaign.log.push({
+      day: campaign.day,
+      entries: [`${def.title}: you chose ${option.label} — it comes to pass at nightfall, unless your raiders strike first.`],
+    })
+    await campaign.save()
+    return res.json({
+      campaign: await campaignView(campaign),
+      resolved: { slot, choice: option.id, label: option.label },
+    })
+  }
 
   const entries = [`${def.title}: you chose "${option.label}".`]
   entries.push(...applyEffect(campaign, option.effect))

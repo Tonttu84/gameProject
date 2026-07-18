@@ -42,6 +42,9 @@ const auguryView = (augury) => {
   const truthRevealed = AUGURY_DEBUG_SHOW_TRUTH || augury.rerollsRemaining <= 0
   return {
     consulted: augury.consulted,
+    // Fates sealed at the tent (own info): tells the client whether the
+    // accept beat still awaits or the player can march.
+    accepted: augury.accepted === true,
     rerollsRemaining: augury.rerollsRemaining,
     visions: augury.consulted
       ? augury.slots.map((slot) => ({

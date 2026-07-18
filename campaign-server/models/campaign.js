@@ -64,7 +64,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 11 // v11: pendingChoices (events with choices)
+export const CAMPAIGN_SCHEMA_VERSION = 12 // v12: augury acceptance (fates at the tent, deferral machinery)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -151,6 +151,14 @@ const campaignSchema = new mongoose.Schema({
             // effect and the reveal reports it averted. Own info once set —
             // the player earned it with a raid.
             countered: { type: Boolean, default: false },
+            // Set ONLY on a DEFERRED slot (a still-unresolved counter_event
+            // raid targets it at acceptance): the rung that will apply at
+            // end-day unless countered first. Non-null ⇔ "still owes its
+            // effect". Immediately-applied slots never use these two.
+            firedRungName: { type: String, default: null },
+            // The branch picked for a deferred choice-fate (applied at
+            // end-day); immediate choice-fates apply on pick instead.
+            chosenChoice: { type: String, default: null },
           },
           { _id: false },
         ),
@@ -158,6 +166,10 @@ const campaignSchema = new mongoose.Schema({
       required: true,
     },
     consulted: { type: Boolean, default: false },
+    // Fates sealed and revealed at the tent (POST /augury/accept): plain
+    // effects applied immediately, deferred ones recorded per slot. Reset
+    // naturally when drawAugury() replaces the augury at new day.
+    accepted: { type: Boolean, default: false },
     rerollsRemaining: { type: Number, required: true },
   },
 
@@ -176,6 +188,10 @@ const campaignSchema = new mongoose.Schema({
           eventId: { type: String, required: true },
           rung: { type: String, required: true },
           day: { type: Number, required: true },
+          // A deferred pending (its slot is counter-raid-targeted): the pick
+          // is recorded on the slot and applies at end-day; non-deferred
+          // picks apply immediately (the default path).
+          deferred: { type: Boolean, default: false },
         },
         { _id: false },
       ),

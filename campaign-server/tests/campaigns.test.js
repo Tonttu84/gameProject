@@ -181,7 +181,7 @@ describe('POST /api/campaigns', () => {
     expect(res.body.roster.Soldier).toBe(300)
     expect(res.body.roster.LightCavalry).toBe(12)
     // A fresh, unread augury: no prophecy yet, the reroll unspent.
-    expect(res.body.augury).toEqual({ consulted: false, rerollsRemaining: 1, visions: null })
+    expect(res.body.augury).toEqual({ consulted: false, accepted: false, rerollsRemaining: 1, visions: null })
     expect(res.body.enemy.stance).toBe('camp')
     // Fresh land: three untouched rings, nobody assigned to forage yet.
     expect(res.body.forage.rings).toEqual([
@@ -1197,6 +1197,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     )
     expect(res.body.campaign.augury).toEqual({
       consulted: false,
+      accepted: false,
       rerollsRemaining: 1,
       visions: null,
     })
@@ -1296,6 +1297,205 @@ describe('POST /api/campaigns/:id/end-day', () => {
 
     // A finished campaign refuses further actions.
     expect((await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status).toBe(400)
+  })
+})
+
+// ── Augury acceptance: fates come to pass at the tent ────────────────────────
+// After consulting (rerolled or not), POST /:id/augury/accept seals and
+// REVEALS the fates mid-turn: plain effects apply immediately; a fate targeted
+// by a still-unresolved counter_event raid is DEFERRED (rung recorded on the
+// slot, applied at end-day unless the raid unmakes it first) — apply straight
+// away by default, later only with a reason (user design, 2026-07-18). The
+// never-accepted path keeps the old end-day resolution verbatim.
+describe('augury acceptance (fates at the tent)', () => {
+  const NIGHT_RAID = EVENT_POOL.find((e) => e.id === 'night_raid')
+  const REFUGEES = EVENT_POOL.find((e) => e.id === 'refugees')
+  const PLAGUE = EVENT_POOL.find((e) => e.id === 'plague')
+
+  const accept = (id) => auth(api.post(`/api/campaigns/${id}/augury/accept`)).send({})
+  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const choose = (id, slot, choice) =>
+    auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send({ choice })
+
+  const setConsulted = async (id) => {
+    const doc = await Campaign.findById(id)
+    doc.augury.consulted = true
+    await doc.save()
+  }
+  const counterOpportunity = (slot) => ({
+    id: 'd1-0',
+    type: 'counter_event',
+    title: 'Scattered Muster',
+    description: 'A hostile muster forms in the hills.',
+    targetForce: { Soldier: 5 },
+    strengthBand: 'a handful',
+    capacity: 100,
+    reward: { slot },
+    resolved: false,
+    outcome: null,
+  })
+  const pinCounterRaid = async (id, slot) => {
+    const doc = await Campaign.findById(id)
+    doc.raid.opportunities = [counterOpportunity(slot)]
+    await doc.save()
+  }
+  // Campaign creation deals RANDOM day-1 opportunities — a stray counter_event
+  // would defer a slot and skew any "applies immediately" arithmetic.
+  const clearRaids = async (id) => {
+    const doc = await Campaign.findById(id)
+    doc.raid.opportunities = []
+    await doc.save()
+  }
+
+  test('accept applies plain fates immediately and returns the reveal', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, DOOMED, QUIET)
+    await setConsulted(c.id)
+    await clearRaids(c.id)
+
+    const res = await accept(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+
+    // Three −999 kg dooms land NOW — no upkeep, no forage (the day goes on).
+    expect(res.body.campaign.resources.food).toBe(50000 - 3 * 999)
+    expect(res.body.campaign.augury.accepted).toBe(true)
+    expect(res.body.report.augury.map((s) => s.actual.id)).toEqual(
+      Array(3).fill('doomed_omen'),
+    )
+    expect(res.body.report.entries.join(' ')).toMatch(/Came to pass/)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.resources.food).toBe(50000 - 3 * 999)
+    expect(doc.augury.slots.map((s) => s.firedRungName)).toEqual([null, null, null])
+  })
+
+  test('guards: no accept before consult, no double accept, no reroll after', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id)
+    expect((await accept(c.id)).status).toBe(400) // unconsulted
+
+    await setConsulted(c.id)
+    expect((await accept(c.id)).status).toBe(200)
+    expect((await accept(c.id)).status).toBe(400) // fates already sealed
+    const reroll = await auth(api.post(`/api/campaigns/${c.id}/augury/reroll`)).send({ slot: 0 })
+    expect(reroll.status).toBe(400) // rerolling a sealed fate is meaningless
+  })
+
+  test('a counter-raid-targeted fate defers: recorded at accept, lands at end-day', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, DOOMED, QUIET)
+    await setConsulted(c.id)
+    await pinCounterRaid(c.id, 1)
+
+    const res = await accept(c.id)
+    expect(res.status).toBe(200)
+    // Slots 0 and 2 land now; slot 1 waits for the raid or the day's end.
+    expect(res.body.campaign.resources.food).toBe(50000 - 2 * 999)
+    expect(res.body.report.augury[1].deferred).toBe(true)
+    expect(res.body.report.augury[0].deferred).toBeUndefined()
+    const doc = await Campaign.findById(c.id)
+    expect(doc.augury.slots.map((s) => s.firedRungName)).toEqual([null, 'blind', null])
+
+    // Nobody raided: the deferred blow lands with the day's end, and the
+    // report carries no augury reveal (the tent already played it).
+    const end = await endDayReq(c.id)
+    expect(end.status).toBe(200)
+    expect(end.body.report.augury).toBeUndefined()
+    expect(end.body.campaign.resources.food).toBe(50000 - 2 * 999 - 999 - 12432)
+  })
+
+  test('the recorded rung applies even if the scouting band shifts after acceptance', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, NIGHT_RAID, QUIET)
+    await setConsulted(c.id)
+    await pinCounterRaid(c.id, 0)
+
+    // Contested at accept → the warned rung (−500 kg) is what's recorded.
+    const res = await accept(c.id)
+    expect(res.status).toBe(200)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.augury.slots[0].firedRungName).toBe('warned')
+
+    // The hosts shift to Superior before nightfall — the recorded warned rung
+    // still applies, NOT the anticipated one the new band would pick.
+    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    const end = await endDayReq(c.id)
+    const after = await Campaign.findById(c.id)
+    // Slots 1–2 applied −500 each at accept; slot 0's deferred warned rung
+    // adds its −500 at end-day (no anticipated enemy_reveal fired).
+    expect(after.enemy.revealedUntilDay ?? 0).toBe(0)
+    expect(end.body.campaign.enemy.revealed).toBeUndefined()
+  })
+
+  test('a raid win between accept and end-day still unmakes the deferred fate', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, DOOMED, QUIET)
+    await setConsulted(c.id)
+    await pinCounterRaid(c.id, 2)
+
+    const res = await accept(c.id)
+    expect(res.body.campaign.resources.food).toBe(50000 - 2 * 999)
+
+    const raid = await auth(
+      api.post(`/api/campaigns/${c.id}/raids/launch`),
+    ).send({ parties: { 'd1-0': { Soldier: 10 } } })
+    expect(raid.status).toBe(201)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.augury.slots[2].countered).toBe(true)
+
+    const end = await endDayReq(c.id)
+    // The deferred −999 never lands; food only moves by upkeep (roster is
+    // 300−10+2 survivors of the raid + the rest, recompute via the report).
+    expect(end.body.report.entries.join(' ')).toMatch(/Averted/)
+    const finalDoc = await Campaign.findById(c.id)
+    expect(finalDoc.resources.food).toBe(
+      50000 - 2 * 999 - end.body.report.upkeep.foodConsumed,
+    )
+  })
+
+  test('choice fates: immediate ones apply on pick, deferred ones on end-day', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    await setConsulted(c.id)
+    await pinCounterRaid(c.id, 0) // slot 0's choice defers; slots 1–2 are immediate
+
+    const res = await accept(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+    expect(res.body.campaign.pendingChoices.map((p) => p.slot)).toEqual([0, 1, 2])
+    // The battle stays gated until every decision is made (machinery unchanged).
+    expect((await endDayReq(c.id)).status).toBe(409)
+
+    // Immediate pick applies now…
+    await choose(c.id, 1, 'take_in')
+    let doc = await Campaign.findById(c.id)
+    expect(doc.roster.get('Militia')).toBe(20)
+    // …a deferred pick only records.
+    await choose(c.id, 0, 'take_in')
+    doc = await Campaign.findById(c.id)
+    expect(doc.roster.get('Militia')).toBe(20)
+    expect(doc.augury.slots[0].chosenChoice).toBe('take_in')
+
+    await choose(c.id, 2, 'turn_away')
+    const end = await endDayReq(c.id)
+    expect(end.status).toBe(200)
+    // The deferred take_in lands at end-day: +20 more Militia.
+    const after = await Campaign.findById(c.id)
+    expect(after.roster.get('Militia')).toBe(40)
+  })
+
+  test('an accepted fate can end the campaign on the spot', async () => {
+    const { body: c } = await createCampaign()
+    await pinArmies(c.id, { roster: { Soldier: 1 } })
+    await pinAugury(c.id, PLAGUE, QUIET) // all_roster ×0.95 floors the last man away
+    await setConsulted(c.id)
+    await clearRaids(c.id)
+
+    const res = await accept(c.id)
+    expect(res.status).toBe(200)
+    expect(res.body.campaign.status).toBe('lost')
+    expect(res.body.campaign.pendingChoices).toEqual([])
   })
 })
 

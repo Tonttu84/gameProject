@@ -1,7 +1,7 @@
 import { DESERTION_FRACTION } from '../utils/campaignConfig.js'
 import { getCatalog } from '../utils/catalog.js'
 import { armyFoodPerTurn, scoutingCoverage, scoutingBand } from '../utils/capabilities.js'
-import { applyEffect, firedRung, rosterTotal } from './events.js'
+import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
@@ -40,6 +40,86 @@ export function checkAnnihilation(campaign) {
   return entries
 }
 
+// Push the option CARDS (never the effects) onto a reveal slot and record the
+// owed decision — shared by acceptance and the end-day fallback.
+const pendChoice = (campaign, revealSlot, i, slotDoc, fired, day, deferred) => {
+  campaign.pendingChoices.push({
+    slot: i,
+    eventId: slotDoc.trueEvent.id,
+    rung: fired.rung,
+    day,
+    deferred,
+  })
+  revealSlot.pendingChoice = {
+    options: fired.choices.map(({ id, label, description }) => ({ id, label, description })),
+  }
+}
+
+// Fates come to pass at the tent (2026-07-18): once the player accepts the
+// reading (rerolled or not), every slot's true event is revealed and — by
+// default — APPLIED on the spot. The one reason to wait: a still-unresolved
+// counter_event raid targets the slot, so the fate stays counterable — its
+// rung is recorded (`firedRungName`) and lands at end-day unless the raid
+// unmakes it first. Choice-fates pend their decision either way; a deferred
+// pick is recorded (`chosenChoice`) instead of applied.
+// Mutates and saves the campaign; returns the fates report for the reveal.
+export async function acceptFates(campaign) {
+  const catalog = await getCatalog()
+  const entries = []
+  const report = { day: campaign.day }
+  const band = scoutingBand(
+    scoutingCoverage(campaign.roster, catalog),
+    scoutingCoverage(campaign.enemy.army, catalog),
+  )
+  const counterTargets = new Set(
+    campaign.raid.opportunities
+      .filter((o) => o.type === 'counter_event' && !o.resolved)
+      .map((o) => o.reward?.slot),
+  )
+
+  report.augury = auguryReveal(campaign)
+  campaign.augury.slots.forEach((slot, i) => {
+    if (slot.countered) {
+      entries.push(`Averted: ${slot.trueEvent.title} — your raiders unmade it.`)
+      return
+    }
+    const fired = firedRung(slot.trueEvent, band)
+    if (fired.reconSensitive) {
+      report.augury[i].fired = {
+        title: fired.title,
+        description: fired.description,
+        rung: fired.rung,
+      }
+      report.augury[i].scoutsIntervened = fired.intervened
+    }
+    if (counterTargets.has(i)) {
+      slot.firedRungName = fired.rung
+      report.augury[i].deferred = true
+      entries.push(`Came to pass: ${fired.title} — but your raiders may yet unmake it.`)
+      if (fired.intervened) entries.push('Your scouts saw it coming.')
+      if (fired.choices?.length) pendChoice(campaign, report.augury[i], i, slot, fired, report.day, true)
+      return
+    }
+    if (fired.choices?.length) {
+      pendChoice(campaign, report.augury[i], i, slot, fired, report.day, false)
+      entries.push(`Came to pass: ${fired.title} — a decision awaits you.`)
+      if (fired.intervened) entries.push('Your scouts saw it coming.')
+      return
+    }
+    entries.push(`Came to pass: ${fired.title}.`)
+    if (fired.intervened) entries.push('Your scouts saw it coming.')
+    entries.push(...applyEffect(campaign, fired.effect))
+  })
+
+  campaign.augury.accepted = true
+  entries.push(...checkAnnihilation(campaign))
+  if (campaign.status !== 'active') campaign.pendingChoices = []
+  campaign.log.push({ day: report.day, entries })
+  await campaign.save()
+  report.entries = entries
+  return report
+}
+
 // Mutates and saves the campaign; returns the day report shown to the player.
 export async function endDay(campaign) {
   const catalog = await getCatalog()
@@ -61,52 +141,72 @@ export async function endDay(campaign) {
   entries.push(...foraging.entries)
   report.forage = foraging.forage
 
-  // 3. Every slot's true event comes to pass — foretold or not — but the
-  // scouting band picks the RUNG that fires (Stage 4 1c): Blind → the full
-  // event, Warned → a lesser blow, Anticipated → neutral or reversed. The
-  // report carries the reveal (per slot: predicted vs actual, plus the fired
-  // rung so a mitigated threat reads as the same event downgraded); the log
-  // records what actually happened.
-  report.augury = auguryReveal(campaign)
-  campaign.augury.slots.forEach((slot, i) => {
-    // A countered fate (a won counter_event raid, Stage 4 Part 2) never
-    // fires at any rung: the raid unmade it before the fortnight ended.
-    // auguryReveal already carries the flag to the report.
-    if (slot.countered) {
-      entries.push(`Averted: ${slot.trueEvent.title} — your raiders unmade it.`)
-      return
-    }
-    const fired = firedRung(slot.trueEvent, band)
-    if (fired.reconSensitive) {
-      report.augury[i].fired = {
-        title: fired.title,
-        description: fired.description,
-        rung: fired.rung,
+  // 3. The fates. Two timelines:
+  //  - ACCEPTED at the tent (the normal play flow since 2026-07-18): the
+  //    reveal already happened and plain effects already applied there — only
+  //    DEFERRED slots (a counter-raid target, marked by firedRungName) still
+  //    owe anything. Their RECORDED rung applies, not the band's current pick,
+  //    so what was revealed is exactly what lands. No report.augury section —
+  //    the tent played that beat.
+  //  - never accepted (skipped the tent / API user): the original end-of-turn
+  //    resolution, verbatim — full reveal in the report, band-picked rungs,
+  //    choices pending (immediately-applying, v11 behaviour).
+  if (campaign.augury.accepted) {
+    campaign.augury.slots.forEach((slot) => {
+      if (!slot.firedRungName) return
+      if (slot.countered) {
+        entries.push(`Averted: ${slot.trueEvent.title} — your raiders unmade it.`)
+        return
       }
-      report.augury[i].scoutsIntervened = fired.intervened
-    }
-    // A choice-fate (resolve-then-choose): nothing applies now — the decision
-    // is recorded and the player picks a branch after the reveal; every other
-    // mutating route is gated until then. The report slot carries the option
-    // CARDS only (effects stay server-side, looked up again at choose time).
-    if (fired.choices?.length) {
-      campaign.pendingChoices.push({
-        slot: i,
-        eventId: slot.trueEvent.id,
-        rung: fired.rung,
-        day: report.day,
-      })
-      report.augury[i].pendingChoice = {
-        options: fired.choices.map(({ id, label, description }) => ({ id, label, description })),
+      const fired = rungOf(slot.trueEvent, slot.firedRungName)
+      if (fired.choices?.length) {
+        // The 409 gate forced the pick before this end-day could run; a
+        // missing option (mid-campaign pool edit) degrades to nothing.
+        const option = fired.choices.find((c) => c.id === slot.chosenChoice)
+        if (option) {
+          entries.push(`${fired.title}: your decision comes to pass — ${option.label}.`)
+          entries.push(...applyEffect(campaign, option.effect))
+        }
+        return
       }
-      entries.push(`Came to pass: ${fired.title} — a decision awaits you.`)
+      entries.push(`Came to pass: ${fired.title}.`)
+      entries.push(...applyEffect(campaign, fired.effect))
+    })
+  } else {
+    report.augury = auguryReveal(campaign)
+    campaign.augury.slots.forEach((slot, i) => {
+      // A countered fate (a won counter_event raid, Stage 4 Part 2) never
+      // fires at any rung: the raid unmade it before the fortnight ended.
+      // auguryReveal already carries the flag to the report.
+      if (slot.countered) {
+        entries.push(`Averted: ${slot.trueEvent.title} — your raiders unmade it.`)
+        return
+      }
+      const fired = firedRung(slot.trueEvent, band)
+      if (fired.reconSensitive) {
+        report.augury[i].fired = {
+          title: fired.title,
+          description: fired.description,
+          rung: fired.rung,
+        }
+        report.augury[i].scoutsIntervened = fired.intervened
+      }
+      // A choice-fate (resolve-then-choose): nothing applies now — the
+      // decision is recorded and the player picks a branch after the reveal;
+      // every other mutating route is gated until then. The report slot
+      // carries the option CARDS only (effects stay server-side, looked up
+      // again at choose time).
+      if (fired.choices?.length) {
+        pendChoice(campaign, report.augury[i], i, slot, fired, report.day, false)
+        entries.push(`Came to pass: ${fired.title} — a decision awaits you.`)
+        if (fired.intervened) entries.push('Your scouts saw it coming.')
+        return
+      }
+      entries.push(`Came to pass: ${fired.title}.`)
       if (fired.intervened) entries.push('Your scouts saw it coming.')
-      return
-    }
-    entries.push(`Came to pass: ${fired.title}.`)
-    if (fired.intervened) entries.push('Your scouts saw it coming.')
-    entries.push(...applyEffect(campaign, fired.effect))
-  })
+      entries.push(...applyEffect(campaign, fired.effect))
+    })
+  }
 
   // 4. Enemy turn
   entries.push(...enemyTurn(campaign, catalog))
