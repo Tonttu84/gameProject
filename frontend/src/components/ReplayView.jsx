@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo } from 'react'
 import useReplay from '../hooks/useReplay'
+import useUiStore from '../stores/useUiStore'
+import TutorialIntro from './TutorialIntro'
 
 // Same geometry as HexGrid.jsx (kept in sync — extract if a third user appears).
 const HEX_SIZE = 20
@@ -68,6 +70,7 @@ const MIN_GLYPH_PX = 4
 // via useReplay — no re-simulation, so scrubbing backward is exact.
 const ReplayView = ({ battleId, tickCount, info, map, onBack, autoPlay = false, backLabel = 'Back to result' }) => {
   const { current, tick, seek, next, prev, playing, setPlaying } = useReplay(battleId, tickCount)
+  const tutorial = useUiStore((s) => s.tutorial)
 
   // The login-screen demo starts playing on its own — the visitor launched it
   // to watch a battle, not to press Play. Real battle replays open paused.
@@ -154,6 +157,15 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack, autoPlay = false, 
 
   return (
     <div className="replay-view">
+      <TutorialIntro
+        id="replay"
+        enabled={tutorial}
+        title="Watching the battle"
+        lines={[
+          'Each glyph is one soldier, colored by its squad; the log below narrates what happens each tick.',
+          'Play, step with ◀ ▶, or drag the slider to scrub — the recording is exact, so you can rewind freely.',
+        ]}
+      />
       <div className="replay-header">
         <h2>Battle Replay — turn {current} / {Math.max(0, tickCount - 1)}</h2>
         {onBack && (

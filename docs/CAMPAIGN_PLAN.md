@@ -330,10 +330,31 @@ Committed + pushed as `0c47535` on `main` (on top of the E2E commit `8df52da`); 
   contended full run (the 2 failures were `beforeEach` hook timeouts from CPU starvation — the demo
   battle's orphaned `./game sample` process, per the E2E session — and both pass in isolation).
   Minimal CSS added for `.phase-omens`/`.phase-raids`.
-- **NOT yet done**: a live browser click-through — user is running `docker compose up --build`
-  (Windows serves the built bundle, so a rebuild is REQUIRED to see these source changes) and
-  playtesting the new flow next session; slices 2–3 (further per-screen action trimming beyond what
-  landed; any Next/Back polish) follow from whatever the playtest surfaces.
+- **NOT yet done at slice 1**: a live browser click-through — user is running `docker compose up
+  --build` (Windows serves the built bundle, so a rebuild is REQUIRED to see these source changes)
+  and playtesting the new flow next session.
+
+**Slices 2–3 SHIPPED 2026-07-18 (frontend only, uncommitted) — Back nav + screen-scope trim.**
+Done alongside the tutorial pass above (user chose "Back nav + trim screens").
+- **Back navigation**: the phased turn was a one-way march; now **Omens → "Back to the Council"**
+  (`back-to-prepare`) and **Raids → "Back to the Omens"** (`back-to-omens`) let it be walked both
+  ways. Pure `setPhase` changes — no committed server action (forage/augury/raids) is undone; going
+  back just re-renders an earlier screen whose own guards handle any already-done action. Secondary
+  (`login-toggle`) styling; `.phase-nav` + a flex `.raids-bar` in `App.css`.
+- **Screen-scope trim / audit**: confirmed each phase screen exposes only its own actions — the
+  slice-1 split already achieved this (Prepare = forage/camp, Omens = augury only, Raids = raiders
+  only), so the "trim" was a verification pass, now **pinned** so a future change can't re-bundle:
+  `phaseNavigation.test.jsx`'s "screen scope" block asserts the council has forage/camp but no
+  augury/raids controls, and the tent has only the augury (no forage/camp/raids). (`raidPanel.test.jsx`
+  already pinned the raids' side.)
+- **Tests**: new `phaseNavigation.test.jsx` (Back nav both directions + screen scope, 4 tests).
+- **Verification**: `npm run lint` clean; the touched/at-risk files (tutorialCoverage,
+  phaseNavigation, watchReplay, replay, battleVictory/Defeat, eventReveal/Choices, campaignFlow,
+  raidPanel) = **68/68 green** run at `--maxWorkers=2`. A plain full `vitest run` shows the known
+  CPU-starvation timeout flakiness (this run: 203/216, the 13 failures all "Test timed out in
+  5000ms", green in the reduced-worker rerun) — same effect the slice-1 note records.
+- **STILL NOT done**: the live browser click-through (needs the Docker rebuild); Deploy→Raids back
+  step was left out (only the two screens the user named got Back — add it if the playtest wants it).
 
 #### Playtest findings 2026-07-18 (new phased build) — ✅ BOTH FIXED (TDD, uncommitted)
 
@@ -1624,16 +1645,19 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
-**TODO — tutorial-message pass over every menu/screen (user, 2026-07-18).** Walk the whole
-campaign UI screen by screen and add a short `TutorialIntro` to each — what the player does here +
-the mechanism behind it — behind the existing `useUiStore` `tutorial` flag (single source of
-truth; panels read `s.tutorial` directly and forward it to `TutorialIntro`'s `enabled`, no
-App→panel fan-out). Some screens already have one (`reveal`, `deploy`/deployment orders, raids);
-this is the pass that fills the gaps across the phased build (Prepare → Omens → Raids → Deploy)
-and any older panels. See [[project-tutorial-flag]]. Static tutorial copy is asserted in a few
-tests (e.g. `deploymentOrders.test.jsx`) — add/adjust those alongside. Related: the augur-tent
-copy was just made click-explicit ("Click a fate to cast its bones anew" / "Click to recast these
-bones") — the tutorial pass should carry that same "here's what to click" clarity everywhere.
+**~~TODO~~ ✅ SHIPPED 2026-07-18 — tutorial-message pass over every menu/screen (user, 2026-07-18).**
+Walked the whole campaign UI and closed the `TutorialIntro` gaps the phased build left. Before this
+pass, intros existed on login, start, council/Prepare, forage, camp, omens/augur, raids, the
+end-turn `reveal` report, and deployment. **Four screens had none — now filled** (all behind the
+`useUiStore` `tutorial` flag, panels reading `s.tutorial` directly per the established no-fan-out
+convention):
+- **Game-over** (Victory!/Defeat) — `id="gameover"`, copy branches on won/lost + points at New Campaign (`App.jsx`).
+- **Battle result** (`BattleResult.jsx`) — `id="result"`; explains survivors are permanent, and the second line adapts to whether a replay is offered.
+- **Decisions Await** (the reload-recovery choices-only path in `EventRevealScreen.jsx`) — `id="decisions"`.
+- **Replay viewer** (`ReplayView.jsx`, used by demo/raid/campaign replays) — `id="replay"`; glyph=one soldier + scrub-controls hint.
+Tests: new `tutorialCoverage.test.jsx` pins all four with the standard flag-on/flag-off contract
+(mirrors `eventReveal.test.jsx`). See [[project-tutorial-flag]]. Copy carries the augur-tent's
+click-explicit house style.
 
 **~~TODO~~ ✅ SHIPPED 2026-07-17/18 — event reveal screen + events with choices.** Both halves
 landed (commits `1e6930c` + `6efa1c4`, schema v11) — see the dated handoff entry near the top

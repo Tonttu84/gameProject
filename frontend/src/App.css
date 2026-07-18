@@ -230,7 +230,10 @@ body {
 /* Read-only army/stores context at the tent — no actions, just what the
    player is deciding against. */
 .omens-context { color: #8888aa; font-size: 0.9rem; }
-.raids-bar { margin-top: 0.5rem; }
+.raids-bar { margin-top: 0.5rem; display: flex; gap: 0.75rem; align-items: center; }
+/* Back-step control on the phased screens — walk the turn both ways, not just
+   forward. Sits below the screen's own content, visually secondary. */
+.phase-nav { margin-top: 0.5rem; }
 
 .augury-phase {
   display: flex;

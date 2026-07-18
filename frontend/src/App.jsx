@@ -105,6 +105,13 @@ const App = () => {
   // blind one (docs/CAMPAIGN_PLAN.md, 2026-07-18).
   const readOmens = () => setPhase('omens')
   const toRaids = () => setPhase('raids')
+  // Back-steps through the phased turn. Pure phase-state changes — no server
+  // action is undone (forage/augury/raids the player already committed stay
+  // committed); going back just re-renders an earlier screen, whose own guards
+  // handle any already-done action. Lets the flow be walked both ways rather
+  // than a one-way march (docs/CAMPAIGN_PLAN.md slices 2–3).
+  const backToPrepare = () => setPhase('prepare')
+  const backToOmens = () => setPhase('omens')
   // Resolve a pending choice-fate (events with choices). Guarded like every
   // campaign action; the reveal screen reads the undefined-on-failure return
   // to keep the options up for another try.
@@ -256,6 +263,17 @@ const App = () => {
         {authBar}
         <div className="phase-setup">
           <h2>{campaign.status === 'won' ? 'Victory!' : 'Defeat'}</h2>
+          <TutorialIntro
+            id="gameover"
+            enabled={tutorial}
+            title="The campaign is over"
+            lines={[
+              campaign.status === 'won'
+                ? 'The enemy host is broken — the country is yours.'
+                : 'Your army is gone; the campaign ends here.',
+              'Start a new campaign to take the field again from turn one.',
+            ]}
+          />
           <p>
             {campaign.status === 'won'
               ? `The enemy is broken after ${campaign.day} turns. The country is yours.`
@@ -383,6 +401,11 @@ const App = () => {
             onAccept={acceptFates}
             onContinue={toRaids}
           />
+          <div className="phase-nav">
+            <button className="login-toggle" data-testid="back-to-prepare" onClick={backToPrepare}>
+              Back to the Council
+            </button>
+          </div>
         </div>
       )}
 
@@ -403,6 +426,9 @@ const App = () => {
             />
           )}
           <div className="raids-bar">
+            <button className="login-toggle" data-testid="back-to-omens" onClick={backToOmens}>
+              Back to the Omens
+            </button>
             <button className="btn-primary" data-testid="to-deploy" onClick={musterForBattle}>
               Deploy for Battle
             </button>

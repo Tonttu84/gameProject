@@ -210,6 +210,15 @@ const EventRevealScreen = ({ report, pendingChoices, onChoose, onContinue }) => 
   if (!report) {
     return (
       <div className="day-report" data-testid="day-report">
+        <TutorialIntro
+          id="decisions"
+          enabled={tutorial}
+          title="A decision is owed"
+          lines={[
+            'An event from the last fortnight demands a choice before the campaign can go on.',
+            'Pick an option for each — the campaign resumes once every decision is made.',
+          ]}
+        />
         <h2>Decisions Await</h2>
         {(pendingChoices ?? []).map((pending) => (
           <div
