@@ -301,6 +301,7 @@ body {
 .choice-option strong { color: var(--gold); }
 .choice-option span { font-size: 12px; color: #8888aa; }
 .choice-outcome { color: #88cc88; }
+.fate-deferred { color: var(--gold); font-style: italic; }
 
 .phase-placement {
   display: flex;

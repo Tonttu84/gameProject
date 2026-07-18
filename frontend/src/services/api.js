@@ -74,6 +74,10 @@ export const postCampaignRaids = (id, parties) =>
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)
+// Accept the fates at the tent: seals the consulted reading and resolves the
+// fortnight's events mid-turn. Returns { report, campaign } like end-day.
+export const postAcceptFates = (id) =>
+  axios.post(`/api/campaigns/${id}/augury/accept`, {}, authed()).then(r => r.data)
 // Resolve a pending choice-fate (events with choices): pick one option of the
 // decision owed on `slot`. Returns { campaign, resolved: {slot, choice, label} }.
 export const postCampaignChoice = (id, slot, choice) =>

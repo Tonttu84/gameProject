@@ -26,7 +26,21 @@ export const startCampaign = guarded(async () => {
   useUiStore.getState().setPhase('setup')
 })
 
+// Accept the fates at the tent: they come to pass right there (server-side),
+// and the reveal plays before anything else — while the player still
+// remembers why they rerolled. Continue lands back on the council.
+export const acceptFates = guarded(async () => {
+  const report = await useCampaignStore.getState().acceptFates()
+  if (!report) return
+  useUiStore.getState().setDayReport({ kind: 'fates', ...report })
+  useUiStore.getState().setPhase('report')
+})
+
 export const musterForBattle = () => {
+  // Safety net: no marching past unsealed fates (e.g. a reload landed on a
+  // consulted-but-unaccepted council) — acceptance comes first.
+  const augury = useCampaignStore.getState().campaign?.augury
+  if (augury?.consulted && !augury.accepted) return acceptFates()
   usePlacementStore.getState().clear()
   useUiStore.getState().setPhase('placement')
 }

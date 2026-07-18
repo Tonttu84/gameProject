@@ -105,6 +105,11 @@ const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
           Averted — your raiders unmade it before the fortnight ended.
         </p>
       )}
+      {slot.deferred && (
+        <p className="fate-deferred" data-testid="fate-deferred">
+          It has not yet struck — your raiders may still unmake it.
+        </p>
+      )}
       {slot.scoutsIntervened && (
         <p className="scout-intervened" data-testid="scout-intervened">
           Your scouts saw it coming — the blow was turned.
@@ -218,7 +223,9 @@ const EventRevealScreen = ({ report, pendingChoices, onChoose, onContinue }) => 
           'Reveal the cards one by one — a prophecy is only judged when its card is turned.',
         ]}
       />
-      <h2>Turn {report.day} — The Fortnight Passes</h2>
+      <h2>
+        Turn {report.day} — {report.kind === 'fates' ? 'The Fates Come to Pass' : 'The Fortnight Passes'}
+      </h2>
 
       {beats.slice(0, shown).map((beat) => {
         switch (beat.kind) {

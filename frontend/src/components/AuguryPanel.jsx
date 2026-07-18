@@ -26,8 +26,8 @@ const omenLabel = ({ valence, severity }) =>
   OMEN_LABEL[valence ?? 'neutral']?.[severity] ?? 'An omen'
 
 // augury comes straight from the campaign store; onConsult/onReroll/
-// onContinue are still props (guarded actions / a flow function).
-const AuguryPanel = ({ onConsult, onReroll, onContinue }) => {
+// onAccept/onContinue are still props (guarded actions / flow functions).
+const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
   const augury = useCampaignStore((s) => s.campaign?.augury ?? EMPTY_OBJECT)
   const canReroll = augury.rerollsRemaining > 0
 
@@ -84,9 +84,18 @@ const AuguryPanel = ({ onConsult, onReroll, onContinue }) => {
               </button>
             ))}
           </div>
-          <button className="btn-primary" data-testid="augury-continue" onClick={onContinue}>
-            Muster for Battle
-          </button>
+          {/* Leaving the tent SEALS the reading: the fates come to pass right
+              here (reveal + any decisions), before deployment — accepting
+              with the reroll unspent is the "skip reroll" option. */}
+          {!augury.accepted ? (
+            <button className="btn-primary" data-testid="accept-fates" onClick={onAccept}>
+              Accept the Fates
+            </button>
+          ) : (
+            <button className="btn-primary" data-testid="augury-continue" onClick={onContinue}>
+              Muster for Battle
+            </button>
+          )}
         </>
       )}
     </div>

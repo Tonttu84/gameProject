@@ -57,6 +57,9 @@ export const campaignFixture = {
 // never appears — that's the end-of-turn reveal.
 export const consultedAugury = {
   consulted: true,
+  // Fates already sealed at the tent — muster-flow tests march straight
+  // through; tent/acceptance tests override this to false explicitly.
+  accepted: true,
   rerollsRemaining: 1,
   visions: [
     {

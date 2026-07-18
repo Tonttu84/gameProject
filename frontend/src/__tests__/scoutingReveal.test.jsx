@@ -204,7 +204,7 @@ describe('App: scouting reveal wiring', () => {
     getCampaigns.mockResolvedValue([
       {
         ...campaignFixture,
-        augury: { ...campaignFixture.augury, consulted: true, visions: [] },
+        augury: { ...campaignFixture.augury, consulted: true, accepted: true, visions: [] },
         scouting: { band: 'Overwhelming' },
         enemy: {
           ...campaignFixture.enemy,

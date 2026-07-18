@@ -10,6 +10,7 @@ import {
   postCampaignRaids,
   endCampaignDay,
   postCampaignChoice,
+  postAcceptFates,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -71,6 +72,14 @@ const useCampaignStore = create((set, get) => ({
 
   endDay: async () => {
     const res = await endCampaignDay(get().campaign.id)
+    set({ campaign: res.campaign })
+    return res.report
+  },
+
+  // Seal the reading and let the fates come to pass at the tent; returns the
+  // fates report for the reveal screen.
+  acceptFates: async () => {
+    const res = await postAcceptFates(get().campaign.id)
     set({ campaign: res.campaign })
     return res.report
   },

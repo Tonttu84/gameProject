@@ -7,8 +7,8 @@ import usePlacementStore from './stores/usePlacementStore'
 import useUiStore from './stores/useUiStore'
 import { guarded } from './stores/guarded'
 import {
-  handleLogin, handleLogout, startCampaign, musterForBattle, startBattle,
-  watchRaid, nextDay, watchDemo,
+  handleLogin, handleLogout, startCampaign, musterForBattle, acceptFates,
+  startBattle, watchRaid, nextDay, watchDemo,
 } from './stores/flows'
 import {
   useTotalUnits, usePlacedCount, useSquadPlacedCount, useInCamp,
@@ -348,6 +348,12 @@ const App = () => {
               <button className="btn-primary" onClick={startAugury}>
                 Visit the Augur
               </button>
+            ) : !campaign.augury.accepted ? (
+              // Consulted but unsealed (e.g. a reload mid-tent): the fates
+              // must come to pass before anyone marches.
+              <button className="btn-primary" data-testid="accept-fates" onClick={acceptFates}>
+                Accept the Fates
+              </button>
             ) : (
               <button className="btn-primary" onClick={musterForBattle}>
                 Muster for Battle
@@ -378,6 +384,7 @@ const App = () => {
           <AuguryPanel
             onConsult={guarded(consultAugur)}
             onReroll={guarded(rerollAugur)}
+            onAccept={acceptFates}
             onContinue={musterForBattle}
           />
         </>
