@@ -335,6 +335,42 @@ Committed + pushed as `0c47535` on `main` (on top of the E2E commit `8df52da`); 
   playtesting the new flow next session; slices 2–3 (further per-screen action trimming beyond what
   landed; any Next/Back polish) follow from whatever the playtest surfaces.
 
+#### Playtest findings 2026-07-18 (new phased build) — NEXT SESSION, not yet started
+
+Two issues surfaced playtesting the pushed `0c47535` build. **No code written yet** — captured
+here + in auto-memory before a context clear.
+
+1. **Deferred fate is shown ALREADY RESOLVED at the tent — "it should not be turned instantly
+   before I do anything" (user).** On the "Fates Come to Pass" reveal, a recon-sensitive fate that
+   is *deferred* (a `counter_event` raid targets its slot) renders its full resolution — "What came
+   to pass: Ambush Foreseen", "The augur was wrong", **and "Your scouts saw it coming — the blow was
+   turned"** — while ALSO showing "It has not yet struck — your raiders may still unmake it." Self-
+   contradictory: a deferred fate is *pending*, but the card presents it as turned before the player
+   reaches the Raids screen. Root: `acceptFates` (`services/dayResolution.js`, deferred branch ~L86-101)
+   sets both `report.augury[i].fired`/`scoutsIntervened` AND `deferred:true`, and pushes
+   "Came to pass … — but your raiders may yet unmake it." + "Your scouts saw it coming." to the log;
+   `FateBeat` (`components/EventRevealScreen.jsx:79-127`) then renders the `came`/`scoutsIntervened`
+   resolution lines next to the deferred/pending line.
+   **Intended direction (confirm with user first):** for a DEFERRED fate, the tent shows it as an
+   unresolved THREAT only — the prophecy + "has not yet struck; your raiders may unmake it" — and
+   ALL resolution flavour (what came to pass / scouts turned it / averted) moves to END-DAY, after
+   the raid opportunity. Spans server (deferred branch: don't emit `fired`/`scoutsIntervened` nor the
+   "came to pass"/"scouts saw it coming" log lines; end-day resolves + reveals the outcome) + frontend
+   (`FateBeat`: when `deferred`, suppress the resolution lines). NB: the recon rung that fires IS
+   already fixed by the scouting band (recorded in `slot.firedRungName`); the raid only escalates it
+   to fully averted — so this is a TIMING/framing fix, not a mechanic change. The accepted-arm
+   end-day (`dayResolution.js:154-174`) currently emits NO `report.augury` reveal cards, only log
+   lines — so revealing a deferred fate's outcome at end-day may need a reveal card added there.
+
+2. **"Again only 2 raid targets" (user).** Still only 2 raid opportunities. `generateRaidOpportunities`
+   (`services/raid.js:89-102`) builds `types = []`, pushes ONE `counter_event` if any bad fate slot
+   exists, fills the rest from the pool up to `RAID_OPPORTUNITIES_PER_DAY[band]`, then truncates to
+   that count — so the counter_event **replaces** a normal slot rather than adding to the total; at
+   Contested the band count caps it at 2. User seems to expect a bad fate to yield an EXTRA counter
+   opportunity (and/or more targets overall). **Open question for next session:** should a
+   counter_event be additive (band count + 1 when a bad fate exists), and/or should
+   `RAID_OPPORTUNITIES_PER_DAY` be higher? Decide with the user before changing.
+
 ### Event reveal screen + events with choices ✅ SHIPPED 2026-07-17/18 — handoff
 
 The deferred-backlog pair (see the backlog entry, now marked shipped) landed as two commits
