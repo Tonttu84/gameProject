@@ -95,6 +95,42 @@ export const EVENT_POOL = [
       { id: 'march_on',   label: 'March on and trust to providence',       description: 'Keep the stores and the pace — and let the fever take whom it takes.', effect: { type: 'all_roster', factor: 0.98 } },
     ],
   },
+  // A major boon with a real fork: turn footmen into a mounted arm, or cash
+  // the herd in for supply. The mount branch is the `convert` mechanic's first
+  // use — Soldiers become Cavalry (a placeable/spawnable engine unit), at a
+  // cost in materials for tack and shoeing.
+  {
+    id: 'horses', title: 'A Captured Herd', description: 'Your outriders drive in a herd of enemy remounts — sound warhorses by the dozen, yours to use as you will.', severity: 3,
+    effect: { type: 'choice' }, valence: 'good',
+    choices: [
+      { id: 'mount_veterans', label: 'Mount your veterans as cavalry', description: 'Put your steadiest footmen in the saddle. Saddlery and shoeing eat into your materials, but you raise a mounted arm from your own ranks.', effect: { type: 'multi', effects: [{ type: 'convert', from: 'Soldier', to: 'Cavalry', count: 25 }, { type: 'materials', delta: -20 }] } },
+      { id: 'sell_herd',      label: 'Sell the herd to the baggage train', description: 'Trade the horses to the quartermasters for supply. The stores swell and the wagons roll a little heavier.', effect: { type: 'multi', effects: [{ type: 'materials', delta: +30 }, { type: 'food', delta: +4000 }] } },
+    ],
+  },
+  {
+    id: 'sellswords', title: 'Sellswords at the Camp', description: 'A free company of veteran mercenaries rides in and offers their spears — for the right price in supply.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good',
+    choices: [
+      { id: 'hire', label: 'Hire the company', description: 'Pay them out of your stores and swell your line with hardened fighters who ask no oath but coin.', effect: { type: 'multi', effects: [{ type: 'roster', unit: 'Soldier', delta: +20 }, { type: 'food', delta: -3000 }, { type: 'materials', delta: -10 }] } },
+      { id: 'decline', label: 'Send them on their way', description: 'You keep your stores whole; they shrug and ride off to sell their steel elsewhere.', effect: { type: 'none' } },
+    ],
+  },
+  {
+    id: 'drillmaster', title: 'A Hard-Handed Drillmaster', description: 'A grizzled sergeant offers to break your raw levy into proper soldiers — if you can feed them through the drilling.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral',
+    choices: [
+      { id: 'drill', label: 'Drill the levy into soldiers', description: 'Weeks of hard training on full rations turn militia into line troops — at a real cost in food.', effect: { type: 'multi', effects: [{ type: 'convert', from: 'Militia', to: 'Soldier', count: 20 }, { type: 'food', delta: -3000 }] } },
+      { id: 'leave_be', label: 'Leave them to forage', description: 'Keep the levy at their sacks and spades. Green they stay, but the stores stay fuller.', effect: { type: 'none' } },
+    ],
+  },
+  {
+    id: 'deserter_lord', title: 'An Enemy Captain Defects', description: 'An enemy officer, out of favour with his warlord, slips into camp under a white flag with his whole company at his back.', severity: 3,
+    effect: { type: 'choice' }, valence: 'good',
+    choices: [
+      { id: 'take_the_oath', label: 'Take his oath and his men', description: 'Swell your banner with a full company of turncoats — trusting that a man who betrayed once will not do it twice.', effect: { type: 'roster', unit: 'Soldier', delta: +35 } },
+      { id: 'send_home', label: 'Send him back to sow discord', description: 'Refuse the oath but let him return whispering mutiny — his warlord\'s ranks thin as the rot spreads.', effect: { type: 'enemy_losses', factor: 0.93 } },
+    ],
+  },
   // ── neutral fates: something happens, nothing tips the scales. One per pool
   // so all three magnitudes of the "neutral" reading show up in play. A
   // `none` effect is a genuine no-op at end-of-turn — the drama is in the
@@ -131,6 +167,9 @@ export const eventValence = (effect) => {
     // The enemy's losses and betrayed secrets are our gain.
     case 'enemy_losses':
     case 'enemy_reveal':
+      return 'good'
+    // Upgrading units in place (mount soldiers as cavalry) is a gain.
+    case 'convert':
       return 'good'
     // A bundle reads as its parts' shared mood; genuinely mixed bundles
     // (a gain and a loss in one fate) net out to neutral.
@@ -204,6 +243,15 @@ export function applyEffect(campaign, effect) {
     // full Overwhelming tier while it holds).
     campaign.enemy.revealedUntilDay = campaign.day + 1
     log.push('Prisoners betray the enemy camp — their host is laid bare.')
+  } else if (effect.type === 'convert') {
+    // Upgrade units in place: up to `count` of `from` become `to` (mount
+    // soldiers as cavalry). Capped at what the source holds — no negative
+    // roster, and you only ever upgrade troops you actually have.
+    const cur = campaign.roster.get(effect.from) ?? 0
+    const moved = Math.min(effect.count, cur)
+    campaign.roster.set(effect.from, cur - moved)
+    campaign.roster.set(effect.to, (campaign.roster.get(effect.to) ?? 0) + moved)
+    log.push(`${moved} ${effect.from} → ${effect.to}.`)
   } else if (effect.type === 'multi') {
     // A bundled fate: every part lands, in order.
     for (const part of effect.effects) log.push(...applyEffect(campaign, part))

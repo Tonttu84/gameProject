@@ -199,6 +199,8 @@ describe('eventValence', () => {
     // Stage 4 1c arms: the enemy's losses and betrayed secrets are our gain.
     expect(eventValence({ type: 'enemy_losses', factor: 0.93 })).toBe('good')
     expect(eventValence({ type: 'enemy_reveal' })).toBe('good')
+    // Upgrading units in place (mount soldiers as cavalry) reads as a gain.
+    expect(eventValence({ type: 'convert', from: 'Soldier', to: 'Cavalry', count: 20 })).toBe('good')
   })
 
   test('multi effects: agreeing parts share their mood, mixed parts read neutral', () => {
@@ -341,6 +343,44 @@ describe('applyEffect — recon-rung arms (Stage 4 1c)', () => {
     expect(c.resources.food).toBe(8000)
     expect(c.roster.get('Soldier')).toBe(98)
     expect(log).toHaveLength(2)
+  })
+
+  // `convert` upgrades units in place: N of `from` become `to` (mount soldiers
+  // as cavalry, arm levy as soldiers…). It's the mechanic the Horses event
+  // hangs on — a real roster change, not just a number tweak.
+  test('convert moves units from one type to another', () => {
+    const c = makeTarget() // Soldier 100
+    const log = applyEffect(c, { type: 'convert', from: 'Soldier', to: 'Cavalry', count: 30 })
+    expect(c.roster.get('Soldier')).toBe(70)
+    expect(c.roster.get('Cavalry')).toBe(30)
+    expect(log.length).toBeGreaterThan(0)
+  })
+
+  test('convert takes only what the source holds — never a negative roster', () => {
+    const c = makeTarget()
+    c.roster.set('Soldier', 10)
+    applyEffect(c, { type: 'convert', from: 'Soldier', to: 'Cavalry', count: 30 })
+    expect(c.roster.get('Soldier')).toBe(0)
+    expect(c.roster.get('Cavalry')).toBe(10)
+  })
+})
+
+describe('the Horses event: mount soldiers as cavalry', () => {
+  const horses = EVENT_POOL.find((e) => e.id === 'horses')
+
+  test('exists as a choice event that declares a valence', () => {
+    expect(horses).toBeTruthy()
+    expect(horses.effect).toEqual({ type: 'choice' })
+    expect(['good', 'bad', 'neutral']).toContain(horses.valence)
+  })
+
+  test('one branch upgrades Soldiers into Cavalry via a convert effect', () => {
+    const branch = horses.choices.find((c) => {
+      const eff = c.effect
+      const parts = eff.type === 'multi' ? eff.effects : [eff]
+      return parts.some((p) => p.type === 'convert' && p.from === 'Soldier' && p.to === 'Cavalry')
+    })
+    expect(branch).toBeTruthy()
   })
 })
 

@@ -1643,6 +1643,30 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 
 ---
 
+**✅ SHIPPED 2026-07-19 — event enrichment + the `convert` mechanic (campaign-server only).**
+The event pools were thin/bland (user, 2026-07-19: "add more interactive events … minor/normal/big
+event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 landed:
+- **New `convert` effect** (`services/events.js`): `{ type: 'convert', from, to, count }` moves up to
+  `count` roster units of `from` into `to`, capped at what the source holds (no negative roster).
+  `eventValence` classifies it `good` (an in-place upgrade). Needs no engine/frontend change —
+  Cavalry (and every convert target) is already a placeable+spawnable `UnitCatalog` unit, and the
+  UI derives unit lists reactively from `roster`, so converted units are immediately fieldable.
+- **The Horses event** (`horses`, severity 3, choice/`good`): "A Captured Herd" → **Mount your
+  veterans as cavalry** (multi: `convert` Soldier→Cavalry ×25, −20 materials for tack) **or Sell the
+  herd** (+materials +food). The user's example, and the `convert` mechanic's first use.
+- **Three more interactive choice events** to de-blandify the normal/major pools: `sellswords`
+  (sev 2, good — hire mercenaries for supply → +Soldiers), `drillmaster` (sev 2, neutral — `convert`
+  Militia→Soldier at a food cost, reusing convert to tie the levy→line progression), `deserter_lord`
+  (sev 3, good — take a defecting company's oath → +Soldiers, or send him home to `enemy_losses`).
+- **Tests**: augury.test.js +6 (convert apply/cap, convert valence, Horses structure) → 39 green;
+  full campaign-server suite **256/256**. All EVENT_POOL structure tripwires still hold (every pool
+  mixes good/bad, choice options are phrase-only/digit-free, every event has a recognized valence).
+- **Follow-ups (not done):** minor-pool (sev 1) got no new interactive event this slice — add one
+  (a small choice) next; consider event chains/prerequisites (the long-standing "richer event
+  system" follow-up); a live click-through of the new choices in-browser.
+
+---
+
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
 **~~TODO~~ ✅ SHIPPED 2026-07-18 — tutorial-message pass over every menu/screen (user, 2026-07-18).**
