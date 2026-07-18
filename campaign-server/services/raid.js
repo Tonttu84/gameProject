@@ -95,11 +95,14 @@ export function generateRaidOpportunities(campaign, catalog, band) {
     .map((slot, i) => ({ i, event: slot.trueEvent }))
     .filter(({ event }) => eventValenceFor(event) === 'bad')
 
-  const types = []
-  if (badSlots.length > 0) types.push('counter_event')
+  // The scouting band's worth of ordinary openings, THEN — additively — one
+  // counter_event when a bad fate is sealed (2026-07-18 playtest fix). The
+  // counter rides ON TOP of the band count instead of replacing a slot, so a
+  // coming blow always grants an EXTRA chance to unmake it rather than crowding
+  // out a plundering target (the "again only 2 targets" complaint).
   const pool = ['destroy_detachment', 'loot_supplies', 'rescue_troops']
-  while (types.length < count) types.push(pool[Math.floor(Math.random() * pool.length)])
-  types.length = count
+  const types = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)])
+  if (badSlots.length > 0) types.push('counter_event')
 
   const opportunities = []
   types.forEach((type, i) => {
