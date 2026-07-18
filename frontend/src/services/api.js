@@ -74,6 +74,10 @@ export const postCampaignRaids = (id, parties) =>
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)
+// Resolve a pending choice-fate (events with choices): pick one option of the
+// decision owed on `slot`. Returns { campaign, resolved: {slot, choice, label} }.
+export const postCampaignChoice = (id, slot, choice) =>
+  axios.post(`/api/campaigns/${id}/choices/${slot}`, { choice }, authed()).then(r => r.data)
 
 // Submit a player bug report. The server stamps the trusted reproduction
 // context (active campaign, day, build) itself; the client only claims which

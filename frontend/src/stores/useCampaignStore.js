@@ -9,6 +9,7 @@ import {
   postCampaignBattle,
   postCampaignRaids,
   endCampaignDay,
+  postCampaignChoice,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -72,6 +73,15 @@ const useCampaignStore = create((set, get) => ({
     const res = await endCampaignDay(get().campaign.id)
     set({ campaign: res.campaign })
     return res.report
+  },
+
+  // Resolve a pending choice-fate. The refreshed view drops the entry from
+  // campaign.pendingChoices; the returned `resolved` carries the chosen
+  // label for the reveal screen's outcome line.
+  resolveChoice: async (slot, choice) => {
+    const res = await postCampaignChoice(get().campaign.id, slot, choice)
+    set({ campaign: res.campaign })
+    return res.resolved
   },
 
   reset: () => set({ campaign: null, loading: false }),

@@ -48,7 +48,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, launchRaids, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, launchRaids, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -99,6 +99,10 @@ const App = () => {
   }, [])
 
   const startAugury = () => setPhase('augury')
+  // Resolve a pending choice-fate (events with choices). Guarded like every
+  // campaign action; the reveal screen reads the undefined-on-failure return
+  // to keep the options up for another try.
+  const chooseFate = guarded(resolveChoice)
 
   if (connectionError) {
     return (
@@ -279,6 +283,20 @@ const App = () => {
     )
   }
 
+  // A decision owed with no report on screen (the report died with a reload):
+  // reopen the choice cards straight from the view in choices-only mode. The
+  // server 409s every other campaign action until they're resolved, so this
+  // overlay IS the campaign until then; it drops away with the last choice.
+  if ((campaign.pendingChoices?.length ?? 0) > 0 && !(phase === 'report' && dayReport)) {
+    return (
+      <div className="app">
+        <CampaignHUD />
+        {authBar}
+        <EventRevealScreen pendingChoices={campaign.pendingChoices} onChoose={chooseFate} />
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <CampaignHUD />
@@ -368,6 +386,7 @@ const App = () => {
       {phase === 'report' && dayReport && (
         <EventRevealScreen
           report={dayReport}
+          onChoose={chooseFate}
           onContinue={() => { setDayReport(null); setPhase('setup') }}
         />
       )}

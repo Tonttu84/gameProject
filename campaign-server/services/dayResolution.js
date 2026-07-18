@@ -85,6 +85,24 @@ export async function endDay(campaign) {
       }
       report.augury[i].scoutsIntervened = fired.intervened
     }
+    // A choice-fate (resolve-then-choose): nothing applies now — the decision
+    // is recorded and the player picks a branch after the reveal; every other
+    // mutating route is gated until then. The report slot carries the option
+    // CARDS only (effects stay server-side, looked up again at choose time).
+    if (fired.choices?.length) {
+      campaign.pendingChoices.push({
+        slot: i,
+        eventId: slot.trueEvent.id,
+        rung: fired.rung,
+        day: report.day,
+      })
+      report.augury[i].pendingChoice = {
+        options: fired.choices.map(({ id, label, description }) => ({ id, label, description })),
+      }
+      entries.push(`Came to pass: ${fired.title} — a decision awaits you.`)
+      if (fired.intervened) entries.push('Your scouts saw it coming.')
+      return
+    }
     entries.push(`Came to pass: ${fired.title}.`)
     if (fired.intervened) entries.push('Your scouts saw it coming.')
     entries.push(...applyEffect(campaign, fired.effect))
@@ -118,6 +136,10 @@ export async function endDay(campaign) {
     campaign.status = 'won'
     entries.push('The enemy has abandoned the campaign. The country is yours.')
   }
+  // Game over outranks an owed decision: without this, the choose route's
+  // active-guard would strand the pending entries (and the client's gate)
+  // on a finished campaign.
+  if (campaign.status !== 'active') campaign.pendingChoices = []
 
   // 7. New turn
   if (campaign.status === 'active') {

@@ -16,7 +16,7 @@ import {
 import { armyTotal } from './enemyAi.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
-import { eventValence } from './events.js'
+import { eventValenceFor, choiceRung } from './events.js'
 
 // THE single serializer between campaign documents and the client. Hidden
 // information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
@@ -116,8 +116,9 @@ const visionCard = ({ id, title, description, severity, effect }) => ({
   severity,
   // The shown card's mood (good/bad/neutral), derived from its own effect so
   // the augur's header labels the flavour on display — never the hidden truth.
-  // No leak: the shown card's nature is already fully visible.
-  valence: eventValence(effect),
+  // No leak: the shown card's nature is already fully visible. A choice event
+  // has no single effect, so its declared valence (pool lookup) is used.
+  valence: eventValenceFor({ id, effect }),
   effect, // what WOULD happen if the vision is true — not a leak
 })
 
@@ -219,6 +220,20 @@ export async function campaignView(campaign) {
       // still-open opportunity. See the schema comment on raid.assignment.
       assignment: Object.fromEntries(campaign.raid.assignment),
     },
+    // Decisions owed (events with choices): display fields + option CARDS
+    // only — branch effects, the pool id, and the fired rung stay server-side
+    // (looked up again at choose time). An entry whose event has left the
+    // pool is dropped, the same degrade-safely convention as elsewhere.
+    pendingChoices: (campaign.pendingChoices ?? []).flatMap(({ slot, eventId, rung }) => {
+      const def = choiceRung(eventId, rung)
+      if (!def) return []
+      return [{
+        slot,
+        title: def.title,
+        description: def.description,
+        options: def.choices.map(({ id, label, description }) => ({ id, label, description })),
+      }]
+    }),
     // Scouting: derived at view time (like foodNeedPerTurn), no schema field.
     // ONLY the banded label crosses the hidden-info boundary — the raw
     // coverage/ratio would let the client solve for the enemy composition.

@@ -1,4 +1,4 @@
-import { eventValence } from './events.js'
+import { eventValenceFor } from './events.js'
 import {
   RAID_OPPORTUNITIES_PER_DAY,
   RAID_TARGET_FRACTION,
@@ -88,9 +88,12 @@ const capacityOf = (targetForce, catalog) => {
 // slot's sealed truth is a bad fate, its (hidden) reward naming that slot.
 export function generateRaidOpportunities(campaign, catalog, band) {
   const count = RAID_OPPORTUNITIES_PER_DAY[band] ?? 1
+  // eventValenceFor (not eventValence): a choice-fate stores only the
+  // `choice` sentinel effect, its declared valence lives in the pool — a
+  // declared-bad choice event draws a counter_event like any bad fate.
   const badSlots = campaign.augury.slots
-    .map((slot, i) => ({ i, effect: slot.trueEvent.effect }))
-    .filter(({ effect }) => eventValence(effect) === 'bad')
+    .map((slot, i) => ({ i, event: slot.trueEvent }))
+    .filter(({ event }) => eventValenceFor(event) === 'bad')
 
   const types = []
   if (badSlots.length > 0) types.push('counter_event')

@@ -96,6 +96,21 @@ const expectNoHiddenInfo = (body) => {
         : ['battleOffer', 'stance']
     expect(Object.keys(c.enemy).sort()).toEqual(allowed)
   }
+  // Events with choices: a pending decision crosses as display fields plus
+  // option cards only — never the branch effects (the pool's `choices`
+  // entries), the pool id, or the rung that fired.
+  expect(raw).not.toContain('"choices"')
+  expect(raw).not.toContain('"eventId"')
+  for (const c of [body, body.campaign]) {
+    for (const p of c?.pendingChoices ?? []) {
+      expect(Object.keys(p).sort()).toEqual(['description', 'options', 'slot', 'title'])
+      for (const o of p.options)
+        expect(Object.keys(o).sort()).toEqual(['description', 'id', 'label'])
+    }
+  }
+  for (const slot of body.report?.augury ?? [])
+    for (const o of slot.pendingChoice?.options ?? [])
+      expect(Object.keys(o).sort()).toEqual(['description', 'id', 'label'])
   // Scouting crosses the boundary as the banded label ONLY — a raw coverage
   // or ratio number would let the client solve for the enemy composition.
   expect(raw).not.toContain('"coverage"')
@@ -1281,5 +1296,142 @@ describe('POST /api/campaigns/:id/end-day', () => {
 
     // A finished campaign refuses further actions.
     expect((await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status).toBe(400)
+  })
+})
+
+// ── Events with choices (resolve-then-choose) ────────────────────────────────
+// A fired choice-fate's effect is NOT applied at end-day: the decision is
+// persisted on the doc (`pendingChoices`, minimal `{slot, eventId, rung, day}`
+// — options come from EVENT_POOL at view/choose time, the sealed-fate rule)
+// and every other mutating action 409s until the player has chosen. The
+// choose route applies the picked branch and re-checks annihilation.
+describe('events with choices', () => {
+  const REFUGEES = EVENT_POOL.find((e) => e.id === 'refugees')
+  const BAGGAGE_PLAGUE = EVENT_POOL.find((e) => e.id === 'baggage_plague')
+
+  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const choose = (id, slot, choice) =>
+    auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send({ choice })
+
+  test('the authored choice events exist with the expected branches', () => {
+    expect(REFUGEES.choices.map((c) => c.id).sort()).toEqual(['take_in', 'turn_away'])
+    expect(BAGGAGE_PLAGUE.choices.map((c) => c.id).sort()).toEqual(['march_on', 'quarantine'])
+    expect(BAGGAGE_PLAGUE.valence).toBe('bad')
+  })
+
+  test('a fired choice event applies nothing and pends the decision', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    const res = await endDayReq(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+
+    // No branch applied: taking the refugees in would have mustered Militia.
+    expect(res.body.campaign.roster.Militia).toBeUndefined()
+    // All three slots pend, each report slot carries its option cards.
+    expect(res.body.campaign.pendingChoices.map((p) => p.slot)).toEqual([0, 1, 2])
+    for (const [i, slot] of res.body.report.augury.entries()) {
+      expect(slot.pendingChoice.options.map((o) => o.id).sort()).toEqual(['take_in', 'turn_away'])
+      expect(res.body.campaign.pendingChoices[i].title).toBe(REFUGEES.title)
+    }
+    expect(res.body.report.entries.join(' ')).toMatch(/decision/i)
+  })
+
+  test('every mutating action 409s while a decision is pending; reads stay open', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    await endDayReq(c.id)
+
+    const blocked = [
+      ['end-day', {}],
+      ['augury/consult', {}],
+      ['augury/reroll', { slot: 0 }],
+      ['spend', { action: 'fortify' }],
+      ['battles', { placement: [] }],
+      ['raids/launch', { parties: {} }],
+    ]
+    for (const [path, payload] of blocked) {
+      const res = await auth(api.post(`/api/campaigns/${c.id}/${path}`)).send(payload)
+      expect(res.status, path).toBe(409)
+      expect(res.body.error).toMatch(/decision/)
+    }
+    const view = await getView(c.id)
+    expect(view.pendingChoices).toHaveLength(3)
+  })
+
+  test('choosing applies that branch, clears the entry, and lifts the gate after the last one', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    await endDayReq(c.id)
+    const before = await getView(c.id)
+
+    const res = await choose(c.id, 0, 'take_in')
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+    expect(res.body.resolved).toEqual({ slot: 0, choice: 'take_in', label: expect.any(String) })
+    // Take them in: −3 t of food, +20 Militia.
+    expect(res.body.campaign.roster.Militia).toBe(20)
+    expect(res.body.campaign.resources.food).toBe(before.resources.food - 3000)
+    expect(res.body.campaign.pendingChoices.map((p) => p.slot)).toEqual([1, 2])
+
+    // Turn them away: a genuine no-op.
+    const res2 = await choose(c.id, 1, 'turn_away')
+    expect(res2.body.campaign.roster.Militia).toBe(20)
+    expect(res2.body.campaign.resources.food).toBe(before.resources.food - 3000)
+
+    await choose(c.id, 2, 'turn_away')
+    // All decisions made: the campaign moves again.
+    expect((await endDayReq(c.id)).status).toBe(200)
+  })
+
+  test('an unknown option or a slot with nothing pending rejects', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    await endDayReq(c.id)
+
+    expect((await choose(c.id, 0, 'bribe_them')).status).toBe(400)
+    expect((await choose(c.id, 7, 'take_in')).status).toBe(404)
+    // The pending entry survived both rejections.
+    const view = await getView(c.id)
+    expect(view.pendingChoices).toHaveLength(3)
+  })
+
+  test('a countered choice-fate never pends — the raid already unmade it', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    const doc = await Campaign.findById(c.id)
+    doc.augury.slots.forEach((s) => { s.countered = true })
+    await doc.save()
+
+    const res = await endDayReq(c.id)
+    expect(res.body.campaign.pendingChoices).toEqual([])
+    expect((await endDayReq(c.id)).status).toBe(200) // no gate left behind
+  })
+
+  test('a campaign that ends the same turn clears its pending decisions', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    const doc = await Campaign.findById(c.id)
+    doc.enemy.army = {}
+    await doc.save()
+
+    const res = await endDayReq(c.id)
+    expect(res.body.campaign.status).toBe('won')
+    // Game over outranks an owed decision — nothing left to strand the client.
+    expect(res.body.campaign.pendingChoices).toEqual([])
+  })
+
+  test('a choice can end the campaign — annihilation is re-checked at choose time', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, BAGGAGE_PLAGUE)
+    await pinArmies(c.id, { roster: { Soldier: 1 } })
+    await endDayReq(c.id)
+
+    // March on with a single soldier: ×0.98 floors the last man away.
+    const res = await choose(c.id, 0, 'march_on')
+    expect(res.status).toBe(200)
+    expect(res.body.campaign.status).toBe('lost')
+    // The remaining decisions die with the campaign.
+    expect(res.body.campaign.pendingChoices).toEqual([])
   })
 })

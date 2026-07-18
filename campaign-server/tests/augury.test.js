@@ -12,6 +12,8 @@ import {
   EVENT_POOL,
   POOL_LEGIBILITY,
   eventValence,
+  eventValenceFor,
+  choiceRung,
   applyEffect,
   firedRung,
 } from '../services/events.js'
@@ -128,9 +130,10 @@ describe('EVENT_POOL structure', () => {
   const pools = [...new Set(EVENT_POOL.map((e) => e.severity))]
 
   // Valence is derived by the one server-side classifier, so the leak guards
-  // and the augur's header can never drift apart.
-  const isGood = (e) => eventValence(e.effect) === 'good'
-  const isBad = (e) => eventValence(e.effect) === 'bad'
+  // and the augur's header can never drift apart. eventValenceFor honours a
+  // choice event's DECLARED valence (it has no single effect to derive from).
+  const isGood = (e) => eventValenceFor(e) === 'good'
+  const isBad = (e) => eventValenceFor(e) === 'bad'
 
   test('every pool has a legibility modifier', () => {
     for (const pool of pools) expect(POOL_LEGIBILITY[pool]).toBeTypeOf('number')
@@ -151,7 +154,7 @@ describe('EVENT_POOL structure', () => {
 
   test('every event has a recognized valence (keeps the classifier honest)', () => {
     for (const e of EVENT_POOL)
-      expect(['good', 'bad', 'neutral']).toContain(eventValence(e.effect))
+      expect(['good', 'bad', 'neutral']).toContain(eventValenceFor(e))
   })
 
   // Stage 4 1c: recon-sensitive events carry the full three-rung ladder in
@@ -391,5 +394,103 @@ describe('firedRung (Stage 4 1c)', () => {
     expect(doom.rung).toBe('blind')
     expect(doom.intervened).toBe(false)
     expect(doom.title).toBe('Doom')
+  })
+})
+
+// ── Events with choices (resolve-then-choose) ────────────────────────────────
+// Some fired fates hand the player a decision instead of an effect. The
+// branches (`choices`) live in EVENT_POOL — on the event itself (its blind
+// rung) or on a recon rung — and ride out of firedRung with the rung that
+// fires; the stored slot copy keeps only display fields plus a `choice`
+// sentinel effect (the schema requires one; it never applies). Option text is
+// phrases only — the effects stay server-side, so no digits may appear.
+describe('EVENT_POOL: events with choices', () => {
+  const allChoiceSets = (e) =>
+    [e.choices, ...Object.values(e.rungs ?? {}).map((r) => r.choices)].filter(Boolean)
+  const choiceEvents = EVENT_POOL.filter((e) => allChoiceSets(e).length > 0)
+
+  test('at least two choice events exist', () => {
+    expect(choiceEvents.length).toBeGreaterThanOrEqual(2)
+  })
+
+  test('every choice event declares a valence and carries the choice-sentinel effect', () => {
+    for (const e of choiceEvents) {
+      expect(['good', 'bad', 'neutral']).toContain(e.valence)
+      expect(e.effect).toEqual({ type: 'choice' })
+    }
+  })
+
+  test('every option is a complete card: unique id, phrase-only label/description, an effect', () => {
+    for (const e of choiceEvents)
+      for (const choices of allChoiceSets(e)) {
+        expect(choices.length).toBeGreaterThanOrEqual(2)
+        expect(new Set(choices.map((c) => c.id)).size).toBe(choices.length)
+        for (const c of choices) {
+          expect(c.id).toBeTruthy()
+          expect(c.label).toBeTruthy()
+          expect(c.description).toBeTruthy()
+          expect(c.effect).toBeTruthy()
+          expect(c.label).not.toMatch(/\d/)
+          expect(c.description).not.toMatch(/\d/)
+        }
+      }
+  })
+})
+
+describe('eventValenceFor', () => {
+  test('a declared valence (looked up in the pool by id) overrides the effect-derived one', () => {
+    const declared = EVENT_POOL.find((e) => e.valence)
+    expect(declared).toBeTruthy()
+    // The stored slot copy carries only display fields + the sentinel effect;
+    // the declared valence must still be found via the pool.
+    const stored = {
+      id: declared.id,
+      title: declared.title,
+      severity: declared.severity,
+      effect: declared.effect,
+    }
+    expect(eventValenceFor(stored)).toBe(declared.valence)
+  })
+
+  test('falls back to the effect for plain events, pooled or not', () => {
+    expect(eventValenceFor({ id: 'supply', effect: { type: 'food', delta: 3000 } })).toBe('good')
+    expect(eventValenceFor(DOOMED)).toBe('bad') // not in the pool
+    expect(eventValenceFor(undefined)).toBe('neutral')
+  })
+})
+
+describe('firedRung/choiceRung: choices ride the fired rung', () => {
+  const storedCopy = (e) => ({
+    id: e.id,
+    title: e.title,
+    description: e.description,
+    severity: e.severity,
+    effect: e.effect,
+  })
+
+  test('a plain choice event fires blind with its choices attached', () => {
+    const e = EVENT_POOL.find((ev) => ev.choices && !ev.reconSensitive)
+    expect(e).toBeTruthy()
+    const fired = firedRung(storedCopy(e), 'Contested')
+    expect(fired.rung).toBe('blind')
+    expect(fired.choices).toEqual(e.choices)
+  })
+
+  test('events without choices fire with none', () => {
+    const supply = EVENT_POOL.find((ev) => ev.id === 'supply')
+    expect(firedRung(storedCopy(supply), 'Blind').choices).toBeUndefined()
+    expect(firedRung(DOOMED, 'Blind').choices).toBeUndefined()
+  })
+
+  test('choiceRung: pool lookup by id+rung; ids or rungs without choices yield null', () => {
+    const e = EVENT_POOL.find((ev) => ev.choices && !ev.reconSensitive)
+    expect(choiceRung(e.id, 'blind')).toEqual({
+      title: e.title,
+      description: e.description,
+      choices: e.choices,
+    })
+    expect(choiceRung('no_such_event', 'blind')).toBeNull()
+    expect(choiceRung('supply', 'blind')).toBeNull()
+    expect(choiceRung(e.id, 'warned')).toBeNull() // no such rung on a plain event
   })
 })

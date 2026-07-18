@@ -64,7 +64,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 10 // v10: raid opportunities + countered augury slots (Stage 4 Part 2)
+export const CAMPAIGN_SCHEMA_VERSION = 11 // v11: pendingChoices (events with choices)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -159,6 +159,28 @@ const campaignSchema = new mongoose.Schema({
     },
     consulted: { type: Boolean, default: false },
     rerollsRemaining: { type: Number, required: true },
+  },
+
+  // Decisions owed by the player (events with choices, resolve-then-choose):
+  // a fired choice-fate's effect is NOT applied at end-day — the decision is
+  // recorded here and every other mutating route 409s until it's made.
+  // Deliberately minimal and self-contained: options/effects are looked up in
+  // EVENT_POOL by eventId+rung at view/choose time (the sealed-fate rule, same
+  // as rung ladders), and `slot` is only historical correlation — end-day's
+  // step 7 redraws augury.slots before the player ever sees the reveal.
+  pendingChoices: {
+    type: [
+      new mongoose.Schema(
+        {
+          slot: { type: Number, required: true },
+          eventId: { type: String, required: true },
+          rung: { type: String, required: true },
+          day: { type: Number, required: true },
+        },
+        { _id: false },
+      ),
+    ],
+    default: [],
   },
 
   forage: {

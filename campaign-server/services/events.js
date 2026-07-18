@@ -70,6 +70,31 @@ export const EVENT_POOL = [
   // ── materials fates (Stage 3 sink feeds fortifications/militia) ──
   { id: 'quarry',        title: 'Quarry Found',      description: 'A workable seam of stone and timber. +25 materials.',     severity: 1, effect: { type: 'materials',  delta: +25 } },
   { id: 'tool_rot',      title: 'Tool Rot',          description: 'Damp ruins tools and cordage. -15 materials.',            severity: 2, effect: { type: 'materials',  delta: -15 } },
+  // ── fates with choices (resolve-then-choose) ── The fired rung's `choices`
+  // hand the player a decision instead of an effect: end-day pends it
+  // (dayResolution) and a follow-up POST applies the picked branch. Branches
+  // live HERE like the rung ladders (the slot copy stores display fields plus
+  // the `choice` sentinel — the schema requires an effect; it never applies).
+  // Option text is phrases only, NO numbers (augury.test.js tripwires it) —
+  // the player weighs directions, never exact magnitudes. A choice event has
+  // no single effect, so it DECLARES its valence for the augur's header and
+  // the counter_event raid draw (eventValenceFor below).
+  {
+    id: 'refugees', title: 'Refugees at the Palisade', description: 'A column of burned-out villagers begs shelter at the camp gates.', severity: 1,
+    effect: { type: 'choice' }, valence: 'neutral',
+    choices: [
+      { id: 'turn_away', label: 'Turn them away',                    description: 'The war is not theirs to eat through. They trudge on; the stores stay whole.', effect: { type: 'none' } },
+      { id: 'take_in',   label: 'Take them in — more mouths, more hands', description: 'Feeding them will cost stores, but the able-bodied among them will take up arms as militia.', effect: { type: 'multi', effects: [{ type: 'food', delta: -3000 }, { type: 'roster', unit: 'Militia', delta: +20 }] } },
+    ],
+  },
+  {
+    id: 'baggage_plague', title: 'Plague in the Baggage Train', description: 'Fever breaks out among the wagons; the sick multiply by the day.', severity: 2,
+    effect: { type: 'choice' }, valence: 'bad',
+    choices: [
+      { id: 'quarantine', label: 'Quarantine and burn the tainted stores', description: 'Harsh, but sure: the sickness dies with the supplies it touched.', effect: { type: 'food', delta: -4000 } },
+      { id: 'march_on',   label: 'March on and trust to providence',       description: 'Keep the stores and the pace — and let the fever take whom it takes.', effect: { type: 'all_roster', factor: 0.98 } },
+    ],
+  },
   // ── neutral fates: something happens, nothing tips the scales. One per pool
   // so all three magnitudes of the "neutral" reading show up in play. A
   // `none` effect is a genuine no-op at end-of-turn — the drama is in the
@@ -118,6 +143,27 @@ export const eventValence = (effect) => {
     default:
       return 'neutral'
   }
+}
+
+// An EVENT's mood, where eventValence above classifies an EFFECT: honours a
+// declared `valence` (looked up in the pool by id, since a stored slot copy
+// carries neither the declaration nor the choices it stands in for), falling
+// back to the effect-derived one. Use this wherever the input is an event —
+// the augur's header (campaignView) and the counter_event raid draw both do.
+export const eventValenceFor = (event) => {
+  const pooled = EVENT_POOL.find((e) => e.id === event?.id)
+  return pooled?.valence ?? eventValence(event?.effect)
+}
+
+// The choice set a pending decision points at: pool lookup by event id +
+// fired rung (the sealed-fate rule — a mid-campaign pool edit changes the
+// branches, never an already-recorded decision's identity). Null when the id
+// is gone from the pool or the rung carries no choices.
+export const choiceRung = (eventId, rung) => {
+  const pooled = EVENT_POOL.find((e) => e.id === eventId)
+  const def = rung === 'blind' ? pooled : pooled?.rungs?.[rung]
+  if (!def?.choices) return null
+  return { title: def.title, description: def.description, choices: def.choices }
 }
 
 // Mutates the campaign in place; caller saves. Returns log lines.
@@ -184,6 +230,9 @@ export const firedRung = (event, band) => {
       title: event.title,
       description: event.description,
       effect: event.effect,
+      // A choice-fate's branches ride along (from the pool, never the stored
+      // copy) so dayResolution can pend the decision instead of applying.
+      choices: pooled?.choices,
     }
   const rung = pooled.rungs[rungName]
   return { rung: rungName, intervened: true, reconSensitive: true, ...rung }

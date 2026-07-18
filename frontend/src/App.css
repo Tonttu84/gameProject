@@ -282,6 +282,25 @@ body {
 }
 .reveal-card h3 { color: var(--gold); font-size: 1.05rem; margin-bottom: 0.4rem; }
 .reveal-clash { color: var(--danger); font-size: 13px; }
+/* Events with choices: the fate card's branch buttons. */
+.choice-options { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.6rem; }
+.choice-option {
+  background: var(--bg);
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+}
+.choice-option:hover:not(:disabled) { background: var(--bg2); }
+.choice-option:disabled { opacity: 0.6; cursor: default; }
+.choice-option strong { color: var(--gold); }
+.choice-option span { font-size: 12px; color: #8888aa; }
+.choice-outcome { color: #88cc88; }
 
 .phase-placement {
   display: flex;

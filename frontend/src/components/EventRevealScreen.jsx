@@ -7,6 +7,13 @@ import { tons } from '../utils/format'
 // player click — forage, then each fate (prophecy against what actually came
 // to pass), then upkeep, the enemy, and finally the full summary. Revealed
 // cards stay on screen; the continue button only appears with the last card.
+//
+// Events with choices (resolve-then-choose): a fate that fired with
+// `pendingChoice` swaps the advance control for its option buttons — the
+// reveal can't move past an unmade decision (the server 409s every other
+// campaign action anyway). With no `report` at all (a reload while a decision
+// was owed), the screen runs in choices-only mode straight off the view's
+// `pendingChoices`; App drops the overlay once the last one resolves.
 
 const FATE_NAMES = ['The First Fate', 'The Second Fate', 'The Third Fate']
 
@@ -21,6 +28,23 @@ const CLASH_LINES = {
   player: 'Enemy riders caught your foragers — your parties drove them off.',
   enemy: 'Enemy riders caught your foragers — your parties were scattered.',
 }
+
+const ChoiceOptions = ({ slot, options, onPick, busy }) => (
+  <div className="choice-options">
+    {options.map((option) => (
+      <button
+        key={option.id}
+        className="choice-option"
+        data-testid={`choice-${option.id}`}
+        disabled={busy}
+        onClick={() => onPick(slot, option)}
+      >
+        <strong>{option.label}</strong>
+        <span>{option.description}</span>
+      </button>
+    ))}
+  </div>
+)
 
 const buildBeats = (report) => {
   const beats = []
@@ -52,7 +76,7 @@ const ForageBeat = ({ forage }) => (
 // what came to pass. Recon-sensitive fates (Stage 4 1c) show the FIRED rung —
 // the augur always foretold the blind one; a countered fate (a won
 // counter_event raid) never fired at all.
-const FateBeat = ({ slot, index }) => {
+const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
   const came = slot.fired ?? slot.actual
   return (
     <div className="reveal-card report-augury-slot" data-testid={`reveal-beat-fate-${index}`}>
@@ -84,6 +108,14 @@ const FateBeat = ({ slot, index }) => {
       {slot.scoutsIntervened && (
         <p className="scout-intervened" data-testid="scout-intervened">
           Your scouts saw it coming — the blow was turned.
+        </p>
+      )}
+      {slot.pendingChoice && outcome == null && (
+        <ChoiceOptions slot={index} options={slot.pendingChoice.options} onPick={onPick} busy={busy} />
+      )}
+      {outcome != null && (
+        <p className="choice-outcome" data-testid={`choice-outcome-${index}`}>
+          You chose: <strong>{outcome}</strong>
         </p>
       )}
     </div>
@@ -126,10 +158,54 @@ const SummaryBeat = ({ report, onContinue }) => (
   </div>
 )
 
-const EventRevealScreen = ({ report, onContinue }) => {
+const EventRevealScreen = ({ report, pendingChoices, onChoose, onContinue }) => {
   const tutorial = useUiStore((s) => s.tutorial)
-  const beats = buildBeats(report)
+  const beats = buildBeats(report ?? {})
   const [shown, setShown] = useState(1)
+  // Slot index → chosen label, kept locally: the report's pendingChoice stays
+  // in the (immutable) report object after the server resolves it.
+  const [outcomes, setOutcomes] = useState({})
+  const [busy, setBusy] = useState(false)
+
+  const pick = async (slot, option) => {
+    setBusy(true)
+    try {
+      // onChoose is guarded(): a failed post returns undefined and the
+      // options stay up for another try.
+      const resolved = await onChoose(slot, option.id)
+      if (resolved)
+        setOutcomes((prev) => ({ ...prev, [slot]: resolved.label ?? option.label }))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Choices-only mode (reload recovery): no report to deal out — just the
+  // owed decisions, all on the table at once. Resolving the last one shrinks
+  // `pendingChoices` to empty and App drops this overlay for the council.
+  if (!report) {
+    return (
+      <div className="day-report" data-testid="day-report">
+        <h2>Decisions Await</h2>
+        {(pendingChoices ?? []).map((pending) => (
+          <div
+            className="reveal-card"
+            data-testid={`reveal-beat-choice-${pending.slot}`}
+            key={pending.slot}
+          >
+            <h3>{pending.title}</h3>
+            {pending.description && <p>{pending.description}</p>}
+            <ChoiceOptions slot={pending.slot} options={pending.options} onPick={pick} busy={busy} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // The reveal can't move past an unmade decision on the card just dealt.
+  const current = beats[shown - 1]
+  const awaitingChoice =
+    current?.slot?.pendingChoice != null && outcomes[current.index] == null
 
   return (
     <div className="day-report" data-testid="day-report">
@@ -155,7 +231,16 @@ const EventRevealScreen = ({ report, onContinue }) => {
           case 'summary':
             return <SummaryBeat key={beat.kind} report={report} onContinue={onContinue} />
           default:
-            return <FateBeat key={beat.kind} slot={beat.slot} index={beat.index} />
+            return (
+              <FateBeat
+                key={beat.kind}
+                slot={beat.slot}
+                index={beat.index}
+                outcome={outcomes[beat.index]}
+                onPick={pick}
+                busy={busy}
+              />
+            )
         }
       })}
 
@@ -163,6 +248,8 @@ const EventRevealScreen = ({ report, onContinue }) => {
         <button
           className="btn-primary reveal-next"
           data-testid="reveal-next"
+          disabled={awaitingChoice}
+          title={awaitingChoice ? 'A decision awaits — choose above.' : undefined}
           onClick={() => setShown(shown + 1)}
         >
           Reveal

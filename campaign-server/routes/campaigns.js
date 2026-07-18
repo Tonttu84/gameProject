@@ -5,6 +5,7 @@ import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay, checkAnnihilation } from '../services/dayResolution.js'
+import { applyEffect, choiceRung } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement, spreadPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
@@ -53,6 +54,18 @@ const findOwn = async (req) =>
     schemaVersion: CAMPAIGN_SCHEMA_VERSION,
     buildVersion: config.APP_VERSION,
   })
+
+// A fired choice-fate awaiting the player's decision (events with choices,
+// resolve-then-choose) blocks every other mutating action — the fortnight
+// isn't resolved until the choice is made. Reads stay open; the choices
+// route below is the only way forward. Returns true when it wrote the 409.
+const rejectIfChoicePending = (campaign, res) => {
+  if ((campaign.pendingChoices?.length ?? 0) > 0) {
+    res.status(409).json({ error: 'a decision is pending — resolve it first' })
+    return true
+  }
+  return false
+}
 
 router.post('/', async (req, res) => {
   const catalog = await getCatalog()
@@ -147,6 +160,7 @@ router.post('/:id/augury/consult', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
   if (campaign.augury.consulted)
     return res.status(400).json({ error: 'the augur has already spoken today' })
 
@@ -166,6 +180,7 @@ router.post('/:id/augury/reroll', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
   if (!campaign.augury.consulted)
     return res.status(400).json({ error: 'consult the augur before rerolling' })
   if (campaign.augury.rerollsRemaining <= 0)
@@ -191,6 +206,7 @@ router.post('/:id/battles', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
   if (campaign.battleFoughtToday) return res.status(400).json({ error: 'battle already fought today' })
 
   const placement = req.body?.player_placement
@@ -329,6 +345,8 @@ router.post('/:id/raids/launch', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
+  if (rejectIfChoicePending(campaign, res)) return
+
   const parties = req.body?.parties
   if (parties === null || typeof parties !== 'object' || Array.isArray(parties))
     return res.status(400).json({ error: 'parties required' })
@@ -455,6 +473,8 @@ router.post('/:id/spend', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
+  if (rejectIfChoicePending(campaign, res)) return
+
   const action = req.body?.action
 
   if (action === 'fortify') {
@@ -517,9 +537,53 @@ router.post('/:id/end-day', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
 
   const report = await endDay(campaign)
   res.json({ report, campaign: await campaignView(campaign) })
+})
+
+// Resolve a pending choice-fate (events with choices): apply the picked
+// branch, log it, clear the entry, and re-check annihilation — a branch can
+// end the campaign (march a one-man army into the fever). `:slot` is the
+// report/pending slot index; the option set comes from EVENT_POOL via the
+// recorded eventId+rung, never from anything the client sent.
+router.post('/:id/choices/:slot', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+
+  const slot = Number(req.params.slot)
+  const idx = campaign.pendingChoices.findIndex((p) => p.slot === slot)
+  if (idx === -1) return res.status(404).json({ error: 'no decision pending for that fate' })
+
+  const pending = campaign.pendingChoices[idx]
+  const def = choiceRung(pending.eventId, pending.rung)
+  if (!def) {
+    // The pool moved out from under a sealed decision (mid-campaign edit):
+    // drop the orphan rather than strand the campaign behind the gate.
+    campaign.pendingChoices.splice(idx, 1)
+    await campaign.save()
+    return res.status(404).json({ error: 'that decision no longer exists' })
+  }
+
+  const option = def.choices.find((c) => c.id === req.body?.choice)
+  if (!option) return res.status(400).json({ error: 'choice required' })
+
+  const entries = [`${def.title}: you chose "${option.label}".`]
+  entries.push(...applyEffect(campaign, option.effect))
+  campaign.pendingChoices.splice(idx, 1)
+  entries.push(...checkAnnihilation(campaign))
+  // A campaign ended by the branch takes its remaining decisions with it
+  // (same rule as end-day step 6): nothing may strand behind the gate.
+  if (campaign.status !== 'active') campaign.pendingChoices = []
+  campaign.log.push({ day: campaign.day, entries })
+  await campaign.save()
+
+  res.json({
+    campaign: await campaignView(campaign),
+    resolved: { slot, choice: option.id, label: option.label },
+  })
 })
 
 export default router
