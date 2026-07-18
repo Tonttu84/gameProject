@@ -194,6 +194,55 @@ notes below over the git history if they ever disagree — the commits win.
   `RaidPanel` read `useUiStore((s) => s.tutorial)` directly and only forward it to
   `TutorialIntro`'s `enabled` prop; single source of truth, no App→panel fan-out to remove.)
 
+### Event reveal screen + events with choices ✅ SHIPPED 2026-07-17/18 — handoff
+
+The deferred-backlog pair (see the backlog entry, now marked shipped) landed as two commits
+on `main`, planned in one session (user decisions: **resolve-then-choose** timing, **full
+ceremony** reveal scope, **descriptive words, no numbers** on choice options).
+
+- **Commit 1 (`1e6930c`, frontend only): `EventRevealScreen.jsx` replaces `DayReport.jsx`.**
+  The one-shot end-day report is dealt out one card per click — forage (posture, harvest,
+  clash lines) → each fate (`reveal-beat-fate-<i>`; prophecy vs came-to-pass, scout/countered
+  badges ported) → upkeep → enemy stance → summary card with the log entries and the continue
+  button (`reveal-next` advances; revealed cards stay up). `TutorialIntro id="reveal"`. Same
+  `report`/`onContinue` seam, phase `'report'` unchanged, `flows.js` untouched. Tests:
+  `eventReveal.test.jsx` (sequencing), `dayReportRungs.test.jsx` reworked to the new testids,
+  `campaignFlow`/`battleVictory` click through the deal.
+- **Commit 2 (`6efa1c4`, schema v10→11): events with choices, resolve-then-choose.**
+  - `EVENT_POOL` events/rungs may carry `choices: [{id, label, description, effect}]`; the
+    fired rung's set rides out of `firedRung`. Two starter fates authored (plain, not
+    recon-sensitive): **Refugees at the Palisade** (sev 1, neutral; turn_away = none /
+    take_in = −3 t food + 20 Militia) and **Plague in the Baggage Train** (sev 2, bad;
+    quarantine = −4 t food / march_on = all_roster ×0.98). Option text is phrases only —
+    NO digits (augury.test.js tripwires). A choice event stores the `{type:'choice'}`
+    sentinel effect (slot schema requires one; it never applies) and DECLARES `valence`;
+    new `eventValenceFor(event)` (pool lookup by id, falls back to `eventValence(effect)`)
+    feeds `visionCard` and the raid counter_event draw.
+  - **Model v11:** `pendingChoices: [{slot, eventId, rung, day}]` — deliberately minimal and
+    self-contained (step 7 redraws `augury.slots` before the player sees the reveal); options
+    come from the pool at view/choose time (sealed-fate rule, like rung ladders). endDay
+    step 3 pends instead of applying (report slot gains `pendingChoice.options` cards);
+    step 6 clears pendings on game over.
+  - **Routes:** `rejectIfChoicePending` 409-gates end-day / battles / raids/launch / spend /
+    augury consult+reroll (forage stays open — planning state). New
+    `POST /:id/choices/:slot {choice}` applies the branch via `applyEffect`, logs, clears
+    the entry, re-runs `checkAnnihilation` (a branch can end the campaign — pendings die
+    with it). `campaignView.pendingChoices` = `{slot, title, description, options}` only;
+    `expectNoHiddenInfo` pins those key sets and bans `"choices"`/`"eventId"` raw.
+  - **Frontend:** fate cards with an unresolved `pendingChoice` swap the advance control for
+    option buttons (`choice-<id>`; `reveal-next` disabled until chosen, outcome line after);
+    `postCampaignChoice`/`useCampaignStore.resolveChoice` (guarded). **Reload recovery:** App
+    renders a choices-only `EventRevealScreen` overlay off `campaign.pendingChoices` whenever
+    they exist without a live report; it yields to the council when the last one resolves.
+  - **TDD both layers** (user steer this session, now a standing preference): server tests
+    red first (16 new), then green; frontend the same (3 new). Verified: campaign-server
+    243/243, frontend 204/204, oxlint clean. No engine change, no C++ run.
+- **Not yet done:** a live browser click-through of a choice turn (unit/flow-tested only);
+  next playtest should force one (`AUGURY_DEBUG_SHOW_TRUTH` or just play until refugees/
+  plague fire). Possible follow-ups, deliberately NOT built: choices on recon rungs are
+  supported by the code but none are authored; no multi-day choice chains; the reveal screen
+  still loses the non-choice report on reload (one-shot as before, by design).
+
 ### Upkeep pass 2026-07-17 (deferred review items + npm pin + test-quality audit) — handoff
 
 Cleared the 07-16 "not-yet-done" list. On the laptop (LAPTOP-FGJQ8QNB), on `main`.
@@ -1368,12 +1417,10 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
-**TODO — event reveal screen + events with choices (user, 2026-07-17).** Two paired UI/design
-ideas for turn events: (1) a dedicated reveal screen where the turn's events are revealed **one
-by one on player click** (drama beat, replacing the all-at-once report dump), and (2) events may
-carry **choices** the player picks between (branching outcomes — needs server-side event schema
-support, hidden-information discipline for undisclosed branches, and augury interplay). Not
-scheduled; note the tutorial-flag convention applies when the screen is built.
+**~~TODO~~ ✅ SHIPPED 2026-07-17/18 — event reveal screen + events with choices.** Both halves
+landed (commits `1e6930c` + `6efa1c4`, schema v11) — see the dated handoff entry near the top
+for the full record (resolve-then-choose model, pendingChoices gate, choices-only reload
+overlay, phrase-only option cards).
 
 **TODO — worker replenishment + workers eating food (paired).** From the Stage-5 playtest-item
 notes (2026-07-13): `workers` (civilian labour pool, `campaignConfig.js` `STARTING_WORKERS =
