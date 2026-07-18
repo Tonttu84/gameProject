@@ -78,3 +78,64 @@ jobs:
           docker ps -a
           echo "── game logs:";  docker logs game  2>&1 || true
           echo "── mongo logs:"; docker logs mongo 2>&1 | tail -20 || true
+
+  # Browser-driven end-to-end coverage: Playwright drives the SAME image a
+  # player would use (SPA + /api served same-origin), through a full campaign
+  # turn. Attaches to a running stack — the tests never boot one themselves,
+  # so this job boots the image on :3001 and points them at it.
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t gameproject .
+
+      - name: Boot the stack
+        run: |
+          docker network create e2e
+          docker run -d --name mongo --network e2e mongo:7
+          docker run -d --name game --network e2e -p 3001:3001 \
+            -e MONGODB_URI=mongodb://mongo:27017 -e DEV_SEED=1 gameproject
+          for i in $(seq 1 60); do
+            curl -fs http://localhost:3001/api/info > /dev/null && exit 0
+            sleep 2
+          done
+          echo "server never came up"
+          docker ps -a
+          echo "── game logs:";  docker logs game  2>&1 || true
+          exit 1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright + Chromium
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:3001
+        run: npm test
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: |
+          docker ps -a
+          echo "── game logs:";  docker logs game  2>&1 || true
+          echo "── mongo logs:"; docker logs mongo 2>&1 | tail -20 || true

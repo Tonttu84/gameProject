@@ -237,10 +237,75 @@ straight away and only later if there is a reason.") Forage/upkeep/enemy stay at
 - **Effect-timing consequences (immediate by default):** `enemy_advance` accepted at midday
   sets `offering_battle` for TODAY's battle; `enemy_reveal` opens the enemy for today; a
   choice branch lands the moment it's picked. All intended.
-- **Not yet done:** a live browser click-through (unit/flow-tested only) — now trivially
-  reachable (consult → Accept the Fates plays the reveal immediately). **Playwright E2E is the
-  queued next-session batch** (see Follow-ups) — its own infra (config, docker-stack fixture,
-  CI wiring), a clean small-batch.
+- **Playwright E2E harness — SHIPPED (2026-07-18).** New top-level `e2e/` Playwright package
+  (`playwright.config.js`, `tests/`, `helpers.js`, own `.gitignore`/`README`). Design decision:
+  **attach to an already-running stack**, never boot one — config reads `E2E_BASE_URL`
+  (default `http://localhost:5173`; CI points it at the Docker image on `:3001`). Locally on
+  Windows/WSL the browsers can't run (no system libs, no sudo), so tests run from the official
+  `mcr.microsoft.com/playwright:v1.61.1-jammy` container on the stack's docker network.
+  `campaign-loop.spec.js` drives a **full turn in a real browser** — login → forage → augur
+  consult/reroll → Accept the Fates (mid-turn reveal) → muster → End Turn → next council — all
+  against the live server+engine, no mocks; **passing**. New CI `e2e` job (build image → boot
+  stack on `:3001` → `npm ci` + `npx playwright install chromium` → `npm test`, report uploaded
+  on failure). `demo-battle.spec.js` smokes the login-screen "Watch a battle" → ReplayView
+  render path (engine → Mongo → browser); **passing**, but note the sample battle is a heavy
+  ~1400-unit, necromancer-summoning simulation whose wall time is RNG/CPU-variable (~70–150s on
+  a clean stack, much longer under host CPU contention), so it carries a wide 240s assertion
+  ceiling + 300s per-test budget — it resolves the instant ReplayView mounts, so the ceiling
+  only costs wall time on the pathological-slow path. **Caveat for whoever tends CI flakes:** a
+  timed-out demo battle leaves its subprocess still burning the container's core, which can
+  starve a retry (a re-run death-spiral seen only when hammering a stale local stack); a fresh
+  stack runs the one demo battle cleanly. If it ever proves flaky in CI, a bounded/seeded demo
+  battle in the app is the real fix (don't just bump the timeout).
+
+### Phased turn structure — one screen per phase (design direction, 2026-07-18) — NOT YET BUILT
+
+**User direction (playtest):** the turn should run as a sequence of distinct **phases**, each its
+own screen, so things happen strictly one after another and the pipeline stays clear. Today the
+`setup` "War Council" screen bundles everything at once — forage assignment, scout report, raid
+assignment, augury access, and the camp (fortify/militia) panel — which muddles ordering and, in
+particular, breaks the *legibility* of the counter_event raid (see the finding below). The fix is
+structural: split `setup` into ordered, single-purpose screens the player advances through.
+
+**First and most important reorder: EVENTS (augury) must come BEFORE raider assignment.** The
+augury/"Accept the Fates" beat gets its **own screen**, shown *before* raids. That screen displays
+troop counts and resource stores (read-only context) but **no actions unrelated to the augury** —
+nothing to click except reading/rerolling/accepting the fates. Only once the fates are known does
+the player move on to assign raiders.
+
+**Why this is a real bug, not just polish — the counter_event raid finding:**
+- The mechanic itself is correct in the model: a `counter_event` raid is dealt at day-start
+  (`endDay` step 7, `dayResolution.js:257`) keyed off the freshly *drawn* augury, its hidden
+  `reward.slot` naming a bad fate; winning it flips `slot.countered = true`
+  (`raid.js:152`), and both `acceptFates` and `endDay` then log "Averted …" and never fire that
+  fate. That logic is sound.
+- The problem is **ordering/visibility**: the augury is drawn but *not consulted* when the War
+  Council first renders, so the player assigns raiders **blind to the fates**. A card like
+  "Riders Massing — strike the muster first and it never falls" has no *visible* fate to cancel,
+  and winning it silently sets `countered` with no change the player can see on the raids list
+  (consulting the augur doesn't — and shouldn't — change the raid count, so "2 before, 2 after"
+  is expected, but reads as broken). Committing raiders to counter a bad omen is meant to be an
+  *informed* choice; right now it's a blind one. Sequencing events first is what makes the
+  counter decision legible — the user's instinct is correct.
+
+**Phase order — DECIDED (user, 2026-07-18): Prepare → Omens → Raids → Deploy → Battle → Report.**
+1. **Prepare** — forage assignment + camp (fortify/militia), with the scout report; plan supplies
+   & defenses while stores are full.
+2. **Omens** — the augur (consult/reroll/**Accept the Fates**), on its own screen showing troop
+   counts + resource stores as read-only context and **nothing else to act on**. The fates-reveal
+   plays here (already does). This is the events-before-raiders fix.
+3. **Raids** — assign & launch raiders, now that the fates are known (the counter-raid decision is
+   finally informed).
+4. **Deploy** — placement (unchanged).
+5. **Battle** (unchanged) → 6. **Report** — end-of-turn reveal (unchanged).
+
+**Implementation is mostly frontend** — the server actions (forage / spend / augury consult+accept
+/ raids launch / battle / end-day) already exist as independent endpoints, so the reorder is App's
+phase state machine + splitting the `setup` "War Council" render into sequential single-purpose
+screens; the counter_event legibility comes for free from the ordering. Slice it (small batches,
+TDD): (1) phase scaffolding + Prepare/Omens/Raids screens with Next/Back wiring so events precede
+raiders; (2) trim each screen to its own actions (Omens read-only context only); (3) update
+flow/tests + a live click-through. No schema bump expected.
 
 ### Event reveal screen + events with choices ✅ SHIPPED 2026-07-17/18 — handoff
 
@@ -1557,15 +1622,14 @@ class count.
 ## Follow-ups (out of scope now)
 Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
 
-**QUEUED NEXT SESSION — Playwright E2E harness (user, 2026-07-18).** Explicitly deferred out of the
-"fates at the tent" batch to keep it small. First real end-to-end coverage against the running
-Docker stack: a browser driving login → council → forage → augur consult/reroll → **Accept the
-Fates** (the new mid-turn reveal, now easy to hit) → placement → fight → End Turn. Needs its own
-infra: a Playwright config, a fixture that boots/wait-for's the `make docker-up` stack (or a
-lighter native `serve`), a test user, and CI wiring. Its own clean small-batch session — pairs
-with the "frontend rendering/integration coverage" deferral below. Start by deciding native-serve
-vs docker-stack as the fixture target (Windows dev = Docker-only per CLAUDE.md, so CI/Linux likely
-drives it).
+**Playwright E2E harness — ✅ SHIPPED 2026-07-18.** First real end-to-end coverage: a browser
+driving login → council → forage → augur consult/reroll → **Accept the Fates** → muster → End Turn
+against the live Docker stack. Fixture decision: **attach to a running stack** (no boot) —
+`E2E_BASE_URL` (default `:5173`, CI `:3001`); tests run from the official Playwright container on
+Windows/WSL since browsers can't run natively there. Full-turn spec `campaign-loop.spec.js`
+passing; login-screen demo-battle render smoke `demo-battle.spec.js` passing (heavy RNG-variable
+sample battle → wide 240s ceiling). CI `e2e` job wired. See the "fates at the tent" entry above for
+the full harness detail + the demo-battle flakiness caveat.
 
 **`Militia` unit (spear-armed levy): ✅ SHIPPED 2026-07-16.** Real, distinct C++ unit type per
 `docs/ADDING_UNITS.md` — `backend/engine/{include,src}/units/Militia.{hpp,cpp}` (models `Human`,
