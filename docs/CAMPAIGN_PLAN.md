@@ -258,7 +258,7 @@ straight away and only later if there is a reason.") Forage/upkeep/enemy stay at
   stack runs the one demo battle cleanly. If it ever proves flaky in CI, a bounded/seeded demo
   battle in the app is the real fix (don't just bump the timeout).
 
-### Phased turn structure — one screen per phase (design direction, 2026-07-18) — NOT YET BUILT
+### Phased turn structure — one screen per phase (design direction, 2026-07-18) — SLICE 1 SHIPPED
 
 **User direction (playtest):** the turn should run as a sequence of distinct **phases**, each its
 own screen, so things happen strictly one after another and the pipeline stays clear. Today the
@@ -306,6 +306,33 @@ screens; the counter_event legibility comes for free from the ordering. Slice it
 TDD): (1) phase scaffolding + Prepare/Omens/Raids screens with Next/Back wiring so events precede
 raiders; (2) trim each screen to its own actions (Omens read-only context only); (3) update
 flow/tests + a live click-through. No schema bump expected.
+
+**Slice 1 SHIPPED (2026-07-18, frontend + one server line) — the reorder + events-before-raiders.**
+Uncommitted on `main` (on top of the E2E commit `8df52da`); no schema bump.
+- **App phase machine** split into `prepare → omens → raids` (was the bundled `setup` + separate
+  `augury`). `prepare` (`App.jsx`) = the War Council: forage + camp + scout, with a single
+  **"Read the Omens"** (`to-omens`) exit — the old bundled RaidPanel and augury tri-state button are
+  gone. `omens` = the augur's tent (AuguryPanel) plus a **read-only** troop/stores line
+  (`omens-context`) and nothing else to act on; its continue (`toRaids`) leads to `raids`. New
+  `raids` screen ("Targets of Opportunity") holds the RaidPanel + a **"Deploy for Battle"**
+  (`to-deploy`) exit → placement. The **fates reveal from the tent now continues to `raids`**
+  (App's report `onContinue` branches on `dayReport.kind === 'fates'`); the End-Turn report still
+  opens the next council (`prepare`).
+- **Stores/flows**: default/reset/recovery phase `setup`→`prepare` (`useUiStore`, `flows.js`,
+  `guarded.js`); AuguryPanel's post-accept button relabeled "On to the Raids"; the raid-replay back
+  label is "Back to the raids". `musterForBattle` is now the Deploy action (its accept-first safety
+  net is harmless there).
+- **Server**: `models/bugReport.js` `SCREENS` gained `prepare`/`omens`/`raids` (kept `setup`/
+  `augury` for old clients) so reports keep their screen context.
+- **Tests**: shared `__tests__/helpers/nav.js` (`marchToRaids`/`marchToDeployment`) walks the new
+  screens; ~11 flow tests migrated off the single "Muster for Battle" click; new raidPanel test
+  pins "raids appear only after the omens, never on the council/tent." **206/208** green under a
+  contended full run (the 2 failures were `beforeEach` hook timeouts from CPU starvation — the demo
+  battle's orphaned `./game sample` process, per the E2E session — and both pass in isolation).
+  Minimal CSS added for `.phase-omens`/`.phase-raids`.
+- **NOT yet done**: a live browser click-through (Windows serves the built Docker bundle, so it
+  needs a rebuilt image or a Linux `make serve` to see these source changes); slices 2–3 (further
+  per-screen action trimming beyond what landed; any Next/Back polish). Commit A when ready.
 
 ### Event reveal screen + events with choices ✅ SHIPPED 2026-07-17/18 — handoff
 

@@ -18,12 +18,12 @@ export const handleLogin = (u) => {
 
 export const handleLogout = () => {
   useAuthStore.getState().logout()
-  useUiStore.getState().setPhase('setup')
+  useUiStore.getState().setPhase('prepare')
 }
 
 export const startCampaign = guarded(async () => {
   await useCampaignStore.getState().create()
-  useUiStore.getState().setPhase('setup')
+  useUiStore.getState().setPhase('prepare')
 })
 
 // Accept the fates at the tent: they come to pass right there (server-side),

@@ -8,7 +8,7 @@ const initialTutorial = () => window.localStorage.getItem(TUTORIAL_KEY) !== 'off
 // create() defaults and reset() draw from, so a new field can't be added to
 // one and forgotten in the other (which would silently break test isolation).
 const initialState = () => ({
-  phase: 'setup',
+  phase: 'prepare',
   battleResult: null,
   raidBattle: null,
   dayReport: null,
@@ -40,9 +40,9 @@ const useUiStore = create((set) => ({
     }),
 
   // The bundle a stale-campaign (404) recovery resets: back to the war
-  // council with no in-flight battle UI left over.
+  // council (the Prepare phase) with no in-flight battle UI left over.
   resetBattleUI: () =>
-    set({ battleResult: null, raidBattle: null, dayReport: null, phase: 'setup' }),
+    set({ battleResult: null, raidBattle: null, dayReport: null, phase: 'prepare' }),
 
   reset: () => set(initialState()),
 }))

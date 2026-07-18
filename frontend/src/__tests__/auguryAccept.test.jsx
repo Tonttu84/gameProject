@@ -1,9 +1,9 @@
 /**
- * Fates come to pass at the tent: after consulting (rerolled or not) the exit
- * is "Accept the Fates" — it posts /augury/accept, the fates reveal plays
- * immediately (while the player still remembers why they rerolled), and
- * Continue returns to the council, where Muster for Battle now leads on. A
- * counter-raid-targeted fate arrives with `deferred: true` and says the
+ * Fates come to pass at the tent (the Omens phase screen): after consulting
+ * (rerolled or not) the exit is "Accept the Fates" — it posts /augury/accept,
+ * the fates reveal plays immediately (while the player still remembers why they
+ * rerolled), and Continue leads on to the Raids screen (events before raiders).
+ * A counter-raid-targeted fate arrives with `deferred: true` and says the
  * raiders may yet unmake it.
  */
 
@@ -74,7 +74,7 @@ beforeEach(() => {
 })
 
 describe('accepting the fates at the tent', () => {
-  it('a fresh consult ends in Accept the Fates, which plays the reveal and returns to the council', async () => {
+  it('a fresh consult ends in Accept the Fates, which plays the reveal and leads on to the raids', async () => {
     getCampaigns.mockResolvedValue([campaignFixture]) // unconsulted
     consultCampaignAugury.mockResolvedValue({ ...campaignFixture, augury: unaccepted })
     postAcceptFates.mockResolvedValue({
@@ -84,7 +84,7 @@ describe('accepting the fates at the tent', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    fireEvent.click(screen.getByText('Visit the Augur'))
+    fireEvent.click(screen.getByTestId('to-omens'))
     fireEvent.click(await screen.findByTestId('consult-augur'))
 
     // The tent's exit is acceptance now, not a straight march to battle.
@@ -101,12 +101,12 @@ describe('accepting the fates at the tent', () => {
 
     fireEvent.click(screen.getByTestId('reveal-next')) // summary
     fireEvent.click(screen.getByTestId('report-continue'))
-    await screen.findByText(/War Council/)
-    // Fates sealed: the council now offers the march.
-    expect(screen.getByText('Muster for Battle')).toBeInTheDocument()
+    // Fates sealed: the reveal leads on to the raids (events before raiders).
+    await screen.findByText('Targets of Opportunity')
+    expect(screen.getByTestId('to-deploy')).toBeInTheDocument()
   })
 
-  it('a reloaded consulted-but-unaccepted campaign offers acceptance from the council', async () => {
+  it('a reloaded consulted-but-unaccepted campaign offers acceptance at the tent', async () => {
     getCampaigns.mockResolvedValue([{ ...campaignFixture, augury: unaccepted }])
     postAcceptFates.mockResolvedValue({
       report: fatesReport,
@@ -115,8 +115,11 @@ describe('accepting the fates at the tent', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    // No silent march past unsealed fates: the council button accepts first.
-    fireEvent.click(screen.getByTestId('accept-fates'))
+    // No silent march past unsealed fates: the tent shows Accept the Fates
+    // (not a continue), and it must be resolved before the raids.
+    fireEvent.click(screen.getByTestId('to-omens'))
+    expect(screen.queryByTestId('augury-continue')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId('accept-fates'))
     await waitFor(() => expect(postAcceptFates).toHaveBeenCalledWith('c1'))
     await screen.findByTestId('reveal-beat-fate-0')
   })
@@ -134,7 +137,8 @@ describe('accepting the fates at the tent', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    fireEvent.click(screen.getByTestId('accept-fates'))
+    fireEvent.click(screen.getByTestId('to-omens'))
+    fireEvent.click(await screen.findByTestId('accept-fates'))
     const fate = await screen.findByTestId('reveal-beat-fate-0')
     expect(fate).toContainElement(screen.getByTestId('fate-deferred'))
   })

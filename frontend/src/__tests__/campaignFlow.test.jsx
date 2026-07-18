@@ -35,6 +35,7 @@ import {
   endCampaignDay,
 } from '../services/api'
 import App from '../App'
+import { marchToDeployment } from './helpers/nav'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
 
 const info = {
@@ -73,7 +74,7 @@ describe('campaign flow', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    fireEvent.click(screen.getByText('Visit the Augur'))
+    fireEvent.click(screen.getByTestId('to-omens'))
     fireEvent.click(await screen.findByTestId('consult-augur'))
 
     const first = await screen.findByTestId('augury-vision-0')
@@ -99,7 +100,10 @@ describe('campaign flow', () => {
     // Slot 2's truth is not revealed in this fixture — no truth line.
     expect(screen.queryByTestId('augury-truth-2')).not.toBeInTheDocument()
 
+    // Accepting (the fixture is already accepted) leaves the tent for the
+    // raids; from there Deploy for Battle reaches the placement grid.
     fireEvent.click(screen.getByTestId('augury-continue'))
+    fireEvent.click(await screen.findByTestId('to-deploy'))
     await screen.findByText('Fight!')
   })
 
@@ -121,7 +125,7 @@ describe('campaign flow', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    fireEvent.click(screen.getByText('Visit the Augur'))
+    fireEvent.click(screen.getByTestId('to-omens'))
     fireEvent.click(await screen.findByTestId('consult-augur'))
     await screen.findByText('Harsh Weather') // slot 1's first vision
     fireEvent.click(screen.getByTestId('augury-vision-1'))
@@ -138,13 +142,16 @@ describe('campaign flow', () => {
     expect(rerollCampaignAugury).toHaveBeenCalledTimes(1)
   })
 
-  it('an already-consulted campaign goes straight to mustering', async () => {
+  it('an already-consulted campaign skips the consult at the tent', async () => {
     getCampaigns.mockResolvedValue([{ ...campaignFixture, augury: consultedAugury }])
     render(<App />)
     await screen.findByText(/War Council/)
 
-    expect(screen.queryByText('Visit the Augur')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText('Muster for Battle'))
+    fireEvent.click(screen.getByTestId('to-omens'))
+    // Already consulted + accepted: no consult button — straight on to the raids.
+    expect(screen.queryByTestId('consult-augur')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('augury-continue'))
+    fireEvent.click(await screen.findByTestId('to-deploy'))
     await screen.findByText('Fight!')
   })
 
@@ -185,7 +192,7 @@ describe('campaign flow', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    fireEvent.click(screen.getByText('Muster for Battle'))
+    await marchToDeployment()
     fireEvent.click(await screen.findByTestId('end-day'))
 
     // The reveal deals one card per click: the first fate is on the table
@@ -217,7 +224,7 @@ describe('campaign flow', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    fireEvent.click(screen.getByText('Visit the Augur'))
+    fireEvent.click(screen.getByTestId('to-omens'))
     fireEvent.click(await screen.findByTestId('consult-augur'))
 
     // No zombie UI: the app reloads campaigns and offers a fresh start.

@@ -93,7 +93,7 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
             </button>
           ) : (
             <button className="btn-primary" data-testid="augury-continue" onClick={onContinue}>
-              Muster for Battle
+              On to the Raids
             </button>
           )}
         </>

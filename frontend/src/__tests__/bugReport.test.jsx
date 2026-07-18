@@ -76,8 +76,8 @@ describe('Bug report button', () => {
     fireEvent.click(screen.getByTestId('bug-report-submit'))
 
     await waitFor(() =>
-      // War Council screen → phase 'setup'.
-      expect(submitBugReport).toHaveBeenCalledWith('the forage meter is wrong', 'setup'),
+      // War Council screen → phase 'prepare'.
+      expect(submitBugReport).toHaveBeenCalledWith('the forage meter is wrong', 'prepare'),
     )
     expect(await screen.findByText(/Thanks/)).toBeInTheDocument()
   })

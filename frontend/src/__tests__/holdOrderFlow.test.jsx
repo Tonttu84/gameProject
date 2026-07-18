@@ -32,6 +32,7 @@ vi.mock('../services/api', () => ({
 import { getInfo, getMap, getCampaigns, postCampaignBattle } from '../services/api'
 import App from '../App'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
+import { marchToDeployment } from './helpers/nav'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -71,7 +72,7 @@ const placeSoldiers = async ({ count, holdTurns }) => {
   getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: count }, squads: [] }])
   render(<App />)
   await screen.findByText(/War Council/)
-  fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
+  await marchToDeployment()
 
   // Hex (col 0, row 4) is in the player zone; axial: q = 0 - floor(4/2) = -2.
   fireEvent.click(screen.getByTestId('hex-0-4'))
@@ -90,7 +91,7 @@ describe('full-deployment gate', () => {
     getCampaigns.mockResolvedValue([{ ...campaign, roster: { Soldier: 3 }, squads: [] }])
     render(<App />)
     await screen.findByText(/War Council/)
-    fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
+    await marchToDeployment()
 
     fireEvent.click(screen.getByTestId('hex-0-4'))
     fireEvent.change(screen.getByTestId('count-Soldier'), { target: { value: '2' } })

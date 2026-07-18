@@ -31,6 +31,7 @@ vi.mock('../services/api', () => ({
 import { getInfo, getMap, getCampaigns, postCampaignBattle } from '../services/api'
 import App from '../App'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
+import { marchToDeployment } from './helpers/nav'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -74,7 +75,7 @@ describe('squad placement in the campaign placement flow', () => {
   it('placing a squad and fighting sends one tagged entry per member', async () => {
     render(<App />)
     await screen.findByText(/War Council/)
-    fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
+    await marchToDeployment()
 
     // Hex (col 0, row 4) is in the player zone; axial: q = 0 - floor(4/2) = -2.
     fireEvent.click(screen.getByTestId('hex-0-4'))
@@ -98,7 +99,7 @@ describe('squad placement in the campaign placement flow', () => {
   it('an unplaced squad counts toward "still in camp"', async () => {
     render(<App />)
     await screen.findByText(/War Council/)
-    fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
+    await marchToDeployment()
 
     expect(screen.getByTestId('placement-in-camp')).toHaveTextContent('2 still in camp')
     expect(screen.getByRole('button', { name: /fight!/i })).toBeDisabled()

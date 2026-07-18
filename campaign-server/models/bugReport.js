@@ -17,6 +17,12 @@ export const SCREENS = [
   'login',
   'start',
   'gameover',
+  // The turn's council split into ordered phase screens (2026-07-18):
+  // prepare → omens → raids → placement. 'setup'/'augury' are retained as
+  // accepted values for older clients/reports, though App no longer emits them.
+  'prepare',
+  'omens',
+  'raids',
   'setup',
   'augury',
   'placement',

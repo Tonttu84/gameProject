@@ -12,7 +12,7 @@
 
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import ScoutReport from '../components/ScoutReport'
 import HexGrid from '../components/HexGrid'
 import usePlacementStore from '../stores/usePlacementStore'
@@ -37,6 +37,7 @@ vi.mock('../services/api', () => ({
 
 import { getInfo, getMap, getCampaigns } from '../services/api'
 import App from '../App'
+import { marchToDeployment } from './helpers/nav'
 import { campaignFixture } from './fixtures/campaign'
 
 // ---------------------------------------------------------------------------
@@ -217,7 +218,7 @@ describe('App: scouting reveal wiring', () => {
     ])
     render(<App />)
     await screen.findByText(/War Council/)
-    fireEvent.click(screen.getByText('Muster for Battle'))
+    await marchToDeployment()
     const glyph = await screen.findByTestId('enemy-glyph-11-22-Soldier')
     expect(glyph).toHaveTextContent('S9')
   })

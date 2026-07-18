@@ -16,7 +16,7 @@ export const guarded = (fn) => async (...args) => {
   } catch (e) {
     if (e.response?.status === 401) {
       useAuthStore.getState().logout()
-      useUiStore.getState().setPhase('setup')
+      useUiStore.getState().setPhase('prepare')
       useNoticeStore.getState().show('Session expired — log in again.')
     } else if (e.response?.status === 404) {
       useNoticeStore.getState().show('This campaign is gone (a new build wiped old saves) — start a fresh one.')

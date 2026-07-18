@@ -98,7 +98,13 @@ const App = () => {
     useAuthStore.getState().rehydrate()
   }, [])
 
-  const startAugury = () => setPhase('augury')
+  // The turn runs as a sequence of single-purpose screens the player advances
+  // through: Prepare (forage + camp) → Omens (the augur) → Raids → Deploy.
+  // Splitting them keeps the pipeline clear and, crucially, puts the fates
+  // BEFORE raider assignment so a counter-raid is an informed choice, not a
+  // blind one (docs/CAMPAIGN_PLAN.md, 2026-07-18).
+  const readOmens = () => setPhase('omens')
+  const toRaids = () => setPhase('raids')
   // Resolve a pending choice-fate (events with choices). Guarded like every
   // campaign action; the reveal screen reads the undefined-on-failure return
   // to keep the options up for another try.
@@ -276,7 +282,7 @@ const App = () => {
           tickCount={raidBattle.tickCount}
           info={info}
           map={map}
-          backLabel="Back to the council"
+          backLabel="Back to the raids"
           onBack={() => setRaidBattle(null)}
         />
       </div>
@@ -302,7 +308,10 @@ const App = () => {
       <CampaignHUD />
       {authBar}
 
-      {phase === 'setup' && (
+      {/* Phase 1 — PREPARE: forage + camp. Plan supplies and defenses while
+          stores are full; then read the omens. No raids or augury actions
+          here — those are their own screens, in order. */}
+      {phase === 'prepare' && (
         <div className="phase-setup">
           <div className="council-main">
             <h2>Turn {campaign.day} — War Council</h2>
@@ -312,7 +321,7 @@ const App = () => {
               title="The war council"
               lines={[
                 'Each turn covers two weeks of campaigning: your army eats, the land empties, the augur reads the signs.',
-                'Send out foragers, consult the augur, then deploy your line — or rest and regroup.',
+                'First prepare — send out foragers and see to your camp. Then read the omens, loose your raiders, and deploy your line.',
                 `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'offering battle' : 'shadowing your army'}.`,
               ]}
             />
@@ -336,29 +345,9 @@ const App = () => {
                 onAssign={guarded(assignForagers)}
               />
             )}
-            {campaign.raid && (
-              <RaidPanel
-                key={`raids-${campaign.day}`}
-                units={info.units}
-                onLaunchAll={guarded(launchRaids)}
-                onWatch={watchRaid}
-              />
-            )}
-            {!campaign.augury.consulted ? (
-              <button className="btn-primary" onClick={startAugury}>
-                Visit the Augur
-              </button>
-            ) : !campaign.augury.accepted ? (
-              // Consulted but unsealed (e.g. a reload mid-tent): the fates
-              // must come to pass before anyone marches.
-              <button className="btn-primary" data-testid="accept-fates" onClick={acceptFates}>
-                Accept the Fates
-              </button>
-            ) : (
-              <button className="btn-primary" onClick={musterForBattle}>
-                Muster for Battle
-              </button>
-            )}
+            <button className="btn-primary" data-testid="to-omens" onClick={readOmens}>
+              Read the Omens
+            </button>
           </div>
           {campaign.fortification && (
             <CampPanel
@@ -369,8 +358,11 @@ const App = () => {
         </div>
       )}
 
-      {phase === 'augury' && (
-        <>
+      {/* Phase 2 — OMENS: the augur's tent. Read-only army/stores context and
+          nothing to act on but the fates themselves. Accepting them plays the
+          reveal, then continues on to the raids. */}
+      {phase === 'omens' && (
+        <div className="phase-omens">
           <TutorialIntro
             id="augury"
             enabled={tutorial}
@@ -381,20 +373,54 @@ const App = () => {
               'Click a vision to recast its bones — that does not re-read the same fate, it changes that fate itself, for better or worse.',
             ]}
           />
+          <p className="omens-context" data-testid="omens-context">
+            Your army has {totalUnits} soldiers. Food stores: <strong>{tons(campaign.resources.food)}</strong>;
+            materials: <strong>{campaign.resources.materials}</strong>.
+          </p>
           <AuguryPanel
             onConsult={guarded(consultAugur)}
             onReroll={guarded(rerollAugur)}
             onAccept={acceptFates}
-            onContinue={musterForBattle}
+            onContinue={toRaids}
           />
-        </>
+        </div>
+      )}
+
+      {/* Phase 3 — RAIDS: with the fates now known, commit raiders (a
+          counter-raid can unmake a bad omen), then deploy for battle. */}
+      {phase === 'raids' && (
+        <div className="phase-raids">
+          <h2>Targets of Opportunity</h2>
+          {campaign.scouting && (
+            <ScoutReport scouting={campaign.scouting} enemy={campaign.enemy} />
+          )}
+          {campaign.raid && (
+            <RaidPanel
+              key={`raids-${campaign.day}`}
+              units={info.units}
+              onLaunchAll={guarded(launchRaids)}
+              onWatch={watchRaid}
+            />
+          )}
+          <div className="raids-bar">
+            <button className="btn-primary" data-testid="to-deploy" onClick={musterForBattle}>
+              Deploy for Battle
+            </button>
+          </div>
+        </div>
       )}
 
       {phase === 'report' && dayReport && (
         <EventRevealScreen
           report={dayReport}
           onChoose={chooseFate}
-          onContinue={() => { setDayReport(null); setPhase('setup') }}
+          // The mid-turn fates reveal (from the tent) continues on to the
+          // raids; the end-of-turn report opens the next turn's council.
+          onContinue={() => {
+            const kind = dayReport.kind
+            setDayReport(null)
+            setPhase(kind === 'fates' ? 'raids' : 'prepare')
+          }}
         />
       )}
 
@@ -455,7 +481,7 @@ const App = () => {
             campaign.status === 'active'
               ? nextDay
               // The battle ended the campaign: end-day would 400, go to game over.
-              : () => { setBattleResult(null); setPhase('setup') }
+              : () => { setBattleResult(null); setPhase('prepare') }
           }
           onWatchReplay={
             battleResult.id && battleResult.tickCount > 0

@@ -39,6 +39,7 @@ import {
   postCampaignChoice,
 } from '../services/api'
 import App from '../App'
+import { marchToDeployment } from './helpers/nav'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
 
 const info = {
@@ -95,7 +96,7 @@ describe('a choice-fate in the day report', () => {
     })
     render(<App />)
     await screen.findByText(/War Council/)
-    fireEvent.click(screen.getByText('Muster for Battle'))
+    await marchToDeployment()
     fireEvent.click(await screen.findByTestId('end-day'))
     await screen.findByTestId('reveal-beat-fate-0')
   }

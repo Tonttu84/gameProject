@@ -31,6 +31,7 @@ vi.mock('../services/api', () => ({
 import { getInfo, getMap, getCampaigns, postCampaignBattle, endCampaignDay } from '../services/api'
 import App from '../App'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
+import { marchToDeployment } from './helpers/nav'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -75,7 +76,7 @@ beforeEach(() => {
 const fightAndLose = async () => {
   render(<App />)
   await screen.findByText(/War Council/)
-  fireEvent.click(screen.getByRole('button', { name: /muster for battle/i }))
+  await marchToDeployment()
   fireEvent.click(screen.getByTestId('hex-0-4'))
   fireEvent.change(screen.getByTestId('count-Soldier'), { target: { value: '3' } })
   fireEvent.click(screen.getByRole('button', { name: /place/i }))

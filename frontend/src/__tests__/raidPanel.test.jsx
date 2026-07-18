@@ -39,7 +39,8 @@ vi.mock('../services/api', () => ({
 
 import { getInfo, getMap, getBattle, getTicks, getCampaigns, postCampaignRaids } from '../services/api'
 import App from '../App'
-import { campaignFixture } from './fixtures/campaign'
+import { campaignFixture, consultedAugury } from './fixtures/campaign'
+import { marchToRaids } from './helpers/nav'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -80,8 +81,11 @@ const OPPORTUNITY_2 = {
   outcome: null,
 }
 
+// Raids are their own screen now, reached after the omens — so the fixture
+// needs an already-accepted augury for marchToRaids() to walk past the tent.
 const withRaid = (opportunities, assignment = {}) => ({
   ...campaignFixture,
+  augury: consultedAugury,
   raid: { opportunities, assignment },
 })
 
@@ -97,10 +101,29 @@ beforeEach(() => {
 })
 
 describe('raid panel — opportunities', () => {
+  // The reorder that motivated the phase split (docs/CAMPAIGN_PLAN.md,
+  // 2026-07-18): raiders are committed AFTER the omens, so a counter-raid is an
+  // informed choice. The raids never appear on the council or at the tent.
+  it('raids live on their own screen after the omens, not on the council or at the tent', async () => {
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    // Not on the council (Prepare)…
+    expect(screen.queryByTestId('raid-panel')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('to-omens'))
+    // …nor at the tent (Omens)…
+    expect(screen.queryByTestId('raid-panel')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId('augury-continue'))
+    // …only once the fates are known, on the Raids screen.
+    expect(await screen.findByTestId('raid-panel')).toBeInTheDocument()
+  })
+
   it('lists the opportunity with its strength band, budget, and the scouting band', async () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
 
     expect(screen.getByTestId('raid-panel')).toBeInTheDocument()
     expect(screen.getByText('Supply Train')).toBeInTheDocument()
@@ -115,6 +138,7 @@ describe('raid panel — opportunities', () => {
     getCampaigns.mockResolvedValue([withRaid([])])
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
     expect(screen.queryByTestId('raid-panel')).not.toBeInTheDocument()
   })
 
@@ -128,6 +152,7 @@ describe('raid panel — opportunities', () => {
     })
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
 
     // 14 Soldiers (7.5 each) cost 105 > 100: over budget, launch disabled.
     fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '14' } })
@@ -152,6 +177,7 @@ describe('raid panel — opportunities', () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
     expect(screen.getByTestId('raid-launch-all')).toBeDisabled()
   })
 
@@ -164,6 +190,7 @@ describe('raid panel — opportunities', () => {
     ])
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
     // 300 − 295 foraging = 5 available; the input clamps to it.
     fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '10' } })
     expect(screen.getByTestId('raid-input-d1-0-Soldier')).toHaveValue(5)
@@ -175,6 +202,7 @@ describe('raid panel — opportunities', () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY], { Soldier: 291 })])
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
     fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '10' } })
     expect(screen.getByTestId('raid-input-d1-0-Soldier')).toHaveValue(9)
   })
@@ -183,6 +211,7 @@ describe('raid panel — opportunities', () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY, OPPORTUNITY_2])])
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
 
     // Draft 250 of the 300 Soldiers into the first raid.
     fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '250' } })
@@ -214,6 +243,7 @@ describe('raid panel — opportunities', () => {
     })
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
 
     fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '10' } })
     fireEvent.change(screen.getByTestId('raid-input-d1-1-Soldier'), { target: { value: '5' } })
@@ -237,13 +267,14 @@ describe('raid panel — opportunities', () => {
     getTicks.mockResolvedValue([])
     render(<App />)
     await screen.findByText(/War Council/)
+    await marchToRaids()
 
     expect(screen.getByTestId('raid-outcome-d1-0')).toHaveTextContent('The raid was beaten back.')
     fireEvent.click(screen.getByTestId('raid-watch-d1-0'))
     await waitFor(() => expect(getBattle).toHaveBeenCalledWith('b9'))
-    // The one ReplayView takes over; Back returns to the council.
-    expect(await screen.findByText('Back to the council')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Back to the council'))
-    expect(await screen.findByText(/War Council/)).toBeInTheDocument()
+    // The one ReplayView takes over; Back returns to the raids screen.
+    expect(await screen.findByText('Back to the raids')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Back to the raids'))
+    expect(await screen.findByTestId('raid-panel')).toBeInTheDocument()
   })
 })
