@@ -49,7 +49,13 @@ const ChoiceOptions = ({ slot, options, onPick, busy }) => (
 const buildBeats = (report) => {
   const beats = []
   if (report.forage) beats.push({ kind: 'forage' })
-  ;(report.augury ?? []).forEach((slot, i) => beats.push({ kind: `fate-${i}`, slot, index: i }))
+  ;(report.augury ?? []).forEach((slot, i) => {
+    // A deferred fate resolved at end-day carries its own slot index in `fate`
+    // (the report holds only the deferred slots, so position ≠ slot); a
+    // full-reveal report leaves it unset and position is the index.
+    const index = slot.fate ?? i
+    beats.push({ kind: `fate-${index}`, slot, index })
+  })
   if (report.upkeep) beats.push({ kind: 'upkeep' })
   if (report.enemy) beats.push({ kind: 'enemy' })
   beats.push({ kind: 'summary' })
@@ -77,6 +83,24 @@ const ForageBeat = ({ forage }) => (
 // the augur always foretold the blind one; a countered fate (a won
 // counter_event raid) never fired at all.
 const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
+  // Deferred (a counter-raid target): the blow hasn't fallen. The tent shows
+  // only the prophecy and the pending threat — no verdict, no came-to-pass, no
+  // scouts line. All of that reveals at end-day, after the raid phase.
+  if (slot.deferred) {
+    return (
+      <div className="reveal-card report-augury-slot" data-testid={`reveal-beat-fate-${index}`}>
+        <h3>{FATE_NAMES[index] ?? `Fate ${index + 1}`}</h3>
+        {slot.predicted && (
+          <p>
+            The augur foretold: <strong>{slot.predicted.title}</strong>
+          </p>
+        )}
+        <p className="fate-deferred" data-testid="fate-deferred">
+          It has not yet struck — your raiders may still unmake it.
+        </p>
+      </div>
+    )
+  }
   const came = slot.fired ?? slot.actual
   return (
     <div className="reveal-card report-augury-slot" data-testid={`reveal-beat-fate-${index}`}>
@@ -103,11 +127,6 @@ const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
       {slot.countered && (
         <p className="scout-intervened" data-testid="fate-countered">
           Averted — your raiders unmade it before the fortnight ended.
-        </p>
-      )}
-      {slot.deferred && (
-        <p className="fate-deferred" data-testid="fate-deferred">
-          It has not yet struck — your raiders may still unmake it.
         </p>
       )}
       {slot.scoutsIntervened && (

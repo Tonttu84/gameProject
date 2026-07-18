@@ -335,10 +335,40 @@ Committed + pushed as `0c47535` on `main` (on top of the E2E commit `8df52da`); 
   playtesting the new flow next session; slices 2–3 (further per-screen action trimming beyond what
   landed; any Next/Back polish) follow from whatever the playtest surfaces.
 
-#### Playtest findings 2026-07-18 (new phased build) — NEXT SESSION, not yet started
+#### Playtest findings 2026-07-18 (new phased build) — ✅ BOTH FIXED (TDD, uncommitted)
 
-Two issues surfaced playtesting the pushed `0c47535` build. **No code written yet** — captured
-here + in auto-memory before a context clear.
+Two issues surfaced playtesting the pushed `0c47535` build. **Both fixed 2026-07-18** (user
+decisions below); campaign-server 252/252, frontend 208/208, oxlint clean, no engine change.
+
+- **Issue 1 (deferred fate shown resolved) — FIXED.** User steer: only a fate that spawns a
+  counter_event raid target is deferred; at the tent it shows the pending THREAT only, and it
+  RESOLVES after the raid phase depending on whether the raid unmade it (normal fates still
+  resolve immediately at the tent). Server (`services/dayResolution.js`): `acceptFates` deferred
+  branch now rebuilds the reveal card to `{predicted, odds, deferred}` — strips `actual`/`fired`/
+  `scoutsIntervened` and drops the "came to pass"/"scouts saw it coming" log lines (one neutral
+  "a coming blow has been foreseen" line instead); the accepted-arm `endDay` now REVEALS each
+  deferred slot's outcome (`report.augury` = the deferred cards, each carrying `fate: i` = its
+  slot index) via a new shared `attachFired` helper, applying the recorded rung. Frontend
+  (`components/EventRevealScreen.jsx`): `FateBeat` gained a deferred branch (prophecy + threat
+  line only, guards the `came` deref); `buildBeats` keys the beat index off `slot.fate ?? i` so
+  a sparse end-day reveal lands under the right fate name. Tests: 2 server (modified defer test +
+  new recon-sensitive defer test), 1 frontend (auguryAccept deferred test now asserts no verdict
+  leaks at the tent).
+- **Issue 2 ("again only 2 raid targets") — FIXED (additive counter).** User steer: the raid
+  amount shouldn't be hard-fixed at 2; better scouting already gives more (band count), and a bad
+  fate should ADD the counter target, not replace one. `services/raid.js`
+  `generateRaidOpportunities` now builds the band count of ordinary openings THEN pushes the
+  counter_event on top (removed the `types.length = count` truncation). Contested bad-fate day
+  now shows 3 targets (2 + counter) instead of 2. Tests: new additive test + the fresh-campaign
+  and tomorrow's-band count tests made counter-aware (a random augury may seal a bad fate).
+  **Deferred tuning (NOT done, optional):** per-band base counts still flat at 2 across
+  Superior/Contested and there's no extra randomness on the base — user accepted that fixed
+  troops → fixed scouting → base stays 2, with events (the counter) as the lever. Revisit only
+  if playtests still feel too fixed.
+
+Original diagnosis kept below for reference.
+
+Two issues surfaced playtesting the pushed `0c47535` build.
 
 1. **Deferred fate is shown ALREADY RESOLVED at the tent — "it should not be turned instantly
    before I do anything" (user).** On the "Fates Come to Pass" reveal, a recon-sensitive fate that

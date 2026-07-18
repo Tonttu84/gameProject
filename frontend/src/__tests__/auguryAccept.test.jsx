@@ -124,13 +124,16 @@ describe('accepting the fates at the tent', () => {
     await screen.findByTestId('reveal-beat-fate-0')
   })
 
-  it('a deferred fate says the raiders may yet unmake it', async () => {
+  it('a deferred fate shows only the pending threat — no verdict at the tent', async () => {
     getCampaigns.mockResolvedValue([{ ...campaignFixture, augury: unaccepted }])
     postAcceptFates.mockResolvedValue({
       report: {
         day: 1,
         entries: [],
-        augury: [{ ...fatesReport.augury[0], deferred: true }],
+        // The deferred card the server now sends: prophecy + the deferred flag
+        // only — no `actual`, no verdict, no scouts line (those wait for
+        // end-day, after the raid that may unmake it).
+        augury: [{ predicted: { id: 'ambush', title: 'Ambush Foreseen' }, deferred: true }],
       },
       campaign: { ...campaignFixture, augury: { ...consultedAugury, accepted: true } },
     })
@@ -141,5 +144,8 @@ describe('accepting the fates at the tent', () => {
     fireEvent.click(await screen.findByTestId('accept-fates'))
     const fate = await screen.findByTestId('reveal-beat-fate-0')
     expect(fate).toContainElement(screen.getByTestId('fate-deferred'))
+    // A pending threat carries no resolution at the tent.
+    expect(fate).not.toHaveTextContent(/What came to pass/i)
+    expect(screen.queryByTestId('scout-intervened')).not.toBeInTheDocument()
   })
 })

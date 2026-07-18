@@ -1393,15 +1393,45 @@ describe('augury acceptance (fates at the tent)', () => {
     expect(res.body.campaign.resources.food).toBe(50000 - 2 * 999)
     expect(res.body.report.augury[1].deferred).toBe(true)
     expect(res.body.report.augury[0].deferred).toBeUndefined()
+    // The tent shows the deferred slot as a pending THREAT only — its outcome
+    // (`actual`) is withheld until it actually resolves (2026-07-18 fix).
+    expect(res.body.report.augury[1].actual).toBeUndefined()
     const doc = await Campaign.findById(c.id)
     expect(doc.augury.slots.map((s) => s.firedRungName)).toEqual([null, 'blind', null])
 
-    // Nobody raided: the deferred blow lands with the day's end, and the
-    // report carries no augury reveal (the tent already played it).
+    // Nobody raided: the deferred blow lands with the day's end — and NOW the
+    // report reveals its outcome (the tent only showed the pending threat).
     const end = await endDayReq(c.id)
     expect(end.status).toBe(200)
-    expect(end.body.report.augury).toBeUndefined()
+    const revealed = end.body.report.augury.find((s) => s.fate === 1)
+    expect(revealed.actual.id).toBe('doomed_omen')
+    expect(end.body.report.entries.join(' ')).toMatch(/Came to pass/)
     expect(end.body.campaign.resources.food).toBe(50000 - 2 * 999 - 999 - 12432)
+  })
+
+  test('a deferred recon-sensitive fate hides its verdict at the tent, reveals it at end-day', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, NIGHT_RAID, QUIET)
+    await setConsulted(c.id)
+    await pinCounterRaid(c.id, 0)
+
+    const res = await accept(c.id)
+    expect(res.status).toBe(200)
+    // Tent: the deferred slot is a pending threat — no came-to-pass verdict,
+    // no fired rung, no "scouts turned it" line on the card.
+    const tent = res.body.report.augury[0]
+    expect(tent.deferred).toBe(true)
+    expect(tent.actual).toBeUndefined()
+    expect(tent.fired).toBeUndefined()
+    expect(tent.scoutsIntervened).toBeUndefined()
+
+    // End-day (after the raid phase): the fate resolves and the fired rung,
+    // with the scouts' hand in it, is revealed here.
+    const end = await endDayReq(c.id)
+    expect(end.status).toBe(200)
+    const revealed = end.body.report.augury.find((s) => s.fate === 0)
+    expect(revealed.fired.rung).toBe('warned')
+    expect(revealed.scoutsIntervened).toBe(true)
   })
 
   test('the recorded rung applies even if the scouting band shifts after acceptance', async () => {
@@ -1448,6 +1478,8 @@ describe('augury acceptance (fates at the tent)', () => {
     // The deferred −999 never lands; food only moves by upkeep (roster is
     // 300−10+2 survivors of the raid + the rest, recompute via the report).
     expect(end.body.report.entries.join(' ')).toMatch(/Averted/)
+    // The reveal reaches the report as a countered card (the raid unmade it).
+    expect(end.body.report.augury.find((s) => s.fate === 2).countered).toBe(true)
     const finalDoc = await Campaign.findById(c.id)
     expect(finalDoc.resources.food).toBe(
       50000 - 2 * 999 - end.body.report.upkeep.foodConsumed,
