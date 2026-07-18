@@ -48,7 +48,7 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
           <p className="augury-hint">
             Three fates for the fortnight.
             {canReroll
-              ? ` Recast the bones on one of them (${augury.rerollsRemaining} left) — it changes that fate itself, for better or worse.`
+              ? ` Click a fate to cast its bones anew (${augury.rerollsRemaining} left) — it changes that fate itself, for better or worse.`
               : ' The bones are still; fate is sealed.'}
           </p>
           <div className="augury-cards">
@@ -80,7 +80,7 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
                       : `In truth: ${vision.truth.title}`}
                   </div>
                 )}
-                {canReroll && <div className="augury-reroll-hint">Recast these bones</div>}
+                {canReroll && <div className="augury-reroll-hint">Click to recast these bones</div>}
               </button>
             ))}
           </div>

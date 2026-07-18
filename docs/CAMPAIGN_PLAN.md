@@ -1624,6 +1624,17 @@ Event pool gains `severity` (1–3) and `baseAccuracy` **bonus** (+0…+3; sever
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
+**TODO — tutorial-message pass over every menu/screen (user, 2026-07-18).** Walk the whole
+campaign UI screen by screen and add a short `TutorialIntro` to each — what the player does here +
+the mechanism behind it — behind the existing `useUiStore` `tutorial` flag (single source of
+truth; panels read `s.tutorial` directly and forward it to `TutorialIntro`'s `enabled`, no
+App→panel fan-out). Some screens already have one (`reveal`, `deploy`/deployment orders, raids);
+this is the pass that fills the gaps across the phased build (Prepare → Omens → Raids → Deploy)
+and any older panels. See [[project-tutorial-flag]]. Static tutorial copy is asserted in a few
+tests (e.g. `deploymentOrders.test.jsx`) — add/adjust those alongside. Related: the augur-tent
+copy was just made click-explicit ("Click a fate to cast its bones anew" / "Click to recast these
+bones") — the tutorial pass should carry that same "here's what to click" clarity everywhere.
+
 **~~TODO~~ ✅ SHIPPED 2026-07-17/18 — event reveal screen + events with choices.** Both halves
 landed (commits `1e6930c` + `6efa1c4`, schema v11) — see the dated handoff entry near the top
 for the full record (resolve-then-choose model, pendingChoices gate, choices-only reload
