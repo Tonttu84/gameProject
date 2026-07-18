@@ -308,7 +308,7 @@ raiders; (2) trim each screen to its own actions (Omens read-only context only);
 flow/tests + a live click-through. No schema bump expected.
 
 **Slice 1 SHIPPED (2026-07-18, frontend + one server line) — the reorder + events-before-raiders.**
-Uncommitted on `main` (on top of the E2E commit `8df52da`); no schema bump.
+Committed + pushed as `0c47535` on `main` (on top of the E2E commit `8df52da`); no schema bump.
 - **App phase machine** split into `prepare → omens → raids` (was the bundled `setup` + separate
   `augury`). `prepare` (`App.jsx`) = the War Council: forage + camp + scout, with a single
   **"Read the Omens"** (`to-omens`) exit — the old bundled RaidPanel and augury tri-state button are
@@ -330,9 +330,10 @@ Uncommitted on `main` (on top of the E2E commit `8df52da`); no schema bump.
   contended full run (the 2 failures were `beforeEach` hook timeouts from CPU starvation — the demo
   battle's orphaned `./game sample` process, per the E2E session — and both pass in isolation).
   Minimal CSS added for `.phase-omens`/`.phase-raids`.
-- **NOT yet done**: a live browser click-through (Windows serves the built Docker bundle, so it
-  needs a rebuilt image or a Linux `make serve` to see these source changes); slices 2–3 (further
-  per-screen action trimming beyond what landed; any Next/Back polish). Commit A when ready.
+- **NOT yet done**: a live browser click-through — user is running `docker compose up --build`
+  (Windows serves the built bundle, so a rebuild is REQUIRED to see these source changes) and
+  playtesting the new flow next session; slices 2–3 (further per-screen action trimming beyond what
+  landed; any Next/Back polish) follow from whatever the playtest surfaces.
 
 ### Event reveal screen + events with choices ✅ SHIPPED 2026-07-17/18 — handoff
 
