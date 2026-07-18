@@ -194,6 +194,54 @@ notes below over the git history if they ever disagree — the commits win.
   `RaidPanel` read `useUiStore((s) => s.tutorial)` directly and only forward it to
   `TutorialIntro`'s `enabled` prop; single source of truth, no App→panel fan-out to remove.)
 
+### Fates come to pass at the tent — reveal + choices moved mid-turn ✅ SHIPPED 2026-07-18 — handoff
+
+Playtest follow-up to the reveal/choices work below: the player loses every main battle
+(balance is rough by design), so an end-of-turn-only reveal was untestable in real play — and
+the user wanted the drama beat *"after you reroll, before you've forgotten why you rerolled."*
+So the fates now resolve at the **augur's tent**, not at End Turn. Two commits on `main`
+(schema v11→**12**).
+
+**User design (this session):** reveal + choices happen in the augury phase via a new
+**"Accept the Fates"** action (usable with the reroll unspent — that IS the skip-reroll
+option). Effects apply **immediately by default**; deferral to end-of-turn is the EXCEPTION,
+used only when there's a *reason* — concretely a still-unresolved `counter_event` raid
+targets that slot, so the fate must stay counterable. ("Simpler if things normally happen
+straight away and only later if there is a reason.") Forage/upkeep/enemy stay at End Turn
+(foragers are assigned before battle and sit it out, unchanged).
+
+- **Commit 1 (`bfa7871`, server, schema v12): `POST /:id/augury/accept`.** New
+  `acceptFates()` in `dayResolution.js` seals `augury.accepted` and, per slot: countered →
+  averted; plain fate → `applyEffect` NOW (an accepted fate can end the campaign on the spot,
+  `checkAnnihilation` after the loop); choice-fate → pend as today. **Deferral**: a slot a
+  live `counter_event` opportunity targets (`reward.slot`) is NOT applied — its rung is
+  recorded on `slot.firedRungName` (new `rungOf(event, rungName)` in `events.js` looks up a
+  rung BY NAME, so the recorded rung lands at End Turn even if the band shifted since) and the
+  reveal slot is flagged `deferred`. A deferred choice-fate records `slot.chosenChoice` at
+  pick time (the choose route branches on the new `pendingChoices[].deferred`), applied at End
+  Turn. `endDay` step 3 now has two arms: **accepted** (only `firedRungName` slots still owe
+  anything; no `report.augury` reveal — the tent played it) and **not-accepted** (the old
+  end-of-turn resolution verbatim — the fallback the existing 1c/choices suites still pin).
+  Reroll 400s once accepted; `auguryView` exposes `accepted`. TDD: 7-test acceptance describe
+  red→green; 250/250. (Gotcha: campaign creation deals RANDOM day-1 raids — a stray
+  counter_event deferred a slot and broke exact-arithmetic asserts; those tests now clear the
+  raid deck first.)
+- **Commit 2 (`597c710`, frontend): the tent's "Accept the Fates".** `AuguryPanel`'s exit is
+  `accept-fates` while `!augury.accepted`, else `Muster for Battle`; new `acceptFates` flow
+  posts, sets `dayReport {kind:'fates', …}`, shows `EventRevealScreen` (title "The Fates Come
+  to Pass"; a `deferred` slot renders `fate-deferred` "your raiders may yet unmake it").
+  Continue → council → Muster. `musterForBattle` safety net: a consulted-but-unaccepted
+  council (reload) accepts first instead of marching. `consultedAugury` fixture gains
+  `accepted:true` so muster-flow tests pass through unchanged. TDD: `auguryAccept.test.jsx`
+  red→green; 207/207, oxlint clean.
+- **Effect-timing consequences (immediate by default):** `enemy_advance` accepted at midday
+  sets `offering_battle` for TODAY's battle; `enemy_reveal` opens the enemy for today; a
+  choice branch lands the moment it's picked. All intended.
+- **Not yet done:** a live browser click-through (unit/flow-tested only) — now trivially
+  reachable (consult → Accept the Fates plays the reveal immediately). **Playwright E2E is the
+  queued next-session batch** (see Follow-ups) — its own infra (config, docker-stack fixture,
+  CI wiring), a clean small-batch.
+
 ### Event reveal screen + events with choices ✅ SHIPPED 2026-07-17/18 — handoff
 
 The deferred-backlog pair (see the backlog entry, now marked shipped) landed as two commits
@@ -237,11 +285,11 @@ ceremony** reveal scope, **descriptive words, no numbers** on choice options).
   - **TDD both layers** (user steer this session, now a standing preference): server tests
     red first (16 new), then green; frontend the same (3 new). Verified: campaign-server
     243/243, frontend 204/204, oxlint clean. No engine change, no C++ run.
-- **Not yet done:** a live browser click-through of a choice turn (unit/flow-tested only);
-  next playtest should force one (`AUGURY_DEBUG_SHOW_TRUTH` or just play until refugees/
-  plague fire). Possible follow-ups, deliberately NOT built: choices on recon rungs are
-  supported by the code but none are authored; no multi-day choice chains; the reveal screen
-  still loses the non-choice report on reload (one-shot as before, by design).
+- **Superseded by the 2026-07-18 "fates at the tent" work above** — the reveal + choices moved
+  mid-turn (End Turn was untestable since the player always loses the main battle). The browser
+  click-through is now trivially reachable. Possible follow-ups still NOT built: choices on
+  recon rungs are supported by the code but none are authored; no multi-day choice chains; the
+  non-choice End-Turn report is still one-shot (lost on reload, by design).
 
 ### Upkeep pass 2026-07-17 (deferred review items + npm pin + test-quality audit) — handoff
 
@@ -1508,6 +1556,16 @@ class count.
 
 ## Follow-ups (out of scope now)
 Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
+
+**QUEUED NEXT SESSION — Playwright E2E harness (user, 2026-07-18).** Explicitly deferred out of the
+"fates at the tent" batch to keep it small. First real end-to-end coverage against the running
+Docker stack: a browser driving login → council → forage → augur consult/reroll → **Accept the
+Fates** (the new mid-turn reveal, now easy to hit) → placement → fight → End Turn. Needs its own
+infra: a Playwright config, a fixture that boots/wait-for's the `make docker-up` stack (or a
+lighter native `serve`), a test user, and CI wiring. Its own clean small-batch session — pairs
+with the "frontend rendering/integration coverage" deferral below. Start by deciding native-serve
+vs docker-stack as the fixture target (Windows dev = Docker-only per CLAUDE.md, so CI/Linux likely
+drives it).
 
 **`Militia` unit (spear-armed levy): ✅ SHIPPED 2026-07-16.** Real, distinct C++ unit type per
 `docs/ADDING_UNITS.md` — `backend/engine/{include,src}/units/Militia.{hpp,cpp}` (models `Human`,
