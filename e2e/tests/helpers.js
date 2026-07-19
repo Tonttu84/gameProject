@@ -47,3 +47,17 @@ export async function advanceReveal(page) {
   await expect(continueBtn).toBeVisible()
   await continueBtn.click()
 }
+
+// After a fates reveal, a deferred choice-fate (a counter-raid target that is
+// also a choice event) leaves its decision owed on the pendingChoices overlay —
+// choice cards with no reveal/continue control — which App shows before the
+// next screen. Drain it by taking the first option of each until it clears. A
+// no-op when nothing is pending (the common case), so it's always safe to call.
+export async function clearPendingDecisions(page) {
+  for (let i = 0; i < 6; i++) {
+    const choice = page.locator('[data-testid^="choice-"]').first()
+    if (!(await choice.isVisible().catch(() => false))) break
+    await choice.click()
+    await page.waitForTimeout(200)
+  }
+}

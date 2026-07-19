@@ -235,10 +235,16 @@ const EventRevealScreen = ({ report, pendingChoices, onChoose, onContinue }) => 
     )
   }
 
-  // The reveal can't move past an unmade decision on the card just dealt.
+  // The reveal can't move past an unmade decision on the card just dealt —
+  // EXCEPT a deferred slot (a counter-raid target): it shows only its threat
+  // here, no options, and its decision is owed later via the pendingChoices
+  // overlay. Gating on its pendingChoice would deadlock the tent (disabled
+  // advance, nothing to click).
   const current = beats[shown - 1]
   const awaitingChoice =
-    current?.slot?.pendingChoice != null && outcomes[current.index] == null
+    current?.slot?.pendingChoice != null &&
+    !current?.slot?.deferred &&
+    outcomes[current.index] == null
 
   return (
     <div className="day-report" data-testid="day-report">

@@ -82,6 +82,35 @@ describe('EventRevealScreen: one card per click', () => {
     expect(onContinue).toHaveBeenCalled()
   })
 
+  // Regression: a DEFERRED fate (a counter-raid target) can also be a choice
+  // event, so acceptFates puts BOTH `deferred` and a `pendingChoice` on its
+  // reveal card. The deferred FateBeat shows only the threat (no options), so
+  // the reveal must NOT gate its advance on that pendingChoice — otherwise
+  // reveal-next goes disabled with nothing to click and the tent deadlocks (a
+  // real stuck-reveal the campaign-loop E2E hit once choice density rose). The
+  // decision is owed later via the pendingChoices overlay, not here.
+  it('a deferred fate that also owes a choice never deadlocks the reveal', () => {
+    const report = {
+      day: 3,
+      kind: 'fates',
+      augury: [
+        {
+          predicted: { id: 'baggage_plague', title: 'Plague in the Baggage Train' },
+          odds: 0.4,
+          deferred: true,
+          pendingChoice: { options: [{ id: 'quarantine', label: 'Quarantine' }] },
+        },
+      ],
+      entries: [],
+    }
+    render(<EventRevealScreen report={report} onContinue={() => {}} />)
+    // The deferred card shows the pending threat, not its options…
+    expect(screen.getByTestId('fate-deferred')).toBeInTheDocument()
+    expect(screen.queryByTestId('choice-quarantine')).not.toBeInTheDocument()
+    // …and the reveal can still advance (not stuck on a choice it can't show).
+    expect(screen.getByTestId('reveal-next')).toBeEnabled()
+  })
+
   it('shows the tutorial intro only when the flag is on', () => {
     const { unmount } = render(<EventRevealScreen report={fullReport} onContinue={() => {}} />)
     expect(screen.getByTestId('tutorial-reveal')).toBeInTheDocument()

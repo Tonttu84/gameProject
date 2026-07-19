@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { registerAndLogin, uniqueUsername, advanceReveal } from './helpers.js'
+import { registerAndLogin, uniqueUsername, advanceReveal, clearPendingDecisions } from './helpers.js'
 
 // First real end-to-end coverage: a browser driving one full campaign turn
 // against a running stack — now through the PHASED turn (Prepare → Omens →
@@ -45,6 +45,8 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
   await page.getByTestId('accept-fates').click()
   await expect(page.getByRole('heading', { name: /The Fates Come to Pass/ })).toBeVisible()
   await advanceReveal(page) // lands on the Raids screen
+  // A deferred choice-fate may owe a decision on the way; clear it if so.
+  await clearPendingDecisions(page)
 
   // ── Raids → deploy for battle ──────────────────────────────────────────
   await page.getByTestId('to-deploy').click()
@@ -54,6 +56,7 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
   await page.getByTestId('end-day').click()
   await expect(page.getByRole('heading', { name: /The Fortnight Passes/ })).toBeVisible()
   await advanceReveal(page)
+  await clearPendingDecisions(page)
 
   // ── The loop closed: a new council on the next turn ────────────────────
   await expect(page.getByRole('heading', { name: /Turn 2 — War Council/ })).toBeVisible()
