@@ -1,3 +1,4 @@
+import config from '../utils/config.js'
 import { throwDice, chanceRoll } from '../utils/dice.js'
 import {
   AUGURY_SLOTS,
@@ -58,21 +59,47 @@ export const rollAuguryOdds = (campaign, trueEvent) => {
 // 2026-07-05): tier members share a legibility modifier, so the displayed
 // odds are identical whichever of the pair is true — the odds tell the
 // player how murky the reading was, never which card to believe.
-const drawSlot = () => {
+const eventById = new Map(EVENT_POOL.map((e) => [e.id, e]))
+
+const slotFrom = (trueEvent, falseEvent) => ({
+  trueEvent: { ...trueEvent },
+  falseEvent: { ...falseEvent },
+  odds: null, // rolled at consult, public from then on
+  shownTrue: null, // unresolved until the augur is consulted — HIDDEN
+})
+
+const randomSlot = () => {
   const trueEvent = EVENT_POOL[Math.floor(Math.random() * EVENT_POOL.length)]
   const peers = EVENT_POOL.filter(
     (e) => e.severity === trueEvent.severity && e.id !== trueEvent.id,
   )
   const falseEvent = peers[Math.floor(Math.random() * peers.length)]
-  return {
-    trueEvent: { ...trueEvent },
-    falseEvent: { ...falseEvent },
-    odds: null, // rolled at consult, public from then on
-    shownTrue: null, // unresolved until the augur is consulted — HIDDEN
-  }
+  return slotFrom(trueEvent, falseEvent)
 }
 
+// Test-only (config.DEV_AUGURY, off in production): a FIFO of `trueId:falseId`
+// specs, re-seeded each drawAugury() and consumed by every draw/reroll in
+// order. It deliberately does NOT touch the dice queue (see the note above),
+// so queued consult rolls are untouched. Returns null — random fallback — when
+// the list is empty or a truth id is unknown.
+let forcedDraws = []
+const forcedSlot = () => {
+  const spec = forcedDraws.shift()
+  if (!spec) return null
+  const [trueId, falseId] = spec.split(':')
+  const trueEvent = eventById.get(trueId)
+  if (!trueEvent) return null
+  const peers = EVENT_POOL.filter(
+    (e) => e.severity === trueEvent.severity && e.id !== trueEvent.id,
+  )
+  const falseEvent = (falseId && eventById.get(falseId)) || peers[0]
+  return slotFrom(trueEvent, falseEvent)
+}
+
+const drawSlot = () => forcedSlot() ?? randomSlot()
+
 export function drawAugury() {
+  forcedDraws = [...config.DEV_AUGURY]
   return {
     slots: Array.from({ length: AUGURY_SLOTS }, drawSlot),
     consulted: false,

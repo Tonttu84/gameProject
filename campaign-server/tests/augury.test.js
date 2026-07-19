@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest'
+import config from '../utils/config.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import {
   drawAugury,
@@ -119,6 +120,56 @@ describe('drawAugury', () => {
         expect(EVENT_POOL.some((e) => e.id === slot.falseEvent.id)).toBe(true)
       }
     }
+  })
+})
+
+// Test-only deterministic draw hook (DEV_AUGURY): the augur normally draws
+// with Math.random, so the e2e can't force a KNOWN reveal. Setting
+// config.DEV_AUGURY to `trueId:falseId` specs pins each slot's hidden pair so
+// the shown fate is deterministic whatever the odds roll does. Unset = the
+// random production path, unchanged (asserted by every OTHER test here).
+describe('drawAugury — DEV_AUGURY force hook', () => {
+  afterEach(() => { config.DEV_AUGURY = [] })
+
+  test('forces the named true/false events into slots, in order', () => {
+    config.DEV_AUGURY = ['horses:comet', 'merchant_caravan:refugees']
+    const a = drawAugury()
+    expect(a.slots[0].trueEvent.id).toBe('horses')
+    expect(a.slots[0].falseEvent.id).toBe('comet')
+    expect(a.slots[1].trueEvent.id).toBe('merchant_caravan')
+    expect(a.slots[1].falseEvent.id).toBe('refugees')
+    // A slot beyond the forced list falls back to a real random pair.
+    expect(EVENT_POOL.some((e) => e.id === a.slots[2].trueEvent.id)).toBe(true)
+    expect(a.slots[2].falseEvent.severity).toBe(a.slots[2].trueEvent.severity)
+  })
+
+  test('re-seeds every draw, so each turn is identical', () => {
+    config.DEV_AUGURY = ['horses:comet']
+    expect(drawAugury().slots[0].trueEvent.id).toBe('horses')
+    expect(drawAugury().slots[0].trueEvent.id).toBe('horses') // not drained across turns
+  })
+
+  test('a forced slot without an explicit false event still gets a valid same-pool peer', () => {
+    config.DEV_AUGURY = ['horses'] // severity 3, no falseId
+    const slot = drawAugury().slots[0]
+    expect(slot.trueEvent.id).toBe('horses')
+    expect(slot.falseEvent.id).not.toBe('horses')
+    expect(slot.falseEvent.severity).toBe(slot.trueEvent.severity)
+  })
+
+  test('an unknown id is ignored — that slot draws randomly, no throw', () => {
+    config.DEV_AUGURY = ['no_such_event']
+    const slot = drawAugury().slots[0]
+    expect(EVENT_POOL.some((e) => e.id === slot.trueEvent.id)).toBe(true)
+    expect(slot.falseEvent.severity).toBe(slot.trueEvent.severity)
+  })
+
+  test('a rerolled slot consumes the next forced spec', () => {
+    config.DEV_AUGURY = ['horses:comet', 'merchant_caravan:refugees', 'sellswords:drillmaster', 'refugees:merchant_caravan']
+    const campaign = { roster: new Map(), augury: drawAugury() }
+    rerollAugurySlot(campaign, 0) // 4th spec
+    expect(campaign.augury.slots[0].trueEvent.id).toBe('refugees')
+    expect(campaign.augury.slots[0].falseEvent.id).toBe('merchant_caravan')
   })
 })
 

@@ -98,7 +98,9 @@ jobs:
           docker network create e2e
           docker run -d --name mongo --network e2e mongo:7
           docker run -d --name game --network e2e -p 3001:3001 \
-            -e MONGODB_URI=mongodb://mongo:27017 -e DEV_SEED=1 gameproject
+            -e MONGODB_URI=mongodb://mongo:27017 -e DEV_SEED=1 \
+            -e DEV_AUGURY="merchant_caravan:refugees,sellswords:drillmaster,horses:deserter_lord,refugees:merchant_caravan" \
+            gameproject
           for i in $(seq 1 60); do
             curl -fs http://localhost:3001/api/info > /dev/null && exit 0
             sleep 2

@@ -29,6 +29,10 @@ services:
       # Local-only convenience login (testuser/test). Remove both this and
       # the default SECRET before exposing the stack to anyone but yourself.
       DEV_SEED: "1"
+      # Test-only: force a deterministic 3-choice, non-deferred augur reveal so
+      # the e2e reliably exercises the multi-choice path (all six ids are choice
+      # events, one pair per severity, all neutral/good valence). Never in prod.
+      DEV_AUGURY: "merchant_caravan:refugees,sellswords:drillmaster,horses:deserter_lord,refugees:merchant_caravan"
     depends_on:
       - mongo
 

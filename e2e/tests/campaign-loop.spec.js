@@ -44,8 +44,14 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
   // Accept → the reveal plays right here, then leads on to the raids.
   await page.getByTestId('accept-fates').click()
   await expect(page.getByRole('heading', { name: /The Fates Come to Pass/ })).toBeVisible()
-  await advanceReveal(page) // lands on the Raids screen
-  // A deferred choice-fate may owe a decision on the way; clear it if so.
+  // The stack runs with DEV_AUGURY forcing all three fates to CHOICE events
+  // (see docker-compose.yml / CI e2e job), so this reveal deterministically
+  // exercises the multi-choice path every run — the exact shape the old
+  // ~1/8 flake lived on. Assert all three choices resolved, proving it ran.
+  const choicesResolved = await advanceReveal(page) // lands on the Raids screen
+  expect(choicesResolved).toBe(3)
+  // No fate is deferred here (all forced fates are neutral/good), so nothing is
+  // owed on the pendingChoices overlay — this is a harmless no-op safety net.
   await clearPendingDecisions(page)
 
   // ── Raids → deploy for battle ──────────────────────────────────────────

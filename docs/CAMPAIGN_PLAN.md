@@ -1685,19 +1685,37 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
   choice** (the exact shape the e2e wedged on — the middle deferred card must not throw off the later
   choice's index/gating). Mocked-network unit tests can't reproduce the residual, which confirms it's
   browser+server TIMING, not logic.
+- **✅ SHIPPED 2026-07-19 — the residual multi-choice e2e flake is FIXED (deterministic augur).**
+  The real fix the follow-ups below pointed at is done. Two parts:
+  - **Server: a test-only `DEV_AUGURY` force hook** (mirrors the existing `DEV_SEED` env idiom;
+    OFF and byte-identical in production). `config.js` parses `DEV_AUGURY` into a list of
+    `trueId:falseId` specs; `services/augury.js` gained a `forcedSlot()` FIFO (re-seeded each
+    `drawAugury()`, consumed by every draw AND reroll) that forces BOTH members of a slot's hidden
+    pair — so the shown fate is deterministic whatever the odds/`shownTrue` roll does. It
+    deliberately does NOT route through the dice queue (the [augury.js:55] note: a redraw must not
+    eat queued consult rolls). Unknown id → random fallback. TDD: 5 new `augury.test.js` cases
+    (46/46). The 6 parallel-run failures seen were pre-existing mongodb-memory-server hook timeouts
+    under CPU contention — `raid.test.js` (the augury→counter_event path) passes 24/24 in isolation.
+  - **e2e wired to force a KNOWN 3-choice, non-deferred reveal.** `docker-compose.yml` + the CI
+    `e2e` job set `DEV_AUGURY="merchant_caravan:refugees,sellswords:drillmaster,horses:deserter_lord,refugees:merchant_caravan"`
+    (all six are CHOICE events, one pair per severity, all neutral/good valence → no counter-raid
+    deferral; the 4th spec covers the spec's slot-0 recast so all three shown fates stay choices).
+    `helpers.js advanceReveal` rewritten deterministic: it picks the current card's one open choice
+    then WAITS for the advance to re-enable (the precise post-pick sync — no fixed sleeps, no
+    re-clicking a busy button), and returns the choice count; `campaign-loop.spec.js` asserts
+    `choicesResolved === 3`, PROVING the multi-choice path ran every run.
+  - **Bug found & fixed while verifying:** the first rewrite trapped the loop — the `choice-`
+    testid prefix also matches the resolved-outcome `<p data-testid="choice-outcome-N">`, so the
+    "pick a choice" branch spun on that inert paragraph forever and never clicked Reveal (the old
+    helper hid this by checking Reveal first). Fixed by narrowing to `button[data-testid^="choice-"]`.
+  - **Verified end-to-end:** stack rebuilt at localhost:5173 with `DEV_AUGURY` live in the
+    container; the previously ~1/8-flaky `campaign-loop` spec ran **8/8 then 12/12 = 20 consecutive
+    clean** under `--repeat-each`, each hitting the deterministic 3-choice reveal.
 - **Follow-ups (not done):**
-  - **Residual e2e timing flake (~1/8):** a rare real-browser+server intermittent survives the helper
-    rewrite; unit tests exonerate the app. THE fix is the seeded-augur item below (make the reveal
-    deterministic) rather than more helper band-aids. CI has retries, so it stays green in practice.
   - **Event chains/prerequisites** (the long-standing "richer event system" follow-up) — next big slice.
   - **A live in-browser click-through** of the new choice events (Horses→Cavalry especially). Windows
     serves the built bundle, so `docker compose up --build` is REQUIRED to see 28471e7/d1d97e2/283fce8.
-    (Stack WAS rebuilt this session at localhost:5173 to `d1d97e2`+; rebuild again for `917ba7e` if newer.)
-  - **Deterministic augur for the e2e (the real flake fix):** the augur draws events via `Math.random()`
-    in `services/augury.js` (drawSlot, ~line 62/66), NOT the seedable dice queue — so seeding needs a
-    small change (seed `Math.random` behind DEV_SEED, or a test-only "force these fates" hook). Then the
-    e2e reliably exercises a KNOWN reveal (single AND multi-choice) instead of probabilistically. The
-    frontend regression tests pin the logic deterministically meanwhile.
+    (Stack WAS rebuilt this session at localhost:5173; rebuild again for anything newer.)
 
 ---
 

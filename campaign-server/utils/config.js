@@ -40,6 +40,14 @@ const config = {
   // Explicit opt-in to seed the dev user even against an external MongoDB
   // (used by docker-compose for local testing). Never set this anywhere public.
   DEV_SEED: process.env.DEV_SEED === '1',
+  // Test-only: force the augur's fate draws so the e2e exercises a KNOWN reveal
+  // deterministically instead of hoping the random draw lands a multi-choice
+  // one. Comma-separated per-draw specs, each `trueId:falseId` (falseId
+  // optional). Consumed in draw order across a turn's slots (and rerolls);
+  // exhausted/empty → normal random draw. NEVER set in a real deployment.
+  DEV_AUGURY: process.env.DEV_AUGURY
+    ? process.env.DEV_AUGURY.split(',').map((s) => s.trim()).filter(Boolean)
+    : [],
   // Battles render at ~200ms/tick in the SFML window, so allow long runs.
   BATTLE_TIMEOUT_MS: Number(process.env.BATTLE_TIMEOUT_MS) || 10 * 60 * 1000,
   // JWT signing secret. The fallback is for local dev only — set SECRET in any
