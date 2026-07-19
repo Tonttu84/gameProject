@@ -1673,15 +1673,31 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
   pendingChoices overlay, which `campaignView` already serves with options); non-deferred choice
   fates still gate inline. Deterministic regression test in `eventReveal.test.jsx`. E2E hardened with
   `clearPendingDecisions()` (drains the deferred-decision overlay after each reveal; no-op otherwise).
+- **E2E hardening `917ba7e` (tests + helper, NOT an app fix):** repeat-each e2e runs (choice density is
+  now high — ~7 of ~20 events carry choices) exposed a fragile TEST HELPER, not an app bug. Root cause:
+  `e2e/helpers.js advanceReveal`'s tight loop re-clicked a choice button while its pick POST was in
+  flight — the button goes `disabled` then detaches, and Playwright actionability on that hangs ~30s
+  per extra choice, blowing the 90s test timeout once two+ choice-fates land together. Rewrote it as a
+  self-healing poll that only clicks an ENABLED choice (`:not([disabled])`), no long blocking waits
+  (same guard on `clearPendingDecisions`). Took the spec from ~1/4 flaky (old loop) → ~7/8.
+  **The app is PROVEN correct** by three new deterministic `eventReveal.test.jsx` tests (all green):
+  two choice-fates in one reveal; a deferred fate that also owes a choice; and **choice → deferred →
+  choice** (the exact shape the e2e wedged on — the middle deferred card must not throw off the later
+  choice's index/gating). Mocked-network unit tests can't reproduce the residual, which confirms it's
+  browser+server TIMING, not logic.
 - **Follow-ups (not done):**
+  - **Residual e2e timing flake (~1/8):** a rare real-browser+server intermittent survives the helper
+    rewrite; unit tests exonerate the app. THE fix is the seeded-augur item below (make the reveal
+    deterministic) rather than more helper band-aids. CI has retries, so it stays green in practice.
   - **Event chains/prerequisites** (the long-standing "richer event system" follow-up) — next big slice.
   - **A live in-browser click-through** of the new choice events (Horses→Cavalry especially). Windows
     serves the built bundle, so `docker compose up --build` is REQUIRED to see 28471e7/d1d97e2/283fce8.
-  - **Deterministic augur for the e2e:** the campaign-loop e2e is RNG-driven, so a green run does NOT
-    prove it traversed the choice/deferred-choice branch (that's how the `283fce8` bug slipped through
-    until choice density rose). Consider a seeded augur path (DEV_SEED already exists) so the e2e
-    reliably exercises a choice fate. The frontend regression test pins the deadlock deterministically
-    meanwhile.
+    (Stack WAS rebuilt this session at localhost:5173 to `d1d97e2`+; rebuild again for `917ba7e` if newer.)
+  - **Deterministic augur for the e2e (the real flake fix):** the augur draws events via `Math.random()`
+    in `services/augury.js` (drawSlot, ~line 62/66), NOT the seedable dice queue — so seeding needs a
+    small change (seed `Math.random` behind DEV_SEED, or a test-only "force these fates" hook). Then the
+    e2e reliably exercises a KNOWN reveal (single AND multi-choice) instead of probabilistically. The
+    frontend regression tests pin the logic deterministically meanwhile.
 
 ---
 
