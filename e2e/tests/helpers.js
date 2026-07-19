@@ -24,24 +24,28 @@ export async function registerAndLogin(page, username, password = 'test1234') {
 export async function advanceReveal(page) {
   const continueBtn = page.getByTestId('report-continue')
   const revealNext = page.getByTestId('reveal-next')
+  // Only ever match an ENABLED choice button: while a pick's POST is in flight
+  // the option buttons go `disabled`, then detach. Clicking a disabled/detaching
+  // button hangs on Playwright actionability, so we skip them and let the poll
+  // come back around — which also self-heals a click the app dropped mid-render.
+  const openChoice = page.locator('[data-testid^="choice-"]:not([disabled])').first()
 
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 60; i++) {
     if (await continueBtn.isVisible()) break
 
-    if (await revealNext.isVisible()) {
-      if (await revealNext.isEnabled()) {
-        await revealNext.click()
+    if (await revealNext.isVisible().catch(() => false)) {
+      if (await revealNext.isEnabled().catch(() => false)) {
+        await revealNext.click().catch(() => {})
         continue
       }
-      // Advance is blocked on an unmade decision — take the first choice.
-      const firstChoice = page.locator('[data-testid^="choice-"]').first()
-      await expect(firstChoice).toBeVisible()
-      await firstChoice.click()
-      continue
+      // Blocked on an unmade decision: pick the first offered option if one is
+      // actually clickable right now (else wait and re-poll).
+      if (await openChoice.isVisible().catch(() => false))
+        await openChoice.click().catch(() => {})
     }
 
-    // Neither control present yet — let the card render.
-    await page.waitForTimeout(100)
+    // Let the card render / a pick resolve before the next poll.
+    await page.waitForTimeout(150)
   }
 
   await expect(continueBtn).toBeVisible()
@@ -54,10 +58,13 @@ export async function advanceReveal(page) {
 // next screen. Drain it by taking the first option of each until it clears. A
 // no-op when nothing is pending (the common case), so it's always safe to call.
 export async function clearPendingDecisions(page) {
-  for (let i = 0; i < 6; i++) {
-    const choice = page.locator('[data-testid^="choice-"]').first()
-    if (!(await choice.isVisible().catch(() => false))) break
-    await choice.click()
+  const anyChoice = page.locator('[data-testid^="choice-"]').first()
+  const openChoice = page.locator('[data-testid^="choice-"]:not([disabled])').first()
+  for (let i = 0; i < 12; i++) {
+    if (!(await anyChoice.isVisible().catch(() => false))) break
+    // Click only an enabled option (skip while a prior pick's POST is busy).
+    if (await openChoice.isVisible().catch(() => false))
+      await openChoice.click().catch(() => {})
     await page.waitForTimeout(200)
   }
 }

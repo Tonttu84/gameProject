@@ -111,6 +111,94 @@ describe('EventRevealScreen: one card per click', () => {
     expect(screen.getByTestId('reveal-next')).toBeEnabled()
   })
 
+  // Two choice fates in ONE reveal (now common — ~7 of ~20 pool events carry
+  // choices): each must block the advance, resolve, and hand off to the next.
+  // The campaign-loop E2E wedged here on the SECOND choice (baggage_plague then
+  // merchant_caravan), so pin the client handles a run of them.
+  it('resolves two choice fates in one reveal, one after the other', async () => {
+    const onChoose = vi.fn(async (slot) => ({ slot, label: `chose-${slot}` }))
+    const choiceFate = (predId, actId, actTitle, opts) => ({
+      predicted: { id: predId, title: 'Foretold' },
+      actual: { id: actId, title: actTitle },
+      wasAccurate: false,
+      pendingChoice: { options: opts },
+    })
+    const report = {
+      day: 3,
+      kind: 'fates',
+      augury: [
+        choiceFate('a', 'baggage_plague', 'Plague in the Baggage Train', [
+          { id: 'quarantine', label: 'Quarantine' },
+          { id: 'march_on', label: 'March on' },
+        ]),
+        choiceFate('b', 'merchant_caravan', 'A Merchant Caravan', [
+          { id: 'buy_provisions', label: 'Buy up their provisions' },
+          { id: 'sell_for_materials', label: 'Trade rations' },
+        ]),
+      ],
+      entries: [],
+    }
+    render(<EventRevealScreen report={report} onChoose={onChoose} onContinue={() => {}} />)
+
+    // Fate-0: its choice blocks the advance until picked.
+    expect(screen.getByTestId('reveal-next')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('choice-quarantine'))
+    await screen.findByTestId('choice-outcome-0')
+    expect(screen.getByTestId('reveal-next')).toBeEnabled()
+
+    // Advance to fate-1: it must block AND resolve too — not wedge the reveal.
+    fireEvent.click(screen.getByTestId('reveal-next'))
+    expect(await screen.findByTestId('choice-buy_provisions')).toBeInTheDocument()
+    expect(screen.getByTestId('reveal-next')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('choice-buy_provisions'))
+    await screen.findByTestId('choice-outcome-1')
+    expect(screen.getByTestId('reveal-next')).toBeEnabled()
+
+    expect(onChoose).toHaveBeenCalledWith(0, 'quarantine')
+    expect(onChoose).toHaveBeenCalledWith(1, 'buy_provisions')
+  })
+
+  // The exact shape the campaign-loop E2E wedged on: choice → DEFERRED → choice.
+  // Resolving fate-0's choice, advancing PAST the deferred fate-1 (threat only,
+  // no gate), then resolving fate-2's choice must all work — the deferred card
+  // in the middle must not throw off the later choice's index/gating.
+  it('handles choice → deferred → choice in one reveal', async () => {
+    const onChoose = vi.fn(async (slot) => ({ slot, label: `chose-${slot}` }))
+    const report = {
+      day: 4,
+      kind: 'fates',
+      augury: [
+        {
+          predicted: { id: 'a', title: 'A' }, actual: { id: 'sellswords', title: 'Sellswords at the Camp' }, wasAccurate: true,
+          pendingChoice: { options: [{ id: 'hire', label: 'Hire the company' }, { id: 'decline', label: 'Send them on' }] },
+        },
+        { predicted: { id: 'b', title: 'B' }, odds: 0.3, deferred: true },
+        {
+          predicted: { id: 'c', title: 'C' }, actual: { id: 'horses', title: 'A Captured Herd' }, wasAccurate: false,
+          pendingChoice: { options: [{ id: 'mount_veterans', label: 'Mount your veterans as cavalry' }, { id: 'sell_herd', label: 'Sell the herd' }] },
+        },
+      ],
+      entries: [],
+    }
+    render(<EventRevealScreen report={report} onChoose={onChoose} onContinue={() => {}} />)
+
+    // Fate-0 choice → resolve.
+    fireEvent.click(screen.getByTestId('choice-hire'))
+    await screen.findByTestId('choice-outcome-0')
+    fireEvent.click(screen.getByTestId('reveal-next'))
+
+    // Fate-1 is deferred: threat only, and it must NOT block the advance.
+    expect(await screen.findByTestId('fate-deferred')).toBeInTheDocument()
+    expect(screen.getByTestId('reveal-next')).toBeEnabled()
+    fireEvent.click(screen.getByTestId('reveal-next'))
+
+    // Fate-2 choice → must be resolvable, indexed correctly past the deferred one.
+    fireEvent.click(await screen.findByTestId('choice-mount_veterans'))
+    await screen.findByTestId('choice-outcome-2')
+    expect(screen.getByTestId('reveal-next')).toBeEnabled()
+    expect(onChoose).toHaveBeenCalledWith(2, 'mount_veterans')
+  })
+
   it('shows the tutorial intro only when the flag is on', () => {
     const { unmount } = render(<EventRevealScreen report={fullReport} onContinue={() => {}} />)
     expect(screen.getByTestId('tutorial-reveal')).toBeInTheDocument()
