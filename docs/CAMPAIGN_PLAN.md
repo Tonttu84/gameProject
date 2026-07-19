@@ -1664,8 +1664,24 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 - **Slice 2 (same day):** `merchant_caravan` (sev 1, choice/neutral) — the minor pool's new
   interactive event: a two-way trade, buy food with materials or buy materials with food. augury.test.js
   +2 → 41 green. Every pool (minor/normal/major) now carries at least one choice event.
-- **Follow-ups (not done):** event chains/prerequisites (the long-standing "richer event system"
-  follow-up); a live click-through of the new choices in-browser.
+- **Deadlock fix `283fce8` (frontend + e2e):** the raised choice-event density exposed a REAL
+  pre-existing bug the CI e2e caught (not a flake). A **deferred** fate (a counter-raid target) that
+  is ALSO a **choice** event gets both `deferred` and `pendingChoice` on its tent reveal card, but the
+  deferred `FateBeat` renders only the threat (no options) — so gating `reveal-next` on that
+  `pendingChoice` disabled the advance with nothing to click → stuck reveal. Fix: EventRevealScreen
+  `awaitingChoice` now ignores `slot.deferred` (a deferred decision is owed later via the
+  pendingChoices overlay, which `campaignView` already serves with options); non-deferred choice
+  fates still gate inline. Deterministic regression test in `eventReveal.test.jsx`. E2E hardened with
+  `clearPendingDecisions()` (drains the deferred-decision overlay after each reveal; no-op otherwise).
+- **Follow-ups (not done):**
+  - **Event chains/prerequisites** (the long-standing "richer event system" follow-up) — next big slice.
+  - **A live in-browser click-through** of the new choice events (Horses→Cavalry especially). Windows
+    serves the built bundle, so `docker compose up --build` is REQUIRED to see 28471e7/d1d97e2/283fce8.
+  - **Deterministic augur for the e2e:** the campaign-loop e2e is RNG-driven, so a green run does NOT
+    prove it traversed the choice/deferred-choice branch (that's how the `283fce8` bug slipped through
+    until choice density rose). Consider a seeded augur path (DEV_SEED already exists) so the e2e
+    reliably exercises a choice fate. The frontend regression test pins the deadlock deterministically
+    meanwhile.
 
 ---
 
