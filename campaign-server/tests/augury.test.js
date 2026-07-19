@@ -384,6 +384,32 @@ describe('the Horses event: mount soldiers as cavalry', () => {
   })
 })
 
+describe('minor pool has an interactive event: the merchant caravan', () => {
+  const caravan = EVENT_POOL.find((e) => e.id === 'merchant_caravan')
+  // a flat list of every (type, sign) resource delta across a branch's effects
+  const deltas = (branch) =>
+    (branch.effect.type === 'multi' ? branch.effect.effects : [branch.effect])
+      .filter((e) => e.delta !== undefined)
+      .map((e) => `${e.type}:${e.delta > 0 ? 'gain' : 'spend'}`)
+
+  test('the minor pool (severity 1) carries a choice event', () => {
+    const minorChoices = EVENT_POOL.filter((e) => e.severity === 1 && e.effect?.type === 'choice')
+    expect(minorChoices.some((e) => e.id === 'merchant_caravan')).toBe(true)
+  })
+
+  test('it lets the player trade materials for food, and food for materials', () => {
+    expect(caravan).toBeTruthy()
+    expect(caravan.severity).toBe(1)
+    const all = caravan.choices.flatMap(deltas)
+    // one branch gains food (spending materials); the other gains materials
+    // (spending food) — a genuine two-way trade, not a one-sided gift.
+    expect(all).toContain('food:gain')
+    expect(all).toContain('materials:spend')
+    expect(all).toContain('materials:gain')
+    expect(all).toContain('food:spend')
+  })
+})
+
 describe('firedRung (Stage 4 1c)', () => {
   // An event as an augury slot stores it: the schema keeps only the display
   // fields, so the ladder must come from EVENT_POOL by id, never from the

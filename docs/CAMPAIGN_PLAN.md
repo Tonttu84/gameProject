@@ -1661,9 +1661,11 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 - **Tests**: augury.test.js +6 (convert apply/cap, convert valence, Horses structure) → 39 green;
   full campaign-server suite **256/256**. All EVENT_POOL structure tripwires still hold (every pool
   mixes good/bad, choice options are phrase-only/digit-free, every event has a recognized valence).
-- **Follow-ups (not done):** minor-pool (sev 1) got no new interactive event this slice — add one
-  (a small choice) next; consider event chains/prerequisites (the long-standing "richer event
-  system" follow-up); a live click-through of the new choices in-browser.
+- **Slice 2 (same day):** `merchant_caravan` (sev 1, choice/neutral) — the minor pool's new
+  interactive event: a two-way trade, buy food with materials or buy materials with food. augury.test.js
+  +2 → 41 green. Every pool (minor/normal/major) now carries at least one choice event.
+- **Follow-ups (not done):** event chains/prerequisites (the long-standing "richer event system"
+  follow-up); a live click-through of the new choices in-browser.
 
 ---
 

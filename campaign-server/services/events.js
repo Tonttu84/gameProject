@@ -80,6 +80,14 @@ export const EVENT_POOL = [
   // no single effect, so it DECLARES its valence for the augur's header and
   // the counter_event raid draw (eventValenceFor below).
   {
+    id: 'merchant_caravan', title: 'A Merchant Caravan', description: 'A well-guarded trade caravan makes camp within sight of your pickets, its masters keen to deal.', severity: 1,
+    effect: { type: 'choice' }, valence: 'neutral',
+    choices: [
+      { id: 'buy_provisions',     label: 'Buy up their provisions',   description: 'Pay in tools and timber to fill the larder against the lean weeks ahead.', effect: { type: 'multi', effects: [{ type: 'materials', delta: -15 }, { type: 'food', delta: +3000 }] } },
+      { id: 'sell_for_materials', label: 'Trade rations for their wares', description: 'Part with some of your stores for the cordage, nails and worked timber the camp sorely needs.', effect: { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'materials', delta: +25 }] } },
+    ],
+  },
+  {
     id: 'refugees', title: 'Refugees at the Palisade', description: 'A column of burned-out villagers begs shelter at the camp gates.', severity: 1,
     effect: { type: 'choice' }, valence: 'neutral',
     choices: [
