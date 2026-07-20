@@ -80,7 +80,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 14 // v14: boss-fight meter (campaign.meter, campaign.bossFightDue)
+export const CAMPAIGN_SCHEMA_VERSION = 15 // v15: recon rework (campaign.recon.points drives the scouting level)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -105,6 +105,17 @@ const campaignSchema = new mongoose.Schema({
     revealed: { type: Boolean, default: false },
   },
   bossFightDue: { type: Boolean, default: false },
+
+  // Recon (docs/CAMPAIGN_PLAN.md "Recon rework"): leftover scouting points that
+  // weren't spent on the raid board accumulate here at end-of-turn (no decay).
+  // `points` alone determines the scouting LEVEL (reconLevel/reconBand in
+  // utils/capabilities.js) that drives the enemy reveal ladder, forage posture,
+  // and recon-sensitive event rungs — the old passive troop-coverage band is
+  // gone. The graduated numeric brackets it also gates (enemy count + meter
+  // value) are added in recon R2.
+  recon: {
+    points: { type: Number, default: 0 },
+  },
 
   resources: {
     food: { type: Number, required: true },

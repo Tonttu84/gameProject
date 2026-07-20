@@ -2,8 +2,7 @@ import { getCatalog } from '../utils/catalog.js'
 import {
   armyFoodPerTurn,
   forageValue,
-  scoutingCoverage,
-  scoutingBand,
+  reconBand,
   SCOUTING_BANDS,
 } from '../utils/capabilities.js'
 import {
@@ -151,10 +150,7 @@ const visionCard = ({ id, title, description, severity, effect }) => ({
 
 export async function campaignView(campaign) {
   const catalog = await getCatalog()
-  const band = scoutingBand(
-    scoutingCoverage(campaign.roster, catalog),
-    scoutingCoverage(campaign.enemy.army, catalog),
-  )
+  const band = reconBand(campaign.recon?.points ?? 0)
   return {
     id: campaign.id,
     day: campaign.day,

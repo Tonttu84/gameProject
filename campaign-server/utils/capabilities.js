@@ -1,7 +1,7 @@
 import {
   FOOD_KG_PER_SIZE_SQ_PER_DAY,
   DAYS_PER_TURN,
-  SCOUTING_BAND_THRESHOLDS,
+  RECON_LEVEL_THRESHOLDS,
   RAID_CAPACITY_SPEED_SCALE,
   BASELINE_ACCURACY,
   ACCURACY_PER_BALLISTIC,
@@ -27,46 +27,20 @@ import {
 const SPEED_POINTS_PER_FOOT = 10
 const speedFactor = (stats) => stats.speed / SPEED_POINTS_PER_FOOT
 
-// Scouting: super-linear in mobility (speed² — covering ground is most of the
-// job, and a future flyer should dominate), plus ranged sense (observing and
-// skirmishing at a distance), plus the engine's signed designer tag for units
-// whose scouting worth diverges from what those two imply (LightCavalry +4,
-// Warhorse −2). See docs/CAMPAIGN_PLAN.md Stage 4.
-export const reconValue = (stats) =>
-  speedFactor(stats) * speedFactor(stats) + Math.floor(stats.ballisticSkill / 2) + stats.reconTag
-
-// Scouting coverage of one side: Σ(count·reconValue) / Σ(count·size) —
-// "scouting per unit of army you must screen." The ÷size denominator is what
-// keeps a big army from auto-winning scouting: a blob dilutes its own
-// coverage (300 infantry DRAG DOWN 12 light cavalry, they don't out-sum it).
-// Unknown types screen as size-10 dead weight with no recon (same guard
-// convention as armyFoodPerTurn: routes validate, this only degrades safely).
-export const scoutingCoverage = (army, catalog) => {
-  const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
-  let recon = 0
-  let sizeSum = 0
-  for (const [type, count] of entries) {
-    const unitType = catalog.get(type)
-    recon += count * (unitType ? reconValue(unitType.stats) : 0)
-    sizeSum += count * (unitType?.size ?? 10)
-  }
-  return sizeSum > 0 ? recon / sizeSum : 0
-}
-
-// Raid scouting points a single unit contributes (Stage 4 Part 2.5): accuracy ×
+// Scouting points a single unit contributes (Stage 4 Part 2.5): accuracy ×
 // mobility, plus the signed reconTag, on a scale where a baseline human
 // (accuracy 10, foot speed, reconTag 0) is worth 1.0. accuracy = ballisticSkill
 // × ACCURACY_PER_BALLISTIC (the engine derives the same; the catalog exports
-// ballisticSkill). Distinct from reconValue (speed², feeds the coverage BAND):
-// this is an ABSOLUTE per-unit worth, summed raw into the turn's points pool.
+// ballisticSkill). An ABSOLUTE per-unit worth, summed raw into the turn's
+// points pool — spent on the raid board, the leftover accruing into recon.
 export const scoutingPointValue = (stats) =>
   ((stats.ballisticSkill * ACCURACY_PER_BALLISTIC) / BASELINE_ACCURACY) * speedFactor(stats) +
   stats.reconTag
 
 // The army's per-turn scouting-points pool: Σ count·scoutingPointValue — a RAW
 // sum (a bigger or scouting-heavier force scouts more openings), kept fractional
-// (the pool never rounds). Unknown types contribute nothing (same safe-degrade
-// guard as scoutingCoverage: routes validate, this only degrades).
+// (the pool never rounds). Unknown types contribute nothing (safe-degrade
+// guard: routes validate, this only degrades).
 export const scoutingPointsFor = (army, catalog) => {
   const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
   let points = 0
@@ -78,23 +52,27 @@ export const scoutingPointsFor = (army, catalog) => {
 }
 
 // Band order, weakest eyes first — reveal tiers (campaignView's enemy view)
-// compare a band's rank against this ladder.
+// compare a band's rank against this ladder. Index === recon level.
 export const SCOUTING_BANDS = ['Blind', 'Outmatched', 'Contested', 'Superior', 'Overwhelming']
 
-// The player-vs-enemy coverage comparison, collapsed to the banded label that
-// is the ONLY scouting fact allowed across the hidden-info boundary (the raw
-// ratio would leak enemy composition). Degenerate cases: eyes against a blind
-// enemy see everything; two blind armies contest by default.
-export const scoutingBand = (playerCoverage, enemyCoverage) => {
-  if (playerCoverage <= 0 && enemyCoverage <= 0) return 'Contested'
-  const ratio = enemyCoverage <= 0 ? Infinity : playerCoverage / enemyCoverage
-  const t = SCOUTING_BAND_THRESHOLDS
-  if (ratio >= t.Overwhelming) return 'Overwhelming'
-  if (ratio >= t.Superior) return 'Superior'
-  if (ratio >= t.Contested) return 'Contested'
-  if (ratio >= t.Outmatched) return 'Outmatched'
-  return 'Blind'
+// Recon rework (docs/CAMPAIGN_PLAN.md): the scouting level is driven by
+// accumulated leftover scouting points (campaign.recon.points), NOT a passive
+// troop-coverage ratio. `reconLevel` counts how many RECON_LEVEL_THRESHOLDS the
+// points have crossed (0 = Blind, up to SCOUTING_BANDS.length − 1 = Overwhelming);
+// `reconBand` maps that to the band label the reveal tiers, forage posture, and
+// recon-sensitive event rungs all read. This band is the ONLY scouting fact
+// allowed across the hidden-info boundary (a raw point count would leak nothing
+// about the enemy, but the band is what the reveal tiers key off).
+export const reconLevel = (points) => {
+  let level = 0
+  for (const threshold of RECON_LEVEL_THRESHOLDS) {
+    if ((points ?? 0) >= threshold) level += 1
+    else break
+  }
+  return Math.min(level, SCOUTING_BANDS.length - 1)
 }
+
+export const reconBand = (points) => SCOUTING_BANDS[reconLevel(points)]
 
 // Raid party budget cost of ONE unit (Stage 4 Part 2): size × (40 − speed) /
 // RAID_CAPACITY_SPEED_SCALE — the user's formula (2026-07-13), kept literally.

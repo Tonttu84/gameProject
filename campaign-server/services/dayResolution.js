@@ -2,8 +2,7 @@ import { DESERTION_FRACTION, BOSS_FIGHT_METER_THRESHOLD } from '../utils/campaig
 import { getCatalog } from '../utils/catalog.js'
 import {
   armyFoodPerTurn,
-  scoutingCoverage,
-  scoutingBand,
+  reconBand,
   scoutingPointsFor,
 } from '../utils/capabilities.js'
 import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
@@ -85,10 +84,7 @@ export async function acceptFates(campaign) {
   const catalog = await getCatalog()
   const entries = []
   const report = { day: campaign.day }
-  const band = scoutingBand(
-    scoutingCoverage(campaign.roster, catalog),
-    scoutingCoverage(campaign.enemy.army, catalog),
-  )
+  const band = reconBand(campaign.recon?.points ?? 0)
   const counterTargets = new Set(
     campaign.raid.opportunities
       .filter((o) => o.type === 'counter_event' && !o.resolved)
@@ -145,15 +141,12 @@ export async function endDay(campaign) {
   const entries = []
   const report = { day: campaign.day }
 
-  // 0.5. Scouting: the fortnight's recon contest, read once against the hosts
-  // as they stand at dawn — the same derivation (and so the same band)
-  // campaignView showed while the player was committing orders. It sets the
-  // forage posture in steps 1–2 and picks each recon-sensitive fate's rung
+  // 0.5. Scouting level, from recon points accumulated up to this turn's start
+  // (this turn's leftover accrues in step 7 below, for NEXT turn) — the SAME
+  // band campaignView showed while the player was committing orders. It sets
+  // the forage posture in steps 1–2 and picks each recon-sensitive fate's rung
   // in step 3.
-  const band = scoutingBand(
-    scoutingCoverage(campaign.roster, catalog),
-    scoutingCoverage(campaign.enemy.army, catalog),
-  )
+  const band = reconBand(campaign.recon?.points ?? 0)
 
   // 1–2. Foraging and forager clashes, at the band's posture
   const foraging = resolveForaging(campaign, catalog, band)
@@ -283,6 +276,11 @@ export async function endDay(campaign) {
     // above), and the scouting-points pool refilled from the roster as the
     // day's attrition left it — unused points from today expire here.
     campaign.raid.opportunities = generateRaidOpportunities(campaign, catalog)
+    // Recon: whatever scouting points went UNSPENT on the raid board this turn
+    // pour into the accumulating recon pool (no decay) — this is what raises the
+    // scouting level over the campaign (docs/CAMPAIGN_PLAN.md "Recon rework").
+    // Done BEFORE the pool refills below, so only the genuine leftover accrues.
+    campaign.recon.points = (campaign.recon.points ?? 0) + Math.max(0, campaign.raid.scoutingPoints ?? 0)
     campaign.raid.scoutingPoints = scoutingPointsFor(campaign.roster, catalog)
     // A meter reveal bought with this turn's points lapses with them — next
     // turn shows the band again until re-bought (docs/CAMPAIGN_PLAN.md Stage C).

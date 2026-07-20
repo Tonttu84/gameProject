@@ -16,7 +16,7 @@ const statsSchema = new mongoose.Schema(
     ballisticSkill: { type: Number, required: true, min: 0 },
     preferredRange: { type: Number, required: true, min: 0 },
     // Signed scouting adjustment (LightCavalry +, Warhorse −, most types 0);
-    // feeds reconValue/scoutingCoverage in utils/capabilities.js.
+    // feeds scoutingPointValue in utils/capabilities.js.
     reconTag: { type: Number, required: true },
   },
   { _id: false },

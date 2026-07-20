@@ -240,6 +240,14 @@ time), 0 → **1000** threshold.
   hold troops back — "likely the player will save troops unless there is a good raid that makes
   a greedy play justified." The tension is deliberate: raiding/foraging is faster meter growth
   (closer to the boss fight) traded for readiness on the day it lands.
+- **DEFERRED — narrative framing for the meter (user, 2026-07-20).** Fluff to make the mechanic
+  read right: the enemy is **besieging a city**; you've arrived to relieve it. The enemy can't just
+  turn and fight you (you'd retreat and the city would hold), so you **besiege the besiegers** — a
+  standoff. The more troops you keep in reserve (in camp), the more the enemy must hold back too, so
+  the **siege progresses more slowly** — which is exactly why idle camp troops slow the meter (the
+  meter = the siege clock). TODO when picked up: reword the meter/"final battle" gauge text and its
+  banded phrases to this frame, and add a few **events** that fit it (relief column, sortie from the
+  city, siege lines, etc.). Purely narrative + a bit of gauge copy — no mechanic change.
 - **Visibility:** hidden by default, shown only as a banded phrase (mirrors
   `ENEMY_STRENGTH_BANDS`/`ENEMY_SUPPLY_BANDS` — e.g. calm / restless / imminent). The exact
   number can be bought: spending **leftover scouting points, just before they expire/refresh at

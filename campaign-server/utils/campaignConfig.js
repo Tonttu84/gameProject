@@ -71,19 +71,19 @@ export const AUGURY_REROLLS_PER_DAY = 1 // rerolling a slot REPLACES that fate: 
 export const AUGURY_DEBUG_SHOW_TRUTH = true
 export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)))
 
-// ── Scouting (Stage 4) ───────────────────────────────────────────────────────
-// The player/enemy scoutingCoverage ratio collapses to one of five bands —
-// Overwhelming / Superior / Contested / Outmatched / Blind — and ONLY that
-// label ever reaches the client. Each key is the minimum ratio for its band;
-// below Outmatched is Blind. On the starting armies the ratio is ~0.96
-// (Contested): the enemy's 20 LightCavalry match the player's 12 + better
-// infantry quality, so scouting is a real contest from turn 1.
-export const SCOUTING_BAND_THRESHOLDS = {
-  Overwhelming: 2.0,
-  Superior: 1.3,
-  Contested: 0.75,
-  Outmatched: 0.4,
-}
+// ── Scouting (Stage 4 → Recon rework) ────────────────────────────────────────
+// The scouting level collapses to one of five bands — Blind / Outmatched /
+// Contested / Superior / Overwhelming — and ONLY that label ever reaches the
+// client (a raw point count would leak nothing about the enemy anyway).
+// Recon rework (docs/CAMPAIGN_PLAN.md): the scouting LEVEL is no longer a
+// passive troop-coverage ratio — it comes from `campaign.recon.points`, the
+// leftover scouting points accumulated over the campaign (reconLevel/reconBand
+// in utils/capabilities.js). Cumulative point thresholds to REACH each band
+// above Blind, indexed to SCOUTING_BANDS[1..4]. A fresh campaign (0 points)
+// starts Blind and climbs as unspent points accrue. ROUGH/TUNABLE — the real
+// per-turn scouting pool is large relative to raid-board costs, so these want
+// calibration in playtest (balance stays rough until the loop is complete).
+export const RECON_LEVEL_THRESHOLDS = [100, 300, 700, 1400] // Outmatched, Contested, Superior, Overwhelming
 
 // Which rung of a recon-sensitive event actually fires at each scouting band
 // (Stage 4 1c). 'blind' is the event itself (the full blow, and always what
