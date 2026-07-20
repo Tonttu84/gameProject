@@ -33,6 +33,8 @@ const {
   RAID_TARGET_FRACTION,
   RAID_MAX_TURNS,
   RAID_STRENGTH_BANDS,
+  RAID_SCOUT_COST_ADD,
+  RAID_SCOUT_COST_REVEAL,
 } = await import('../utils/campaignConfig.js')
 
 const api = supertest(app)
@@ -66,19 +68,20 @@ const launchBatch = (id, parties) =>
   auth(api.post(`/api/campaigns/${id}/raids/launch`)).send({ parties })
 const launch = (id, raidId, party) => launchBatch(id, { [raidId]: party })
 
-// What an opportunity may look like on the wire. targetForce (the hidden
-// slice the raid fights) and reward (counter_event's reward.slot would out
-// which fate is bad) NEVER cross the boundary — the strength band and the
-// description carry the promise instead.
+// What an opportunity looks like on the wire (scouting mini-game, Stage 4
+// Part 2.5): `enemy` and `reward` carry per-type RANGES until points buy the
+// exact value; the raw hidden `targetForce` Map field name never crosses, and
+// a counter_event's reward.slot (which would out the bad fate) stays null on
+// the wire since its reward has no numeric range to reveal.
 const PUBLIC_OPPORTUNITY_KEYS = [
-  'capacity', 'description', 'id', 'outcome', 'resolved', 'strengthBand', 'title', 'type',
+  'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome',
+  'resolved', 'reward', 'rewardReveal', 'source', 'strengthBand', 'title', 'type',
 ]
 const RAID_TYPES = ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event']
 
 const expectPublicOpportunities = (body) => {
   const raw = JSON.stringify(body)
   expect(raw).not.toContain('"targetForce"')
-  expect(raw).not.toContain('"reward"')
   for (const c of [body, body.campaign]) {
     for (const o of c?.raid?.opportunities ?? [])
       expect(Object.keys(o).sort()).toEqual(PUBLIC_OPPORTUNITY_KEYS)
@@ -493,6 +496,156 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     const docHeavy = await Campaign.findById(heavy.id)
     expect(baseBoard(docHeavy.raid.opportunities)).toBe(RAID_BASE_TARGETS)
     expect(docHeavy.raid.scoutingPoints).toBeGreaterThan(docLight.raid.scoutingPoints)
+  })
+})
+
+// ── The scout route (raid mini-game, Stage 4 Part 2.5) ───────────────────────
+// Spend the per-turn scouting-points pool to shape the board: add_target scouts
+// a new target; reveal pins a target's enemy/reward from a range to the exact
+// value. The view shows ranges pre-reveal, exact post-reveal, and NEVER the
+// hidden ground truth beyond what a paid reveal licenses.
+describe('POST /api/campaigns/:id/raids/scout', () => {
+  const scout = (id, body) => auth(api.post(`/api/campaigns/${id}/raids/scout`)).send(body)
+  const getView = (id) => auth(api.get(`/api/campaigns/${id}`))
+  const setPoints = async (id, n) => {
+    const doc = await Campaign.findById(id)
+    doc.raid.scoutingPoints = n
+    await doc.save()
+  }
+  // A pinned loot target carrying explicit ranges that bracket the hidden truth,
+  // so a reveal's exact value is assertable against a known number.
+  const REVEALABLE = (over = {}) => ({
+    ...OPP(),
+    targetForce: { Soldier: 5, Archer: 2 },
+    enemyRange: { Soldier: [4, 7], Archer: [1, 3] },
+    reward: { food: 3000, materials: 20 },
+    rewardRange: { food: [2250, 3750], materials: [15, 25] },
+    rewardReveal: 0,
+    enemyReveal: 0,
+    source: 'base',
+    ...over,
+  })
+
+  test('add_target: appends a scouted target and spends the cost', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP()])
+    await setPoints(c.id, RAID_SCOUT_COST_ADD + 1)
+    const res = await scout(c.id, { action: 'add_target' })
+    expect(res.status).toBe(201)
+    const opps = res.body.campaign.raid.opportunities
+    expect(opps).toHaveLength(2)
+    const added = opps.find((o) => o.source === 'scouted')
+    expect(added).toBeTruthy()
+    expect(res.body.campaign.raid.scoutingPoints).toBe(1)
+    expectPublicOpportunities(res.body)
+  })
+
+  test('add_target: rejects when the pool cannot cover the cost (no target added)', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP()])
+    await setPoints(c.id, RAID_SCOUT_COST_ADD - 1)
+    const res = await scout(c.id, { action: 'add_target' })
+    expect(res.status).toBe(400)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.raid.opportunities).toHaveLength(1)
+    expect(doc.raid.scoutingPoints).toBe(RAID_SCOUT_COST_ADD - 1) // unspent
+  })
+
+  test('add_target: rejects when the enemy host is exhausted (nothing to scout)', async () => {
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.enemy.army = new Map() // host wiped — no slice can be cut
+    doc.raid.opportunities = [OPP()]
+    doc.raid.scoutingPoints = RAID_SCOUT_COST_ADD
+    await doc.save()
+    const res = await scout(c.id, { action: 'add_target' })
+    expect(res.status).toBe(400)
+    const after = await Campaign.findById(c.id)
+    expect(after.raid.opportunities).toHaveLength(1)
+    expect(after.raid.scoutingPoints).toBe(RAID_SCOUT_COST_ADD) // unspent
+  })
+
+  test('reveal enemy: pins per-type counts to the exact truth, independent of reward', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [REVEALABLE()])
+    await setPoints(c.id, RAID_SCOUT_COST_REVEAL + 5)
+
+    const before = (await getView(c.id)).body.raid.opportunities[0]
+    expect(before.enemy).toEqual({ Soldier: [4, 7], Archer: [1, 3] }) // range
+    expect(before.enemyReveal).toBe(0)
+
+    const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'enemy' })
+    expect(res.status).toBe(201)
+    const o = res.body.campaign.raid.opportunities[0]
+    expect(o.enemy).toEqual({ Soldier: 5, Archer: 2 }) // exact hidden truth
+    expect(o.enemyReveal).toBe(1)
+    expect(o.reward).toEqual({ food: [2250, 3750], materials: [15, 25] }) // untouched
+    expect(o.rewardReveal).toBe(0)
+    expect(res.body.campaign.raid.scoutingPoints).toBe(5)
+    expectPublicOpportunities(res.body)
+  })
+
+  test('reveal reward: pins numeric reward to the exact truth', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [REVEALABLE()])
+    await setPoints(c.id, RAID_SCOUT_COST_REVEAL)
+    const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'reward' })
+    expect(res.status).toBe(201)
+    const o = res.body.campaign.raid.opportunities[0]
+    expect(o.reward).toEqual({ food: 3000, materials: 20 })
+    expect(o.rewardReveal).toBe(1)
+  })
+
+  test('reveal: refuses to spend again once a field is exact', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [REVEALABLE({ enemyReveal: 1 })])
+    await setPoints(c.id, RAID_SCOUT_COST_REVEAL)
+    const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'enemy' })
+    expect(res.status).toBe(400)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.raid.scoutingPoints).toBe(RAID_SCOUT_COST_REVEAL) // unspent
+  })
+
+  test('reveal: rejects when the pool cannot cover the cost', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [REVEALABLE()])
+    await setPoints(c.id, RAID_SCOUT_COST_REVEAL - 1)
+    const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'enemy' })
+    expect(res.status).toBe(400)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.raid.opportunities[0].enemyReveal).toBe(0) // not revealed
+  })
+
+  test('reveal reward: a slot-only counter_event reward has nothing to reveal', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [
+      REVEALABLE({ type: 'counter_event', reward: { slot: 1 }, rewardRange: null }),
+    ])
+    await setPoints(c.id, RAID_SCOUT_COST_REVEAL)
+    const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'reward' })
+    expect(res.status).toBe(400)
+    // The bad-fate slot never leaks — reward stays null on the wire either way.
+    const view = (await getView(c.id)).body.raid.opportunities[0]
+    expect(view.reward).toBeNull()
+    expect(JSON.stringify(view)).not.toContain('slot')
+    const doc = await Campaign.findById(c.id)
+    expect(doc.raid.scoutingPoints).toBe(RAID_SCOUT_COST_REVEAL) // unspent
+  })
+
+  test('reveal: 404 unknown target, 400 resolved, 400 bad field', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [REVEALABLE(), REVEALABLE({ id: 'd1-1', resolved: true })])
+    await setPoints(c.id, 99)
+    expect((await scout(c.id, { action: 'reveal', raidId: 'nope', field: 'enemy' })).status).toBe(404)
+    expect((await scout(c.id, { action: 'reveal', raidId: 'd1-1', field: 'enemy' })).status).toBe(400)
+    expect((await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'terrain' })).status).toBe(400)
+  })
+
+  test('an unknown action is rejected', async () => {
+    const { body: c } = await createCampaign()
+    await setPoints(c.id, 99)
+    expect((await scout(c.id, { action: 'wat' })).status).toBe(400)
+    expect((await scout(c.id, {})).status).toBe(400)
   })
 })
 

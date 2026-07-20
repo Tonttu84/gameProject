@@ -33,8 +33,29 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."   # repo root (…/gameProject)
 
+# Pick up nvm's node/npm/npx if this shell wasn't started as a login shell
+# (nvm is normally sourced from ~/.bashrc or ~/.zshrc, which a non-login
+# invocation of this script skips) — makes `bash scripts/dev.sh <task>` work
+# standalone instead of requiring the caller to wrap it in `bash -lc`.
+if ! command -v npx >/dev/null 2>&1 && [ -s "$HOME/.nvm/nvm.sh" ]; then
+  # shellcheck disable=SC1090
+  . "$HOME/.nvm/nvm.sh"
+fi
+
 tail_n="${TAIL:-40}"
 _run() { if [ "$tail_n" = "0" ]; then "$@"; else "$@" 2>&1 | tail -n "$tail_n"; fi; }
+
+# Flatpak-sandbox workaround for `cs-test` (mongodb-memory-server can't detect
+# the distro to download mongod in there, and parallel file runs hit
+# binary-startup contention). Gated on /.flatpak-info so this is a no-op on
+# every machine that isn't running the editor/shell inside a Flatpak sandbox —
+# see reference_laptop_mongo_tests memory for the failure modes this avoids.
+if [ -e /.flatpak-info ]; then
+  export MONGOMS_DISTRO="${MONGOMS_DISTRO:-ubuntu-22.04}"
+  cs_test_extra_args=(--no-file-parallelism)
+else
+  cs_test_extra_args=()
+fi
 
 task="${1:-help}"; shift || true
 # Optional tail override carried INSIDE the single-token command line
@@ -53,7 +74,7 @@ case "$task" in
   case)     make run_tests >/dev/null 2>&1; _run ./run_tests "$@" ;;
   fe-test)  _run make frontend-test ;;
   fe-lint)  _run npm --prefix frontend run lint "$@" ;;
-  cs-test)  ( cd campaign-server && _run npx vitest run "$@" ) ;;
+  cs-test)  ( cd campaign-server && _run npx vitest run "${cs_test_extra_args[@]}" "$@" ) ;;
   info)     make >/dev/null 2>&1; ./game info ;;
   help|*)   sed -n '/^# Usage:/,/^# Env:/p' "$0" | sed 's/^# \{0,1\}//' ; [ "$task" = help ] || { echo "unknown task: $task" >&2; exit 2; } ;;
 esac

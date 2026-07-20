@@ -117,16 +117,17 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"ratio"')
   for (const scouting of [body.scouting, body.campaign?.scouting])
     if (scouting) expect(Object.keys(scouting)).toEqual(['band'])
-  // Raid opportunities (Stage 4 Part 2): the hidden target slice and the
-  // reward (counter_event's reward.slot would out which fate is bad) never
-  // cross; each opportunity's key set is pinned exactly.
+  // Raid opportunities (Stage 4 Part 2 + the 2.5 scouting mini-game): the raw
+  // hidden target-slice Map (`targetForce`) never crosses — the wire carries
+  // per-type ranges under `enemy`/`reward` instead — and each opportunity's
+  // key set is pinned exactly.
   expect(raw).not.toContain('"targetForce"')
-  expect(raw).not.toContain('"reward"')
   for (const c of [body, body.campaign]) {
     for (const o of c?.raid?.opportunities ?? [])
-      expect(Object.keys(o).sort()).toEqual(
-        ['capacity', 'description', 'id', 'outcome', 'resolved', 'strengthBand', 'title', 'type'],
-      )
+      expect(Object.keys(o).sort()).toEqual([
+        'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome',
+        'resolved', 'reward', 'rewardReveal', 'source', 'strengthBand', 'title', 'type',
+      ])
   }
 }
 

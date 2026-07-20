@@ -89,7 +89,6 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"falseEvent"')
   expect(raw).not.toContain('"shownTrue"')
   expect(raw).not.toContain('"targetForce"')
-  expect(raw).not.toContain('"reward"')
   expect(raw).not.toContain('"coverage"')
   expect(raw).not.toContain('"ratio"')
   for (const c of [body, body.campaign, body.report]) {

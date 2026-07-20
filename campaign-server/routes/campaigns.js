@@ -9,7 +9,7 @@ import { applyEffect, choiceRung } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement, spreadPlacement } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
-import { generateRaidOpportunities, applyRaidReward } from '../services/raid.js'
+import { generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget } from '../services/raid.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
@@ -32,6 +32,8 @@ import {
   MILITIA_WORKER_COST,
   MILITIA_DAILY_CAP,
   MILITIA_UNIT,
+  RAID_SCOUT_COST_ADD,
+  RAID_SCOUT_COST_REVEAL,
 } from '../utils/campaignConfig.js'
 
 const router = Router()
@@ -481,6 +483,58 @@ router.post('/:id/raids/launch', async (req, res) => {
 
   await campaign.save()
   res.status(201).json({ results, campaign: await campaignView(campaign) })
+})
+
+// The raid scouting mini-game (Stage 4 Part 2.5): spend the per-turn
+// scouting-points pool to shape the board. {action:'add_target'} scouts one new
+// ordinary target; {action:'reveal', raidId, field:'reward'|'enemy'} pins that
+// field of an existing target from a range to its exact value. Ownership /
+// active / pending-choice guards mirror /raids/launch. Points-only spend — no
+// battle runs here, and launching a partly-revealed target stays allowed (the
+// fight always uses the hidden targetForce regardless of what's been bought).
+router.post('/:id/raids/scout', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const action = req.body?.action
+
+  if (action === 'add_target') {
+    if (campaign.raid.scoutingPoints < RAID_SCOUT_COST_ADD)
+      return res.status(400).json({ error: 'not enough scouting points' })
+    const catalog = await getCatalog()
+    const opportunity = addScoutedTarget(campaign, catalog)
+    if (!opportunity)
+      return res.status(400).json({ error: 'no more targets to scout — the enemy host is exhausted' })
+    campaign.raid.scoutingPoints -= RAID_SCOUT_COST_ADD
+    await campaign.save()
+    return res.status(201).json({ campaign: await campaignView(campaign) })
+  }
+
+  if (action === 'reveal') {
+    const { raidId, field } = req.body ?? {}
+    if (field !== 'reward' && field !== 'enemy')
+      return res.status(400).json({ error: "field must be 'reward' or 'enemy'" })
+    const opportunity = campaign.raid.opportunities.find((o) => o.id === raidId)
+    if (!opportunity) return res.status(404).json({ error: `raid opportunity not found: ${raidId}` })
+    if (opportunity.resolved)
+      return res.status(400).json({ error: `this opportunity is already resolved: ${raidId}` })
+    // A slot-only reward (counter_event) has no numeric range to pin — nothing
+    // to buy, so reject rather than silently burn points to no visible effect.
+    if (field === 'reward' && !opportunity.rewardRange)
+      return res.status(400).json({ error: 'this target has no reward intel to reveal' })
+    if (campaign.raid.scoutingPoints < RAID_SCOUT_COST_REVEAL)
+      return res.status(400).json({ error: 'not enough scouting points' })
+    if (!revealField(opportunity, field))
+      return res.status(400).json({ error: `${field} intel is already fully revealed` })
+    campaign.raid.scoutingPoints -= RAID_SCOUT_COST_REVEAL
+    await campaign.save()
+    return res.status(201).json({ campaign: await campaignView(campaign) })
+  }
+
+  return res.status(400).json({ error: "action must be 'add_target' or 'reveal'" })
 })
 
 // Spend stores at the camp. {action:'fortify'} raises the fortification level

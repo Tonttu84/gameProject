@@ -12,6 +12,8 @@ import {
   MAP_NAME,
   ENEMY_STRENGTH_BANDS,
   ENEMY_SUPPLY_BANDS,
+  RAID_SCOUT_COST_ADD,
+  RAID_SCOUT_COST_REVEAL,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
@@ -58,6 +60,27 @@ const auguryView = (augury) => {
 
 // Descending {min, label} table → the first phrase the value qualifies for.
 const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
+
+// A raid target's reward as the player may see it (mini-game reveal, Stage 4
+// Part 2.5): a range until the reward field is bought (rewardReveal >= 1), then
+// the exact numbers — but ONLY the numeric keys the range already bracketed
+// (food/materials/roster). A counter_event's reward is {slot}, which has no
+// range (rewardRange is null) and would out which fate is bad, so it stays
+// null on BOTH channels — the exact side is keyed off rewardRange, never the
+// raw reward, so `slot` can't leak even once revealed.
+const rewardView = (opp) => {
+  const range = opp.rewardRange
+  if (!range) return null
+  if (opp.rewardReveal < 1) return range
+  const exact = {}
+  if (range.food) exact.food = opp.reward.food
+  if (range.materials) exact.materials = opp.reward.materials
+  if (range.roster) {
+    exact.roster = {}
+    for (const type of Object.keys(range.roster)) exact.roster[type] = opp.reward.roster[type]
+  }
+  return exact
+}
 
 // The graduated enemy reveal (Stage 4 1b): the scouting band decides how much
 // of the hidden enemy the serializer lets through, keys ACCUMULATING with
@@ -200,28 +223,39 @@ export async function campaignView(campaign) {
         ]),
       ),
     },
-    // Raid opportunities (Stage 4 Part 2): the hidden targetForce is stripped
-    // to its strength band, and the reward stays server-side (a counter_event
-    // reward's slot index would out which vision was true — the card's text
-    // carries the promise instead). A resolved opportunity shows its outcome;
-    // the battle replay is the reveal of what the party actually met.
+    // Raid opportunities (Stage 4 Part 2 + the 2.5 scouting mini-game): the
+    // hidden targetForce and reward stay server-side; the player sees per-type
+    // enemy RANGES and (where the reward has numbers) a reward range, each of
+    // which spending scouting points pins to the exact value (enemyReveal /
+    // rewardReveal >= 1). strengthBand stays a coarse always-on summary. A
+    // resolved opportunity shows its outcome; the battle replay is the reveal
+    // of what the party actually met.
     raid: {
-      opportunities: campaign.raid.opportunities.map(
-        ({ id, type, title, description, strengthBand, capacity, resolved, outcome }) => ({
-          id,
-          type,
-          title,
-          description,
-          strengthBand,
-          capacity,
-          resolved,
-          outcome: resolved ? outcome : null,
-        }),
-      ),
+      opportunities: campaign.raid.opportunities.map((opp) => ({
+        id: opp.id,
+        type: opp.type,
+        title: opp.title,
+        description: opp.description,
+        strengthBand: opp.strengthBand,
+        capacity: opp.capacity,
+        source: opp.source,
+        // Range pre-reveal, exact once bought — per unit TYPE, never one
+        // headcount (a fantasy roster reads "3 Giants + 20 spearmen").
+        enemy: opp.enemyReveal >= 1 ? Object.fromEntries(opp.targetForce) : opp.enemyRange,
+        enemyReveal: opp.enemyReveal,
+        reward: rewardView(opp),
+        rewardReveal: opp.rewardReveal,
+        resolved: opp.resolved,
+        outcome: opp.resolved ? opp.outcome : null,
+      })),
       // Troops already committed to a raid today (own resources — no hidden
       // info here), so the party-builder can share one pool across every
       // still-open opportunity. See the schema comment on raid.assignment.
       assignment: Object.fromEntries(campaign.raid.assignment),
+      // The per-turn scouting-points pool + what each action costs, so the
+      // client can render the mini-game and clamp its buttons.
+      scoutingPoints: campaign.raid.scoutingPoints,
+      scoutCost: { addTarget: RAID_SCOUT_COST_ADD, reveal: RAID_SCOUT_COST_REVEAL },
     },
     // Decisions owed (events with choices): display fields + option CARDS
     // only — branch effects, the pool id, and the fired rung stay server-side
