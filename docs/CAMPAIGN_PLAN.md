@@ -1721,6 +1721,32 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
+**TODO — multi-turn campaign loop: persistent enemy army + a "final battle" meter (user,
+2026-07-20 — idea only, no plan yet).** Today's campaign is effectively single-battle: the enemy
+force is generated fresh and the main battle each turn is treated as decisive. Direction sketched:
+the enemy keeps a **persistent army size** across turns (not re-rolled), which raids/events can
+**sometimes** (not every event) shrink; troops NOT sent raiding instead fill a **final-battle
+meter**; once that meter is full, the decisive battle fires and advances/ends the campaign. Several
+turns of raiding/foraging/events happen before that trigger, rather than one. Explicitly not
+planned yet — needs grilling (scope, how the meter fills exactly, what "advances the campaign"
+means post-battle, interaction with the existing `enemy.stance`/`offering_battle` machine and the
+raid opportunity generator's `sliceTargetForce`) before any implementation.
+
+**TODO — squads as the persistent campaign unit (user, 2026-07-20 — idea only, no plan yet).**
+Direction sketched: squads (already persistent + named, see the 2026-07-13 campaign-squads
+shipped entry) become the primary unit players manage — a squad should be able to **absorb**
+compatible replacement troops after taking casualties, and even **survive being wiped** (full
+rebuild from scratch, identity/name/prestige retained) rather than disbanding as today's
+reconciliation does (`campaigns.js` battle route currently disbands a squad whose every tagged
+survivor left it). Follow-on ideas bundled with this ask: **prestige** progression (the existing
+`_prestige` placeholder, currently unwired — see the test-quality-audit user decision (2) noting
+it's "kept" for exactly this), **attaching characters** to a squad so they move with it and
+contribute some effect, and a **cavalry rework** so mounted units fight like cavalry rather than
+fast infantry — floated idea: a phase where cavalry can disengage, and light cavalry specifically
+should be able to pin/slow slower units rather than just trade blows. The cavalry piece overlaps
+[[design_mounted_units]] and [[design_pursuit]] (screening/rearguard) in auto-memory. All of this
+is idea-stage — needs grilling before scoping into stages.
+
 **~~TODO~~ ✅ SHIPPED 2026-07-18 — tutorial-message pass over every menu/screen (user, 2026-07-18).**
 Walked the whole campaign UI and closed the `TutorialIntro` gaps the phased build left. Before this
 pass, intros existed on login, start, council/Prepare, forage, camp, omens/augur, raids, the
@@ -1903,9 +1929,38 @@ exact). Full grilled spec + staged design in the plan file
   11 new scout-route tests (add/reveal happy paths, cost/exhaustion/already-revealed rejections, the
   counter_event slot-leak guard, 404/400s). **campaign-server: 281/281 green** (verified in the user's
   own terminal — see the sandbox note below).
-- **Stage 3 (next):** raiding as its OWN phase/screen (user 2026-07-20, also eases testing) +
-  RaidPanel mini-game UI (points header, per-type range/exact rendering, reveal/add-target buttons) +
-  api/store wiring + FE tests.
+- **Stage 3 ✅ SHIPPED 2026-07-20 (frontend only, uncommitted).** The raids phase/screen already
+  existed (phased-turn slice 1, 2026-07-18) — what was missing was the mini-game UI on top of the
+  Stage 1/2 server surface. `RaidPanel.jsx`: a `.raid-scouting-header` shows the pool
+  (`raid-points`, floored) + a "Scout new target (−N)" button (`raid-scout-add`, cost
+  `raid.scoutCost.addTarget`); each unresolved card gains a `.raid-intel` block — a reward line
+  (`raid-reward-<id>`, only rendered when the type has a numeric reward — destroy_detachment/
+  counter_event have none) and an enemy line (`raid-enemy-<id>`, always present, per-type), each
+  with its own "Reveal (−N)" button (`raid-reveal-reward-<id>`/`raid-reveal-enemy-<id>`) that
+  disappears once that field's reveal level is ≥1. A shared `formatAmount`/`rewardParts` renders a
+  `[lo,hi]` range or the exact value identically either side of the reveal — the JSX doesn't need
+  to know which it got. `onScout` prop (new, alongside `onLaunchAll`/`onWatch`) wired through
+  `App.jsx` → `guarded(scoutRaid)`; `useCampaignStore.scoutRaid(body)` → `api.scoutRaidTarget(id,
+  body)` → `POST /:id/raids/scout`, swapping in the refreshed view like every other campaign
+  action. Buttons disabled on `scoutBusy` (a dedicated flag, separate from the party-launch `busy`
+  so a reveal click doesn't grey out the unrelated Launch button) or insufficient points — pure
+  client-side convenience, the server re-validates identically. Resolved cards render no intel
+  block (nothing left to scout on a finished raid). Minimal CSS (`.raid-scouting-header`,
+  `.raid-intel`). Tests: `raidPanel.test.jsx` fixtures (`OPPORTUNITY`/`OPPORTUNITY_2`, `withRaid`)
+  gained `reward`/`enemy`/`*Reveal`/`source`/`scoutingPoints`/`scoutCost`; a new "scouting
+  mini-game" describe block (6 tests: points+ranges render, reward reveal swaps to exact +
+  spends points, enemy reveal likewise, add-target appends a card + spends points, buttons
+  disable when short, resolved cards show no intel). **225/225 frontend green, oxlint clean.**
+  **Manually verified in a real browser** (native `make server-node` + `make frontend` on this
+  Linux box — no Docker/mongod needed, `index.js` falls back to an embedded
+  `mongodb-memory-server` when `MONGODB_URI` is unset, and seeds the `testuser`/`test` dev login)
+  via a throwaway Playwright script driving a fresh campaign through Prepare → Omens → Accept the
+  Fates → Raids: the points header, ranges, and Scout/Reveal buttons rendered correctly; clicking
+  "Reveal" on the enemy line flipped `"21–35 Soldier, …"` to exact counts and dropped
+  `raid.scoutingPoints` by exactly the reveal cost; clicking "Scout new target" appended a new
+  card and dropped points by the add cost. Screenshots taken, then the scratch spec/screenshots
+  discarded (not part of the permanent `e2e/` suite). **Not yet committed** — still on the working
+  tree pending the user's own review pass.
 
 **Dev-tooling fix landed alongside Stage 2:** `scripts/dev.sh` now auto-detects a Flatpak sandbox
 (`/.flatpak-info` present) and, only then, exports `MONGOMS_DISTRO=ubuntu-22.04` +

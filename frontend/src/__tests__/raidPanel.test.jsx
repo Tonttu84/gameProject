@@ -34,10 +34,11 @@ vi.mock('../services/api', () => ({
   spendCampaign: vi.fn(),
   postCampaignBattle: vi.fn(),
   postCampaignRaids: vi.fn(),
+  scoutRaidTarget: vi.fn(),
   endCampaignDay: vi.fn(),
 }))
 
-import { getInfo, getMap, getBattle, getTicks, getCampaigns, postCampaignRaids } from '../services/api'
+import { getInfo, getMap, getBattle, getTicks, getCampaigns, postCampaignRaids, scoutRaidTarget } from '../services/api'
 import App from '../App'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
 import { marchToRaids } from './helpers/nav'
@@ -63,6 +64,11 @@ const OPPORTUNITY = {
   description: 'Laden wagons under light guard.',
   strengthBand: 'a handful',
   capacity: 100,
+  source: 'base',
+  enemy: { Soldier: [8, 14] },
+  enemyReveal: 0,
+  reward: { food: [1500, 2500], materials: [50, 100] },
+  rewardReveal: 0,
   resolved: false,
   outcome: null,
 }
@@ -77,16 +83,24 @@ const OPPORTUNITY_2 = {
   description: 'A far outpost, thinly held.',
   strengthBand: 'a company',
   capacity: 5000,
+  source: 'base',
+  enemy: { Soldier: [40, 70] },
+  enemyReveal: 0,
+  // destroy_detachment has no numeric reward (rewardRange is null server-side).
+  reward: null,
+  rewardReveal: 0,
   resolved: false,
   outcome: null,
 }
 
 // Raids are their own screen now, reached after the omens — so the fixture
 // needs an already-accepted augury for marchToRaids() to walk past the tent.
-const withRaid = (opportunities, assignment = {}) => ({
+// scoutingPoints defaults to a value comfortably above both action costs
+// (add=8, reveal=3) so tests don't trip disabled buttons unless they mean to.
+const withRaid = (opportunities, assignment = {}, scoutingPoints = 20) => ({
   ...campaignFixture,
   augury: consultedAugury,
-  raid: { opportunities, assignment },
+  raid: { opportunities, assignment, scoutingPoints, scoutCost: { addTarget: 8, reveal: 3 } },
 })
 
 beforeEach(() => {
@@ -276,5 +290,95 @@ describe('raid panel — opportunities', () => {
     expect(await screen.findByText('Back to the raids')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Back to the raids'))
     expect(await screen.findByTestId('raid-panel')).toBeInTheDocument()
+  })
+})
+
+// Raid mini-game (Stage 4 Part 2.5): a per-turn scouting-points pool buys
+// either a new target (add_target) or a field reveal (reward/enemy, range →
+// exact), through POST /:id/raids/scout. See docs/CAMPAIGN_PLAN.md.
+describe('raid panel — scouting mini-game', () => {
+  it('shows the scouting-points pool and per-target reward/enemy ranges', async () => {
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY, OPPORTUNITY_2])])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.getByTestId('raid-points')).toHaveTextContent('Scouting points: 20')
+    expect(screen.getByTestId('raid-reward-d1-0')).toHaveTextContent('Reward: 1500–2500 food, 50–100 materials')
+    expect(screen.getByTestId('raid-enemy-d1-0')).toHaveTextContent('Enemy: 8–14 Soldier')
+    // destroy_detachment has no numeric reward — nothing to list or reveal.
+    expect(screen.queryByTestId('raid-reward-d1-1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('raid-enemy-d1-1')).toHaveTextContent('Enemy: 40–70 Soldier')
+  })
+
+  it('revealing the reward spends points and swaps the range for the exact value', async () => {
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
+    scoutRaidTarget.mockResolvedValue({
+      campaign: withRaid([{ ...OPPORTUNITY, reward: { food: 2000, materials: 80 }, rewardReveal: 1 }], {}, 17),
+    })
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    fireEvent.click(screen.getByTestId('raid-reveal-reward-d1-0'))
+    await waitFor(() =>
+      expect(scoutRaidTarget).toHaveBeenCalledWith('c1', { action: 'reveal', raidId: 'd1-0', field: 'reward' }),
+    )
+    expect(await screen.findByTestId('raid-reward-d1-0')).toHaveTextContent('Reward: 2000 food, 80 materials')
+    expect(screen.queryByTestId('raid-reveal-reward-d1-0')).not.toBeInTheDocument()
+    expect(screen.getByTestId('raid-points')).toHaveTextContent('Scouting points: 17')
+  })
+
+  it('revealing the enemy spends points and swaps the range for exact per-type counts', async () => {
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
+    scoutRaidTarget.mockResolvedValue({
+      campaign: withRaid([{ ...OPPORTUNITY, enemy: { Soldier: 11 }, enemyReveal: 1 }], {}, 17),
+    })
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    fireEvent.click(screen.getByTestId('raid-reveal-enemy-d1-0'))
+    await waitFor(() =>
+      expect(scoutRaidTarget).toHaveBeenCalledWith('c1', { action: 'reveal', raidId: 'd1-0', field: 'enemy' }),
+    )
+    expect(await screen.findByTestId('raid-enemy-d1-0')).toHaveTextContent('Enemy: 11 Soldier')
+    expect(screen.queryByTestId('raid-reveal-enemy-d1-0')).not.toBeInTheDocument()
+  })
+
+  it('scouting a new target appends a card and spends points', async () => {
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
+    scoutRaidTarget.mockResolvedValue({ campaign: withRaid([OPPORTUNITY, OPPORTUNITY_2], {}, 12) })
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    fireEvent.click(screen.getByTestId('raid-scout-add'))
+    await waitFor(() => expect(scoutRaidTarget).toHaveBeenCalledWith('c1', { action: 'add_target' }))
+    expect(await screen.findByTestId('raid-card-d1-1')).toBeInTheDocument()
+    expect(screen.getByTestId('raid-points')).toHaveTextContent('Scouting points: 12')
+  })
+
+  it('disables scout/reveal buttons once points fall short of their cost', async () => {
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY], {}, 1)])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.getByTestId('raid-scout-add')).toBeDisabled() // costs 8, only 1 point
+    expect(screen.getByTestId('raid-reveal-reward-d1-0')).toBeDisabled() // costs 3
+    expect(screen.getByTestId('raid-reveal-enemy-d1-0')).toBeDisabled()
+  })
+
+  it('a resolved raid shows no intel block (nothing left to scout)', async () => {
+    getCampaigns.mockResolvedValue([
+      withRaid([{ ...OPPORTUNITY, resolved: true, outcome: { winner: 'blue', battleId: 'b9' } }]),
+    ])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.queryByTestId('raid-reward-d1-0')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('raid-enemy-d1-0')).not.toBeInTheDocument()
   })
 })

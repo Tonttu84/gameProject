@@ -138,6 +138,16 @@ body {
 }
 .raid-panel h3 { color: var(--gold); font-size: 0.95rem; margin-bottom: 0; }
 .raid-band { font-size: 0.8rem; color: #8888aa; margin: 0; }
+.raid-scouting-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--gold);
+}
+.raid-intel { display: flex; flex-direction: column; gap: 0.2rem; }
+.raid-intel p { font-size: 0.8rem; color: #8888aa; display: flex; align-items: center; gap: 0.5rem; }
 .raid-card {
   border: 1px solid var(--border);
   border-radius: 6px;

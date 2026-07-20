@@ -8,6 +8,7 @@ import {
   spendCampaign,
   postCampaignBattle,
   postCampaignRaids,
+  scoutRaidTarget,
   endCampaignDay,
   postCampaignChoice,
   postAcceptFates,
@@ -66,6 +67,12 @@ const useCampaignStore = create((set, get) => ({
 
   launchRaids: async (parties) => {
     const res = await postCampaignRaids(get().campaign.id, parties)
+    set({ campaign: res.campaign })
+    return res
+  },
+
+  scoutRaid: async (body) => {
+    const res = await scoutRaidTarget(get().campaign.id, body)
     set({ campaign: res.campaign })
     return res
   },

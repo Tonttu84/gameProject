@@ -31,10 +31,29 @@ const unitCost = (unit) =>
       RAID_CAPACITY_SPEED_SCALE,
   )
 
+// One amount from a reward/enemy view field: a [lo, hi] pair pre-reveal, the
+// exact number once bought. Same rendering either side of the reveal — the
+// caller doesn't need to know which it got.
+const formatAmount = (value) => (Array.isArray(value) ? `${value[0]}–${value[1]}` : value)
+
+// The reward view's shape varies by raid type (loot pays food+materials,
+// rescue pays roster, destroy/counter_event have no numeric reward — reward
+// is null and there's nothing to list or reveal).
+const rewardParts = (reward) => {
+  if (!reward) return []
+  const parts = []
+  if (reward.food !== undefined) parts.push(`${formatAmount(reward.food)} food`)
+  if (reward.materials !== undefined) parts.push(`${formatAmount(reward.materials)} materials`)
+  if (reward.roster) {
+    for (const [type, value] of Object.entries(reward.roster)) parts.push(`${formatAmount(value)} ${type}`)
+  }
+  return parts
+}
+
 // raid/scouting/roster/forageAssignment come straight from the campaign
 // store; units stays a prop (it's the static /api/info catalog, not
-// campaign data). onLaunchAll/onWatch are still props (guarded actions).
-const RaidPanel = ({ units, onLaunchAll, onWatch }) => {
+// campaign data). onLaunchAll/onScout/onWatch are still props (guarded actions).
+const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
   const raid = useCampaignStore((s) => s.campaign?.raid)
   const scouting = useCampaignStore((s) => s.campaign?.scouting)
   const roster = useRoster()
@@ -45,9 +64,33 @@ const RaidPanel = ({ units, onLaunchAll, onWatch }) => {
   // key={campaign.day} so a new turn's fresh opportunities reset the drafts.
   const [parties, setParties] = useState({})
   const [busy, setBusy] = useState(false)
+  // Separate busy flag for the scouting mini-game (add-target/reveal) so a
+  // reveal click doesn't disable the unrelated launch button, and vice versa.
+  const [scoutBusy, setScoutBusy] = useState(false)
 
   const opportunities = raid?.opportunities ?? []
   if (opportunities.length === 0) return null
+
+  const scoutingPoints = raid?.scoutingPoints ?? 0
+  const scoutCost = raid?.scoutCost ?? { addTarget: 0, reveal: 0 }
+
+  const addTarget = async () => {
+    setScoutBusy(true)
+    try {
+      await onScout({ action: 'add_target' })
+    } finally {
+      setScoutBusy(false)
+    }
+  }
+
+  const revealField = async (raidId, field) => {
+    setScoutBusy(true)
+    try {
+      await onScout({ action: 'reveal', raidId, field })
+    } finally {
+      setScoutBusy(false)
+    }
+  }
 
   const raidAssignment = raid?.assignment ?? {}
   // Units out foraging, or already sent on a raid today, are unavailable for
@@ -119,6 +162,18 @@ const RaidPanel = ({ units, onLaunchAll, onWatch }) => {
       <p className="raid-band" data-testid="raid-band">
         Scouting: {scouting?.band ?? 'Unknown'}
       </p>
+      <div className="raid-scouting-header">
+        <span data-testid="raid-points">Scouting points: {Math.floor(scoutingPoints)}</span>
+        <button
+          className="login-toggle"
+          data-testid="raid-scout-add"
+          onClick={addTarget}
+          disabled={scoutBusy || scoutingPoints < scoutCost.addTarget}
+          title={`Scout a new target (−${scoutCost.addTarget})`}
+        >
+          Scout new target (−{scoutCost.addTarget})
+        </button>
+      </div>
       {opportunities.map((o) => (
         <div className="raid-card" key={o.id} data-testid={`raid-card-${o.id}`}>
           <strong>{o.title}</strong>
@@ -126,6 +181,40 @@ const RaidPanel = ({ units, onLaunchAll, onWatch }) => {
           <p data-testid={`raid-strength-${o.id}`}>
             The scouts judge it {o.strengthBand}. Party budget: {o.capacity}.
           </p>
+          {!o.resolved && (
+            <div className="raid-intel">
+              {rewardParts(o.reward).length > 0 && (
+                <p data-testid={`raid-reward-${o.id}`}>
+                  Reward: {rewardParts(o.reward).join(', ')}
+                  {o.rewardReveal < 1 && (
+                    <button
+                      className="login-toggle"
+                      data-testid={`raid-reveal-reward-${o.id}`}
+                      onClick={() => revealField(o.id, 'reward')}
+                      disabled={scoutBusy || scoutingPoints < scoutCost.reveal}
+                    >
+                      Reveal (−{scoutCost.reveal})
+                    </button>
+                  )}
+                </p>
+              )}
+              <p data-testid={`raid-enemy-${o.id}`}>
+                Enemy: {Object.entries(o.enemy ?? {})
+                  .map(([type, value]) => `${formatAmount(value)} ${type}`)
+                  .join(', ')}
+                {o.enemyReveal < 1 && (
+                  <button
+                    className="login-toggle"
+                    data-testid={`raid-reveal-enemy-${o.id}`}
+                    onClick={() => revealField(o.id, 'enemy')}
+                    disabled={scoutBusy || scoutingPoints < scoutCost.reveal}
+                  >
+                    Reveal (−{scoutCost.reveal})
+                  </button>
+                )}
+              </p>
+            </div>
+          )}
           {o.resolved ? (
             <div className="raid-outcome" data-testid={`raid-outcome-${o.id}`}>
               <span>

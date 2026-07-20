@@ -71,6 +71,12 @@ export const postCampaignBattle = (id, payload) =>
 // { results: [{raidId, ...battleSummary}], campaign }.
 export const postCampaignRaids = (id, parties) =>
   axios.post(`/api/campaigns/${id}/raids/launch`, { parties }, authed()).then(r => r.data)
+// The raid scouting mini-game: spend the turn's scouting-points pool to shape
+// the board. body is either {action:'add_target'} (scout one new ordinary
+// target) or {action:'reveal', raidId, field:'reward'|'enemy'} (pin that
+// field from a range to its exact value). Returns the refreshed view.
+export const scoutRaidTarget = (id, body) =>
+  axios.post(`/api/campaigns/${id}/raids/scout`, body, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)
