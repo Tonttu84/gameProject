@@ -154,11 +154,13 @@ notes below over the git history if they ever disagree — the commits win.
 - **Movement-speed rework: ✅ SHIPPED 2026-07-14** (was a deferred-backlog TODO; see the
   "SHIPPED — movement-speed rework" record in the deferred backlog for the numbers and the
   campaign-seam normalization).
-- **Boss-fight campaign loop — Stage A (meter core) ✅ SHIPPED 2026-07-20** (uncommitted at
-  write time — see the dated handoff entry right after the Stage A TDD breakdown for the full
-  detail). Raid scouting mini-game Stage 3 landed committed (`556335e`) first, per the
-  prerequisite noted below. **Then (NEXT):** Stage B (gate the battle on `bossFightDue` +
-  raid-assignment carve-out + decisive win/loss). **combat-score-per-hexside**
+- **Boss-fight campaign loop — Stage A (meter core) ✅ SHIPPED 2026-07-20** (committed `4680c43`;
+  see the dated handoff entry right after the Stage A TDD breakdown for the full detail). Raid
+  scouting mini-game Stage 3 landed committed (`556335e`) first, per the prerequisite noted below.
+- **Boss-fight campaign loop — Stage B (gate the battle) ✅ SHIPPED 2026-07-20** — server-only,
+  all four steps (see the dated handoff after the Stage B TDD breakdown). **Then (NEXT):** Stage C
+  (meter reveal via leftover scouting points), then Stage D (`destroy_detachment` raid rework).
+  **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
   behind the loop.
@@ -473,6 +475,50 @@ in this file.
    there. Regression test: forage assignment and raid launch still succeed normally on a
    boss-fight-due day before the battle is fought (proves the screens aren't locked out, per the
    user's explicit requirement).
+
+#### Stage B (gate the battle) ✅ SHIPPED 2026-07-20 — handoff
+
+Server-only, exactly as the four steps above. One file of behavior change
+(`routes/campaigns.js`) + its test file (`tests/campaigns.test.js`); no frontend, model, or
+config change. `campaigns.test.js` **87/87 green** (run by the user on their own box — the
+sandbox mongo flake in [[reference_laptop_mongo_tests]] makes local `cs-test` unreliable here, so
+tests are handed to the user; CI runs the full suite anyway).
+
+- **B1 — gate.** `POST /:id/battles` 400s (`no battle is offered — the enemy is not yet ready to
+  fight`) unless `campaign.bossFightDue`, placed right after the `battleFoughtToday` guard so it
+  fires before any placement validation. Since post-Stage-A `enemy.stance === 'offering_battle'
+  ⟺ bossFightDue` and the frontend already gates its battle warning on `enemy.battleOffer`, the
+  client was already consistent — B1 is server-side enforcement (defense in depth).
+- **B2 — raid carve-out.** Both the per-type budget check AND the whole-army `inCamp` sum now
+  subtract `campaign.raid.assignment.get(type)` alongside the existing `forage.assignment` term —
+  mirrors forage exactly. The "not enough" message composes `N out foraging`/`M out raiding`
+  parts (keeps the old `/out foraging/` assertion matching while adding raiding). This is the fix
+  for the old double-place bug: a unit sent raiding earlier the same day can no longer also be
+  fielded, and doesn't count as "still in camp".
+- **B3 — decisive win/loss.** The battle route's old `...checkAnnihilation(campaign)` log spread
+  is REPLACED by: `campaign.bossFightDue = false; const won = summary.winner === 'blue';
+  campaign.status = won ? 'won' : 'lost'` + a decisive log line. So a blue win takes the country
+  even with enemy survivors, and a red/stalemate loses even with surviving player troops —
+  regardless of counts. `checkAnnihilation` is untouched and still imported/called on the ambient
+  paths (raid launch `campaigns.js`, choices, forage clashes in `dayResolution.js`).
+- **B4 — mandatory End Turn.** New `rejectIfBossFightUnfought(campaign, res)` guard (same
+  shape/style as `rejectIfChoicePending`); `POST /:id/end-day` calls it after the choice-pending
+  guard. 400s (`the enemy offers battle — you must take the field before the day can end`) while
+  `bossFightDue && !battleFoughtToday`. Post-battle the campaign is `won`/`lost`, so the existing
+  `status !== 'active'` guard covers "can't end after the fight" with no extra case.
+- **Tests added:** the gate-400 case; two raid carve-out cases (over-commit → 400 `/out raiding/`;
+  raided unit carved out of `inCamp` → 201); two decisive cases (blue win w/ enemy survivors →
+  `won`; red win w/ player survivors → `lost`); two End-Turn cases (due+unfought → 400; "screens
+  not locked out" regression: forage + augury consult still 200 on a boss day while End Turn
+  400s). `bossFightDue` was threaded through every existing battle case (folded into
+  `shrinkRoster`/`setSquads`, a `dueBossFight` raw-update helper for the `createCampaign`-only
+  cases, and the forage-block battle test).
+- **Frontend follow-up (NOT done in Stage B, flag for whoever wires the UI):** the Deploy screen
+  still renders the **Fight!** button unconditionally. On a fresh (non-boss) campaign, clicking it
+  now gets B1's raw 400 with no friendly handling. Intended end-state is: hide/disable Fight!
+  until `bossFightDue`, surface the mandatory-battle state on the boss day, and route the decisive
+  win/loss into the existing Victory!/Defeat screens. The e2e (`campaign-loop.spec.js`) stays green
+  because it reaches Deploy and ends the turn WITHOUT clicking Fight! on a non-boss day.
 
 **Stage C — meter reveal via leftover scouting points**
 1. **RED→GREEN.** Extend the existing `POST /:id/raids/scout` action dispatch

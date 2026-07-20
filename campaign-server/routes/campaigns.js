@@ -69,6 +69,19 @@ const rejectIfChoicePending = (campaign, res) => {
   return false
 }
 
+// The boss fight is mandatory once the meter marks it due: the fortnight can't
+// end until it's actually been fought. Fighting it wins or loses the campaign
+// (see the battle route below), so `status !== 'active'` then blocks end-day
+// via its own guard — this only ever fires on the due-but-not-yet-fought day.
+// Same shape as rejectIfChoicePending. Returns true when it wrote the 400.
+const rejectIfBossFightUnfought = (campaign, res) => {
+  if (campaign.bossFightDue && !campaign.battleFoughtToday) {
+    res.status(400).json({ error: 'the enemy offers battle — you must take the field before the day can end' })
+    return true
+  }
+  return false
+}
+
 router.post('/', async (req, res) => {
   const catalog = await getCatalog()
   const augury = drawAugury()
@@ -228,6 +241,11 @@ router.post('/:id/battles', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
   if (campaign.battleFoughtToday) return res.status(400).json({ error: 'battle already fought today' })
+  // Stage B: the ONLY battle is the decisive boss fight, unlocked when the
+  // meter fills (campaign.bossFightDue). There is no voluntary full-army
+  // battle before then — raids and forage clashes are the only ways to fight.
+  if (!campaign.bossFightDue)
+    return res.status(400).json({ error: 'no battle is offered — the enemy is not yet ready to fight' })
 
   const placement = req.body?.player_placement
   if (!Array.isArray(placement) || placement.length === 0)
@@ -258,14 +276,22 @@ router.post('/:id/battles', async (req, res) => {
   for (const [type, count] of placed) {
     if (!placeableTypes.has(type))
       return res.status(400).json({ error: `not a placeable unit type: ${type}` })
-    // Units out foraging are unavailable for today's battle.
+    // Units out foraging OR committed to a raid this turn are unavailable for
+    // the battle (raid.assignment mirrors forage.assignment — a raided unit
+    // must not be double-counted onto the battle line as well).
     const foraging = campaign.forage.assignment.get(type) ?? 0
-    if (count > (campaign.roster.get(type) ?? 0) - foraging)
+    const raiding = campaign.raid.assignment.get(type) ?? 0
+    if (count > (campaign.roster.get(type) ?? 0) - foraging - raiding) {
+      const away = [
+        foraging > 0 && `${foraging} out foraging`,
+        raiding > 0 && `${raiding} out raiding`,
+      ].filter(Boolean).join(', ')
       return res.status(400).json({
-        error: foraging > 0
-          ? `not enough ${type} in camp (${foraging} out foraging)`
+        error: away
+          ? `not enough ${type} in camp (${away})`
           : `not enough ${type} in the roster`,
       })
+    }
   }
 
   // A hex can only hold so much (Hex::CAPACITY). The engine silently DROPS
@@ -286,7 +312,10 @@ router.post('/:id/battles', async (req, res) => {
   // foraging must take the field — no reserves skulking in camp.
   let inCamp = 0
   for (const [type, n] of campaign.roster)
-    inCamp += n - (campaign.forage.assignment.get(type) ?? 0) - (placed.get(type) ?? 0)
+    inCamp += n
+      - (campaign.forage.assignment.get(type) ?? 0)
+      - (campaign.raid.assignment.get(type) ?? 0)
+      - (placed.get(type) ?? 0)
   if (inCamp > 0)
     return res.status(400).json({
       error: `the whole army must take the field — ${inCamp} units still in camp`,
@@ -331,11 +360,23 @@ router.post('/:id/battles', async (req, res) => {
     })
   campaign.battleFoughtToday = true
   campaign.battles.push(battle._id)
+
+  // This is the boss fight — the gate above means there is no other kind of
+  // battle. It is decisive both ways regardless of survivor counts
+  // (docs/CAMPAIGN_PLAN.md): a 'blue' win takes the country, red/stalemate
+  // loses the campaign. This REPLACES the old checkAnnihilation call here;
+  // annihilation still runs on the ambient paths (forage clashes, raid
+  // launches, augury accept), just not on the decisive battle itself.
+  campaign.bossFightDue = false
+  const won = summary.winner === 'blue'
+  campaign.status = won ? 'won' : 'lost'
   campaign.log.push({
     day: campaign.day,
     entries: [
       `Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`,
-      ...checkAnnihilation(campaign),
+      won
+        ? 'The enemy host is broken. The country is yours.'
+        : 'The line is shattered — the campaign is lost.',
     ],
   })
   await campaign.save()
@@ -610,6 +651,7 @@ router.post('/:id/end-day', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfBossFightUnfought(campaign, res)) return
 
   const report = await endDay(campaign)
   res.json({ report, campaign: await campaignView(campaign) })

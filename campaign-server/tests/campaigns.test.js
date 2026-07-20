@@ -740,6 +740,7 @@ describe('POST /api/campaigns/:id/forage', () => {
 
   test('foragers are unavailable for the battle line', async () => {
     const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } }) // reach the battle (Stage B gate)
     await assign(c.id, { Soldier: 300 })
 
     const res = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
@@ -757,11 +758,18 @@ describe('POST /api/campaigns/:id/battles', () => {
       player_placement: Array.from({ length: n }, () => ({ unit_type: 'Soldier', q: 4, r: 4 })),
     })
 
+  // Stage B: POST /:id/battles is the boss fight — it only fires while
+  // campaign.bossFightDue. Every case that actually reaches the battle sets
+  // the flag (the gate itself is covered by its own test below).
+  const dueBossFight = (id) =>
+    Campaign.updateOne({ _id: id }, { $set: { bossFightDue: true } })
+
   // Battle commits the whole army, so these tests shrink the roster to
-  // exactly what they field.
+  // exactly what they field — and mark the boss fight due so it's reachable.
   const shrinkRoster = async (id, roster) => {
     const doc = await Campaign.findById(id)
     doc.roster = roster
+    doc.bossFightDue = true
     await doc.save()
     return doc
   }
@@ -830,6 +838,7 @@ describe('POST /api/campaigns/:id/battles', () => {
     // Playtest 2026-07-05: 212 of 378 placed still offered Fight. The server
     // now rejects any placement that leaves non-foraging units in camp.
     const { body: c } = await createCampaign()
+    await dueBossFight(c.id)
     const res = await fightSoldiers(c.id, 1) // 377 units still in camp
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/whole army/)
@@ -838,6 +847,7 @@ describe('POST /api/campaigns/:id/battles', () => {
 
   test('cannot field more units than the roster owns', async () => {
     const { body: c } = await createCampaign()
+    await dueBossFight(c.id)
     const res = await fightSoldiers(c.id, 301)
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/not enough Soldier/)
@@ -868,6 +878,7 @@ describe('POST /api/campaigns/:id/battles', () => {
     const { body: c } = await createCampaign()
     const doc = await Campaign.findById(c.id)
     doc.roster = { Soldier: 5 } // field the entire host, nobody stays in camp
+    doc.bossFightDue = true
     await doc.save()
 
     const res = await fightSoldiers(c.id, 5)
@@ -896,6 +907,7 @@ describe('POST /api/campaigns/:id/battles', () => {
     const { body: c } = await createCampaign()
     const doc = await Campaign.findById(c.id)
     doc.roster = { Soldier: 5 }
+    doc.bossFightDue = true
     await doc.save()
 
     const res = await fightSoldiers(c.id, 5)
@@ -904,6 +916,7 @@ describe('POST /api/campaigns/:id/battles', () => {
 
   test('cannot field non-placeable types', async () => {
     const { body: c } = await createCampaign()
+    await dueBossFight(c.id)
     const res = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
       player_placement: [{ unit_type: 'Zombie', q: 4, r: 4 }],
     })
@@ -911,11 +924,93 @@ describe('POST /api/campaigns/:id/battles', () => {
     expect(res.body.error).toMatch(/not a placeable/)
   })
 
+  // ── Stage B: the boss fight (docs/CAMPAIGN_PLAN.md) ────────────────────
+  test('no battle is offered before the meter marks the boss fight due', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    // Shrink the roster to a fieldable size but leave bossFightDue false — the
+    // gate must fire before any placement validation.
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 1 }
+    await doc.save()
+
+    const res = await fightSoldiers(c.id)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/no battle is offered/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('a unit committed to a raid this turn cannot also be placed into the boss battle', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 2 }
+    doc.raid.assignment = new Map([['Soldier', 1]]) // 1 out raiding, 1 in camp
+    doc.bossFightDue = true
+    await doc.save()
+
+    // Fielding both over-commits the raided Soldier.
+    const res = await fightSoldiers(c.id, 2)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/out raiding/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('a raided unit is carved out of the whole-army-in-camp check', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 2 }
+    doc.raid.assignment = new Map([['Soldier', 1]]) // 1 raiding, 1 in camp
+    doc.bossFightDue = true
+    await doc.save()
+
+    // Fielding just the in-camp Soldier satisfies the whole-army rule — the
+    // raided one is away, not "still in camp".
+    const res = await fightSoldiers(c.id, 1)
+    expect(res.status).toBe(201)
+    expect(engine.runBattle).toHaveBeenCalled()
+  })
+
+  test('the boss fight is decisive: a blue win takes the country even with enemy survivors', async () => {
+    // Pre-Stage-B this needed enemy.army at exactly 0 (checkAnnihilation); the
+    // boss fight is now decisive on the winner alone.
+    const result = structuredClone(battleResultFixture)
+    result.winner = 'blue'
+    result.red_survivors = { Zombie: 3 } // enemy NOT annihilated
+    result.blue_survivors = { Soldier: 1 }
+    engine.runBattle.mockResolvedValue(result)
+
+    const { body: c } = await createCampaign()
+    await shrinkRoster(c.id, { Soldier: 1 })
+    const res = await fightSoldiers(c.id)
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.status).toBe('won')
+    // bossFightDue is cleared once the fight resolves, win or lose.
+    const after = await Campaign.findById(c.id)
+    expect(after.bossFightDue).toBe(false)
+  })
+
+  test('the boss fight is decisive: a red win loses the campaign even with surviving troops', async () => {
+    const result = structuredClone(battleResultFixture)
+    result.winner = 'red'
+    result.red_survivors = { Zombie: 3 }
+    result.blue_survivors = { Soldier: 1 } // player NOT wiped
+    engine.runBattle.mockResolvedValue(result)
+
+    const { body: c } = await createCampaign()
+    await shrinkRoster(c.id, { Soldier: 1 })
+    const res = await fightSoldiers(c.id)
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.status).toBe('lost')
+  })
+
   describe('squads (playtest item 1)', () => {
     const setSquads = async (id, squads, roster) => {
       const doc = await Campaign.findById(id)
       doc.squads = squads
       if (roster) doc.roster = roster
+      doc.bossFightDue = true // reach the boss fight (Stage B gate)
       await doc.save()
       return doc
     }
@@ -1214,6 +1309,35 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.report.forage.harvested).toEqual({ food: 0, materials: 0 })
     expect(res.body.report.forage.rings[0].richness).toBe(20000 - 9084)
     expect(res.body.report.forage.clashes).toEqual([])
+  })
+
+  // ── Stage B: the boss fight is mandatory once due ─────────────────────
+  test('cannot end the day while the boss fight is due and not yet fought', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } })
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/take the field/)
+  })
+
+  test('the other screens are NOT locked out on a boss-fight-due day — only End Turn is', async () => {
+    // The player may still forage/scout/etc; they simply can't skip the fight.
+    // (Raid launch lives on its own route with no bossFightDue gate, so it is
+    // structurally unaffected — forage here stands in for "screens still open".)
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } })
+
+    const forageRes = await auth(api.post(`/api/campaigns/${c.id}/forage`))
+      .send({ assignment: { Soldier: 1 } })
+    expect(forageRes.status).toBe(200)
+
+    const consultRes = await auth(api.post(`/api/campaigns/${c.id}/augury/consult`)).send({})
+    expect(consultRes.status).toBe(200)
+
+    // But End Turn is still barred until the fight happens.
+    const endRes = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(endRes.status).toBe(400)
+    expect(endRes.body.error).toMatch(/take the field/)
   })
 
   // Workers eating food is DEFERRED on purpose (docs/CAMPAIGN_PLAN.md
