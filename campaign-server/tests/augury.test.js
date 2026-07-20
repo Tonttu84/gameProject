@@ -17,6 +17,8 @@ import {
   choiceRung,
   applyEffect,
   firedRung,
+  eventEligible,
+  eligiblePool,
 } from '../services/events.js'
 import {
   AUGURY_SLOTS,
@@ -200,6 +202,23 @@ describe('EVENT_POOL structure', () => {
       const members = EVENT_POOL.filter((e) => e.severity === pool)
       expect(members.some(isGood)).toBe(true)
       expect(members.some(isBad)).toBe(true)
+    }
+  })
+
+  // Prerequisites (R1) are ADDITIVE: a gated event only ever widens a tier's
+  // eligible set, it can never shrink it below a legible pair. The guarantee
+  // is that the UNCONDITIONAL events (no `requires`) already satisfy the ≥2 +
+  // mixed-valence rule on their own — so however the campaign state gates the
+  // rest, drawAugury can always form an honest same-pool pair. Break this and
+  // a prerequisite could strand a tier with one card (no decoy) or one mood
+  // (direction leaks). This is the invariant that lets eligiblePool filter
+  // freely without a collapse guard.
+  test('the unconditional events alone keep every pool legible (≥2, mixed)', () => {
+    for (const pool of pools) {
+      const base = EVENT_POOL.filter((e) => e.severity === pool && !e.requires)
+      expect(base.length).toBeGreaterThanOrEqual(2)
+      expect(base.some(isGood)).toBe(true)
+      expect(base.some(isBad)).toBe(true)
     }
   })
 
@@ -609,5 +628,121 @@ describe('firedRung/choiceRung: choices ride the fired rung', () => {
     expect(choiceRung('no_such_event', 'blind')).toBeNull()
     expect(choiceRung('supply', 'blind')).toBeNull()
     expect(choiceRung(e.id, 'warned')).toBeNull() // no such rung on a plain event
+  })
+})
+
+// ── Prerequisites (R1): events gated on campaign state ──────────────────────
+// An event may carry a `requires` block; eventEligible tests it against a
+// context {day, roster, eventFlags}. Ineligible events never enter a draw —
+// neither as the truth nor as a decoy — so a chain's follow-up can't surface
+// before its trigger, and a state-flavoured fate (horse sickness) can't fire
+// on an army that has no horses. The context is duck-typed: roster/eventFlags
+// may be a Map (the Mongoose doc) or a plain object (creation-time / tests).
+describe('eventEligible — prerequisites', () => {
+  const ev = (requires) => ({ id: 'x', title: 'X', severity: 1, effect: { type: 'none' }, requires })
+
+  test('no requires → always eligible', () => {
+    expect(eventEligible(ev(undefined), {})).toBe(true)
+    expect(eventEligible(ev(undefined), { day: 1 })).toBe(true)
+  })
+
+  test('minDay / maxDay gate on the turn number', () => {
+    expect(eventEligible(ev({ minDay: 3 }), { day: 2 })).toBe(false)
+    expect(eventEligible(ev({ minDay: 3 }), { day: 3 })).toBe(true)
+    expect(eventEligible(ev({ maxDay: 3 }), { day: 4 })).toBe(false)
+    expect(eventEligible(ev({ maxDay: 3 }), { day: 3 })).toBe(true)
+    // A missing day reads as day 1 (creation-time draw).
+    expect(eventEligible(ev({ minDay: 2 }), {})).toBe(false)
+  })
+
+  test('flags require every named flag set; notFlags forbid any', () => {
+    const flags = new Map([['caravan_dealt', 1]])
+    expect(eventEligible(ev({ flags: ['caravan_dealt'] }), { eventFlags: flags })).toBe(true)
+    expect(eventEligible(ev({ flags: ['caravan_dealt', 'missing'] }), { eventFlags: flags })).toBe(false)
+    expect(eventEligible(ev({ notFlags: ['caravan_dealt'] }), { eventFlags: flags })).toBe(false)
+    expect(eventEligible(ev({ notFlags: ['other'] }), { eventFlags: flags })).toBe(true)
+    // A plain-object flag bag works the same (no Mongoose Map yet).
+    expect(eventEligible(ev({ flags: ['seen'] }), { eventFlags: { seen: 1 } })).toBe(true)
+    // A flag at 0 counts as unset.
+    expect(eventEligible(ev({ flags: ['seen'] }), { eventFlags: { seen: 0 } })).toBe(false)
+  })
+
+  test('hasUnit gates on the roster holding that type (Map or object)', () => {
+    expect(eventEligible(ev({ hasUnit: 'Cavalry' }), { roster: new Map([['Cavalry', 5]]) })).toBe(true)
+    expect(eventEligible(ev({ hasUnit: 'Cavalry' }), { roster: new Map([['Cavalry', 0]]) })).toBe(false)
+    expect(eventEligible(ev({ hasUnit: 'Cavalry' }), { roster: new Map() })).toBe(false)
+    expect(eventEligible(ev({ hasUnit: 'Cavalry' }), { roster: { Cavalry: 3 } })).toBe(true)
+    expect(eventEligible(ev({ hasUnit: 'Cavalry' }), {})).toBe(false)
+  })
+
+  test('all clauses must pass together (AND)', () => {
+    const e = ev({ minDay: 2, hasUnit: 'Cavalry' })
+    expect(eventEligible(e, { day: 2, roster: { Cavalry: 1 } })).toBe(true)
+    expect(eventEligible(e, { day: 1, roster: { Cavalry: 1 } })).toBe(false)
+    expect(eventEligible(e, { day: 2, roster: {} })).toBe(false)
+  })
+})
+
+describe('eligiblePool + drawAugury honour prerequisites', () => {
+  afterEach(() => { config.DEV_AUGURY = [] })
+
+  // horse_sickness is the R1 proof event: it only makes sense on an army with
+  // mounts, so it is gated hasUnit:'Cavalry'.
+  test('a cavalry-gated event is out of the pool with no horses, in with them', () => {
+    const withoutHorses = eligiblePool({ roster: new Map([['Soldier', 100]]) })
+    expect(withoutHorses.some((e) => e.id === 'horse_sickness')).toBe(false)
+    const withHorses = eligiblePool({ roster: new Map([['Soldier', 100], ['Cavalry', 20]]) })
+    expect(withHorses.some((e) => e.id === 'horse_sickness')).toBe(true)
+  })
+
+  test('drawAugury never surfaces an ineligible event — truth OR decoy', () => {
+    const ctx = { day: 1, roster: new Map([['Soldier', 100]]) } // no cavalry
+    const ids = new Set(eligiblePool(ctx).map((e) => e.id))
+    for (let i = 0; i < 80; i++) {
+      for (const slot of drawAugury(ctx).slots) {
+        expect(ids.has(slot.trueEvent.id)).toBe(true)
+        expect(ids.has(slot.falseEvent.id)).toBe(true)
+      }
+    }
+  })
+})
+
+describe('applyEffect — flag (R0 chain/prereq bookkeeping)', () => {
+  const target = () => ({ day: 1, resources: { food: 0, materials: 0 }, roster: new Map(), eventFlags: new Map() })
+
+  test('sets a flag to 1 by default and leaves no player-visible number', () => {
+    const c = target()
+    const log = applyEffect(c, { type: 'flag', name: 'caravan_dealt' })
+    expect(c.eventFlags.get('caravan_dealt')).toBe(1)
+    // Flags are hidden bookkeeping — the chain's narrative lives in event
+    // text, never a numeric log line that would leak state.
+    expect(log.join(' ')).not.toMatch(/\d/)
+  })
+
+  test('an explicit value sets, a delta increments', () => {
+    const c = target()
+    applyEffect(c, { type: 'flag', name: 'mood', value: 3 })
+    expect(c.eventFlags.get('mood')).toBe(3)
+    applyEffect(c, { type: 'flag', name: 'mood', delta: 2 })
+    expect(c.eventFlags.get('mood')).toBe(5)
+  })
+
+  test('rides inside a multi alongside a real effect', () => {
+    const c = target()
+    c.resources.food = 1000
+    applyEffect(c, { type: 'multi', effects: [{ type: 'food', delta: 2000 }, { type: 'flag', name: 'caravan_dealt' }] })
+    expect(c.resources.food).toBe(3000)
+    expect(c.eventFlags.get('caravan_dealt')).toBe(1)
+  })
+})
+
+describe('the horse_sickness event: prerequisites in the pool', () => {
+  const ev = EVENT_POOL.find((e) => e.id === 'horse_sickness')
+
+  test('exists, gated on holding cavalry, and thins the mounted arm', () => {
+    expect(ev).toBeTruthy()
+    expect(ev.requires).toEqual({ hasUnit: 'Cavalry' })
+    expect(eventValenceFor(ev)).toBe('bad')
+    expect(ev.effect).toMatchObject({ type: 'roster', unit: 'Cavalry' })
   })
 })

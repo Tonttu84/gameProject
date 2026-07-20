@@ -84,7 +84,10 @@ const rejectIfBossFightUnfought = (campaign, res) => {
 
 router.post('/', async (req, res) => {
   const catalog = await getCatalog()
-  const augury = drawAugury()
+  // Day-1 draw, before the doc exists: hand drawAugury the starting context so
+  // prerequisite-gated fates (events.js `requires`) are judged against the
+  // opening army. No eventFlags yet — the first turn can't be a chain payoff.
+  const augury = drawAugury({ day: 1, roster: STARTING_ROSTER })
   const campaign = await Campaign.create({
     user: req.user._id,
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS },

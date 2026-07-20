@@ -9,7 +9,7 @@ import {
   AUGURY_REROLLS_PER_DAY,
   AUGURY_MAGE_BONUS_CAP,
 } from '../utils/campaignConfig.js'
-import { EVENT_POOL, POOL_LEGIBILITY } from './events.js'
+import { EVENT_POOL, POOL_LEGIBILITY, eligiblePool } from './events.js'
 
 // The augur's visions. Each turn holds AUGURY_SLOTS independent fates; a slot
 // is a hidden {trueEvent, falseEvent} pair drawn from ONE pool (severity
@@ -68,9 +68,15 @@ const slotFrom = (trueEvent, falseEvent) => ({
   shownTrue: null, // unresolved until the augur is consulted — HIDDEN
 })
 
-const randomSlot = () => {
-  const trueEvent = EVENT_POOL[Math.floor(Math.random() * EVENT_POOL.length)]
-  const peers = EVENT_POOL.filter(
+// Both the truth and the decoy come from the pool the campaign state currently
+// allows (eligiblePool) — a prerequisite-gated fate (events.js `requires`)
+// enters neither role until its trigger is met. `ctx` is {day, roster,
+// eventFlags}; an empty ctx (no gating context) admits only the ungated
+// events, which the tripwire guarantees keep every tier legible.
+const randomSlot = (ctx = {}) => {
+  const pool = eligiblePool(ctx)
+  const trueEvent = pool[Math.floor(Math.random() * pool.length)]
+  const peers = pool.filter(
     (e) => e.severity === trueEvent.severity && e.id !== trueEvent.id,
   )
   const falseEvent = peers[Math.floor(Math.random() * peers.length)]
@@ -96,12 +102,16 @@ const forcedSlot = () => {
   return slotFrom(trueEvent, falseEvent)
 }
 
-const drawSlot = () => forcedSlot() ?? randomSlot()
+const drawSlot = (ctx) => forcedSlot() ?? randomSlot(ctx)
 
-export function drawAugury() {
+// ctx is the campaign context the eligibility filter reads: {day, roster,
+// eventFlags}. The live doc IS a valid ctx (dayResolution passes `campaign`);
+// the creation route passes a plain {day, roster} before the doc exists. An
+// omitted ctx admits only ungated events.
+export function drawAugury(ctx = {}) {
   forcedDraws = [...config.DEV_AUGURY]
   return {
-    slots: Array.from({ length: AUGURY_SLOTS }, drawSlot),
+    slots: Array.from({ length: AUGURY_SLOTS }, () => drawSlot(ctx)),
     consulted: false,
     rerollsRemaining: AUGURY_REROLLS_PER_DAY,
   }
@@ -126,7 +136,7 @@ export function consultAugury(campaign) {
 // Replace ONE fate: the slot gets a fresh pair and a fresh reading (new
 // roll, new odds); one reroll is spent. Returns the slot's newly shown event.
 export function rerollAugurySlot(campaign, index) {
-  const slot = drawSlot()
+  const slot = drawSlot(campaign)
   readSlot(campaign, slot)
   campaign.augury.slots.splice(index, 1, slot) // splice keeps Mongoose array change tracking
   campaign.augury.rerollsRemaining -= 1

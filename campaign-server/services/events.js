@@ -70,6 +70,14 @@ export const EVENT_POOL = [
   // ── materials fates (Stage 3 sink feeds fortifications/militia) ──
   { id: 'quarry',        title: 'Quarry Found',      description: 'A workable seam of stone and timber. +25 materials.',     severity: 1, effect: { type: 'materials',  delta: +25 } },
   { id: 'tool_rot',      title: 'Tool Rot',          description: 'Damp ruins tools and cordage. -15 materials.',            severity: 2, effect: { type: 'materials',  delta: -15 } },
+  // ── prerequisite-gated fates (R1) ── An event may carry a `requires` block
+  // (eventEligible below); it only enters a draw when the campaign state
+  // satisfies it, as truth OR decoy. Gated events are ADDITIVE — the
+  // unconditional events already keep every tier legible (augury.test.js
+  // tripwire), so a prerequisite can only widen a pool, never collapse it.
+  // horse_sickness is the proof: a murrain among the mounts that can only
+  // befall an army that actually fields cavalry.
+  { id: 'horse_sickness', title: 'Horse Sickness', description: 'Murrain runs the picket lines; your mounts sicken and the worst must be put down.', severity: 2, effect: { type: 'roster', unit: 'Cavalry', factor: 0.9 }, requires: { hasUnit: 'Cavalry' } },
   // ── fates with choices (resolve-then-choose) ── The fired rung's `choices`
   // hand the player a decision instead of an effect: end-day pends it
   // (dayResolution) and a follow-up POST applies the picked branch. Branches
@@ -152,6 +160,35 @@ export const EVENT_POOL = [
 
 export const rosterTotal = (roster) =>
   [...roster.values()].reduce((a, b) => a + b, 0)
+
+// The augur's state (roster, eventFlags) reaches here as a Mongoose Map on the
+// live doc but a plain object at creation-time draws and in tests — read both.
+const bagGet = (bag, key) => (bag instanceof Map ? bag.get(key) : bag?.[key]) ?? 0
+
+// Prerequisites (R1): does this event's `requires` block hold against the
+// current campaign context {day, roster, eventFlags}? An event with no
+// `requires` is always eligible. Every clause is ANDed; the context is
+// duck-typed so the same predicate serves the draw path (live doc), the
+// creation route (plain STARTING_ROSTER), and the unit tests. Ineligible
+// events are dropped from the draw entirely — a gated fate can be neither the
+// truth nor the decoy until its trigger is met, so a chain's later beat can't
+// surface early and a state-flavoured fate can't fire on the wrong army.
+export const eventEligible = (event, ctx = {}) => {
+  const req = event.requires
+  if (!req) return true
+  const day = ctx.day ?? 1
+  if (req.minDay != null && day < req.minDay) return false
+  if (req.maxDay != null && day > req.maxDay) return false
+  if (req.flags && !req.flags.every((f) => bagGet(ctx.eventFlags, f) > 0)) return false
+  if (req.notFlags && req.notFlags.some((f) => bagGet(ctx.eventFlags, f) > 0)) return false
+  if (req.hasUnit && bagGet(ctx.roster, req.hasUnit) <= 0) return false
+  return true
+}
+
+// The draw pool as the campaign state currently allows it. The augur draws
+// both the truth and the decoy from here (augury.js), so nothing ineligible
+// can ever reach the player.
+export const eligiblePool = (ctx) => EVENT_POOL.filter((e) => eventEligible(e, ctx))
 
 // The single source of an event's mood: good / bad / neutral, derived from its
 // own effect. The augur's header labels the SHOWN card with this (so a bluff
@@ -260,6 +297,18 @@ export function applyEffect(campaign, effect) {
     campaign.roster.set(effect.from, cur - moved)
     campaign.roster.set(effect.to, (campaign.roster.get(effect.to) ?? 0) + moved)
     log.push(`${moved} ${effect.from} → ${effect.to}.`)
+  } else if (effect.type === 'flag') {
+    // Chain/prerequisite bookkeeping (R0): mark campaign state so a later fate
+    // can gate on it (eventEligible). `value` sets, `delta` increments,
+    // default set-to-1 (a plain "this happened" marker). Produces NO log line
+    // — a flag is hidden state; the chain's narrative lives in event text, and
+    // a numeric line here would leak that state to the player.
+    if (!campaign.eventFlags) campaign.eventFlags = new Map()
+    const flags = campaign.eventFlags
+    const cur = bagGet(flags, effect.name)
+    const next = effect.delta !== undefined ? cur + effect.delta : (effect.value ?? 1)
+    if (flags instanceof Map) flags.set(effect.name, next)
+    else flags[effect.name] = next
   } else if (effect.type === 'multi') {
     // A bundled fate: every part lands, in order.
     for (const part of effect.effects) log.push(...applyEffect(campaign, part))
