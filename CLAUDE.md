@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Grill before you build
+
+`/grill-me` and its underlying `grilling` skill are vendored under `.claude/skills/` (from
+[mattpocock/skills](https://github.com/mattpocock/skills)) specifically so this fires
+**proactively, not just when typed**: before starting any large or ambiguous plan or
+implementation, if your confidence in the requirements is only medium or low, invoke the
+`grilling` skill and interview the user rather than guessing and building on an assumption.
+Staying aligned with the user outranks moving fast — err toward grilling too often rather
+than too rarely. Don't act on the plan until the interview reaches a shared understanding.
+
 ## Planning & session continuity (multi-machine)
 
 This project is developed across **multiple computers**. Keep plans, TODOs, staged designs, and
