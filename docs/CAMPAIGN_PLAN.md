@@ -154,9 +154,12 @@ notes below over the git history if they ever disagree — the commits win.
 - **Movement-speed rework: ✅ SHIPPED 2026-07-14** (was a deferred-backlog TODO; see the
   "SHIPPED — movement-speed rework" record in the deferred backlog for the numbers and the
   campaign-seam normalization).
-- **Then (NEXT):** **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make
-  `HexSide.combatScore` erode `fortDurability` mid-battle so the placeholder goes live),
-  resequenced AFTER scouting/raids (user, 2026-07-13) — that's now.
+- **Then (NEXT):** the **boss-fight campaign loop** — see "Boss-fight campaign loop (meter +
+  decisive battle) — DESIGNED 2026-07-20" below, staged A→E, once the in-progress raid
+  scouting mini-game (see "Raid mini-game (scouting-points economy)" near the end of this file)
+  is committed. **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make
+  `HexSide.combatScore` erode `fortDurability` mid-battle so the placeholder goes live) is still
+  open but pushed further down the queue behind the loop.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 - **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
@@ -193,6 +196,274 @@ notes below over the git history if they ever disagree — the commits win.
   "optional future polish" is **already done** in the shipped code — `CampPanel`/`ForagePanel`/
   `RaidPanel` read `useUiStore((s) => s.tutorial)` directly and only forward it to
   `TutorialIntro`'s `enabled` prop; single source of truth, no App→panel fan-out to remove.)
+
+### Boss-fight campaign loop (meter + decisive battle) — DESIGNED 2026-07-20, NOT YET IMPLEMENTED
+
+Grilled end-to-end with the user before writing anything down (per the `grilling` skill rule in
+`CLAUDE.md`); this section **supersedes** the old `[[todo-multi-turn-campaign-loop]]` and
+"raid vs. main-battle turn sequencing" backlog stubs (both now point here). Staged for
+one-thing-at-a-time implementation, but the whole loop is designed up front per user request —
+"having a plan for the whole loop even if it has unimplemented features is helpful."
+
+**Framing (user):** roguelite-style — events, raids, and hiring troops turn-by-turn, building up
+to one decisive **"boss fight."** A lot of the persistence groundwork already exists and needed
+no new work: `campaign.enemy.army` already carries real survivors across turns
+(`campaigns.js:312`, `red_survivors`), already shrinks from forage clashes/raids/events, and
+`checkAnnihilation` already ends the campaign at 0 either side. What's actually missing is (1) a
+mechanic that turns "fight any day, always full army" into "several turns of raiding/foraging/
+events, THEN one decisive fight," and (2) raiding actually costing something against that fight.
+
+**1. The meter.** New hidden per-campaign field, `campaign.meter` (name TBD at implementation
+time), 0 → **1000** threshold.
+- **Fills at end-of-day resolution** (same place `enemyTurn`/`enemyAi.js` already runs), by
+  `100 − 50×(troopsInCamp / totalRoster)` — **floor 50** when every non-forage/non-raid troop
+  sat idle in camp, **ceiling 100** when none did (everyone raiding/foraging). `troopsInCamp`
+  reuses the existing carve-out already used for the full-deployment gate: `roster −
+  forage.assignment − raid.assignment`.
+- At 100/turn (worst case for the player, i.e. best case for speed) that's 10 turns minimum to
+  fill; at 50/turn (everyone held back) it's 20 — "several turns" falls out of the formula
+  itself, no separate floor needed.
+- **Design intent, stated by the user:** camp troops slow the meter, so a player will normally
+  hold troops back — "likely the player will save troops unless there is a good raid that makes
+  a greedy play justified." The tension is deliberate: raiding/foraging is faster meter growth
+  (closer to the boss fight) traded for readiness on the day it lands.
+- **Visibility:** hidden by default, shown only as a banded phrase (mirrors
+  `ENEMY_STRENGTH_BANDS`/`ENEMY_SUPPLY_BANDS` — e.g. calm / restless / imminent). The exact
+  number can be bought: spending **leftover scouting points, just before they expire/refresh at
+  turn start** (see "Raid mini-game (scouting-points economy)" below — `raid.scoutingPoints` is
+  an army-derived per-turn pool that already expires unused), reveals the exact value. Small
+  value ("better than just wasting points") rather than a dedicated new spend — reuses the
+  existing scouting-points economy instead of adding a new currency for this alone.
+
+**2. Before the meter is full: no voluntary full-army battle exists.** The current
+`POST /:id/battles` (always full-army, always available once/day) is gone as a standing option
+pre-threshold. The only ways to fight the enemy before the boss fight are raids (partial forces,
+`POST /:id/raids/launch`) and forage clashes (`forage.js`) — this is what makes the loop read as
+build-up to ONE fight rather than a battle every day.
+
+**3. When the meter crosses 1000** (checked at the same end-of-day point it's incremented),
+`campaign.bossFightDue` flips true. **The boss fight is due the NEXT day, not that instant** —
+preserves the deliberate-formation moment (Prepare→Omens→Raids→Deploy, unchanged screens).
+- **Raiding, foraging, and events are all still allowed** on the boss-fight day — the user was
+  explicit: don't lock the screens out. **Correction after reading the actual route** (was
+  slightly wrong above): `campaigns.js:285-293`'s "whole army must take the field" check
+  ALREADY carves foragers out of `inCamp` (`n − forage.assignment − placed`) — it just never
+  learned about `raid.assignment`, so a raided unit both dodges the check AND can be
+  double-placed into the battle in the same day (the exact bug the old backlog TODO named). The
+  400 itself doesn't go away: idle camp troops must still fight (that's the whole point of the
+  tradeoff). The fix is narrower — add `raid.assignment` as a carve-out term everywhere
+  `forage.assignment` already is: the per-type placement budget (~line 263) and the `inCamp` sum
+  (~line 289), mirroring forage exactly. A greedy raid on boss day is then a real, informed risk:
+  fewer troops on the field for the fight that decides the campaign, but idle troops can't skip it.
+- Ending the boss-fight day now requires the battle to actually have been fought
+  (`battleFoughtToday`) — End Turn is gated the same way other actions already 400 on
+  preconditions elsewhere in `campaigns.js`.
+
+**4. The boss fight is decisive both ways — new explicit win/loss check, not `checkAnnihilation`:**
+- **Winner `blue`** (engine result) → campaign **victory immediately**, regardless of
+  `red_survivors` count. No longer needs `enemy.army` to hit exactly 0.
+- **Winner `red` or stalemate** → campaign **defeat immediately**, regardless of player
+  survivors. This is what actually makes it "decisive" — losing has a real, final consequence
+  distinct from ordinary battle casualties.
+- Both reuse the existing Victory!/Defeat game-over screens (already built, see the 2026-07-18
+  tutorial-pass entry) — just a new trigger into the same end state.
+
+**5. `enemy.stance` gets rewired to be driven BY the meter**, not the independent
+`ENEMY_WITHDRAW_FRACTION`/`ENEMY_OFFER_EVERY`/`ENEMY_LOW_SUPPLIES` thresholds in `enemyAi.js`
+today (those don't gate anything currently — pure flavor text that could contradict the real
+mechanic once one exists). New mapping: `offering_battle` ⟺ `bossFightDue`; `camp`/`shadowing`
+reflect the meter's fraction toward 1000 (low/mid); `withdrawing` is kept for the existing
+near-annihilation case (`size < initialStrength × ENEMY_WITHDRAW_FRACTION`), which stays
+orthogonal to the meter. One coherent signal instead of two systems that could disagree.
+
+**6. Raid rework — `destroy_detachment` only, other types untouched.** Today it's all-or-nothing:
+`sliceTargetForce` builds a hidden slice of `enemy.army`, a real mini-battle is fought against
+it, but the ACTUAL casualties (`summary.red_survivors`) are thrown away — only a full win
+subtracts the whole slice (`applyRaidReward`), a loss touches nothing. Fix: **every
+`destroy_detachment` raid applies its real battle casualties to `enemy.army`, win or lose** —
+`enemy.army -= (targetForce − red_survivors)`. On a **win**, additionally wipe whatever's left
+(pursuit of the routing remainder) and grant a **prestige stub** (unimplemented value — reuses
+the existing unwired `_prestige` placeholder on squads, see the test-quality-audit note and the
+`[[todo-squads-persistent-unit]]` backlog entry below). Explicitly scoped narrow: `loot_supplies`/
+`rescue_troops`/`counter_event` stay reward-on-win-only, no casualty tracking — their target
+forces are narrative dressing, not tracked attrition.
+
+**7. Hiring troops — planned in full, implementation explicitly DEFERRED to a later stage.**
+- Converts idle `workers` (the existing, currently-unwired labour pool, `STARTING_WORKERS` in
+  `campaignConfig.js`) into roster troops.
+- Cost: **materials** (existing resource) + a **new `gold` resource** (to be added to the
+  economy — earn sources TBD, likely raid/event rewards) + **horses** for mounted unit types
+  (at minimum; exact resource shape TBD).
+- Also supports recruiting a **new unit/squad slot** that then absorbs already-idle, unassigned
+  roster troops rather than requiring fresh bodies — this is the same shape as the
+  squads-absorbing-replacements idea in the `[[todo-squads-persistent-unit]]` backlog entry
+  below; the two should be designed together when this stage is picked up, not independently.
+- No numbers, caps, or UI decided — this is a placeholder stage, captured so the loop reads as
+  complete, not a spec to build from yet.
+
+**Scope boundary (user, explicit):** "we will start with A [single boss fight ends the run,
+win or lose] and work towards B [win → new chapter: fresh persistent enemy, meter resets, loop
+repeats] eventually but not in this refactor." Build for A; don't foreclose B, but don't design
+it now.
+
+**Suggested implementation staging** (one thing at a time, per user preference — order is a
+recommendation, not fixed):
+- **Stage A — meter core.** Schema field(s) + `CAMPAIGN_SCHEMA_VERSION` bump, the fill formula,
+  threshold check, `bossFightDue` flag, `enemy.stance` rewire, banded view exposure. No battle
+  behavior change yet — a landable, testable slice on its own.
+- **Stage B — gate the battle.** Gate `POST /:id/battles` on `bossFightDue` (no battle exists
+  before it); add `raid.assignment` as a carve-out term alongside the existing
+  `forage.assignment` one in the battle route's budget/`inCamp` checks (see the correction
+  above). **Resolved:** once Stage B1 lands, `POST /:id/battles` is ALWAYS the boss fight (there
+  is no other kind left) — so its existing `checkAnnihilation(campaign)` call
+  (`campaigns.js:338`) is replaced outright by the new decisive winner===blue⇒won /
+  else⇒lost check, unconditionally. `checkAnnihilation` itself is untouched and keeps running
+  everywhere else it does today (forage clashes, raid launches, augury accept) — that's the
+  pre-boss ambient path (e.g. the enemy raided down to 0 before the meter ever fills). Also wire
+  the mandatory boss-fight day: End Turn 400s while `bossFightDue && !battleFoughtToday`
+  (same shape as the existing `rejectIfChoicePending` gate).
+- **Stage C — meter reveal.** Spend-leftover-scouting-points action, wired to the existing
+  `raid.scoutingPoints` pool/expiry.
+- **Stage D — `destroy_detachment` raid rework.** Casualty-proportional on loss, pursuit + a
+  prestige stub on win.
+- **Stage E — hiring troops.** The deferred piece above; pick up once A–D are playtested and the
+  `gold` resource/workers-eating-food questions (see the paired "worker replenishment" backlog
+  entry below) have real answers.
+
+#### TDD implementation breakdown (2026-07-20) — Stages A–D, one commit-sized step at a time
+
+Per [[feedback_tdd]] (standing preference: tests alongside the behavior change, not after) and
+the "no mock theater" convention this codebase already follows — campaign-server tests hit real
+HTTP routes + a real in-memory Mongo (`mongodb-memory-server`, `tests/helpers/db.js`), so every
+step below is a route/service-level red test, not a unit mock. `tests/campaigns.test.js` is
+where almost all of this lands (it already has per-route `describe` blocks); a new
+`describe('boss-fight meter', ...)` block holds the Stage A/B-specific cases. Stage E has no
+steps yet — still design-only, picked up later.
+
+**Stage A — meter core (no player-facing behavior change to battles; safe standalone commit)**
+1. **Schema + config.** `models/campaign.js`: add `meter: { value: {type:Number, default:0},
+   revealed: {type:Boolean, default:false} }` and `bossFightDue: {type:Boolean, default:false}`;
+   bump `CAMPAIGN_SCHEMA_VERSION` 13→14 with a one-line comment. `utils/campaignConfig.js`: add
+   `BOSS_FIGHT_METER_THRESHOLD = 1000`, `BOSS_FIGHT_METER_FLOOR = 50`,
+   `BOSS_FIGHT_METER_CEILING = 100`, and a `METER_BANDS` table (same `{min, label}` shape as
+   `ENEMY_STRENGTH_BANDS`, e.g. calm/restless/imminent). Mechanical — the existing generic
+   "campaign schema versioning" tests (`campaigns.test.js:480`) already cover any version bump
+   with no new case needed; no red test for this step itself, it just unblocks the next ones.
+2. **RED→GREEN: fill formula.** New `meterFillAmount(campaign)` (pure function — new
+   `services/meter.js`, or alongside `armyTotal` in `enemyAi.js`) computing
+   `troopsInCamp = rosterTotal(roster) − rosterTotal(forage.assignment) − rosterTotal(raid.assignment)`
+   and `BOSS_FIGHT_METER_CEILING − BOSS_FIGHT_METER_FLOOR × (troopsInCamp / rosterTotal(roster))`,
+   floored at `BOSS_FIGHT_METER_FLOOR`. Test first: call it directly (it's a pure function, no
+   route needed) with a few roster/forage/raid combinations — all-idle → 50, none-idle → 100,
+   half → 75. Then wire it into `dayResolution.js` end-day BEFORE step 7 clears
+   `forage.assignment`/`raid.assignment` (their pre-clear values are the formula's input) —
+   natural home is right alongside step 4's `enemyTurn` call, since both read the same
+   pre-reset state. Route-level test: `POST /:id/end-day` on a fresh campaign, assert
+   `campaign.meter.value` (read via `Campaign.findById` in the test, same pattern the schema
+   tests use) increased by the expected amount.
+3. **RED→GREEN: threshold → `bossFightDue`.** Test: drive `meter.value` to just under 1000 via
+   repeated `end-day` calls (or seed it directly with a raw Mongo update, matching the
+   `makeLegacy`-style raw-driver pattern already used for schema tests, to avoid a slow multi-turn
+   loop), then one more end-day crosses 1000 → assert `bossFightDue === true` in the next
+   `campaignView`. Implementation: the threshold check runs right after the fill, same step.
+4. **RED→GREEN: `enemy.stance` rewire.** First **read `tests/enemyAi.test.js`** — it very likely
+   pins the OLD `ENEMY_OFFER_EVERY`/`ENEMY_LOW_SUPPLIES` transitions being replaced; those cases
+   need rewriting, not just addition. New behavior: `stance === 'offering_battle' ⟺ bossFightDue`;
+   `withdrawing` unchanged (still the independent near-annihilation fraction check); `camp`/
+   `shadowing` now reflect the meter's fraction toward 1000 instead of `ENEMY_SHADOW_DAY`. Delete
+   `ENEMY_OFFER_EVERY`/`ENEMY_LOW_SUPPLIES` from `campaignConfig.js` once nothing reads them.
+5. **RED→GREEN: banded view exposure.** `campaignView.js`'s `enemyView` (or a new top-level
+   `meter` key — `battleOffer` already exists off `stance`, a raw `meter.value` should never
+   reach the client) gains a banded phrase from `METER_BANDS`, `revealed:false`. Test: extend
+   whatever hidden-info discipline test already pins the campaign response's key set (grep
+   `campaigns.test.js`/`raid.test.js` for `expectNoHiddenInfo` or similar) to assert
+   `meter.value`/raw number never appears pre-reveal, only the band phrase.
+
+**Stage B — gate the battle (the real behavior change; expect to touch existing battle tests)**
+1. **RED→GREEN: gate on `bossFightDue`.** `routes/campaigns.js` `POST /:id/battles`: add
+   `if (!campaign.bossFightDue) return res.status(400).json({error: '...'})` near the top
+   (alongside the existing `battleFoughtToday`/`status` guards). This BREAKS every existing test
+   in the `'POST /api/campaigns/:id/battles'` describe block (`campaigns.test.js:747`) — they all
+   currently fight on a fresh campaign where `bossFightDue` is false. Add a small test helper
+   (`tests/helpers/` or a local fixture in that describe block) that force-sets
+   `bossFightDue: true` via a raw Mongo update (same pattern as `makeLegacy`), and thread it
+   through every existing case's setup — this is the "red" step: run the suite, watch everything
+   in that block fail on the new 400, then fix each one. Add one new case: battle attempted with
+   `bossFightDue: false` → 400.
+2. **RED→GREEN: raid carve-out parity.** Add `− (campaign.raid.assignment.get(type) ?? 0)` next
+   to the existing `− foraging` term in both the per-type budget check (~line 263) and the
+   `inCamp` sum (~line 289) — mirrors `forage.assignment` exactly, no new concept. Test: a unit
+   sent on a raid earlier the same day (`raid.assignment` populated) — (a) can no longer also be
+   placed into the boss battle beyond what's left in camp (400 if over-committed), and (b) does
+   NOT count toward `inCamp` (battle succeeds without that unit placed). Both cases need
+   `bossFightDue: true` from step 1's helper.
+3. **RED→GREEN: decisive win/loss.** Replace the battle route's `checkAnnihilation(campaign)`
+   call (`campaigns.js:338`) with the new unconditional check: `summary.winner === 'blue'` →
+   `campaign.status = 'won'`; otherwise → `campaign.status = 'lost'`; clear `bossFightDue` either
+   way. Test: engine result `winner: 'blue'` with nonzero `red_survivors` still ends in `'won'`
+   (today's `checkAnnihilation` would NOT trigger here since the enemy isn't at 0 — that's the
+   behavior actually changing); `winner: 'red'`/stalemate with nonzero `blue_survivors` still
+   ends in `'lost'`. **Verified seam to reuse:** `campaigns.test.js` already `vi.mock`s
+   `services/engine.js` (the real trust boundary — the `./game battle` subprocess) and sets
+   `engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))` per test, so a
+   losing-boss-fight test just clones the fixture and overwrites `winner`/`red_survivors`/
+   `blue_survivors` before mocking — no new seam needed.
+4. **RED→GREEN: mandatory End Turn gate.** `POST /:id/end-day`: 400 when
+   `campaign.bossFightDue && !campaign.battleFoughtToday` (new guard function alongside
+   `rejectIfChoicePending`, same shape/style). Test: end-day attempted on a boss-fight-due,
+   not-yet-fought day → 400; after the battle resolves (win or lose) `campaign.status !== 'active'`
+   already blocks end-day via the existing guard, so no separate "post-battle" case is needed
+   there. Regression test: forage assignment and raid launch still succeed normally on a
+   boss-fight-due day before the battle is fought (proves the screens aren't locked out, per the
+   user's explicit requirement).
+
+**Stage C — meter reveal via leftover scouting points**
+1. **RED→GREEN.** Extend the existing `POST /:id/raids/scout` action dispatch
+   (`{action:'add_target'|'reveal'}`) with a third action, e.g. `{action:'reveal_meter'}`
+   (no `raidId`/`field` needed) — reuses the one route instead of adding a new endpoint. New
+   config constant for its cost (e.g. `METER_REVEAL_SCOUT_COST`). Test: insufficient
+   `raid.scoutingPoints` → 400 (matches the existing `add_target`/`reveal` insufficient-points
+   tests' shape); sufficient → `meter.revealed = true`, points deducted by the cost, and
+   `campaignView` now returns the exact `meter.value` instead of the band. Reset test:
+   `meter.revealed` is cleared at the next end-day's step 7 (new turn), alongside
+   `raid.scoutingPoints` refilling — one assertion added to whatever test already checks turn-reset
+   fields (forage.assignment clearing etc., likely in the end-day describe block).
+
+**Stage D — `destroy_detachment` raid rework**
+1. **RED→GREEN: casualties on loss.** `routes/campaigns.js` raids/launch loop: after
+   `runAndPersistBattle`, for `opportunity.type === 'destroy_detachment'`, always subtract
+   `(opportunity.targetForce − summary.red_survivors)` from `campaign.enemy.army` (per-type,
+   floor 0 — same `Math.max(0, ...)` pattern `raid.js:225` already uses), regardless of `won`.
+   Test: a LOST destroy_detachment raid (engine `winner !== 'blue'`, but `red_survivors` still
+   less than `targetForce` — the mini-battle isn't a total whitewash) → assert `enemy.army`
+   dropped by exactly the real casualty count, even though `applyRaidReward` never ran (no
+   reward-on-win log lines).
+2. **RED→GREEN: pursuit + prestige stub on win.** Change `applyRaidReward`'s `destroy_detachment`
+   branch (`raid.js:222-226`) to subtract only the REMAINING `red_survivors` (not the whole
+   `targetForce` — step 1 already accounted for the real casualties, this would double-subtract
+   otherwise), plus a prestige-stub log line (no real mechanic yet — e.g. `'A prestigious victory
+   (not yet tracked).'` or similar, explicitly a placeholder). Test: a WON destroy_detachment raid
+   with nonzero `red_survivors` → `enemy.army` ends at exactly `targetForce`'s original count
+   fully removed (step-1 casualties + step-2 remainder = the whole slice), matching today's
+   all-or-nothing win outcome numerically, but now reachable via two additive steps instead of one.
+   Other raid types (`loot_supplies`/`rescue_troops`/`counter_event`) get NO new test — explicitly
+   untouched.
+
+**Frontend testing convenience (user ask, 2026-07-20) — do NOT skip, even though it's small.**
+`CampaignHUD.jsx` today shows `Turn`/`Food`/`Materials`/`Forts`/`Land`/roster only
+(`frontend/src/components/CampaignHUD.jsx:20-32`) — no scouting/meter/future-resource readout at
+all, and `raid.scoutingPoints` is otherwise only visible buried inside `RaidPanel`'s
+`.raid-scouting-header` (Raids screen only). User's reasoning: a plain number on the always-visible
+HUD is trivial to add and makes manual playtesting/debugging each stage far easier than digging
+into a panel or the network tab. Add as each value comes into existence, same commit as the
+stage that introduces it — don't defer to a cleanup pass:
+- **Stage A/C:** meter band (and exact value once `meter.revealed`) on the HUD, not just
+  wherever `enemy.stance`/`battleOffer` currently render; `raid.scoutingPoints` mirrored onto the
+  HUD too (RaidPanel keeps its own copy for the spend buttons — this is an additional, cheap
+  read of the same store field, not a move).
+- **Stage E:** the new `gold` resource and `horses` (whatever shape that ends up — a resource
+  count or a roster-like pool) go on the HUD the moment they're added to `campaignView`'s
+  `resources`, same line pattern as the existing `Food:`/`Materials:` spans.
 
 ### Fates come to pass at the tent — reveal + choices moved mid-turn ✅ SHIPPED 2026-07-18 — handoff
 
@@ -1725,18 +1996,13 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
-**TODO — multi-turn campaign loop: persistent enemy army + a "final battle" meter (user,
-2026-07-20 — idea only, no plan yet).** Today's campaign is effectively single-battle: the enemy
-force is generated fresh and the main battle each turn is treated as decisive. Direction sketched:
-the enemy keeps a **persistent army size** across turns (not re-rolled), which raids/events can
-**sometimes** (not every event) shrink; troops NOT sent raiding instead fill a **final-battle
-meter**; once that meter is full, the decisive battle fires and advances/ends the campaign. Several
-turns of raiding/foraging/events happen before that trigger, rather than one. Explicitly not
-planned yet — needs grilling (scope, how the meter fills exactly, what "advances the campaign"
-means post-battle, interaction with the existing `enemy.stance`/`offering_battle` machine and the
-raid opportunity generator's `sliceTargetForce`) before any implementation.
+**~~TODO~~ ✅ DESIGNED 2026-07-20 — multi-turn campaign loop: persistent enemy army + a "final
+battle" meter.** Grilled and fully designed — see "Boss-fight campaign loop (meter + decisive
+battle) — DESIGNED 2026-07-20, NOT YET IMPLEMENTED" near the top of this file (right after
+"Project state"). Not yet built; staged A→E there.
 
 **TODO — squads as the persistent campaign unit (user, 2026-07-20 — idea only, no plan yet).**
+[[todo-squads-persistent-unit]]
 Direction sketched: squads (already persistent + named, see the 2026-07-13 campaign-squads
 shipped entry) become the primary unit players manage — a squad should be able to **absorb**
 compatible replacement troops after taking casualties, and even **survive being wiped** (full
@@ -1809,25 +2075,12 @@ was designed for this — foot ¾·size, rider ³⁄₁₀·size); recon/forage/
 don't map onto old 2/3 — e.g. LightCavalry forage 90→84 kg); retuning those formulas to exploit
 the finer granularity is deferred until a playtest wants it.
 
-**TODO — raid vs. main-battle turn sequencing (open DECISION, could go either way).** For the
-first raid implementation, raiding is INDEPENDENT of the main battle — the same units may raid
-and fight the main battle in one turn, and raids aren't gated by `battleFoughtToday`. This is
-explicitly the simplest placeholder, not a decision: the real turn cycle (e.g. one or more
-raiding turns/phases BEFORE the main battle, or raids consuming the turn's battle slot, or a
-forage-style carve-out) is deferred until the full loop is playtested with raids in it.
-
-**Direction set 2026-07-20 (user, still NEEDS PLANNING — not scoped, do together with the
-multi-turn campaign loop item below, [[todo-multi-turn-campaign-loop]]):** troops committed to a
-raid should become **unavailable for that turn's main battle** — mirroring how `forage.assignment`
-already removes foragers from what's placeable — AND should **not count toward the "N still in
-camp" full-deployment gate** (`App.jsx`/`useInCamp`, `campaigns.js` battle route 400,
-`docs/CAMPAIGN_PLAN.md` "Full-deployment rule" line ~53/639), the same carve-out foragers already
-get. Today neither is true: `RaidPanel`'s own troop pool (roster − forage − `raid.assignment`)
-already prevents a raided unit from being double-booked into ANOTHER raid, but nothing stops it
-from ALSO being placed in the main battle, and the full-deployment counter doesn't know raiders
-exist. Natural to land alongside the persistent-enemy-army/final-battle-meter rework since that
-rework is what turns "raid vs. main battle" from a same-day toggle into a real turn-sequencing
-question — don't implement standalone without that context.
+**~~TODO~~ ✅ DESIGNED 2026-07-20 — raid vs. main-battle turn sequencing.** Resolved as part of the
+same grilling session: see point 3 of "Boss-fight campaign loop" above — raiders/foragers get the
+same carve-out from the boss-fight roster that foragers alone get today, and the "whole army must
+take the field" rejection goes away once the meter/boss-fight mechanic lands (Stage B). Until
+Stage B ships, raiding stays independent of the main battle as today (the placeholder this entry
+originally described).
 
 **Morale overhaul (battle↔campaign).** Two morale tracks per army on a 1–1000 scale: a
 **starting/max** value and a **current** value. Unit deaths damage the max a little and the
