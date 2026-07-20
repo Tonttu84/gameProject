@@ -7,6 +7,10 @@ export const campaignFixture = {
   day: 1,
   status: 'active',
   battleFoughtToday: false,
+  // Boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
+  // banded phrase only pre-reveal — value stays null until bought.
+  meter: { band: 'calm', revealed: false, value: null },
+  bossFightDue: false,
   resources: { food: 50000, materials: 0, foodNeedPerTurn: 12432 },
   roster: { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10, LightCavalry: 12 },
   // Persistent player-facing squads (playtest item 1) — a subset of roster
@@ -34,7 +38,7 @@ export const campaignFixture = {
   // Raid opportunities (Stage 4 Part 2): public projection only — the hidden
   // target slice is stripped to its strength band; outcome appears once
   // resolved. Empty by default so tests opt in per case.
-  raid: { opportunities: [] },
+  raid: { opportunities: [], assignment: {}, scoutingPoints: 0, scoutCost: { addTarget: 8, reveal: 3 } },
   augury: { consulted: false, rerollsRemaining: 1, visions: null },
   // Only the banded label crosses the boundary — never coverage numbers.
   scouting: { band: 'Contested' },

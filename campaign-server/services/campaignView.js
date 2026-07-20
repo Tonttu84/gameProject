@@ -16,6 +16,7 @@ import {
   RAID_SCOUT_COST_REVEAL,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
+import { meterBand } from './meter.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValenceFor, choiceRung } from './events.js'
@@ -159,6 +160,17 @@ export async function campaignView(campaign) {
     day: campaign.day,
     status: campaign.status,
     battleFoughtToday: campaign.battleFoughtToday,
+    // The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
+    // hidden by default — only the banded phrase crosses the wire, same
+    // discipline as `scouting.band` below. `value` is null until bought
+    // (meter.revealed, a later stage). `bossFightDue` itself is own info —
+    // it's what unlocks the decisive battle, not a secret.
+    meter: {
+      band: meterBand(campaign.meter.value),
+      revealed: campaign.meter.revealed,
+      value: campaign.meter.revealed ? campaign.meter.value : null,
+    },
+    bossFightDue: campaign.bossFightDue,
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,

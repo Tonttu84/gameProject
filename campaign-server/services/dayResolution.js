@@ -1,4 +1,4 @@
-import { DESERTION_FRACTION } from '../utils/campaignConfig.js'
+import { DESERTION_FRACTION, BOSS_FIGHT_METER_THRESHOLD } from '../utils/campaignConfig.js'
 import { getCatalog } from '../utils/catalog.js'
 import {
   armyFoodPerTurn,
@@ -9,6 +9,7 @@ import {
 import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
+import { meterFillAmount } from './meter.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging } from './forage.js'
@@ -24,7 +25,10 @@ import { resolveForaging } from './forage.js'
 //                         odds × posture damper)
 //   3. apply true event  (regardless of what the augur foretold — the reveal;
 //                         the band decides WHICH RUNG of the fate fires)
-//   4. enemy turn        (upkeep, stance, tomorrow's offer + forage plan)
+//   4. meter + enemy turn (boss-fight meter fill/threshold read against the
+//                         day's pre-reset forage/raid assignments, THEN enemy
+//                         upkeep/stance/tomorrow's forage plan, since stance
+//                         now reads bossFightDue/meter — see services/meter.js)
 //   5. player upkeep     (food, desertion at zero)
 //   6. check end         (annihilation / enemy withdrawal)
 //   7. new turn          (draw events, clear forage assignment, regenerate
@@ -229,7 +233,11 @@ export async function endDay(campaign) {
     })
   }
 
-  // 4. Enemy turn
+  // 4. Boss-fight meter, THEN the enemy turn (stance reads the fresh value).
+  // Read against the day's pre-reset forage/raid assignments — step 7 below
+  // clears them for the new turn.
+  campaign.meter.value += meterFillAmount(campaign)
+  if (campaign.meter.value >= BOSS_FIGHT_METER_THRESHOLD) campaign.bossFightDue = true
   entries.push(...enemyTurn(campaign, catalog))
 
   // 5. Player upkeep — size² × kg/day × days-per-turn, from live catalog sizes.

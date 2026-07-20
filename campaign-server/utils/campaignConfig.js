@@ -180,8 +180,8 @@ export const ENEMY_STRENGTH_BANDS = [
   { min: 0, label: 'a scattered few' },
 ]
 // Turns of food the enemy has left (supplies ÷ its per-turn need) → supply
-// phrase. 'near starving' brackets ENEMY_LOW_SUPPLIES — a host read as
-// starving is about to be forced into a battle offer.
+// phrase — flavour only now that the battle offer is meter-driven, not a
+// supply threshold.
 export const ENEMY_SUPPLY_BANDS = [
   { min: 3, label: 'well-provisioned' },
   { min: 1.5, label: 'strained' },
@@ -195,8 +195,8 @@ export const ENEMY_ARMY = {
   Necromancer: 11,
   LightCavalry: 20,
 }
-// ~4 turns for the enemy host (21,868 kg per turn); its forage deficit walks
-// it down to ENEMY_LOW_SUPPLIES around turn 5 — hunger forces a battle.
+// ~4 turns for the enemy host (21,868 kg per turn); its forage deficit is
+// flavour only now — the battle offer is driven by the meter, not supply.
 export const ENEMY_SUPPLIES = 90000
 
 // Daily food need per unit = size² × this (kg); a turn consumes 14 days of it.
@@ -298,8 +298,28 @@ export const MILITIA_UNIT = 'Militia'
 // it waits on the replenishment design.
 export const STARTING_WORKERS = 2000
 
-// Enemy AI stance machine (services/enemyAi.js). Thresholds are turns.
-export const ENEMY_SHADOW_DAY = 3 // leaves camp and starts shadowing from this turn
-export const ENEMY_OFFER_EVERY = 5 // offers battle every Nth turn regardless
-export const ENEMY_LOW_SUPPLIES = 25000 // offers battle below this (~1 turn of food)
+// Enemy AI stance machine (services/enemyAi.js). `stance` is now driven by
+// the boss-fight meter below (see METER_BANDS) except for the withdraw case,
+// which stays an independent near-annihilation check.
 export const ENEMY_WITHDRAW_FRACTION = 0.2 // withdraws (you win) below this strength
+
+// ── Boss-fight meter (roguelite campaign loop) ───────────────────────────────
+// Hidden per-campaign counter, 0 → BOSS_FIGHT_METER_THRESHOLD. Fills at
+// end-of-day by CEILING − FLOOR × (troopsInCamp / totalRoster): everyone
+// raiding/foraging fills it fastest (CEILING/turn), everyone held back in
+// camp fills it slowest (FLOOR/turn) — see services/meter.js. Crossing the
+// threshold sets campaign.bossFightDue; the decisive fight is due the NEXT
+// day (see docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop").
+export const BOSS_FIGHT_METER_THRESHOLD = 1000
+export const BOSS_FIGHT_METER_FLOOR = 50
+export const BOSS_FIGHT_METER_CEILING = 100
+// Banded phrase (mirrors ENEMY_STRENGTH_BANDS/ENEMY_SUPPLY_BANDS) — the ONLY
+// form of the meter that reaches the client pre-reveal. Also drives the enemy
+// stance machine directly (calm ⇒ camp, else ⇒ shadowing; offering_battle is
+// bossFightDue instead) — one banded signal instead of two systems that could
+// disagree.
+export const METER_BANDS = [
+  { min: 667, label: 'imminent' },
+  { min: 334, label: 'restless' },
+  { min: 0, label: 'calm' },
+]

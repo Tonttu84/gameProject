@@ -52,7 +52,11 @@ _run() { if [ "$tail_n" = "0" ]; then "$@"; else "$@" 2>&1 | tail -n "$tail_n"; 
 # see reference_laptop_mongo_tests memory for the failure modes this avoids.
 if [ -e /.flatpak-info ]; then
   export MONGOMS_DISTRO="${MONGOMS_DISTRO:-ubuntu-22.04}"
-  cs_test_extra_args=(--no-file-parallelism)
+  # Sandbox contention (VS Code's own TS-server/ESLint/GPU subprocesses sharing
+  # the same resource envelope as the in-memory mongod) can blow the default
+  # 10s hook/test timeout even when nothing is actually wrong — widen both so
+  # a slow-but-fine run doesn't get killed (see reference_laptop_mongo_tests).
+  cs_test_extra_args=(--no-file-parallelism --hookTimeout=60000 --testTimeout=60000)
 else
   cs_test_extra_args=()
 fi

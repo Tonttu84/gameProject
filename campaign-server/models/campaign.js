@@ -80,7 +80,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 13 // v13: raid scouting-points mini-game (per-target reveals + scoutingPoints pool)
+export const CAMPAIGN_SCHEMA_VERSION = 14 // v14: boss-fight meter (campaign.meter, campaign.bossFightDue)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -93,6 +93,18 @@ const campaignSchema = new mongoose.Schema({
   // One `day` = one campaign turn = two weeks of campaigning (DAYS_PER_TURN).
   day: { type: Number, default: 1 },
   battleFoughtToday: { type: Boolean, default: false },
+
+  // The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
+  // fills at end-of-day based on how many troops sat idle in camp (raiding/
+  // foraging fills it faster), crossing BOSS_FIGHT_METER_THRESHOLD flips
+  // `bossFightDue` — the decisive boss fight is due the NEXT day. Hidden by
+  // default (campaignView exposes only a banded phrase); `revealed` is bought
+  // with leftover scouting points (later stage) and shows the exact value.
+  meter: {
+    value: { type: Number, default: 0 },
+    revealed: { type: Boolean, default: false },
+  },
+  bossFightDue: { type: Boolean, default: false },
 
   resources: {
     food: { type: Number, required: true },

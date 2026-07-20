@@ -8,7 +8,7 @@ import { useRoster } from '../stores/selectors'
 // never re-derives campaign math), the player reads tonnes. Reads straight
 // from the campaign store — only ever mounted once a campaign exists.
 const CampaignHUD = () => {
-  const { day, resources, fortification, forage } = useCampaignStore((s) => s.campaign)
+  const { day, resources, fortification, forage, meter, raid } = useCampaignStore((s) => s.campaign)
   const roster = useRoster()
 
   const landLeft = forage?.rings?.reduce((s, r) => s + r.richness, 0) ?? 0
@@ -24,6 +24,12 @@ const CampaignHUD = () => {
       <span className="hud-materials">Materials: {resources.materials}</span>
       <span className="hud-forts" data-testid="hud-forts">Forts: Lv {fortification?.level ?? 0}</span>
       <span className="hud-land" data-testid="hud-land">Land: {landPct}% left</span>
+      <span className="hud-meter" data-testid="hud-meter">
+        {meter?.revealed ? `Meter: ${meter.value}` : `Meter: ${meter?.band ?? 'calm'}`}
+      </span>
+      <span className="hud-scouting" data-testid="hud-scouting">
+        Scouting: {Math.floor(raid?.scoutingPoints ?? 0)}
+      </span>
       <span className="hud-roster">
         {Object.entries(roster)
           .filter(([, n]) => n > 0)

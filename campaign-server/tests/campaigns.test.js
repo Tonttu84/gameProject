@@ -117,6 +117,13 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"ratio"')
   for (const scouting of [body.scouting, body.campaign?.scouting])
     if (scouting) expect(Object.keys(scouting)).toEqual(['band'])
+  // Boss-fight meter: banded phrase only pre-reveal — the exact value stays
+  // null until bought (meter.revealed, a later stage).
+  for (const c of [body, body.campaign]) {
+    if (!c?.meter) continue
+    expect(Object.keys(c.meter).sort()).toEqual(['band', 'revealed', 'value'])
+    if (!c.meter.revealed) expect(c.meter.value).toBeNull()
+  }
   // Raid opportunities (Stage 4 Part 2 + the 2.5 scouting mini-game): the raw
   // hidden target-slice Map (`targetForce`) never crosses — the wire carries
   // per-type ranges under `enemy`/`reward` instead — and each opportunity's

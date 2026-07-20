@@ -154,12 +154,14 @@ notes below over the git history if they ever disagree — the commits win.
 - **Movement-speed rework: ✅ SHIPPED 2026-07-14** (was a deferred-backlog TODO; see the
   "SHIPPED — movement-speed rework" record in the deferred backlog for the numbers and the
   campaign-seam normalization).
-- **Then (NEXT):** the **boss-fight campaign loop** — see "Boss-fight campaign loop (meter +
-  decisive battle) — DESIGNED 2026-07-20" below, staged A→E, once the in-progress raid
-  scouting mini-game (see "Raid mini-game (scouting-points economy)" near the end of this file)
-  is committed. **combat-score-per-hexside** ([[todo-combat-score-per-hexside]] — make
-  `HexSide.combatScore` erode `fortDurability` mid-battle so the placeholder goes live) is still
-  open but pushed further down the queue behind the loop.
+- **Boss-fight campaign loop — Stage A (meter core) ✅ SHIPPED 2026-07-20** (uncommitted at
+  write time — see the dated handoff entry right after the Stage A TDD breakdown for the full
+  detail). Raid scouting mini-game Stage 3 landed committed (`556335e`) first, per the
+  prerequisite noted below. **Then (NEXT):** Stage B (gate the battle on `bossFightDue` +
+  raid-assignment carve-out + decisive win/loss). **combat-score-per-hexside**
+  ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
+  mid-battle so the placeholder goes live) is still open but pushed further down the queue
+  behind the loop.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
 - **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
@@ -379,6 +381,61 @@ steps yet — still design-only, picked up later.
    `campaigns.test.js`/`raid.test.js` for `expectNoHiddenInfo` or similar) to assert
    `meter.value`/raw number never appears pre-reveal, only the band phrase.
 
+#### Stage A (meter core) ✅ SHIPPED 2026-07-20 — handoff (uncommitted at write time)
+
+All five steps above landed as described, plus the HUD convenience bullet below (done same
+session, not deferred). campaign-server's raid scouting mini-game Stage 3 (`556335e`) was
+confirmed already committed first, satisfying the "once committed" prerequisite noted earlier
+in this file.
+
+- **Schema/config** (`models/campaign.js`, schema v13→**14**): `campaign.meter = {value, revealed}`,
+  `campaign.bossFightDue`. `utils/campaignConfig.js`: `BOSS_FIGHT_METER_THRESHOLD=1000`,
+  `_FLOOR=50`, `_CEILING=100`, and `METER_BANDS` (`calm` <334, `restless` <667, `imminent` ≥667 —
+  thirds of the threshold, not user-specified exactly, just a reasonable split of the example
+  band names from the design). `ENEMY_SHADOW_DAY`/`ENEMY_OFFER_EVERY`/`ENEMY_LOW_SUPPLIES`
+  deleted (nothing reads them anymore); `ENEMY_WITHDRAW_FRACTION` stays, independent of the meter.
+- **New `services/meter.js`**: `meterFillAmount(campaign)` (pure — `CEILING − FLOOR ×
+  (troopsInCamp/totalRoster)`, floored at `FLOOR`, guarded against a 0-roster divide) and
+  `meterBand(value)` (the same descending-table lookup convention `campaignView`'s local
+  `bandLabel` already uses, exported so `enemyAi.js` and `campaignView.js` share ONE band
+  decision instead of two that could disagree — the design's explicit goal).
+- **`dayResolution.js`**: meter fill + threshold check now run at step 4, BEFORE `enemyTurn` (so
+  stance reads the fresh `bossFightDue`/value) and BEFORE step 7 clears `forage.assignment`/
+  `raid.assignment` (the fill formula's input). Pipeline docstring updated.
+- **`enemyAi.js` stance rewire**: `withdrawing` check unchanged (first, independent);
+  `bossFightDue` ⇒ `offering_battle`; else `meterBand(meter.value) === 'calm'` ⇒ `camp`, else
+  ⇒ `shadowing`. `tests/enemyAi.test.js`'s old "battle offer" + "stance cadence" describe blocks
+  (pinned to the deleted supply/calendar thresholds) were rewritten wholesale into one "the
+  boss-fight meter drives stance" block using a new `pinMeter(id, value)` raw-doc helper (same
+  convention as the existing `pinEnemy`) — idle-army floor-fill, calm→camp/restless→shadowing,
+  and crossing 1000 sets `bossFightDue` + offers battle same day. The supply-depletion and
+  withdraw-threshold blocks needed NO changes (their arithmetic/priority was untouched by the
+  rewire) — confirmed by reasoning through the meter math, not by a full suite run (see below).
+- **`campaignView.js`**: new top-level `meter: {band, revealed, value}` (`value` null pre-reveal)
+  and `bossFightDue` (own info — it's what unlocks Stage B's battle, not a secret). Both
+  `campaigns.test.js` and `enemyAi.test.js`'s `expectNoHiddenInfo` extended to pin the meter's
+  key set and that `value` stays null pre-reveal.
+- **HUD convenience** (done this session per the note below, not deferred): `CampaignHUD.jsx`
+  gained `hud-meter` (band, or exact value once revealed) and `hud-scouting`
+  (`raid.scoutingPoints`, floored) spans; `__tests__/fixtures/campaign.js` gained matching
+  `meter`/`bossFightDue`/`raid.scoutingPoints`/`raid.scoutCost` fields; new
+  `campaignHud.test.jsx` (3 tests, direct-render pattern like `auguryLabel.test.jsx` — no full
+  `App` mount needed).
+- **Verification status:** `enemyAi.test.js` alone: **6/6 green**. Full frontend suite: **228/228
+  green**. The full `campaign-server` suite (`cs-test` with no file filter) was NOT completed
+  locally this session — this sandboxed shell's `mongodb-memory-server` instance died mid-run
+  (`ECONNREFUSED`) under the same Flatpak/VS-Code resource contention
+  [[reference_laptop_mongo_tests]] already describes, and a second attempt on `campaigns.test.js`
+  alone also stalled. User call: skip the full local run, since GitHub CI runs the suite anyway.
+  **Whoever picks this up next: run `bash scripts/dev.sh cs-test` for real green/red on
+  `campaigns.test.js`/`enemyAi.test.js` before trusting this stage further**, or check CI on the
+  branch/PR that carries this commit.
+- **`scripts/dev.sh`**: the Flatpak-sandbox branch (already gating `MONGOMS_DISTRO`/
+  `--no-file-parallelism`) now also widens vitest's hook/test timeout to 60s
+  (`--hookTimeout=60000 --testTimeout=60000`) — the default 10s was tripping on contention alone
+  even where the run would otherwise have passed (confirmed: `enemyAi.test.js` alone hit this
+  exact timeout once, then passed clean on retry with the wider window).
+
 **Stage B — gate the battle (the real behavior change; expect to touch existing battle tests)**
 1. **RED→GREEN: gate on `bossFightDue`.** `routes/campaigns.js` `POST /:id/battles`: add
    `if (!campaign.bossFightDue) return res.status(400).json({error: '...'})` near the top
@@ -460,7 +517,10 @@ stage that introduces it — don't defer to a cleanup pass:
 - **Stage A/C:** meter band (and exact value once `meter.revealed`) on the HUD, not just
   wherever `enemy.stance`/`battleOffer` currently render; `raid.scoutingPoints` mirrored onto the
   HUD too (RaidPanel keeps its own copy for the spend buttons — this is an additional, cheap
-  read of the same store field, not a move).
+  read of the same store field, not a move). **Stage A half ✅ SHIPPED 2026-07-20** (see the
+  Stage A handoff above) — `hud-meter`/`hud-scouting` spans landed same commit as the meter core;
+  the exact-value-once-revealed path is exercised by a fixture-driven test now but has no real
+  `revealed:true` producer yet (that's Stage C).
 - **Stage E:** the new `gold` resource and `horses` (whatever shape that ends up — a resource
   count or a roster-like pool) go on the HUD the moment they're added to `campaignView`'s
   `resources`, same line pattern as the existing `Food:`/`Materials:` spans.

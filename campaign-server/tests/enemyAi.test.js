@@ -101,6 +101,11 @@ const expectNoHiddenInfo = (body) => {
         : ['battleOffer', 'stance']
     expect(Object.keys(c.enemy).sort()).toEqual(allowed)
   }
+  for (const c of [body, body.campaign]) {
+    if (!c?.meter) continue
+    expect(Object.keys(c.meter).sort()).toEqual(['band', 'revealed', 'value'])
+    if (!c.meter.revealed) expect(c.meter.value).toBeNull()
+  }
 }
 
 // A no-op truth in every slot keeps events out of the supply/stance math
@@ -129,6 +134,12 @@ const pinEnemy = async (id, { army, supplies } = {}) => {
   await doc.save()
 }
 
+const pinMeter = async (id, value) => {
+  const doc = await Campaign.findById(id)
+  doc.meter.value = value
+  await doc.save()
+}
+
 describe('enemy supply depletion', () => {
   test('the host eats size²-scale food and forages 40% of its capacity — net −14,601 kg/turn', async () => {
     const { body: c } = await createCampaign()
@@ -150,67 +161,71 @@ describe('enemy supply depletion', () => {
   })
 })
 
-describe('the battle offer (offering_battle stance)', () => {
-  // End-of-turn supplies = start + 7,267 − 21,868 = start − 14,601, and the
-  // offer fires strictly below 25,000 — so start 39,601 lands exactly ON the
-  // threshold (no offer) and 39,600 lands one kg under it (offer). Turn 1
-  // (next turn 2) sits below the shadow day and off the every-5th cadence,
-  // so hunger is the only possible trigger here.
-  test('one kg above the hunger line the host stays in camp', async () => {
+// The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop") now
+// drives stance instead of the old ENEMY_OFFER_EVERY/ENEMY_LOW_SUPPLIES
+// thresholds: calm ⇒ camp, restless/imminent ⇒ shadowing, bossFightDue (meter
+// crosses BOSS_FIGHT_METER_THRESHOLD=1000) ⇒ offering_battle. A fresh
+// campaign never forages or raids in these tests, so troopsInCamp == the
+// whole roster every turn — meterFillAmount is pinned at the FLOOR (50)/turn,
+// which these tests use to predict the post-end-day value from a pinned
+// starting one.
+describe('the boss-fight meter drives stance', () => {
+  test('an idle army fills the meter by the floor amount (50) each end-day', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
-    await pinEnemy(c.id, { supplies: 39601 })
 
     const res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.enemy).toEqual({ stance: 'camp', battleOffer: false })
-    expect((await Campaign.findById(c.id)).enemy.supplies).toBe(25000)
+    expect(res.body.campaign.meter).toEqual({ band: 'calm', revealed: false, value: null })
+    expect(res.body.campaign.bossFightDue).toBe(false)
+    expect((await Campaign.findById(c.id)).meter.value).toBe(50)
   })
 
-  test('one kg below it, hungry banners form up for battle', async () => {
+  test('calm (< 334) stays camp, restless (>= 334) tips to shadowing', async () => {
+    const { body: c } = await createCampaign()
+
+    await pinAugury(c.id)
+    await pinMeter(c.id, 250) // + 50 floor fill = 300, still calm
+    let res = await endDay(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+    expect(res.body.report.enemy).toEqual({ stance: 'camp', battleOffer: false })
+
+    await pinAugury(c.id)
+    await pinMeter(c.id, 300) // + 50 = 350, restless
+    res = await endDay(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+    expect(res.body.report.enemy).toEqual({ stance: 'shadowing', battleOffer: false })
+  })
+
+  test('crossing 1000 sets bossFightDue and the enemy offers battle that same day', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
-    await pinEnemy(c.id, { supplies: 39600 })
+    await pinMeter(c.id, 949) // + 50 floor fill = 999, just under the threshold
 
-    const res = await endDay(c.id)
+    let res = await endDay(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+    expect(res.body.report.enemy).toEqual({ stance: 'shadowing', battleOffer: false })
+    expect(res.body.campaign.bossFightDue).toBe(false)
+    expect((await Campaign.findById(c.id)).meter.value).toBe(999)
+
+    await pinAugury(c.id) // second end-day: 999 + 50 = 1049, crosses 1000
+    res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.enemy).toEqual({ stance: 'offering_battle', battleOffer: true })
     expect(res.body.report.entries).toContain(
       'Enemy banners form up in the plain — they are offering battle.',
     )
+    expect(res.body.campaign.bossFightDue).toBe(true)
     const doc = await Campaign.findById(c.id)
     expect(doc.enemy.stance).toBe('offering_battle')
-    expect(doc.enemy.supplies).toBe(24999)
-  })
-})
-
-describe('stance cadence over the opening turns', () => {
-  test('camp → shadowing from turn 3 → a show of force every 5th turn → back to shadowing', async () => {
-    const { body: c } = await createCampaign()
-
-    const seen = []
-    for (let turn = 1; turn <= 5; turn++) {
-      await pinAugury(c.id)
-      // Top the train up each turn so hunger can never trigger the offer —
-      // what's left must be pure calendar: shadow from turn 3
-      // (ENEMY_SHADOW_DAY), banners on every turn divisible by 5
-      // (ENEMY_OFFER_EVERY), shadowing again after.
-      await pinEnemy(c.id, { supplies: 90000 })
-      const res = await endDay(c.id)
-      expect(res.status).toBe(200)
-      expectNoHiddenInfo(res.body)
-      seen.push({ day: res.body.report.newDay, ...res.body.report.enemy })
-    }
-
-    expect(seen).toEqual([
-      { day: 2, stance: 'camp', battleOffer: false },
-      { day: 3, stance: 'shadowing', battleOffer: false },
-      { day: 4, stance: 'shadowing', battleOffer: false },
-      { day: 5, stance: 'offering_battle', battleOffer: true },
-      { day: 6, stance: 'shadowing', battleOffer: false },
-    ])
+    expect(doc.bossFightDue).toBe(true)
+    expect(doc.meter.value).toBe(1049)
   })
 })
 

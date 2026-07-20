@@ -1,12 +1,7 @@
-import {
-  ENEMY_SHADOW_DAY,
-  ENEMY_OFFER_EVERY,
-  ENEMY_LOW_SUPPLIES,
-  ENEMY_WITHDRAW_FRACTION,
-  ENEMY_FORAGE_FRACTION,
-} from '../utils/campaignConfig.js'
+import { ENEMY_WITHDRAW_FRACTION, ENEMY_FORAGE_FRACTION } from '../utils/campaignConfig.js'
 import { armyFoodPerTurn } from '../utils/capabilities.js'
 import { forageCapacityKg } from './forage.js'
+import { meterBand } from './meter.js'
 
 export const armyTotal = (army) => [...army.values()].reduce((a, b) => a + b, 0)
 
@@ -27,14 +22,14 @@ export function enemyTurn(campaign, catalog) {
 
   const prev = enemy.stance
   if (size < enemy.initialStrength * ENEMY_WITHDRAW_FRACTION) {
+    // Near-annihilation stays an independent check, orthogonal to the meter.
     enemy.stance = 'withdrawing'
-  } else if (enemy.supplies < ENEMY_LOW_SUPPLIES || (campaign.day + 1) % ENEMY_OFFER_EVERY === 0) {
-    // Hungry armies seek a decision; otherwise a periodic show of force.
+  } else if (campaign.bossFightDue) {
     enemy.stance = 'offering_battle'
-  } else if (campaign.day + 1 >= ENEMY_SHADOW_DAY) {
-    enemy.stance = 'shadowing'
   } else {
-    enemy.stance = 'camp'
+    // camp/shadowing reflect the boss-fight meter's own band — one coherent
+    // signal instead of a second, independently-tuned threshold set.
+    enemy.stance = meterBand(campaign.meter.value) === 'calm' ? 'camp' : 'shadowing'
   }
 
   if (enemy.stance !== prev) {
