@@ -1871,3 +1871,30 @@ work — gone for good" (dropped "& militia" — only fort labour lives in `used
 
 ## Verification (overall)
 Per stage as listed. Cross-stage: WSL `make test` (engine tripwire + movement tests), `campaign-server npm test`, `frontend npm test`, then a full manual campaign: create → forage → scout reveal → battle → end-day with lying augur → materials spend → repeat until a ring runs dry.
+
+### Raid mini-game (scouting-points economy) — IN PROGRESS 2026-07-20
+
+Turning the raid phase into a planning mini-game: a per-turn **scouting-points** pool spent to
+**scout new targets** or **reveal** a target's hidden reward / per-unit-type enemy strength (ranges →
+exact). Full grilled spec + staged design in the plan file
+`~/.claude/plans/distributed-cooking-steele.md` (machine-local; summary here for cross-machine).
+
+- **Stage 1 ✅ SHIPPED (commit `c9310f3`, schema v13).** Server core: `raid.scoutingPoints` pool +
+  per-opportunity `rewardRange`/`enemyRange` (per unit TYPE — "3 Giants + 20 spearmen", never one
+  headcount) + `rewardReveal`/`enemyReveal` LEVELS (int, 0=range 1=exact) + `source`. Points are
+  ARMY-derived, not band-derived: `scoutingPointValue = (accuracy/BASELINE_ACCURACY × speed/foot) +
+  reconTag`, summed raw over the roster (baseline human ≈ 1 pt), set at both deal sites, expiring at
+  turn start. One counter-raid per bad fate (was one total). Retired `RAID_OPPORTUNITIES_PER_DAY`;
+  flat raised costs (`RAID_SCOUT_COST_ADD=8`/`REVEAL=3`) are the balance knob. Tests green
+  (capabilities + raid).
+- **Stage 2 (next):** `POST /:id/raids/scout` route (`add_target` | `reveal`) using `addScoutedTarget`
+  /`revealField`; `campaignView` raid projection (expose `scoutingPoints`, range-vs-exact per reveal
+  level, never leak unrevealed truth); route tests (spending points).
+- **Stage 3:** raiding as its OWN phase/screen (user 2026-07-20, also eases testing) + RaidPanel
+  mini-game UI + api/store wiring + FE tests.
+
+**Deferred asks logged this session (not in the plan above):** (1) archery rework — rescale accuracy
+to avg-10 + give archers control roles (taunt/hold/disrupt) beyond DPS [engine work]; (2) install the
+`grill-me` skill (github.com/mattpocock/skills .../grill-me) + add a "grill the spec before building
+complex features" rule to CLAUDE.md. **Laptop note:** campaign-server tests here need
+`MONGOMS_DISTRO=ubuntu-22.04` + `--no-file-parallelism` (Flatpak sandbox).
