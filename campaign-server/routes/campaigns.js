@@ -495,16 +495,26 @@ router.post('/:id/raids/launch', async (req, res) => {
     if (error) return res.status(400).json({ error })
 
     // The party is replaced by its survivors (same reconciliation as the main
-    // battle route). The target force was never pre-subtracted from the
-    // enemy host, so a lost raid leaves it untouched — only a
-    // destroy_detachment WIN makes the slice real (and dead) via
-    // applyRaidReward. The committed troops stay in raid.assignment for the
-    // rest of the day regardless of survivors — they already spent today's
-    // raid on this opportunity.
+    // battle route). The committed troops stay in raid.assignment for the rest
+    // of the day regardless of survivors — they already spent today's raid on
+    // this opportunity.
     for (const [type, count] of Object.entries(cleaned)) {
       campaign.roster.set(type, (campaign.roster.get(type) ?? 0) - count + (summary.blue_survivors[type] ?? 0))
       campaign.raid.assignment.set(type, (campaign.raid.assignment.get(type) ?? 0) + count)
     }
+
+    // destroy_detachment inflicts its REAL battle casualties on the hidden
+    // enemy host, win OR lose (docs/CAMPAIGN_PLAN.md Stage D): the slice that
+    // actually died is targetForce − red_survivors. A WIN additionally pursues
+    // the routing remainder — that second subtraction lives in applyRaidReward
+    // below, so a win removes the whole slice and a loss removes only the real
+    // dead. The other raid types never pre-subtract their (narrative) target
+    // force, so a lost loot/rescue/counter raid still leaves the host untouched.
+    if (opportunity.type === 'destroy_detachment')
+      for (const [type, n] of opportunity.targetForce) {
+        const casualties = Math.max(0, n - (summary.red_survivors[type] ?? 0))
+        campaign.enemy.army.set(type, Math.max(0, (campaign.enemy.army.get(type) ?? 0) - casualties))
+      }
 
     const won = summary.winner === 'blue'
     const entries = [
@@ -514,7 +524,7 @@ router.post('/:id/raids/launch', async (req, res) => {
             summary.winner === 'red' ? 'beaten back' : 'fought to a standstill'
           } after ${summary.tickCount} turns.`,
     ]
-    if (won) entries.push(...applyRaidReward(campaign, opportunity))
+    if (won) entries.push(...applyRaidReward(campaign, opportunity, summary.red_survivors))
     opportunity.resolved = true
     opportunity.outcome = { winner: summary.winner, battleId: battle.id }
     campaign.battles.push(battle._id)

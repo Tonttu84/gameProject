@@ -404,6 +404,65 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     expect(doc.enemy.army.get('Archer')).toBe(150 - 10)
   })
 
+  test('destroy_detachment: a LOSS still inflicts its real casualties on the hidden host', async () => {
+    // Stage D: the mini-battle's actual dead (targetForce − red_survivors) are
+    // subtracted even when the raid is lost — no reward, but real attrition.
+    const lost = structuredClone(battleResultFixture)
+    lost.winner = 'red'
+    lost.blue_survivors = { Soldier: 1 }
+    lost.red_survivors = { Soldier: 20, Archer: 5 } // 10 Soldier + 5 Archer fell
+    engine.runBattle.mockResolvedValue(lost)
+
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({
+      type: 'destroy_detachment',
+      targetForce: { Soldier: 30, Archer: 10 },
+      reward: null,
+      capacity: 200,
+    })])
+
+    const res = await launch(c.id, 'd1-0', { Soldier: 20 })
+    expect(res.status).toBe(201)
+    expect(res.body.results[0].winner).toBe('red')
+
+    const doc = await Campaign.findById(c.id)
+    expect(doc.enemy.army.get('Soldier')).toBe(540 - 10) // 30 sent − 20 survived
+    expect(doc.enemy.army.get('Archer')).toBe(150 - 5)   // 10 sent − 5 survived
+    expect(doc.raid.opportunities[0].resolved).toBe(true)
+    // A loss runs no reward path — no "wiped out"/"prestigious" lines.
+    const allEntries = doc.log.flatMap((l) => l.entries)
+    expect(allEntries.some((e) => /wiped out|prestig/i.test(e))).toBe(false)
+  })
+
+  test('destroy_detachment: a WIN with survivors pursues the remainder — whole slice gone, plus a prestige stub', async () => {
+    // Casualties booked at the launch site (targetForce − survivors), then
+    // applyRaidReward pursues the surviving remainder — the two together remove
+    // the whole targetForce, matching the old all-or-nothing win number.
+    const won = structuredClone(battleResultFixture)
+    won.winner = 'blue'
+    won.blue_survivors = { Soldier: 2 }
+    won.red_survivors = { Soldier: 12, Archer: 4 } // survived the fight, then pursued
+    engine.runBattle.mockResolvedValue(won)
+
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({
+      type: 'destroy_detachment',
+      targetForce: { Soldier: 30, Archer: 10 },
+      reward: null,
+      capacity: 200,
+    })])
+
+    const res = await launch(c.id, 'd1-0', { Soldier: 20 })
+    expect(res.status).toBe(201)
+
+    const doc = await Campaign.findById(c.id)
+    // 540 − (30−12 casualties) − 12 pursued = 540 − 30; likewise Archer.
+    expect(doc.enemy.army.get('Soldier')).toBe(540 - 30)
+    expect(doc.enemy.army.get('Archer')).toBe(150 - 10)
+    const allEntries = doc.log.flatMap((l) => l.entries)
+    expect(allEntries.some((e) => /prestig/i.test(e))).toBe(true)
+  })
+
   test('rescue_troops: a win adds the freed prisoners to the roster', async () => {
     engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
     const { body: c } = await createCampaign()

@@ -217,13 +217,18 @@ export function addScoutedTarget(campaign, catalog) {
 // Apply a WON raid's reward. Mutates the campaign in place; caller saves.
 // Returns log lines — phrases only where the enemy is concerned (the log is
 // player-visible, so enemy numbers never leak through it).
-export function applyRaidReward(campaign, opportunity) {
+export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
   const entries = []
   if (opportunity.type === 'destroy_detachment') {
-    // The slice becomes real — and dead: subtract it from the hidden host.
-    for (const [type, n] of entriesOf(opportunity.targetForce))
+    // The caller already booked the real casualties (targetForce − red_survivors),
+    // win or lose. A WIN pursues the routing remainder — the surviving slice —
+    // so the whole detachment is gone. Subtracting only that remainder here
+    // avoids double-counting the casualties already removed at the launch site.
+    for (const [type, n] of entriesOf(redSurvivors))
       campaign.enemy.army.set(type, Math.max(0, (campaign.enemy.army.get(type) ?? 0) - n))
     entries.push('The detachment is wiped out — the enemy host is the thinner for it.')
+    // Prestige stub (Stage E, docs/CAMPAIGN_PLAN.md): no mechanic yet.
+    entries.push('A prestigious victory — word of it spreads (prestige not yet tracked).')
   } else if (opportunity.type === 'loot_supplies') {
     const { food = 0, materials = 0 } = opportunity.reward ?? {}
     campaign.resources.food += food

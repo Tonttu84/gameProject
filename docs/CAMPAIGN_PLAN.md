@@ -576,6 +576,32 @@ Server-only, exactly the one step above. `tests/raid.test.js` **40/40 green** (u
    Other raid types (`loot_supplies`/`rescue_troops`/`counter_event`) get NO new test — explicitly
    untouched.
 
+#### Stage D (destroy_detachment rework) ✅ SHIPPED 2026-07-20 — handoff
+
+Both steps exactly as above; `tests/raid.test.js` green (user-run).
+
+- **Route** (`routes/campaigns.js` raids/launch loop): after `runAndPersistBattle`, for
+  `destroy_detachment` ONLY, always subtract `targetForce − red_survivors` per type from
+  `campaign.enemy.army` (floored at 0), win or lose — the real casualties the mini-battle inflicted.
+  The stale "a lost raid leaves the host untouched" comment was rewritten. Other raid types still
+  never pre-subtract their (narrative) target force, so a lost loot/rescue/counter raid leaves the
+  host untouched as before.
+- **Service** (`services/raid.js`): `applyRaidReward(campaign, opportunity, redSurvivors = {})`
+  gained a third arg. Its `destroy_detachment` branch now subtracts only the surviving remainder
+  (`redSurvivors`) — the route already booked the casualties, so this avoids double-counting; the
+  two together remove the whole slice on a win. Added a prestige-stub log line ("A prestigious
+  victory … prestige not yet tracked") — explicitly a placeholder for the Stage E prestige mechanic.
+- **Tests** (in the launch `describe`): a LOST raid drops the host by exactly the real casualties
+  with NO reward/prestige log lines; a WON raid with nonzero survivors removes the whole
+  `targetForce` (casualties + pursued remainder) and logs the prestige stub. The pre-existing
+  "a win subtracts the target force" test still passes unchanged (fixture `red_survivors: {}` →
+  step 1 removes the full slice, step 2 removes nothing).
+- **Recon interaction to test when recon lands (user, 2026-07-20 — "delicate, add good coverage"):**
+  a `destroy_detachment` raid shrinks `enemy.army`, so the recon enemy-count bracket
+  (`currentTrue + {floor,ceil}Offset`) must shift the PERCEIVED size DOWN by exactly the casualties
+  — same width, floor clamped ≥ 0, no accuracy gained or leaked. Explicit test required in the
+  recon work: raid kills N → perceived `[low,high]` both drop by N (not narrower, not wider).
+
 **Frontend testing convenience (user ask, 2026-07-20) — do NOT skip, even though it's small.**
 `CampaignHUD.jsx` today shows `Turn`/`Food`/`Materials`/`Forts`/`Land`/roster only
 (`frontend/src/components/CampaignHUD.jsx:20-32`) — no scouting/meter/future-resource readout at
