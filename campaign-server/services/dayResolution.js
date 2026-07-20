@@ -284,6 +284,9 @@ export async function endDay(campaign) {
     // day's attrition left it — unused points from today expire here.
     campaign.raid.opportunities = generateRaidOpportunities(campaign, catalog)
     campaign.raid.scoutingPoints = scoutingPointsFor(campaign.roster, catalog)
+    // A meter reveal bought with this turn's points lapses with them — next
+    // turn shows the band again until re-bought (docs/CAMPAIGN_PLAN.md Stage C).
+    campaign.meter.revealed = false
   }
 
   campaign.log.push({ day: report.day, entries })

@@ -132,6 +132,11 @@ export const FORAGE_CLASH_DAMPER_BY_BAND = {
 export const RAID_BASE_TARGETS = 1
 export const RAID_SCOUT_COST_ADD = 8 // scout a NEW target (~5 for a ~40-pt army)
 export const RAID_SCOUT_COST_REVEAL = 3 // reveal one field (reward OR enemy) one level
+// Pin the exact boss-fight meter value for this turn (otherwise only the band
+// crosses the wire). Cheap on purpose — the intent is to spend leftover points
+// just before they expire at turn start, "better than wasting them" rather
+// than a first-choice buy (docs/CAMPAIGN_PLAN.md Stage C). Rough balance.
+export const METER_REVEAL_SCOUT_COST = 5
 // scoutingPointValue = (accuracy / BASELINE_ACCURACY) × (speed / foot) + reconTag,
 // with accuracy = ballisticSkill × ACCURACY_PER_BALLISTIC. Named so no literal
 // 10s leak into the formula; baseline human (bs 2 → acc 10, speed 10) = 1.0.

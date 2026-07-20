@@ -35,6 +35,7 @@ const {
   RAID_STRENGTH_BANDS,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
+  METER_REVEAL_SCOUT_COST,
 } = await import('../utils/campaignConfig.js')
 
 const api = supertest(app)
@@ -639,6 +640,67 @@ describe('POST /api/campaigns/:id/raids/scout', () => {
     expect((await scout(c.id, { action: 'reveal', raidId: 'nope', field: 'enemy' })).status).toBe(404)
     expect((await scout(c.id, { action: 'reveal', raidId: 'd1-1', field: 'enemy' })).status).toBe(400)
     expect((await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'terrain' })).status).toBe(400)
+  })
+
+  // ── Stage C: buy the exact boss-fight meter value with leftover points ──
+  const setMeter = async (id, value) => {
+    const doc = await Campaign.findById(id)
+    doc.meter.value = value
+    await doc.save()
+  }
+
+  test('reveal_meter: spends points and pins the exact meter value (band only until then)', async () => {
+    const { body: c } = await createCampaign()
+    await setMeter(c.id, 500)
+    await setPoints(c.id, METER_REVEAL_SCOUT_COST + 2)
+
+    // Pre-reveal the wire carries only the band, never the number.
+    const before = (await getView(c.id)).body.meter
+    expect(before.revealed).toBe(false)
+    expect(before.value).toBeNull()
+    expect(typeof before.band).toBe('string')
+
+    const res = await scout(c.id, { action: 'reveal_meter' })
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.meter.revealed).toBe(true)
+    expect(res.body.campaign.meter.value).toBe(500) // exact truth now visible
+    expect(res.body.campaign.raid.scoutingPoints).toBe(2)
+  })
+
+  test('reveal_meter: rejects when the pool cannot cover the cost (unspent, still hidden)', async () => {
+    const { body: c } = await createCampaign()
+    await setMeter(c.id, 500)
+    await setPoints(c.id, METER_REVEAL_SCOUT_COST - 1)
+    const res = await scout(c.id, { action: 'reveal_meter' })
+    expect(res.status).toBe(400)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.meter.revealed).toBe(false)
+    expect(doc.raid.scoutingPoints).toBe(METER_REVEAL_SCOUT_COST - 1) // unspent
+  })
+
+  test('reveal_meter: refuses to spend again once revealed this turn', async () => {
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.meter.revealed = true
+    await doc.save()
+    await setPoints(c.id, METER_REVEAL_SCOUT_COST)
+    const res = await scout(c.id, { action: 'reveal_meter' })
+    expect(res.status).toBe(400)
+    const after = await Campaign.findById(c.id)
+    expect(after.raid.scoutingPoints).toBe(METER_REVEAL_SCOUT_COST) // unspent
+  })
+
+  test('reveal_meter: the reveal lapses at the next turn (band again until re-bought)', async () => {
+    const { body: c } = await createCampaign()
+    await setMeter(c.id, 500)
+    await setPoints(c.id, METER_REVEAL_SCOUT_COST)
+    await scout(c.id, { action: 'reveal_meter' })
+    expect((await Campaign.findById(c.id)).meter.revealed).toBe(true)
+
+    await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const after = await Campaign.findById(c.id)
+    expect(after.meter.revealed).toBe(false)
+    expect((await getView(c.id)).body.meter.value).toBeNull()
   })
 
   test('an unknown action is rejected', async () => {

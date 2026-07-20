@@ -34,6 +34,7 @@ import {
   MILITIA_UNIT,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
+  METER_REVEAL_SCOUT_COST,
 } from '../utils/campaignConfig.js'
 
 const router = Router()
@@ -575,7 +576,22 @@ router.post('/:id/raids/scout', async (req, res) => {
     return res.status(201).json({ campaign: await campaignView(campaign) })
   }
 
-  return res.status(400).json({ error: "action must be 'add_target' or 'reveal'" })
+  if (action === 'reveal_meter') {
+    // Spend leftover scouting points to pin this turn's exact boss-fight meter
+    // value (otherwise only the banded phrase crosses — see campaignView). The
+    // reveal lasts the turn; end-day's step-7 reset clears it as the points
+    // pool refills (docs/CAMPAIGN_PLAN.md Stage C).
+    if (campaign.meter.revealed)
+      return res.status(400).json({ error: 'the meter is already revealed' })
+    if (campaign.raid.scoutingPoints < METER_REVEAL_SCOUT_COST)
+      return res.status(400).json({ error: 'not enough scouting points' })
+    campaign.meter.revealed = true
+    campaign.raid.scoutingPoints -= METER_REVEAL_SCOUT_COST
+    await campaign.save()
+    return res.status(201).json({ campaign: await campaignView(campaign) })
+  }
+
+  return res.status(400).json({ error: "action must be 'add_target', 'reveal', or 'reveal_meter'" })
 })
 
 // Spend stores at the camp. {action:'fortify'} raises the fortification level

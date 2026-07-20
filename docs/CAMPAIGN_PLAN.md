@@ -158,9 +158,11 @@ notes below over the git history if they ever disagree — the commits win.
   see the dated handoff entry right after the Stage A TDD breakdown for the full detail). Raid
   scouting mini-game Stage 3 landed committed (`556335e`) first, per the prerequisite noted below.
 - **Boss-fight campaign loop — Stage B (gate the battle) ✅ SHIPPED 2026-07-20** — server-only,
-  all four steps (see the dated handoff after the Stage B TDD breakdown). **Then (NEXT):** Stage C
-  (meter reveal via leftover scouting points), then Stage D (`destroy_detachment` raid rework).
-  **combat-score-per-hexside**
+  all four steps (see the dated handoff after the Stage B TDD breakdown).
+- **Boss-fight campaign loop — Stage C (meter reveal) ✅ SHIPPED 2026-07-20** — server-only,
+  `reveal_meter` scout action (see the dated handoff after the Stage C TDD breakdown).
+  **Then (NEXT):** Stage D (`destroy_detachment` raid rework — casualties on loss, pursuit +
+  prestige stub on win). Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
   behind the loop.
@@ -531,6 +533,28 @@ tests are handed to the user; CI runs the full suite anyway).
    `meter.revealed` is cleared at the next end-day's step 7 (new turn), alongside
    `raid.scoutingPoints` refilling — one assertion added to whatever test already checks turn-reset
    fields (forage.assignment clearing etc., likely in the end-day describe block).
+
+#### Stage C (meter reveal) ✅ SHIPPED 2026-07-20 — handoff
+
+Server-only, exactly the one step above. `tests/raid.test.js` **40/40 green** (user ran it).
+
+- **Config:** `METER_REVEAL_SCOUT_COST = 5` in `campaignConfig.js` (cheap by design — leftover-points
+  spend; rough balance, tunable).
+- **Route:** `POST /:id/raids/scout` gains a third action `{action:'reveal_meter'}` (no
+  `raidId`/`field`). Order: already-revealed → 400 (`the meter is already revealed`, don't burn
+  points twice); insufficient points → 400; else `meter.revealed = true`, deduct the cost. The
+  fallthrough message now lists all three actions. `campaignView`'s `meter.value` (Stage A) already
+  returns the exact value once `revealed`, so NO view change was needed.
+- **Turn reset:** `dayResolution.js` step 7 now clears `campaign.meter.revealed = false` alongside
+  the `scoutingPoints` refill — the reveal lasts exactly the turn it was bought.
+- **Tests** (in the existing scout `describe` block, mirroring the `add_target`/`reveal` cases):
+  reveal pins the exact value (band-only + `value:null` before, `value:500` after); insufficient
+  points → 400 unspent + still hidden; refuse-to-rebuy once revealed → 400 unspent; reveal lapses
+  at the next end-day (`revealed` false again, `value` null on the wire).
+- **Frontend follow-up (NOT done — flag):** no button yet triggers `reveal_meter`. The HUD already
+  SHOWS the exact value once `meter.revealed` (Stage A `hud-meter`), but the player can't yet spend
+  points to flip it — needs a spend button (likely on the Raids screen) via `api.js` + a store
+  action. Same server-first pattern as Stage B's unwired Fight! button.
 
 **Stage D — `destroy_detachment` raid rework**
 1. **RED→GREEN: casualties on loss.** `routes/campaigns.js` raids/launch loop: after
