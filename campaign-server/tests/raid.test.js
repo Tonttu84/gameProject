@@ -5,7 +5,6 @@ import { createUserAndToken } from './helpers/auth.js'
 import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { clearRolls } from '../utils/dice.js'
-import { SCOUTING_BANDS } from '../utils/capabilities.js'
 
 // Stub the engine service — raids run REAL battles in production, but these
 // tests cover the campaign layer around them. getInfo feeds the zone spread.
@@ -25,10 +24,12 @@ const engine = await import('../services/engine.js')
 const { default: app } = await import('../app.js')
 const { default: Campaign } = await import('../models/campaign.js')
 const { default: UnitType } = await import('../models/unitType.js')
-const { generateRaidOpportunities } = await import('../services/raid.js')
+const { generateRaidOpportunities, revealField, addScoutedTarget } = await import(
+  '../services/raid.js'
+)
 const { raidCapacityCost } = await import('../utils/capabilities.js')
 const {
-  RAID_OPPORTUNITIES_PER_DAY,
+  RAID_BASE_TARGETS,
   RAID_TARGET_FRACTION,
   RAID_MAX_TURNS,
   RAID_STRENGTH_BANDS,
@@ -158,20 +159,39 @@ describe('generateRaidOpportunities', () => {
     ...over,
   })
 
-  test('the per-band count table covers exactly the five scouting bands', () => {
-    expect(Object.keys(RAID_OPPORTUNITIES_PER_DAY).sort()).toEqual([...SCOUTING_BANDS].sort())
-    expect(RAID_OPPORTUNITIES_PER_DAY.Blind).toBe(1)
-    expect(RAID_OPPORTUNITIES_PER_DAY.Overwhelming).toBe(3)
+  test('a quiet augury deals exactly RAID_BASE_TARGETS base target(s), no counters', () => {
+    const opps = generateRaidOpportunities(fakeCampaign(), catalog)
+    expect(opps).toHaveLength(RAID_BASE_TARGETS)
+    expect(opps.every((o) => o.source === 'base')).toBe(true)
+    expect(opps.every((o) => o.type !== 'counter_event')).toBe(true)
   })
 
-  test('opportunity count follows the scouting band', () => {
-    for (const band of SCOUTING_BANDS)
-      expect(generateRaidOpportunities(fakeCampaign(), catalog, band))
-        .toHaveLength(RAID_OPPORTUNITIES_PER_DAY[band])
+  test('every opportunity ships per-type enemy ranges + reward range, reveals start hidden (0)', () => {
+    const campaign = fakeCampaign({
+      augury: { slots: [{ trueEvent: QUIET }, { trueEvent: QUIET }, { trueEvent: BAD_FATE }] },
+    })
+    for (const o of generateRaidOpportunities(campaign, catalog)) {
+      expect(o.rewardReveal).toBe(0)
+      expect(o.enemyReveal).toBe(0)
+      // Per-type enemy ranges bracket the hidden slice (never one headcount).
+      for (const [type, n] of Object.entries(o.targetForce)) {
+        const [lo, hi] = o.enemyRange[type]
+        expect(lo).toBeLessThanOrEqual(n)
+        expect(hi).toBeGreaterThanOrEqual(n)
+      }
+      // A numeric reward has a bracketing range; counter/destroy have none.
+      if (o.reward && typeof o.reward.food === 'number') {
+        const [lo, hi] = o.rewardRange.food
+        expect(lo).toBeLessThanOrEqual(o.reward.food)
+        expect(hi).toBeGreaterThanOrEqual(o.reward.food)
+      } else if (o.type === 'counter_event' || o.type === 'destroy_detachment') {
+        expect(o.rewardRange).toBeNull()
+      }
+    }
   })
 
   test('opportunities are complete: id, type, hidden target slice, band phrase, capacity', () => {
-    const opportunities = generateRaidOpportunities(fakeCampaign(), catalog, 'Overwhelming')
+    const opportunities = generateRaidOpportunities(fakeCampaign(), catalog)
     const enemyArmy = fakeCampaign().enemy.army
     const ids = new Set()
     for (const o of opportunities) {
@@ -198,7 +218,7 @@ describe('generateRaidOpportunities', () => {
 
   test('counter_event never generates without a bad sealed fate', () => {
     for (let i = 0; i < 10; i++) {
-      const opportunities = generateRaidOpportunities(fakeCampaign(), catalog, 'Overwhelming')
+      const opportunities = generateRaidOpportunities(fakeCampaign(), catalog)
       expect(opportunities.every((o) => o.type !== 'counter_event')).toBe(true)
     }
   })
@@ -208,26 +228,55 @@ describe('generateRaidOpportunities', () => {
       augury: { slots: [{ trueEvent: QUIET }, { trueEvent: QUIET }, { trueEvent: BAD_FATE }] },
     })
     for (let i = 0; i < 10; i++) {
-      const counters = generateRaidOpportunities(campaign, catalog, 'Overwhelming')
-        .filter((o) => o.type === 'counter_event')
+      const counters = generateRaidOpportunities(campaign, catalog).filter(
+        (o) => o.type === 'counter_event',
+      )
       expect(counters).toHaveLength(1)
       expect(counters[0].reward).toEqual({ slot: 2 })
+      expect(counters[0].source).toBe('counter_event')
     }
   })
 
-  // Playtest fix 2026-07-18: a coming blow ADDS a chance to unmake it — the
-  // counter_event rides ON TOP of the scouting-band count, it never eats a
-  // plundering target (before, it replaced one, so a bad-fate day at Contested
-  // still showed only 2 targets — the "again only 2" complaint).
-  test('a bad sealed fate ADDS the counter_event on top of the band count (additive)', () => {
-    const campaign = fakeCampaign({
+  // 2026-07-20: a counter now rides on top of the base target(s), and there is
+  // ONE per sealed bad fate (was one total) — each coming blow gets its own
+  // chance to be unmade, naming its own slot.
+  test('each bad sealed fate ADDS its own counter_event on top of the base target(s)', () => {
+    const oneBad = fakeCampaign({
       augury: { slots: [{ trueEvent: QUIET }, { trueEvent: QUIET }, { trueEvent: BAD_FATE }] },
     })
-    for (const band of SCOUTING_BANDS) {
-      const opps = generateRaidOpportunities(campaign, catalog, band)
-      expect(opps).toHaveLength(RAID_OPPORTUNITIES_PER_DAY[band] + 1)
-      expect(opps.filter((o) => o.type === 'counter_event')).toHaveLength(1)
-    }
+    const opps1 = generateRaidOpportunities(oneBad, catalog)
+    expect(opps1).toHaveLength(RAID_BASE_TARGETS + 1)
+    expect(opps1.filter((o) => o.type === 'counter_event')).toHaveLength(1)
+
+    const twoBad = fakeCampaign({
+      augury: { slots: [{ trueEvent: BAD_FATE }, { trueEvent: QUIET }, { trueEvent: BAD_FATE }] },
+    })
+    const opps2 = generateRaidOpportunities(twoBad, catalog)
+    expect(opps2).toHaveLength(RAID_BASE_TARGETS + 2)
+    const counters = opps2.filter((o) => o.type === 'counter_event')
+    expect(counters).toHaveLength(2)
+    // One per fate, each naming its own slot (0 and 2).
+    expect(new Set(counters.map((c) => c.reward.slot))).toEqual(new Set([0, 2]))
+  })
+
+  test('revealField pins one field to exact once, then refuses; fields independent', () => {
+    const [o] = generateRaidOpportunities(fakeCampaign(), catalog)
+    expect(o.enemyReveal).toBe(0)
+    expect(revealField(o, 'enemy')).toBe(true)
+    expect(o.enemyReveal).toBe(1)
+    expect(revealField(o, 'enemy')).toBe(false) // already exact
+    expect(o.enemyReveal).toBe(1)
+    expect(o.rewardReveal).toBe(0) // untouched — the two are independent
+  })
+
+  test('addScoutedTarget appends a scouted target continuing the id sequence', () => {
+    const campaign = fakeCampaign()
+    campaign.raid = { opportunities: generateRaidOpportunities(campaign, catalog) }
+    const before = campaign.raid.opportunities.length
+    const added = addScoutedTarget(campaign, catalog)
+    expect(added.source).toBe('scouted')
+    expect(campaign.raid.opportunities).toHaveLength(before + 1)
+    expect(added.id).toBe(`d1-${before}`)
   })
 })
 
@@ -236,11 +285,11 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
   test('a fresh campaign carries public opportunities; the target slice stays in the DB', async () => {
     const res = await createCampaign()
     expect(res.status).toBe(201)
-    // Turn-1 default band is Contested (see campaigns.test.js). A freshly drawn
-    // augury may seal a bad fate, which now ADDS a counter_event on top.
+    // The board opens with RAID_BASE_TARGETS base target(s); a freshly drawn
+    // augury may seal bad fates, each ADDING one counter_event on top.
     const opps = res.body.raid.opportunities
     const counters = opps.filter((o) => o.type === 'counter_event').length
-    expect(opps).toHaveLength(RAID_OPPORTUNITIES_PER_DAY.Contested + counters)
+    expect(opps).toHaveLength(RAID_BASE_TARGETS + counters)
     expectPublicOpportunities(res.body)
     const doc = await Campaign.findById(res.body.id)
     for (const o of doc.raid.opportunities) {
@@ -413,33 +462,37 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     }
   })
 
-  test('tomorrow\'s opportunity count follows tomorrow\'s scouting band', async () => {
+  test('tomorrow deals the base board + a points pool scaled to the roster', async () => {
     const pinArmies = async (id, { roster, enemyArmy }) => {
       const doc = await Campaign.findById(id)
       if (roster) doc.roster = new Map(Object.entries(roster))
       if (enemyArmy) doc.enemy.army = new Map(Object.entries(enemyArmy))
       await doc.save()
     }
-    // end-day redraws a RANDOM augury for tomorrow (step 7) — pinning today's
-    // fates doesn't control it, so a bad fate may seal and add a counter_event
-    // on top. Count the band's openings plus whatever counter rode along.
-    const bandCount = (opps, band) =>
-      opps.length - opps.filter((o) => o.type === 'counter_event').length === RAID_OPPORTUNITIES_PER_DAY[band]
-    // Blind (player 0.30 vs enemy 0.85 — see campaigns.test.js 1b): one raid.
-    // 150 riders keep the pinned host above the withdraw threshold (0.2 ×
-    // the CREATION initialStrength of 721) so the campaign survives step 6.
-    const { body: blind } = await createCampaign()
-    await pinAugury(blind.id, QUIET)
-    await pinArmies(blind.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 150 } })
-    const resBlind = await auth(api.post(`/api/campaigns/${blind.id}/end-day`)).send({})
-    expect(bandCount(resBlind.body.campaign.raid.opportunities, 'Blind')).toBe(true)
+    // Base board = opportunities minus whatever counter_event a freshly redrawn
+    // augury sealed on. Count follows RAID_BASE_TARGETS now, not the band.
+    const baseBoard = (opps) =>
+      opps.length - opps.filter((o) => o.type === 'counter_event').length
 
-    // Overwhelming (ratio 2.83): three raids.
-    const { body: over } = await createCampaign()
-    await pinAugury(over.id, QUIET)
-    await pinArmies(over.id, { enemyArmy: { Zombie: 450, LightCavalry: 10 } })
-    const resOver = await auth(api.post(`/api/campaigns/${over.id}/end-day`)).send({})
-    expect(bandCount(resOver.body.campaign.raid.opportunities, 'Overwhelming')).toBe(true)
+    // Scout-LIGHT roster (Priests). 150 riders keep the pinned host above the
+    // withdraw threshold so the campaign survives step 6. scoutingPoints is read
+    // off the DB doc — campaignView exposure lands in stage 2.
+    const { body: light } = await createCampaign()
+    await pinAugury(light.id, QUIET)
+    await pinArmies(light.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 150 } })
+    await auth(api.post(`/api/campaigns/${light.id}/end-day`)).send({})
+    const docLight = await Campaign.findById(light.id)
+    expect(baseBoard(docLight.raid.opportunities)).toBe(RAID_BASE_TARGETS)
+    expect(docLight.raid.scoutingPoints).toBeGreaterThan(0)
+
+    // Scout-HEAVY roster (LightCavalry: reconTag +4, fast) → a bigger pool.
+    const { body: heavy } = await createCampaign()
+    await pinAugury(heavy.id, QUIET)
+    await pinArmies(heavy.id, { roster: { LightCavalry: 100 }, enemyArmy: { Zombie: 450, LightCavalry: 10 } })
+    await auth(api.post(`/api/campaigns/${heavy.id}/end-day`)).send({})
+    const docHeavy = await Campaign.findById(heavy.id)
+    expect(baseBoard(docHeavy.raid.opportunities)).toBe(RAID_BASE_TARGETS)
+    expect(docHeavy.raid.scoutingPoints).toBeGreaterThan(docLight.raid.scoutingPoints)
   })
 })
 

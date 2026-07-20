@@ -120,18 +120,26 @@ export const FORAGE_CLASH_DAMPER_BY_BAND = {
   Blind: 1.5,
 }
 
-// ── Raids (Stage 4 Part 2) ───────────────────────────────────────────────────
-// Each turn deals a hand of raid OPPORTUNITIES — capacity-limited parties
-// hitting scouted targets, resolved as real short engine battles. Scouting
-// pays out here as COUNT: better eyes find more openings (the other Stage-4
-// benefits are deterministic by band; raids stay somewhat random).
-export const RAID_OPPORTUNITIES_PER_DAY = {
-  Overwhelming: 3,
-  Superior: 2,
-  Contested: 2,
-  Outmatched: 1,
-  Blind: 1,
-}
+// ── Raids (Stage 4 Part 2.5 — the scouting-points mini-game) ─────────────────
+// Each turn opens with ONE base target (plus any counter-raids). The player
+// then spends a pool of SCOUTING POINTS to shape the board: scout a new target,
+// or reveal a target's hidden reward / per-type enemy strength. Points are
+// derived from the army's own recon capability (scoutingPointsFor, capabilities
+// .js) — a baseline human ≈ 1 point, summed raw over the army — so a bigger or
+// scouting-heavier force gets more raids. Abundance is tamed by the FLAT costs
+// below (not by the generation formula), which keep "more scouting → more
+// raids" true while stopping a big army from trivially revealing everything.
+export const RAID_BASE_TARGETS = 1
+export const RAID_SCOUT_COST_ADD = 8 // scout a NEW target (~5 for a ~40-pt army)
+export const RAID_SCOUT_COST_REVEAL = 3 // reveal one field (reward OR enemy) one level
+// scoutingPointValue = (accuracy / BASELINE_ACCURACY) × (speed / foot) + reconTag,
+// with accuracy = ballisticSkill × ACCURACY_PER_BALLISTIC. Named so no literal
+// 10s leak into the formula; baseline human (bs 2 → acc 10, speed 10) = 1.0.
+export const BASELINE_ACCURACY = 10
+export const ACCURACY_PER_BALLISTIC = 5
+// Player-facing reward/enemy bands are the true value ± this fraction (min
+// width 1), pre-computed at generation; a reveal only pins them to exact.
+export const RAID_RANGE_JITTER = 0.25
 // The slice of the enemy host a raid targets (jittered per opportunity), and
 // the party budget relative to the target's size-points — raids are small
 // detachment actions, not the main battle by another door.

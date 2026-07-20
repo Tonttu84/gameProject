@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { reconValue, forageValue, screenValue, scoutingCoverage, scoutingBand } from '../utils/capabilities.js'
-import { SCOUTING_BAND_THRESHOLDS } from '../utils/campaignConfig.js'
+import {
+  reconValue,
+  forageValue,
+  screenValue,
+  scoutingCoverage,
+  scoutingBand,
+  scoutingPointValue,
+  scoutingPointsFor,
+} from '../utils/capabilities.js'
+import {
+  SCOUTING_BAND_THRESHOLDS,
+  BASELINE_ACCURACY,
+  ACCURACY_PER_BALLISTIC,
+} from '../utils/campaignConfig.js'
 import { engineStatsFixture } from './fixtures/engineStats.js'
 
 // Stats as exported by the engine, shared through fixtures/engineStats.js so
@@ -73,6 +85,56 @@ describe('scoutingCoverage', () => {
     // Unknown type: no recon, still screening burden (size-10 guard, like
     // armyFoodPerTurn) — never NaN/throw.
     expect(scoutingCoverage({ Dragon: 5 }, catalog)).toBe(0)
+  })
+})
+
+describe('scoutingPointValue (raid points one unit generates)', () => {
+  it('a baseline human (accuracy 10, foot speed, no tag) is worth exactly 1.0', () => {
+    // accuracy = ballisticSkill × ACCURACY_PER_BALLISTIC; the baseline bs makes
+    // accuracy == BASELINE_ACCURACY, so the whole product is 1.0 — no literal 10s.
+    const baselineBs = BASELINE_ACCURACY / ACCURACY_PER_BALLISTIC
+    expect(scoutingPointValue({ ballisticSkill: baselineBs, speed: 10, reconTag: 0 })).toBeCloseTo(1)
+  })
+
+  it('the signed reconTag shifts a unit up or down from its accuracy×mobility worth', () => {
+    const base = { ballisticSkill: 2, speed: 10, reconTag: 0 } // worth 1.0
+    expect(scoutingPointValue({ ...base, reconTag: 4 })).toBeCloseTo(5)
+    expect(scoutingPointValue({ ...base, reconTag: -2 })).toBeCloseTo(-1)
+  })
+
+  it('faster, sharper eyes are worth more, and the value stays fractional (no rounding)', () => {
+    expect(scoutingPointValue(lightCavalry)).toBeGreaterThan(scoutingPointValue(soldier))
+    expect(Number.isInteger(scoutingPointValue({ ballisticSkill: 3, speed: 15, reconTag: 0 }))).toBe(
+      false,
+    )
+  })
+})
+
+describe('scoutingPointsFor (the turn pool)', () => {
+  const catalog = new Map([
+    ['Soldier', { size: 10, stats: soldier }],
+    ['LightCavalry', { size: 20, stats: lightCavalry }],
+  ])
+
+  it('is a RAW sum Σ(count·scoutingPointValue) — scales with army size, Map or object', () => {
+    const one = scoutingPointValue(soldier)
+    expect(scoutingPointsFor({ Soldier: 10 }, catalog)).toBeCloseTo(10 * one)
+    expect(scoutingPointsFor(new Map([['Soldier', 10]]), catalog)).toBeCloseTo(10 * one)
+    // Unlike scoutingCoverage (÷size), a bigger force strictly generates MORE.
+    expect(scoutingPointsFor({ Soldier: 20 }, catalog)).toBeGreaterThan(
+      scoutingPointsFor({ Soldier: 10 }, catalog),
+    )
+  })
+
+  it('a scout-heavy force out-generates a plain one of equal count', () => {
+    expect(scoutingPointsFor({ LightCavalry: 50 }, catalog)).toBeGreaterThan(
+      scoutingPointsFor({ Soldier: 50 }, catalog),
+    )
+  })
+
+  it('unknown types and an empty army degrade to 0 (never NaN/throw)', () => {
+    expect(scoutingPointsFor({ Dragon: 5 }, catalog)).toBe(0)
+    expect(scoutingPointsFor({}, catalog)).toBe(0)
   })
 })
 

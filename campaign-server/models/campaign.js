@@ -22,11 +22,14 @@ const auguryEventSchema = new mongoose.Schema(
   { _id: false },
 )
 
-// One raid opportunity (Stage 4 Part 2): a scouted, capacity-limited target
-// resolved as a real short engine battle. targetForce (the slice of the
-// hidden host the raid fights) and reward (counter_event's slot index would
-// out which vision was true) are HIDDEN; campaignView exposes the strength
-// band and, once resolved, the outcome — the replay is the reveal.
+// One raid opportunity (Stage 4 Part 2.5, the scouting-points mini-game): a
+// capacity-limited target resolved as a real short engine battle. targetForce
+// (the slice of the hidden host the raid fights) and reward (counter_event's
+// slot index would out which vision was true) stay HIDDEN as ground truth;
+// what campaignView exposes depends on how much the player has PAID to reveal.
+// Each of reward and enemy has its own reveal LEVEL (an int, not a bool, so
+// unknown→range→tighter→exact can grow later): 0 shows the range, 1 the exact
+// value. The player-facing ranges are pre-computed so a reveal only pins them.
 const raidOpportunitySchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
@@ -37,10 +40,23 @@ const raidOpportunitySchema = new mongoose.Schema(
     },
     title: { type: String, required: true },
     description: { type: String, default: '' },
-    targetForce: { type: Map, of: Number, required: true }, // HIDDEN
+    targetForce: { type: Map, of: Number, required: true }, // HIDDEN ground truth
     strengthBand: { type: String, required: true },
     capacity: { type: Number, required: true },
-    reward: { type: mongoose.Schema.Types.Mixed, default: null }, // HIDDEN
+    reward: { type: mongoose.Schema.Types.Mixed, default: null }, // HIDDEN ground truth
+    // Player-facing bands bracketing the hidden truth, shown until revealed:
+    // rewardRange {food:[lo,hi], materials:[lo,hi], roster:{type:[lo,hi]}} —
+    // only the keys the reward actually has; enemyRange {type:[lo,hi]} per unit
+    // type in targetForce (fantasy rosters read per-type, never one headcount).
+    rewardRange: { type: mongoose.Schema.Types.Mixed, default: null },
+    enemyRange: { type: mongoose.Schema.Types.Mixed, default: null },
+    rewardReveal: { type: Number, default: 0 }, // 0 range, 1 exact
+    enemyReveal: { type: Number, default: 0 }, // 0 range, 1 exact
+    source: {
+      type: String,
+      enum: ['base', 'scouted', 'counter_event'],
+      default: 'base',
+    },
     resolved: { type: Boolean, default: false },
     outcome: { type: mongoose.Schema.Types.Mixed, default: null }, // {winner, battleId} once resolved
   },
@@ -64,7 +80,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 12 // v12: augury acceptance (fates at the tent, deferral machinery)
+export const CAMPAIGN_SCHEMA_VERSION = 13 // v13: raid scouting-points mini-game (per-target reveals + scoutingPoints pool)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -209,10 +225,17 @@ const campaignSchema = new mongoose.Schema({
     enemyPlan: { type: Number, default: 0 },
   },
 
-  // The day's raid opportunities — redealt every new turn (step 7), count
-  // scaling with the scouting band. See raidOpportunitySchema above.
+  // The day's raid opportunities — redealt every new turn (step 7): one base
+  // target plus any counter-raids, which the player then grows/reveals by
+  // spending scoutingPoints. See raidOpportunitySchema above.
   raid: {
     opportunities: { type: [raidOpportunitySchema], default: [] },
+    // The per-turn scouting-points pool, DERIVED from the army's recon
+    // capability (scoutingPointsFor) and reset at the start of every turn —
+    // spent to scout new targets or reveal a target's reward/enemy intel.
+    // Fractional (no rounding) and drawable at any point in the turn, so a
+    // future event can grant or spend points without touching the turn flow.
+    scoutingPoints: { type: Number, default: 0 },
     // This turn's cumulative committed-to-a-raid party, unit-type -> count —
     // the raid twin of forage.assignment. A unit sent on ANY raid this turn
     // (win or lose) stays counted here for the rest of the day even though it

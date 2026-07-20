@@ -1,6 +1,11 @@
 import { DESERTION_FRACTION } from '../utils/campaignConfig.js'
 import { getCatalog } from '../utils/catalog.js'
-import { armyFoodPerTurn, scoutingCoverage, scoutingBand } from '../utils/capabilities.js'
+import {
+  armyFoodPerTurn,
+  scoutingCoverage,
+  scoutingBand,
+  scoutingPointsFor,
+} from '../utils/capabilities.js'
 import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
@@ -266,18 +271,11 @@ export async function endDay(campaign) {
     campaign.raid.assignment = new Map()
     campaign.augury = drawAugury()
     campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
-    // Tomorrow's raids are cut from tomorrow's contest: the band is
-    // recomputed against the hosts as the day's attrition left them (the
-    // same derivation the next campaignView shows), and counter_event keys
-    // off the FRESH augury drawn just above.
-    campaign.raid.opportunities = generateRaidOpportunities(
-      campaign,
-      catalog,
-      scoutingBand(
-        scoutingCoverage(campaign.roster, catalog),
-        scoutingCoverage(campaign.enemy.army, catalog),
-      ),
-    )
+    // Tomorrow's board: one base target (+ a counter per FRESH bad fate drawn
+    // above), and the scouting-points pool refilled from the roster as the
+    // day's attrition left it — unused points from today expire here.
+    campaign.raid.opportunities = generateRaidOpportunities(campaign, catalog)
+    campaign.raid.scoutingPoints = scoutingPointsFor(campaign.roster, catalog)
   }
 
   campaign.log.push({ day: report.day, entries })

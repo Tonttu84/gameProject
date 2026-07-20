@@ -14,7 +14,7 @@ import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '..
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
 import { getCatalog } from '../utils/catalog.js'
-import { scoutingBand, scoutingCoverage, raidCapacityCost } from '../utils/capabilities.js'
+import { raidCapacityCost, scoutingPointsFor } from '../utils/capabilities.js'
 import config from '../utils/config.js'
 import {
   MAP_NAME,
@@ -82,17 +82,15 @@ router.post('/', async (req, res) => {
       enemyPlan: enemyForagePlanKg(ENEMY_ARMY, catalog),
     },
     augury,
-    // Day-1 raid opportunities are dealt at creation; end-day redeals them
-    // each new turn. Same band derivation campaignView uses.
+    // Day-1 raid board: one base target (+ any counters), plus the turn's
+    // scouting-points pool derived from the starting roster's recon capability.
+    // end-day redeals both each new turn.
     raid: {
       opportunities: generateRaidOpportunities(
         { day: 1, augury, enemy: { army: ENEMY_ARMY } },
         catalog,
-        scoutingBand(
-          scoutingCoverage(STARTING_ROSTER, catalog),
-          scoutingCoverage(ENEMY_ARMY, catalog),
-        ),
       ),
+      scoutingPoints: scoutingPointsFor(STARTING_ROSTER, catalog),
     },
     enemy: {
       army: ENEMY_ARMY,

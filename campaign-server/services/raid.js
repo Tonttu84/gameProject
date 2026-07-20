@@ -1,6 +1,7 @@
 import { eventValenceFor } from './events.js'
 import {
-  RAID_OPPORTUNITIES_PER_DAY,
+  RAID_BASE_TARGETS,
+  RAID_RANGE_JITTER,
   RAID_TARGET_FRACTION,
   RAID_CAPACITY_RATIO,
   RAID_LOOT_FOOD,
@@ -82,54 +83,135 @@ const capacityOf = (targetForce, catalog) => {
   return Math.ceil(sizePoints * RAID_CAPACITY_RATIO)
 }
 
-// Deal the day's opportunities. Count follows the scouting band (better eyes
-// find more openings — the deterministic Stage-4 payoffs live elsewhere, so
-// raids keep their randomness); a counter_event is dealt exactly when some
-// slot's sealed truth is a bad fate, its (hidden) reward naming that slot.
-export function generateRaidOpportunities(campaign, catalog, band) {
-  const count = RAID_OPPORTUNITIES_PER_DAY[band] ?? 1
-  // eventValenceFor (not eventValence): a choice-fate stores only the
-  // `choice` sentinel effect, its declared valence lives in the pool — a
-  // declared-bad choice event draws a counter_event like any bad fate.
+// A player-facing band bracketing a hidden value: value ± RAID_RANGE_JITTER,
+// floored/ceiled, minimum width 1 (so a value of 1 still reads as a range, not
+// a giveaway). Revealing a field pins the range to the exact value.
+const rangeAround = (value, jitter = RAID_RANGE_JITTER) => {
+  const lo = Math.max(0, Math.floor(value * (1 - jitter)))
+  const hi = Math.ceil(value * (1 + jitter))
+  return [lo, Math.max(hi, lo + 1)]
+}
+
+// Ranges over the hidden reward, by reward shape — only the numeric keys the
+// reward actually has (loot pays food+materials, rescue pays roster). A
+// counter_event reward is {slot} and destroy's reward is null: neither has a
+// number to reveal, so rewardRange is null and only enemy intel is buyable.
+const rewardRangeOf = (reward) => {
+  if (!reward) return null
+  const range = {}
+  if (typeof reward.food === 'number') range.food = rangeAround(reward.food)
+  if (typeof reward.materials === 'number') range.materials = rangeAround(reward.materials)
+  if (reward.roster) {
+    range.roster = {}
+    for (const [type, n] of Object.entries(reward.roster)) range.roster[type] = rangeAround(n)
+  }
+  return Object.keys(range).length > 0 ? range : null
+}
+
+// Per-unit-type ranges over the hidden target force. Fantasy rosters read
+// per type (3 Giants vs 20 spearmen is the decision, not "23 units"), so the
+// enemy is never collapsed to one headcount here.
+const enemyRangeOf = (targetForce) => {
+  const range = {}
+  for (const [type, n] of Object.entries(targetForce)) range[type] = rangeAround(n)
+  return range
+}
+
+// Build ONE opportunity of the given type, or null if the host is exhausted.
+// counterSlot (for counter_event) is the augury slot this counter unmakes.
+const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot }) => {
+  const targetForce = sliceTargetForce(campaign.enemy.army)
+  if (Object.keys(targetForce).length === 0) return null // nothing left to raid
+  const reward =
+    type === 'loot_supplies'
+      ? { food: randInt(RAID_LOOT_FOOD), materials: randInt(RAID_LOOT_MATERIALS) }
+      : type === 'rescue_troops'
+        ? { roster: { [RAID_RESCUE_UNIT]: randInt(RAID_RESCUE_COUNT) } }
+        : type === 'counter_event'
+          ? { slot: counterSlot }
+          : null
+  const totalUnits = Object.values(targetForce).reduce((a, b) => a + b, 0)
+  return {
+    id: `d${campaign.day}-${seq}`,
+    type,
+    ...FLAVOR[type],
+    targetForce, // HIDDEN ground truth
+    strengthBand: bandLabel(totalUnits, RAID_STRENGTH_BANDS),
+    capacity: capacityOf(targetForce, catalog),
+    reward, // HIDDEN ground truth
+    rewardRange: rewardRangeOf(reward),
+    enemyRange: enemyRangeOf(targetForce),
+    rewardReveal: 0,
+    enemyReveal: 0,
+    source,
+    resolved: false,
+    outcome: null,
+  }
+}
+
+// The pool of ordinary raid types a base/scouted target draws from.
+const RAID_POOL = ['destroy_detachment', 'loot_supplies', 'rescue_troops']
+const randomRaidType = () => RAID_POOL[Math.floor(Math.random() * RAID_POOL.length)]
+
+// Deal the turn's opening board: RAID_BASE_TARGETS base target(s) plus ONE
+// counter_event per sealed bad fate (each names its own slot). Everything
+// beyond this is bought during the turn with scouting points (addScoutedTarget).
+// The scoutingPoints pool itself is set by the caller (both deal sites) from
+// scoutingPointsFor — this only produces the opportunity list.
+export function generateRaidOpportunities(campaign, catalog) {
+  // eventValenceFor (not eventValence): a choice-fate stores only the `choice`
+  // sentinel effect, its declared valence lives in the pool — a declared-bad
+  // choice event draws a counter_event like any bad fate.
   const badSlots = campaign.augury.slots
     .map((slot, i) => ({ i, event: slot.trueEvent }))
     .filter(({ event }) => eventValenceFor(event) === 'bad')
 
-  // The scouting band's worth of ordinary openings, THEN — additively — one
-  // counter_event when a bad fate is sealed (2026-07-18 playtest fix). The
-  // counter rides ON TOP of the band count instead of replacing a slot, so a
-  // coming blow always grants an EXTRA chance to unmake it rather than crowding
-  // out a plundering target (the "again only 2 targets" complaint).
-  const pool = ['destroy_detachment', 'loot_supplies', 'rescue_troops']
-  const types = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)])
-  if (badSlots.length > 0) types.push('counter_event')
-
   const opportunities = []
-  types.forEach((type, i) => {
-    const targetForce = sliceTargetForce(campaign.enemy.army)
-    if (Object.keys(targetForce).length === 0) return // nothing left to raid
-    const reward =
-      type === 'loot_supplies'
-        ? { food: randInt(RAID_LOOT_FOOD), materials: randInt(RAID_LOOT_MATERIALS) }
-        : type === 'rescue_troops'
-          ? { roster: { [RAID_RESCUE_UNIT]: randInt(RAID_RESCUE_COUNT) } }
-          : type === 'counter_event'
-            ? { slot: badSlots[Math.floor(Math.random() * badSlots.length)].i }
-            : null
-    const totalUnits = Object.values(targetForce).reduce((a, b) => a + b, 0)
-    opportunities.push({
-      id: `d${campaign.day}-${i}`,
-      type,
-      ...FLAVOR[type],
-      targetForce, // HIDDEN — campaignView strips it to strengthBand
-      strengthBand: bandLabel(totalUnits, RAID_STRENGTH_BANDS),
-      capacity: capacityOf(targetForce, catalog),
-      reward, // HIDDEN
-      resolved: false,
-      outcome: null,
-    })
-  })
+  let seq = 0
+  const push = (opp) => {
+    if (opp) {
+      opportunities.push(opp)
+      seq += 1
+    }
+  }
+  for (let b = 0; b < RAID_BASE_TARGETS; b++)
+    push(buildOpportunity(campaign, catalog, { type: randomRaidType(), seq, source: 'base' }))
+  // One counter per bad fate (was one total): a coming blow always grants its
+  // own extra chance to unmake it rather than crowding out a plundering target.
+  for (const bad of badSlots)
+    push(
+      buildOpportunity(campaign, catalog, {
+        type: 'counter_event',
+        seq,
+        source: 'counter_event',
+        counterSlot: bad.i,
+      }),
+    )
   return opportunities
+}
+
+// Spend-a-point outcomes (the route validates points/ownership; these mutate).
+// Bump one field's reveal level; false if already at the max (range→exact = 1),
+// leaving room for finer levels later without a schema change.
+const MAX_REVEAL = 1
+export function revealField(opportunity, field) {
+  const key = field === 'reward' ? 'rewardReveal' : 'enemyReveal'
+  if (opportunity[key] >= MAX_REVEAL) return false
+  opportunity[key] += 1
+  return true
+}
+
+// Scout a NEW ordinary target onto the board (source 'scouted'), or null if
+// the host is exhausted. Its id continues the turn's sequence.
+export function addScoutedTarget(campaign, catalog) {
+  const opp = buildOpportunity(campaign, catalog, {
+    type: randomRaidType(),
+    seq: campaign.raid.opportunities.length,
+    source: 'scouted',
+  })
+  if (!opp) return null
+  campaign.raid.opportunities.push(opp)
+  return opp
 }
 
 // Apply a WON raid's reward. Mutates the campaign in place; caller saves.

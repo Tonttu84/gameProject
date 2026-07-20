@@ -3,6 +3,8 @@ import {
   DAYS_PER_TURN,
   SCOUTING_BAND_THRESHOLDS,
   RAID_CAPACITY_SPEED_SCALE,
+  BASELINE_ACCURACY,
+  ACCURACY_PER_BALLISTIC,
 } from './campaignConfig.js'
 
 // Campaign-layer unit capabilities, DERIVED from the engine-exported combat
@@ -49,6 +51,30 @@ export const scoutingCoverage = (army, catalog) => {
     sizeSum += count * (unitType?.size ?? 10)
   }
   return sizeSum > 0 ? recon / sizeSum : 0
+}
+
+// Raid scouting points a single unit contributes (Stage 4 Part 2.5): accuracy ×
+// mobility, plus the signed reconTag, on a scale where a baseline human
+// (accuracy 10, foot speed, reconTag 0) is worth 1.0. accuracy = ballisticSkill
+// × ACCURACY_PER_BALLISTIC (the engine derives the same; the catalog exports
+// ballisticSkill). Distinct from reconValue (speed², feeds the coverage BAND):
+// this is an ABSOLUTE per-unit worth, summed raw into the turn's points pool.
+export const scoutingPointValue = (stats) =>
+  ((stats.ballisticSkill * ACCURACY_PER_BALLISTIC) / BASELINE_ACCURACY) * speedFactor(stats) +
+  stats.reconTag
+
+// The army's per-turn scouting-points pool: Σ count·scoutingPointValue — a RAW
+// sum (a bigger or scouting-heavier force scouts more openings), kept fractional
+// (the pool never rounds). Unknown types contribute nothing (same safe-degrade
+// guard as scoutingCoverage: routes validate, this only degrades).
+export const scoutingPointsFor = (army, catalog) => {
+  const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
+  let points = 0
+  for (const [type, count] of entries) {
+    const unitType = catalog.get(type)
+    if (unitType) points += count * scoutingPointValue(unitType.stats)
+  }
+  return points
 }
 
 // Band order, weakest eyes first — reveal tiers (campaignView's enemy view)
