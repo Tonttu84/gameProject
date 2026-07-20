@@ -382,10 +382,13 @@ decisions below); campaign-server 252/252, frontend 208/208, oxlint clean, no en
   counter_event on top (removed the `types.length = count` truncation). Contested bad-fate day
   now shows 3 targets (2 + counter) instead of 2. Tests: new additive test + the fresh-campaign
   and tomorrow's-band count tests made counter-aware (a random augury may seal a bad fate).
-  **Deferred tuning (NOT done, optional):** per-band base counts still flat at 2 across
-  Superior/Contested and there's no extra randomness on the base — user accepted that fixed
-  troops → fixed scouting → base stays 2, with events (the counter) as the lever. Revisit only
-  if playtests still feel too fixed.
+  **Deferred tuning — CLOSED, superseded by the scouting-points economy (2026-07-20).** The
+  band-scaled base count this note worried about no longer exists: the Stage 1 rewrite (see the
+  "Raid mini-game (scouting-points economy)" section below) replaced `RAID_OPPORTUNITIES_PER_DAY`
+  entirely with a flat `RAID_BASE_TARGETS = 1` + buy-more-with-points model. User confirmed
+  (2026-07-20) this is exactly the intended shape, not a gap to revisit — "base count should just
+  be 1 and then you buy new ones with the scouting points." Any further raid-count feel is a
+  balance-knob tweak (`RAID_SCOUT_COST_ADD`/`RAID_SCOUT_COST_REVEAL`), not a design question.
 
 Original diagnosis kept below for reference.
 
@@ -418,7 +421,8 @@ Two issues surfaced playtesting the pushed `0c47535` build.
    exists, fills the rest from the pool up to `RAID_OPPORTUNITIES_PER_DAY[band]`, then truncates to
    that count — so the counter_event **replaces** a normal slot rather than adding to the total; at
    Contested the band count caps it at 2. User seems to expect a bad fate to yield an EXTRA counter
-   opportunity (and/or more targets overall). **Open question for next session:** should a
+   opportunity (and/or more targets overall). **Open question for next session — ANSWERED &
+   SUPERSEDED, see the "CLOSED" note above this diagnosis:** should a
    counter_event be additive (band count + 1 when a bad fate exists), and/or should
    `RAID_OPPORTUNITIES_PER_DAY` be higher? Decide with the user before changing.
 
@@ -1811,6 +1815,19 @@ and fight the main battle in one turn, and raids aren't gated by `battleFoughtTo
 explicitly the simplest placeholder, not a decision: the real turn cycle (e.g. one or more
 raiding turns/phases BEFORE the main battle, or raids consuming the turn's battle slot, or a
 forage-style carve-out) is deferred until the full loop is playtested with raids in it.
+
+**Direction set 2026-07-20 (user, still NEEDS PLANNING — not scoped, do together with the
+multi-turn campaign loop item below, [[todo-multi-turn-campaign-loop]]):** troops committed to a
+raid should become **unavailable for that turn's main battle** — mirroring how `forage.assignment`
+already removes foragers from what's placeable — AND should **not count toward the "N still in
+camp" full-deployment gate** (`App.jsx`/`useInCamp`, `campaigns.js` battle route 400,
+`docs/CAMPAIGN_PLAN.md` "Full-deployment rule" line ~53/639), the same carve-out foragers already
+get. Today neither is true: `RaidPanel`'s own troop pool (roster − forage − `raid.assignment`)
+already prevents a raided unit from being double-booked into ANOTHER raid, but nothing stops it
+from ALSO being placed in the main battle, and the full-deployment counter doesn't know raiders
+exist. Natural to land alongside the persistent-enemy-army/final-battle-meter rework since that
+rework is what turns "raid vs. main battle" from a same-day toggle into a real turn-sequencing
+question — don't implement standalone without that context.
 
 **Morale overhaul (battle↔campaign).** Two morale tracks per army on a 1–1000 scale: a
 **starting/max** value and a **current** value. Unit deaths damage the max a little and the
