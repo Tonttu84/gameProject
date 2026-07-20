@@ -159,10 +159,17 @@ notes below over the git history if they ever disagree — the commits win.
   scouting mini-game Stage 3 landed committed (`556335e`) first, per the prerequisite noted below.
 - **Boss-fight campaign loop — Stage B (gate the battle) ✅ SHIPPED 2026-07-20** — server-only,
   all four steps (see the dated handoff after the Stage B TDD breakdown).
-- **Boss-fight campaign loop — Stage C (meter reveal) ✅ SHIPPED 2026-07-20** — server-only,
-  `reveal_meter` scout action (see the dated handoff after the Stage C TDD breakdown).
-  **Then (NEXT):** Stage D (`destroy_detachment` raid rework — casualties on loss, pursuit +
-  prestige stub on win). Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
+- **Boss-fight campaign loop — Stage C (meter reveal) ✅ SHIPPED 2026-07-20 — but SUPERSEDED
+  same day** by the recon rework (committed `e618104`; `reveal_meter` scout action). The user
+  redesigned it: the meter is camp-troop-driven and NOT tied to scouting, so the manual point-buy
+  is replaced by an automatic, graduated recon system — see **"Recon rework"** below. Stage C's
+  `reveal_meter` will be reverted in recon R2.
+- **Boss-fight campaign loop — Stage D (`destroy_detachment` rework) ✅ SHIPPED 2026-07-20** —
+  committed `794a5e3` (casualties always, pursuit + prestige stub on win). See the Stage D handoff.
+- **Recon rework — DESIGNED 2026-07-20 (grilled), NOT YET IMPLEMENTED. NEXT: R1** (recon.points
+  accrual + `reconLevel`/`reconBand`, swap the 3 band consumers, delete `scoutingCoverage`). Then
+  R2 (numeric brackets + revert Stage C) and R3 (frontend). See the "Recon rework" section below.
+  Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
   behind the loop.
@@ -601,6 +608,73 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
   (`currentTrue + {floor,ceil}Offset`) must shift the PERCEIVED size DOWN by exactly the casualties
   — same width, floor clamped ≥ 0, no accuracy gained or leaked. Explicit test required in the
   recon work: raid kills N → perceived `[low,high]` both drop by N (not narrower, not wider).
+
+### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
+
+**Supersedes Stage C (`reveal_meter`)** and reworks Stage A's meter-value reveal. Grilled end-to-end
+with the user before writing (per `CLAUDE.md`); the confirmed decisions are listed at the end. The
+passive coverage-based scouting band is **removed**; a single recon **LEVEL**, earned by pouring
+leftover scouting points, drives every scouting-gated reveal — and, above the band, a graduated
+numeric estimate of the enemy count and the meter value.
+
+**Core mechanic.**
+- `campaign.recon.points` accumulates: at end-of-turn (dayResolution step 7, BEFORE the
+  `raid.scoutingPoints` pool refills), whatever points the player didn't spend on the raid board are
+  added — **accumulate, no decay, no reset**. Leftover points otherwise just expire, so this is
+  automatic, not a choice ("it's the last place to spend points" — user).
+- `reconLevel(points)` → 0..4 on the existing `SCOUTING_BANDS` ladder (Blind..Overwhelming) via a
+  tunable `RECON_LEVEL_THRESHOLDS`; `reconBand(points) = SCOUTING_BANDS[level]`.
+- The level read DURING a turn (campaignView + dayResolution) uses `recon.points` as it stands at
+  turn start; this turn's leftover accrues at end-of-turn → affects NEXT turn. One band per turn
+  (planning == resolution), exactly as the coverage band was consistent before.
+
+**Replaces the passive band at all THREE consumers** (each was
+`scoutingBand(scoutingCoverage(roster), scoutingCoverage(enemy))`):
+1. Enemy reveal ladder (`campaignView.enemyView`) — composition %, placements, exact units at their
+   existing tiers, just re-driven by recon level.
+2. Forage posture yield + clash damper (`forage.js`, via `dayResolution`).
+3. Recon-sensitive event rungs (`firedRung(event, band)` in `acceptFates` + `endDay`).
+`scoutingCoverage`, `scoutingBand`, `SCOUTING_BAND_THRESHOLDS`, `reconValue` are **deleted** (nothing
+else uses them). `scoutingPointsFor`/`scoutingPointValue` **stay** (they mint the per-turn pool that
+feeds recon). `SCOUTING_BANDS` ladder stays. `ENEMY_STRENGTH_BANDS` phrase is replaced by the numeric
+bracket below; `METER_BANDS` stays as the meter's level-0 phrase.
+
+**NEW graduated numeric brackets (the "more accurate the more you pour" part) — enemy total count +
+meter value.** Per quantity, store `{ atLevel, floorOffset, ceilOffset }` (floorOffset ≤ 0 ≤
+ceilOffset, asymmetric):
+- Set ONCE per level-up (detected at accrual when newLevel > stored `atLevel`): apply that level's
+  asymmetric multipliers to the CURRENT truth + a small random jitter (so the midpoint ≠ truth and it
+  isn't exactly reverse-engineerable), store the resulting absolute offsets.
+- Displayed each turn as `[max(0, currentTrue + floorOffset), currentTrue + ceilOffset]` against LIVE
+  truth — so it slides with player-known deltas (raid/forage casualties, meter growth) revealing
+  nothing across turns; only a level-up narrows it. **Floor clamped ≥ 0** (user). Level 0 → phrase
+  only (METER_BANDS for the meter; enemy shows nothing, like Blind today). Top level → offsets 0 →
+  exact. Why absolute offsets not live multipliers: a player who knows a casualty delta could solve a
+  live multiplier (hence the truth); fixed offsets just slide by the known delta and leak nothing.
+- **Delicate interaction (user: "add good coverage"):** a `destroy_detachment` raid shrinks
+  `enemy.army` → the enemy-count bracket must shift DOWN by exactly the casualties (same width, floor
+  ≥ 0). Automatic via live truth, but MUST be explicitly tested.
+
+**Confirmed decisions (grill, 2026-07-20):** meter is camp-troop-driven, NOT tied to scouting —
+scouting only REVEALS it, never changes the true value; recon sharpens BOTH meter value and enemy
+count; accumulate with no decay; the persisted bracket only narrows on level-up (never re-rolls, so
+cross-turn comparison yields nothing); on casualties adjust floor/ceiling by the loss amount
+(≡ live-truth + fixed offsets); floor never negative; combine the two systems so accumulation
+determines the level, keeping the level's existing uses (enemy ladder + forage posture); the
+enemy-army coverage input is dead and thrown away.
+
+**Staging (one thing at a time):**
+- **R1 — recon core + band-driver swap.** Add `campaign.recon.points` (schema bump) + `reconLevel`/
+  `reconBand`; accrue leftover points at end-of-turn; swap all 3 consumers to the recon band; delete
+  `scoutingCoverage`/`scoutingBand`/`reconValue`. Behavior-changing (band now from recon) → the
+  coverage-band tests get rewritten. No brackets yet.
+- **R2 — numeric brackets + revert Stage C.** Enemy-count + meter brackets (stored asym offsets,
+  live-tracked, narrow on level-up, exact at top); remove `reveal_meter`; rework `meter.revealed/value`
+  into the meter bracket. Includes the raid-casualty-shift test.
+- **R3 — frontend readout.** Recon level + brackets in `ScoutReport`/HUD.
+
+Constants (`RECON_LEVEL_THRESHOLDS`, per-level multipliers, jitter) are **rough/tunable** — calibrate
+against the real per-turn scouting-points pool in playtest.
 
 **Frontend testing convenience (user ask, 2026-07-20) — do NOT skip, even though it's small.**
 `CampaignHUD.jsx` today shows `Turn`/`Food`/`Materials`/`Forts`/`Land`/roster only
