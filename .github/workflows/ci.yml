@@ -5,6 +5,19 @@ on:
   pull_request:
 
 jobs:
+  # Fresh actions/checkout is a stand-in for "a different computer just
+  # cloned this repo" — the one place that actually proves vendored
+  # .claude/skills/ content survives git and isn't silently gitignored.
+  claude-skills:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify vendored Claude skills survived the checkout
+        run: ./scripts/check_claude_skills.sh
+
   test:
     runs-on: ubuntu-latest
 
