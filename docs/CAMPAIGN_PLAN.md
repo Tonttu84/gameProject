@@ -1887,14 +1887,42 @@ exact). Full grilled spec + staged design in the plan file
   turn start. One counter-raid per bad fate (was one total). Retired `RAID_OPPORTUNITIES_PER_DAY`;
   flat raised costs (`RAID_SCOUT_COST_ADD=8`/`REVEAL=3`) are the balance knob. Tests green
   (capabilities + raid).
-- **Stage 2 (next):** `POST /:id/raids/scout` route (`add_target` | `reveal`) using `addScoutedTarget`
-  /`revealField`; `campaignView` raid projection (expose `scoutingPoints`, range-vs-exact per reveal
-  level, never leak unrevealed truth); route tests (spending points).
-- **Stage 3:** raiding as its OWN phase/screen (user 2026-07-20, also eases testing) + RaidPanel
-  mini-game UI + api/store wiring + FE tests.
+- **Stage 2 ✅ SHIPPED 2026-07-20 (commit `90ab204`).** `POST /:id/raids/scout` route in
+  `routes/campaigns.js`:
+  `{action:'add_target'}` (cost `RAID_SCOUT_COST_ADD`, rejects on insufficient points or an exhausted
+  enemy host) and `{action:'reveal', raidId, field:'reward'|'enemy'}` (cost `RAID_SCOUT_COST_REVEAL`,
+  rejects on missing/resolved target, already-max reveal level, insufficient points, or a slot-only
+  `counter_event` reward with nothing numeric to reveal). Both guarded the same way as
+  `/raids/launch` (ownership/active/pending-choice). `campaignView`'s raid projection
+  (`services/campaignView.js`) now exposes per-opportunity `enemy`/`reward` as a range pre-reveal and
+  the exact value once bought (a `rewardView` helper keys the exact side off `rewardRange`'s own keys,
+  never the raw `reward`, so a counter_event's `reward.slot` can't leak even after a reveal — its
+  `rewardRange` is null so there's nothing to buy), plus `enemyReveal`/`rewardReveal`/`source` and a
+  new `raid.scoutingPoints` + `raid.scoutCost` block. Updated the 3 existing hidden-info discipline
+  tests (`raid.test.js`, `campaigns.test.js`, `enemyAi.test.js`) for the new opportunity key set, plus
+  11 new scout-route tests (add/reveal happy paths, cost/exhaustion/already-revealed rejections, the
+  counter_event slot-leak guard, 404/400s). **campaign-server: 281/281 green** (verified in the user's
+  own terminal — see the sandbox note below).
+- **Stage 3 (next):** raiding as its OWN phase/screen (user 2026-07-20, also eases testing) +
+  RaidPanel mini-game UI (points header, per-type range/exact rendering, reveal/add-target buttons) +
+  api/store wiring + FE tests.
+
+**Dev-tooling fix landed alongside Stage 2:** `scripts/dev.sh` now auto-detects a Flatpak sandbox
+(`/.flatpak-info` present) and, only then, exports `MONGOMS_DISTRO=ubuntu-22.04` +
+`--no-file-parallelism` for `cs-test` — a no-op on every other machine. It also sources
+`~/.nvm/nvm.sh` itself when `npx` isn't already on `PATH`, so plain `bash scripts/dev.sh cs-test …`
+works standalone without a `bash -lc` wrapper. **Sandbox caveat found this session:** on the laptop,
+running `cs-test` from the coding assistant's own shell can intermittently hang/time out on the
+`beforeEach` `clearDb()` hook — even a single isolated test file, even with the flags above — because
+VS Code's own TS-server/ESLint/GPU subprocesses share the same sandboxed resource envelope as the
+in-memory `mongod`. Two clean back-to-back runs (before/without that contention) passed 122/122 in
+~26s each, and the user's own terminal ran the full suite clean (281/281, 94s) — so this is
+environment contention, not a real flake; **prefer running `cs-test` from the user's own terminal on
+this machine**, not the assistant's sandboxed shell.
 
 **Deferred asks logged this session (not in the plan above):** (1) archery rework — rescale accuracy
 to avg-10 + give archers control roles (taunt/hold/disrupt) beyond DPS [engine work]; (2) install the
 `grill-me` skill (github.com/mattpocock/skills .../grill-me) + add a "grill the spec before building
 complex features" rule to CLAUDE.md. **Laptop note:** campaign-server tests here need
-`MONGOMS_DISTRO=ubuntu-22.04` + `--no-file-parallelism` (Flatpak sandbox).
+`MONGOMS_DISTRO=ubuntu-22.04` + `--no-file-parallelism` (Flatpak sandbox) — now automatic via
+`scripts/dev.sh`, see the sandbox caveat above for where it still needs the user's own terminal.
