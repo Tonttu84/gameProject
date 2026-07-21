@@ -231,7 +231,8 @@ notes below over the git history if they ever disagree — the commits win.
   reaches the player as **neither truth nor decoy** until its trigger is met. State is written by
   a new `flag` effect type (`applyEffect`: `value` sets / `delta` increments / default 1, NO
   player-visible log line — hidden bookkeeping) into a new hidden `eventFlags: Map` on the
-  campaign (schema **v13**). **Load-bearing invariant** (augury.test.js tripwire): the
+  campaign (authored v13; **landed as schema v17** — reconciled with recon-R2's v16 during the
+  integration rebase). **Load-bearing invariant** (augury.test.js tripwire): the
   *unconditional* events alone keep every severity tier legible (≥2 + mixed valence), so
   prerequisites are purely additive and the same-pool pairing can never collapse — no runtime
   collapse guard needed. Proof event: `horse_sickness` (severity 2, `requires:{hasUnit:'Cavalry'}`
@@ -243,6 +244,15 @@ notes below over the git history if they ever disagree — the commits win.
   they appear only when scheduled). `flag`/`eventFlags` are the primitive that also lets a
   *randomly-eligible* follow-up be gated on a prior choice. Not yet click-tested in the live
   browser (unit + route suites green: 275/275).
+  - **Integrated 2026-07-21** (the branch sat unmerged for a day while main moved 21 commits
+    ahead). Rebased onto main — clean except the one-line `CAMPAIGN_SCHEMA_VERSION` collision
+    (v13 vs main's v16), reconciled to **v17**; `augury.js`/`events.js` had no overlap with
+    main's recon/boss-fight work. Merged via **PR #2** (`37c5db3`); `feat/event-prerequisites`
+    retired (local + remote). **Rode along:** a stale-e2e fix (`d8941bf`) — main's `ab7398a`
+    (pitched-battle gate) had gated `Fight!` on `bossFightDue` and updated the vitest fixtures
+    but left `e2e/tests/campaign-loop.spec.js` asserting `Fight!` visible on Turn 1 (a quiet
+    day, button correctly absent → red CI); switched to the `end-day` deploy landmark, matching
+    campaignFlow.test.jsx. Unrelated to prerequisites; committed straight to main first.
 - **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
   dated entries under the Stage-4 block and "Follow-ups" below. Not a new stage, bug fixes +
   a follow-up item landing early.
