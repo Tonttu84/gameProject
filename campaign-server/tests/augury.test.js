@@ -384,7 +384,7 @@ describe('applyEffect — recon-rung arms (Stage 4 1c)', () => {
     day: 1,
     resources: { food: 10000, materials: 100 },
     roster: new Map([['Soldier', 100]]),
-    enemy: { army: new Map([['Soldier', 400], ['Zombie', 200]]), stance: 'camp' },
+    enemy: { army: new Map([['Soldier', 400], ['Zombie', 200]]) },
   })
 
   test('enemy_losses thins every enemy line, telling the player only a phrase', () => {
@@ -403,6 +403,15 @@ describe('applyEffect — recon-rung arms (Stage 4 1c)', () => {
     // Applied during end-of-day N, the reveal covers the new day N+1.
     expect(c.enemy.revealedUntilDay).toBe(2)
     expect(log.length).toBeGreaterThan(0)
+  })
+
+  test('enemy_advance forces the boss fight (bossFightDue) — the retired stance is gone', () => {
+    const c = makeTarget()
+    const log = applyEffect(c, { type: 'enemy_advance' })
+    // What the old 'offering_battle' stance used to signal is now the meter's
+    // bossFightDue flag: the decisive fight is due next day regardless of the meter.
+    expect(c.bossFightDue).toBe(true)
+    expect(log).toContain('The enemy host is moving on your camp.')
   })
 
   test('multi applies every part in order and concatenates the logs', () => {

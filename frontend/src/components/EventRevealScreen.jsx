@@ -17,11 +17,14 @@ import { tons } from '../utils/format'
 
 const FATE_NAMES = ['The First Fate', 'The Second Fate', 'The Third Fate']
 
-const STANCE_LINES = {
-  camp: 'The enemy keeps to its camp.',
-  shadowing: 'The enemy shadows your line of march.',
-  offering_battle: 'The enemy has drawn up for battle — they offer the field.',
-  withdrawing: 'The enemy is withdrawing from the country.',
+// Enemy-movement flavor, re-derived from the boss-fight meter band (+ the
+// bossFightDue flag) now that the standalone stance concept is retired.
+// FLAGGED FOR PLAYTEST (docs/CAMPAIGN_PLAN.md): the band→prose mapping is a
+// first pass — revisit once the meter's pacing is felt in play.
+const BAND_LINES = {
+  calm: 'The enemy keeps to its camp.',
+  restless: 'The enemy shadows your line of march.',
+  imminent: 'The enemy host is massing — a reckoning nears.',
 }
 
 const CLASH_LINES = {
@@ -163,8 +166,12 @@ const UpkeepBeat = ({ upkeep }) => (
 const EnemyBeat = ({ enemy }) => (
   <div className="reveal-card" data-testid="reveal-beat-enemy">
     <h3>The Enemy</h3>
-    <p>{STANCE_LINES[enemy.stance] ?? "The enemy's movements are unclear."}</p>
-    {enemy.battleOffer && <p>Battle will be joined if you take the field.</p>}
+    <p>
+      {enemy.bossFightDue
+        ? 'The enemy has drawn up for battle — they offer the field.'
+        : (BAND_LINES[enemy.band] ?? "The enemy's movements are unclear.")}
+    </p>
+    {enemy.bossFightDue && <p>Battle will be joined if you take the field.</p>}
   </div>
 )
 

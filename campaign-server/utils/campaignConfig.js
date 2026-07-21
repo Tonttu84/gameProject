@@ -315,9 +315,10 @@ export const MILITIA_UNIT = 'Militia'
 // it waits on the replenishment design.
 export const STARTING_WORKERS = 2000
 
-// Enemy AI stance machine (services/enemyAi.js). `stance` is now driven by
-// the boss-fight meter below (see METER_BANDS) except for the withdraw case,
-// which stays an independent near-annihilation check.
+// Near-annihilation win: once the enemy host drops below this fraction of its
+// starting strength it melts away and you take the country (checked directly in
+// services/dayResolution.js end conditions — the ambient path, independent of
+// the boss-fight meter).
 export const ENEMY_WITHDRAW_FRACTION = 0.2 // withdraws (you win) below this strength
 
 // ── Boss-fight meter (roguelite campaign loop) ───────────────────────────────
@@ -331,10 +332,10 @@ export const BOSS_FIGHT_METER_THRESHOLD = 1000
 export const BOSS_FIGHT_METER_FLOOR = 50
 export const BOSS_FIGHT_METER_CEILING = 100
 // Banded phrase (mirrors ENEMY_SUPPLY_BANDS) — the meter's level-0 form on the
-// wire (recon R2 adds a numeric estimate above that). Also drives the enemy
-// stance machine directly (calm ⇒ camp, else ⇒ shadowing; offering_battle is
-// bossFightDue instead) — one banded signal instead of two systems that could
-// disagree.
+// wire (recon R2 adds a numeric estimate above that). Also the single signal
+// for the enemy's disposition: the reveal/council flavor is derived from this
+// band plus bossFightDue (calm/restless/imminent, then "offering battle" once
+// bossFightDue) — one banded signal, no separate stance machine.
 export const METER_BANDS = [
   { min: 667, label: 'imminent' },
   { min: 334, label: 'restless' },

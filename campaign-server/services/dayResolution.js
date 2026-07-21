@@ -1,4 +1,8 @@
-import { DESERTION_FRACTION, BOSS_FIGHT_METER_THRESHOLD } from '../utils/campaignConfig.js'
+import {
+  DESERTION_FRACTION,
+  BOSS_FIGHT_METER_THRESHOLD,
+  ENEMY_WITHDRAW_FRACTION,
+} from '../utils/campaignConfig.js'
 import { getCatalog } from '../utils/catalog.js'
 import {
   armyFoodPerTurn,
@@ -10,7 +14,7 @@ import { bracketOnLevelUp } from './recon.js'
 import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
-import { meterFillAmount } from './meter.js'
+import { meterFillAmount, meterBand } from './meter.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging } from './forage.js'
@@ -28,10 +32,9 @@ import { resolveForaging } from './forage.js'
 //                         the band decides WHICH RUNG of the fate fires)
 //   4. meter + enemy turn (boss-fight meter fill/threshold read against the
 //                         day's pre-reset forage/raid assignments, THEN enemy
-//                         upkeep/stance/tomorrow's forage plan, since stance
-//                         now reads bossFightDue/meter — see services/meter.js)
+//                         upkeep/tomorrow's forage plan — see services/meter.js)
 //   5. player upkeep     (food, desertion at zero)
-//   6. check end         (annihilation / enemy withdrawal)
+//   6. check end         (annihilation / enemy near-annihilation withdrawal)
 //   7. new turn          (draw events, clear forage assignment, regenerate
 //                         the enemy's planned placement)
 //
@@ -228,7 +231,7 @@ export async function endDay(campaign) {
     })
   }
 
-  // 4. Boss-fight meter, THEN the enemy turn (stance reads the fresh value).
+  // 4. Boss-fight meter, THEN the enemy turn (enemy upkeep/forage plan).
   // Read against the day's pre-reset forage/raid assignments — step 7 below
   // clears them for the new turn.
   campaign.meter.value += meterFillAmount(campaign)
@@ -256,9 +259,19 @@ export async function endDay(campaign) {
 
   // 6. End conditions
   entries.push(...checkAnnihilation(campaign))
-  if (campaign.status === 'active' && campaign.enemy.stance === 'withdrawing') {
+  // Near-annihilation win: the enemy melts away once its host drops below a
+  // fraction of its starting strength. Independent of the boss-fight meter
+  // (this is the ambient path — the enemy raided/foraged down to a husk before
+  // the decisive fight ever came due). `size === 0` is already the annihilation
+  // win above, so this only fires for a nonzero-but-broken host.
+  const enemySize = armyTotal(campaign.enemy.army)
+  if (
+    campaign.status === 'active' &&
+    enemySize > 0 &&
+    enemySize < campaign.enemy.initialStrength * ENEMY_WITHDRAW_FRACTION
+  ) {
     campaign.status = 'won'
-    entries.push('The enemy has abandoned the campaign. The country is yours.')
+    entries.push('The enemy host is melting away down the road it came by. The country is yours.')
   }
   // Game over outranks an owed decision: without this, the choose route's
   // active-guard would strand the pending entries (and the client's gate)
@@ -309,9 +322,12 @@ export async function endDay(campaign) {
 
   report.entries = entries
   report.status = campaign.status
+  // The day-report enemy summary carries the flavor inputs the reveal screen
+  // narrates from: the boss-fight meter's band and whether the decisive fight
+  // is now due (replaces the retired stance/battleOffer pair).
   report.enemy = {
-    stance: campaign.enemy.stance,
-    battleOffer: campaign.enemy.stance === 'offering_battle',
+    band: meterBand(campaign.meter.value),
+    bossFightDue: campaign.bossFightDue,
   }
   report.newDay = campaign.day
   return report

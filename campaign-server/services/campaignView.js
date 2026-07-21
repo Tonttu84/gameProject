@@ -85,13 +85,15 @@ const rewardView = (opp) => {
 
 // The graduated enemy reveal (Stage 4 1b): the scouting band decides how much
 // of the hidden enemy the serializer lets through, keys ACCUMULATING with
-// rank — Blind: stance only; Outmatched/Contested: + bucketed strength phrase
-// and supply state; Superior: + composition by category %; Overwhelming:
-// + exact counts and the REAL planned placement (aggregated per hex for the
-// placement grid). Everything stays a phrase or a band until the top rung —
-// tests/campaigns.test.js pins the exact key set per band.
+// rank — Blind: nothing (the host is unseen); Outmatched/Contested: + bucketed
+// strength phrase and supply state; Superior: + composition by category %;
+// Overwhelming: + exact counts and the REAL planned placement (aggregated per
+// hex for the placement grid). Everything stays a phrase or a band until the
+// top rung — tests/campaigns.test.js pins the exact key set per band. (Whether
+// the enemy offers battle is the top-level campaign.bossFightDue flag now, not
+// an enemy-view key — the retired stance concept.)
 const enemyView = (enemy, band, level, countBracket, catalog, revealed = false) => {
-  const view = { stance: enemy.stance, battleOffer: enemy.stance === 'offering_battle' }
+  const view = {}
   // A free reveal (Stage 4 1c, the anticipated Night Raid's prisoners) opens
   // the full Overwhelming tier for the turn regardless of the band; the
   // `revealed` flag tells the client (and the hidden-info tests) why.

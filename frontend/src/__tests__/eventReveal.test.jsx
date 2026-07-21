@@ -32,7 +32,7 @@ const fullReport = {
     },
   ],
   upkeep: { foodConsumed: 12432, deserters: 40 },
-  enemy: { stance: 'offering_battle', battleOffer: true },
+  enemy: { bossFightDue: true },
   entries: ['Came to pass: Supply Cache.', '40 soldiers deserted — the stores are empty.'],
 }
 

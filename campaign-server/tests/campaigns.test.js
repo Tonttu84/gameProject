@@ -64,13 +64,14 @@ afterEach(clearRolls)
 // trip a hidden-key check.
 // What the enemy view may expose at each scouting band (Stage 4 1b). Keys
 // accumulate as the band climbs and NOTHING beyond the band's set may appear;
-// day-report enemy summaries (no scouting sibling) stay stance-only.
+// day-report enemy summaries (no scouting sibling) carry only { band,
+// bossFightDue } — the retired stance's replacement.
 const ENEMY_KEYS_BY_BAND = {
-  Blind: ['battleOffer', 'stance'],
-  Outmatched: ['battleOffer', 'count', 'stance', 'supplies'],
-  Contested: ['battleOffer', 'count', 'stance', 'supplies'],
-  Superior: ['battleOffer', 'composition', 'count', 'stance', 'supplies'],
-  Overwhelming: ['battleOffer', 'composition', 'count', 'placements', 'stance', 'supplies', 'units'],
+  Blind: [],
+  Outmatched: ['count', 'supplies'],
+  Contested: ['count', 'supplies'],
+  Superior: ['composition', 'count', 'supplies'],
+  Overwhelming: ['composition', 'count', 'placements', 'supplies', 'units'],
 }
 
 const expectNoHiddenInfo = (body) => {
@@ -94,7 +95,7 @@ const expectNoHiddenInfo = (body) => {
       ? [...ENEMY_KEYS_BY_BAND.Overwhelming, 'revealed'].sort()
       : c.scouting
         ? ENEMY_KEYS_BY_BAND[c.scouting.band]
-        : ['battleOffer', 'stance']
+        : ['band', 'bossFightDue'] // the day report's enemy summary
     expect(Object.keys(c.enemy).sort()).toEqual(allowed)
   }
   // Events with choices: a pending decision crosses as display fields plus
@@ -195,7 +196,10 @@ describe('POST /api/campaigns', () => {
     expect(res.body.roster.LightCavalry).toBe(12)
     // A fresh, unread augury: no prophecy yet, the reroll unspent.
     expect(res.body.augury).toEqual({ consulted: false, accepted: false, rerollsRemaining: 1, visions: null })
-    expect(res.body.enemy.stance).toBe('camp')
+    // Fresh campaign is Blind (recon 0): the enemy view is empty, and the
+    // boss fight is not yet due (the retired stance is gone).
+    expect(res.body.enemy).toEqual({})
+    expect(res.body.bossFightDue).toBe(false)
     // Fresh land: three untouched rings, nobody assigned to forage yet.
     expect(res.body.forage.rings).toEqual([
       { ring: 0, richness: 20000, initialRichness: 20000 },
@@ -275,13 +279,13 @@ const getView = async (id) => {
 }
 
 describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
-  test('Blind (a fresh campaign, 0 recon points): stance only', async () => {
+  test('Blind (a fresh campaign, 0 recon points): the enemy is unread', async () => {
     const { body } = await createCampaign()
     // No recon yet → Blind, the enemy is unread.
     await pinArmies(body.id, { enemyArmy: { LightCavalry: 50 } })
     const view = await getView(body.id)
     expect(view.scouting.band).toBe('Blind')
-    expect(view.enemy).toEqual({ stance: 'camp', battleOffer: false })
+    expect(view.enemy).toEqual({})
   })
 
   test('Outmatched: adds the numeric count estimate and supply state, nothing more', async () => {
@@ -307,8 +311,6 @@ describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
     // Default ENEMY_ARMY armyTotal 721.
     expect(view.scouting.band).toBe('Contested')
     expect(view.enemy).toEqual({
-      stance: 'camp',
-      battleOffer: false,
       count: { low: 721, high: 721 },
       supplies: 'well-provisioned',
     })
@@ -514,8 +516,9 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expectNoHiddenInfo(res.body)
 
-    // The blind rung would have set the host on the camp; anticipated must not.
-    expect(res.body.campaign.enemy.stance).not.toBe('offering_battle')
+    // The blind rung (enemy_advance) would have forced the boss fight
+    // (bossFightDue); the anticipated reversal must not.
+    expect(res.body.campaign.bossFightDue).toBe(false)
     for (const slot of res.body.report.augury) {
       expect(slot.fired.rung).toBe('anticipated')
       expect(slot.fired.title).toBe(AMBUSH.rungs.anticipated.title)

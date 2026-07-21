@@ -80,7 +80,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 18 // v18: event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 19 // v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -318,11 +318,6 @@ const campaignSchema = new mongoose.Schema({
     army: { type: Map, of: Number, required: true }, // HIDDEN
     initialStrength: { type: Number, required: true },
     supplies: { type: Number, required: true },
-    stance: {
-      type: String,
-      enum: ['camp', 'shadowing', 'offering_battle', 'withdrawing'],
-      default: 'camp',
-    },
     // Exact placement the engine will receive today — HIDDEN until a
     // scouting reveal is purchased (later stage).
     plannedPlacement: { type: [mongoose.Schema.Types.Mixed], default: null },

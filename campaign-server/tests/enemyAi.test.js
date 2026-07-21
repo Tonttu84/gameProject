@@ -5,12 +5,16 @@ import { createUserAndToken } from './helpers/auth.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { clearRolls } from '../utils/dice.js'
 
-// The enemy stance machine (services/enemyAi.js) + the withdrawal win in
-// services/dayResolution.js step 6 — driven through the real end-day route
-// against the real DB. Everything here is deterministic: the player never
-// forages (so no clash rolls), pinned QUIET fates keep events out of the
-// math, and the enemy state is steered by writing the doc directly (the same
-// pinning convention as campaigns.test.js / raid.test.js).
+// Enemy per-turn upkeep (services/enemyAi.js) + the near-annihilation
+// withdrawal win in services/dayResolution.js step 6 — driven through the real
+// end-day route against the real DB. Everything here is deterministic: the
+// player never forages (so no clash rolls), pinned QUIET fates keep events out
+// of the math, and the enemy state is steered by writing the doc directly (the
+// same pinning convention as campaigns.test.js / raid.test.js).
+//
+// The standalone enemy "stance" was retired (docs/CAMPAIGN_PLAN.md): the
+// boss-fight meter band (+ bossFightDue) is the single signal for the enemy's
+// disposition, and the day report exposes it as { band, bossFightDue }.
 //
 // The fixed arithmetic all of it leans on (fixture catalog == engine-pinned
 // sizes/speeds):
@@ -21,9 +25,8 @@ import { clearRolls } from '../utils/dice.js'
 //   food for the supply train (the rest is the materials share)
 // - so an untouched host nets 7,267 − 21,868 = −14,601 kg of supplies/turn.
 //
-// Stance thresholds (utils/campaignConfig.js): withdraw below 0.2 × initial
-// strength, battle offer below 25,000 kg supplies or every 5th turn, shadow
-// from turn 3.
+// Near-annihilation win (utils/campaignConfig.js): the host melts away once it
+// drops below ENEMY_WITHDRAW_FRACTION (0.2) × its initial strength.
 
 vi.mock('../services/engine.js', () => ({
   runBattle: vi.fn(),
@@ -73,11 +76,11 @@ const endDay = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
 // no response may carry the enemy composition, plan, or augury internals,
 // and the enemy view's keys are exactly what the scouting band licenses.
 const ENEMY_KEYS_BY_BAND = {
-  Blind: ['battleOffer', 'stance'],
-  Outmatched: ['battleOffer', 'count', 'stance', 'supplies'],
-  Contested: ['battleOffer', 'count', 'stance', 'supplies'],
-  Superior: ['battleOffer', 'composition', 'count', 'stance', 'supplies'],
-  Overwhelming: ['battleOffer', 'composition', 'count', 'placements', 'stance', 'supplies', 'units'],
+  Blind: [],
+  Outmatched: ['count', 'supplies'],
+  Contested: ['count', 'supplies'],
+  Superior: ['composition', 'count', 'supplies'],
+  Overwhelming: ['composition', 'count', 'placements', 'supplies', 'units'],
 }
 
 const expectNoHiddenInfo = (body) => {
@@ -98,7 +101,7 @@ const expectNoHiddenInfo = (body) => {
       ? [...ENEMY_KEYS_BY_BAND.Overwhelming, 'revealed'].sort()
       : c.scouting
         ? ENEMY_KEYS_BY_BAND[c.scouting.band]
-        : ['battleOffer', 'stance']
+        : ['band', 'bossFightDue'] // the day report's enemy summary (no scouting sibling)
     expect(Object.keys(c.enemy).sort()).toEqual(allowed)
   }
   for (const c of [body, body.campaign]) {
@@ -162,15 +165,15 @@ describe('enemy supply depletion', () => {
   })
 })
 
-// The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop") now
-// drives stance instead of the old ENEMY_OFFER_EVERY/ENEMY_LOW_SUPPLIES
-// thresholds: calm ⇒ camp, restless/imminent ⇒ shadowing, bossFightDue (meter
-// crosses BOSS_FIGHT_METER_THRESHOLD=1000) ⇒ offering_battle. A fresh
-// campaign never forages or raids in these tests, so troopsInCamp == the
-// whole roster every turn — meterFillAmount is pinned at the FLOOR (50)/turn,
-// which these tests use to predict the post-end-day value from a pinned
-// starting one.
-describe('the boss-fight meter drives stance', () => {
+// The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop") is the
+// single signal for the enemy's disposition now that stance is retired. The day
+// report's enemy summary is { band, bossFightDue } — the meter band (calm/
+// restless/imminent) plus whether crossing BOSS_FIGHT_METER_THRESHOLD=1000 has
+// set bossFightDue. A fresh campaign never forages or raids in these tests, so
+// troopsInCamp == the whole roster every turn — meterFillAmount is pinned at the
+// FLOOR (50)/turn, which these tests use to predict the post-end-day value from
+// a pinned starting one.
+describe('the boss-fight meter is the enemy-disposition signal', () => {
   test('an idle army fills the meter by the floor amount (50) each end-day', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
@@ -178,7 +181,7 @@ describe('the boss-fight meter drives stance', () => {
     const res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ stance: 'camp', battleOffer: false })
+    expect(res.body.report.enemy).toEqual({ band: 'calm', bossFightDue: false })
     // meter.value 50 → 'calm' band. (The end-day accrued this fresh army's
     // scouting pool into recon, so the level climbed and a numeric estimate now
     // shows — recon R2; the exact bracket carries jitter, so just its shape.)
@@ -191,7 +194,7 @@ describe('the boss-fight meter drives stance', () => {
     expect((await Campaign.findById(c.id)).meter.value).toBe(50)
   })
 
-  test('calm (< 334) stays camp, restless (>= 334) tips to shadowing', async () => {
+  test('the report band tracks the meter: calm (< 334) then restless (>= 334)', async () => {
     const { body: c } = await createCampaign()
 
     await pinAugury(c.id)
@@ -199,14 +202,14 @@ describe('the boss-fight meter drives stance', () => {
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ stance: 'camp', battleOffer: false })
+    expect(res.body.report.enemy).toEqual({ band: 'calm', bossFightDue: false })
 
     await pinAugury(c.id)
     await pinMeter(c.id, 300) // + 50 = 350, restless
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ stance: 'shadowing', battleOffer: false })
+    expect(res.body.report.enemy).toEqual({ band: 'restless', bossFightDue: false })
   })
 
   test('crossing 1000 sets bossFightDue and the enemy offers battle that same day', async () => {
@@ -217,7 +220,8 @@ describe('the boss-fight meter drives stance', () => {
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ stance: 'shadowing', battleOffer: false })
+    // 999 ≥ 667 → 'imminent', but still not due.
+    expect(res.body.report.enemy).toEqual({ band: 'imminent', bossFightDue: false })
     expect(res.body.campaign.bossFightDue).toBe(false)
     expect((await Campaign.findById(c.id)).meter.value).toBe(999)
 
@@ -225,13 +229,9 @@ describe('the boss-fight meter drives stance', () => {
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ stance: 'offering_battle', battleOffer: true })
-    expect(res.body.report.entries).toContain(
-      'Enemy banners form up in the plain — they are offering battle.',
-    )
+    expect(res.body.report.enemy).toEqual({ band: 'imminent', bossFightDue: true })
     expect(res.body.campaign.bossFightDue).toBe(true)
     const doc = await Campaign.findById(c.id)
-    expect(doc.enemy.stance).toBe('offering_battle')
     expect(doc.bossFightDue).toBe(true)
     expect(doc.meter.value).toBe(1049)
   })
@@ -248,12 +248,11 @@ describe('the withdraw threshold and the withdrawal win', () => {
     const res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy.stance).toBe('camp') // turn 2: not withdrawing
-    expect(res.body.report.status).toBe('active')
+    expect(res.body.report.status).toBe('active') // above the line: not withdrawing
     expect(res.body.report.newDay).toBe(2)
   })
 
-  test('below the threshold the stance flips to withdrawing — and that wins the campaign', async () => {
+  test('below the threshold the host withdraws — and that wins the campaign', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
     await pinEnemy(c.id, { army: { Soldier: 144 }, supplies: 90000 })
@@ -262,21 +261,19 @@ describe('the withdraw threshold and the withdrawal win', () => {
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
 
-    expect(res.body.report.enemy).toEqual({ stance: 'withdrawing', battleOffer: false })
+    // The meter still filled (step 4 runs before the end check), so the report
+    // band is 'calm'; the win comes from the direct near-annihilation check.
+    expect(res.body.report.enemy).toEqual({ band: 'calm', bossFightDue: false })
     expect(res.body.report.status).toBe('won')
     expect(res.body.campaign.status).toBe('won')
     // The war ends where it stands: step 7 (new turn) never runs.
     expect(res.body.report.newDay).toBe(1)
     expect(res.body.report.entries).toContain(
-      'The enemy host is melting away down the road it came by.',
-    )
-    expect(res.body.report.entries).toContain(
-      'The enemy has abandoned the campaign. The country is yours.',
+      'The enemy host is melting away down the road it came by. The country is yours.',
     )
 
     const doc = await Campaign.findById(c.id)
     expect(doc.status).toBe('won')
-    expect(doc.enemy.stance).toBe('withdrawing')
     expect(doc.day).toBe(1)
 
     // A finished campaign refuses further actions.

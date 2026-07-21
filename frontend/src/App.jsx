@@ -340,7 +340,10 @@ const App = () => {
               lines={[
                 'Each turn covers two weeks of campaigning: your army eats, the land empties, the augur reads the signs.',
                 'First prepare — send out foragers and see to your camp. Then read the omens, loose your raiders, and deploy your line.',
-                `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'formed up for a pitched battle' : 'shadowing your army'}.`,
+                // Enemy disposition re-derived from the boss-fight meter band
+                // (+ bossFightDue), the single signal since stance was retired.
+                // FLAGGED FOR PLAYTEST: this band→prose mapping is a first pass.
+                `The enemy is ${campaign.bossFightDue ? 'formed up for a pitched battle' : campaign.meter?.band === 'imminent' ? 'massing for battle' : campaign.meter?.band === 'restless' ? 'shadowing your army' : 'sitting in camp'}.`,
               ]}
             />
             <p>

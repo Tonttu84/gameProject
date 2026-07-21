@@ -48,8 +48,6 @@ export const campaignFixture = {
   // state; higher bands add composition, exact counts and the revealed
   // placement (see scoutingReveal.test.jsx).
   enemy: {
-    stance: 'camp',
-    battleOffer: false,
     count: { low: 400, high: 900 },
     supplies: 'well-provisioned',
   },

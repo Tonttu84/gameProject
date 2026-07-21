@@ -321,7 +321,16 @@ notes below over the git history if they ever disagree — the commits win.
   `RaidPanel` read `useUiStore((s) => s.tutorial)` directly and only forward it to
   `TutorialIntro`'s `enabled` prop; single source of truth, no App→panel fan-out to remove.)
 
-### Boss-fight campaign loop (meter + decisive battle) — DESIGNED 2026-07-20, NOT YET IMPLEMENTED
+### Boss-fight campaign loop (meter + decisive battle) — Stages A–D + recon rework SHIPPED; Stage E (hiring) still deferred
+
+> **Status (2026-07-21):** the core loop is BUILT and in `main` — Stage A (meter core), Stage B
+> (gate the battle + decisive win/loss), Stage C (meter reveal, later superseded by the recon
+> rework), Stage D (`destroy_detachment` casualty rework), and the whole recon rework (R1–R3) all
+> shipped, plus the `enemy.stance`/`battleOffer` removal (2026-07-21, see the DONE note below).
+> What remains: **Stage E — hiring troops** (still design-only, needs the `gold` resource +
+> numbers decided) and the deferred **narrative siege reframe** (gauge copy + themed events).
+> The per-stage SHIPPED handoff blocks below are the source of truth; this section was designed
+> up front, so read the ✅/DEFERRED tags per bullet, not just the heading.
 
 Grilled end-to-end with the user before writing anything down (per the `grilling` skill rule in
 `CLAUDE.md`); this section **supersedes** the old `[[todo-multi-turn-campaign-loop]]` and
@@ -359,16 +368,26 @@ time), 0 → **1000** threshold.
   meter = the siege clock). TODO when picked up: reword the meter/"final battle" gauge text and its
   banded phrases to this frame, and add a few **events** that fit it (relief column, sortie from the
   city, siege lines, etc.). Purely narrative + a bit of gauge copy — no mechanic change.
-- **DEFERRED — remove `enemy.stance`/`battleOffer` entirely (user, 2026-07-20).** There is no army
-  "stance" in the design anymore (the enemy is dug in around the besieged city, per the framing
-  above), so `enemy.stance` and the `battleOffer` flag derived from it are outdated cruft. Rip out
-  the whole stance concept: the `stance` field on `enemy` (model), `enemyView`'s `stance`/
-  `battleOffer` keys, the `enemyTurn`/`enemyAi.js` stance transitions (Stage A rewired stance to the
-  meter, but the meter/`bossFightDue` should stand on their own without a stance middleman), the
-  frontend stance/battleOffer copy (`App.jsx`, `EventRevealScreen.jsx`, `ScoutReport.jsx`), and the
-  `ENEMY_KEYS_BY_BAND` `stance`/`battleOffer` entries + tests. Whatever legitimately keyed off
-  `offering_battle` now keys off `bossFightDue` directly. Its own cleanup pass — do NOT fold into
-  the recon rework.
+- **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
+  branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
+  `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns
+  `{}`), the `enemyTurn`/`enemyAi.js` transition machine (now just supplies + forage plan), and the
+  `ENEMY_KEYS_BY_BAND` `stance`/`battleOffer` entries in both server test files. The two
+  behavior-carrying pieces were preserved, not dropped: (1) the near-annihilation **withdraw win**
+  is now a direct `armyTotal < initialStrength × ENEMY_WITHDRAW_FRACTION` check in
+  `dayResolution.js` step 6 (no longer routed through a `stance === 'withdrawing'` flag); (2) the
+  `enemy_advance` event effect now sets `campaign.bossFightDue = true` (what `offering_battle` used
+  to mean). The day-report enemy summary is `{ band, bossFightDue }` (was `{ stance, battleOffer }`);
+  the frontend battle-offer gating already keyed off top-level `bossFightDue`, so `battleOffer` was
+  pure redundancy. **Enemy-movement flavor re-derived from the meter band** (option A, user 2026-07-21):
+  `App.jsx`'s council line + `EventRevealScreen`'s `EnemyBeat` narrate from `meter.band` +
+  `bossFightDue` (calm→camp, restless→shadowing, imminent→massing, bossFightDue→offers battle).
+  **⚑ FLAGGED FOR PLAYTEST** (user: "I don't completely understand it… we'll see how it works"):
+  the band→prose mapping is a first pass — revisit once the meter's pacing is felt in play.
+  Verified: frontend vitest **235/235** + oxlint clean; server tests updated (`enemyAi`/`campaigns`/
+  `augury`, incl. a new `enemy_advance`→`bossFightDue` applyEffect case) but run by CI/user (local
+  `cs-test` sandbox-mongo flake). NB: this removes the last "stance still EXISTS" caveat the recon
+  R2 handoff flagged (`METER_BANDS` comment updated).
 - **Visibility:** hidden by default, shown only as a banded phrase (mirrors
   `ENEMY_STRENGTH_BANDS`/`ENEMY_SUPPLY_BANDS` — e.g. calm / restless / imminent). The exact
   number can be bought: spending **leftover scouting points, just before they expire/refresh at
@@ -2436,10 +2455,11 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
-**~~TODO~~ ✅ DESIGNED 2026-07-20 — multi-turn campaign loop: persistent enemy army + a "final
-battle" meter.** Grilled and fully designed — see "Boss-fight campaign loop (meter + decisive
-battle) — DESIGNED 2026-07-20, NOT YET IMPLEMENTED" near the top of this file (right after
-"Project state"). Not yet built; staged A→E there.
+**~~TODO~~ ~~DESIGNED 2026-07-20~~ ✅ BUILT 2026-07-21 — multi-turn campaign loop: persistent enemy
+army + a "final battle" meter.** Grilled, designed, and shipped — see the "Boss-fight campaign loop
+(meter + decisive battle)" section near the top of this file (right after "Project state"): Stages
+A–D + the recon rework + the stance removal are all in `main`; only Stage E (hiring troops) and the
+narrative siege reframe remain.
 
 **TODO — squads as the persistent campaign unit (user, 2026-07-20 — idea only, no plan yet).**
 [[todo-squads-persistent-unit]]

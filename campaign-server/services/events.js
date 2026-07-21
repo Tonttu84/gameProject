@@ -295,8 +295,10 @@ export function applyEffect(campaign, effect) {
       campaign.roster.set(type, Math.floor(n * effect.factor))
     log.push(`All units ×${effect.factor}.`)
   } else if (effect.type === 'enemy_advance') {
-    // The enemy comes looking for a fight tomorrow.
-    campaign.enemy.stance = 'offering_battle'
+    // The enemy comes looking for a fight tomorrow — force the decisive battle
+    // early, regardless of the meter (what the retired 'offering_battle' stance
+    // used to signal; the boss fight is now the only pitched battle there is).
+    campaign.bossFightDue = true
     log.push('The enemy host is moving on your camp.')
   } else if (effect.type === 'enemy_losses') {
     // The scouts' reversal (anticipated rung): the blow lands on the enemy

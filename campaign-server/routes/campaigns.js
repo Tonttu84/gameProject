@@ -114,7 +114,6 @@ router.post('/', async (req, res) => {
       army: ENEMY_ARMY,
       initialStrength: Object.values(ENEMY_ARMY).reduce((a, b) => a + b, 0),
       supplies: ENEMY_SUPPLIES,
-      stance: 'camp',
       plannedPlacement: await buildEnemyPlacement(ENEMY_ARMY),
     },
   })

@@ -49,7 +49,7 @@ describe('ScoutReport', () => {
     render(
       <ScoutReport
         scouting={{ band: 'Blind' }}
-        enemy={{ stance: 'camp', battleOffer: false }}
+        enemy={{}}
       />,
     )
     expect(screen.getByTestId('scouting-band')).toHaveTextContent('Blind')
@@ -61,8 +61,6 @@ describe('ScoutReport', () => {
       <ScoutReport
         scouting={{ band: 'Contested' }}
         enemy={{
-          stance: 'camp',
-          battleOffer: false,
           count: { low: 400, high: 900 },
           supplies: 'well-provisioned',
         }}
@@ -81,8 +79,6 @@ describe('ScoutReport', () => {
       <ScoutReport
         scouting={{ band: 'Superior' }}
         enemy={{
-          stance: 'shadowing',
-          battleOffer: false,
           count: { low: 500, high: 800 },
           supplies: 'strained',
           composition: { Foot: 97, Mounted: 3 },
@@ -98,8 +94,6 @@ describe('ScoutReport', () => {
       <ScoutReport
         scouting={{ band: 'Overwhelming' }}
         enemy={{
-          stance: 'shadowing',
-          battleOffer: false,
           count: { low: 560, high: 560 },
           supplies: 'near starving',
           composition: { Foot: 98, Mounted: 2 },
