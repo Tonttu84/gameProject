@@ -166,9 +166,18 @@ notes below over the git history if they ever disagree — the commits win.
   `reveal_meter` will be reverted in recon R2.
 - **Boss-fight campaign loop — Stage D (`destroy_detachment` rework) ✅ SHIPPED 2026-07-20** —
   committed `794a5e3` (casualties always, pursuit + prestige stub on win). See the Stage D handoff.
-- **Recon rework — DESIGNED 2026-07-20 (grilled), NOT YET IMPLEMENTED. NEXT: R1** (recon.points
-  accrual + `reconLevel`/`reconBand`, swap the 3 band consumers, delete `scoutingCoverage`). Then
-  R2 (numeric brackets + revert Stage C) and R3 (frontend). See the "Recon rework" section below.
+- **Recon rework — R1 SOURCE committed as WIP (`ba1ec33` "preparing to switch computer"), R1 TESTS
+  IN PROGRESS (uncommitted).** NOTE: `ba1ec33` is in-progress work committed only to save context —
+  **not authoritative/frozen**; verify it and fix freely. It has the R1 source:
+  `campaign.recon.points` (schema **v15**), `reconLevel`/`reconBand`
+  (`RECON_LEVEL_THRESHOLDS = [100,300,700,1400]`), end-of-turn accrual of leftover scouting points,
+  all 3 band consumers swapped to `reconBand`, and `scoutingCoverage`/`scoutingBand`/`reconValue`
+  deleted. **Uncommitted WIP:** `capabilities.test.js` + `campaigns.test.js` recon test rewrites
+  (verify/finish these — likely not yet complete or green). **NEXT (extend `ba1ec33`, don't
+  needlessly redo R1 source, but fix it where tests demand):** finish the R1 tests, then
+  **R2** (numeric count/meter brackets — stored asym offsets, live-tracked, floor ≥ 0, narrow on
+  level-up, exact at top; revert Stage C `reveal_meter`; the raid-casualty-shift test), then **R3**
+  (frontend readout). See the "Recon rework" section below.
   Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
@@ -248,6 +257,16 @@ time), 0 → **1000** threshold.
   meter = the siege clock). TODO when picked up: reword the meter/"final battle" gauge text and its
   banded phrases to this frame, and add a few **events** that fit it (relief column, sortie from the
   city, siege lines, etc.). Purely narrative + a bit of gauge copy — no mechanic change.
+- **DEFERRED — remove `enemy.stance`/`battleOffer` entirely (user, 2026-07-20).** There is no army
+  "stance" in the design anymore (the enemy is dug in around the besieged city, per the framing
+  above), so `enemy.stance` and the `battleOffer` flag derived from it are outdated cruft. Rip out
+  the whole stance concept: the `stance` field on `enemy` (model), `enemyView`'s `stance`/
+  `battleOffer` keys, the `enemyTurn`/`enemyAi.js` stance transitions (Stage A rewired stance to the
+  meter, but the meter/`bossFightDue` should stand on their own without a stance middleman), the
+  frontend stance/battleOffer copy (`App.jsx`, `EventRevealScreen.jsx`, `ScoutReport.jsx`), and the
+  `ENEMY_KEYS_BY_BAND` `stance`/`battleOffer` entries + tests. Whatever legitimately keyed off
+  `offering_battle` now keys off `bossFightDue` directly. Its own cleanup pass — do NOT fold into
+  the recon rework.
 - **Visibility:** hidden by default, shown only as a banded phrase (mirrors
   `ENEMY_STRENGTH_BANDS`/`ENEMY_SUPPLY_BANDS` — e.g. calm / restless / imminent). The exact
   number can be bought: spending **leftover scouting points, just before they expire/refresh at
@@ -672,10 +691,14 @@ determines the level, keeping the level's existing uses (enemy ladder + forage p
 enemy-army coverage input is dead and thrown away.
 
 **Staging (one thing at a time):**
-- **R1 — recon core + band-driver swap.** Add `campaign.recon.points` (schema bump) + `reconLevel`/
-  `reconBand`; accrue leftover points at end-of-turn; swap all 3 consumers to the recon band; delete
-  `scoutingCoverage`/`scoutingBand`/`reconValue`. Behavior-changing (band now from recon) → the
-  coverage-band tests get rewritten. No brackets yet.
+- **R1 — recon core + band-driver swap. ✅ SOURCE DONE (`ba1ec33`), TESTS WIP (uncommitted).**
+  `campaign.recon.points` (schema **v15**) + `reconLevel`/`reconBand`; leftover points accrue at
+  end-of-turn; all 3 consumers swapped to the recon band; `scoutingCoverage`/`scoutingBand`/
+  `reconValue` deleted. `RECON_LEVEL_THRESHOLDS = [100,300,700,1400]` (rough/tunable — the real
+  per-turn pool is large, calibrate in playtest). Coverage-band tests are being rewritten
+  (`capabilities.test.js` + `campaigns.test.js`, uncommitted) — **verify/finish + run before R2**;
+  fresh campaign now starts **Blind** (recon 0), which changes turn-1 default-band assertions
+  (was Contested) and the turn-1 forage posture. No brackets yet.
 - **R2 — numeric brackets + revert Stage C.** Enemy-count + meter brackets (stored asym offsets,
   live-tracked, narrow on level-up, exact at top); remove `reveal_meter`; rework `meter.revealed/value`
   into the meter bracket. Includes the raid-casualty-shift test.
