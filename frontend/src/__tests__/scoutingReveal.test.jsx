@@ -4,7 +4,7 @@
  * The server's campaignView already gates WHAT crosses the boundary by
  * scouting band; the client just renders whatever arrived:
  *   - ScoutReport shows the band plus only the intel fields present on
- *     campaign.enemy (strength/supplies/composition/units).
+ *     campaign.enemy (count/supplies/composition/units).
  *   - HexGrid takes an optional enemyPlacements prop ({type,q,r,count},
  *     axial — the Overwhelming-band reveal) and draws red glyphs on the
  *     enemy-zone hexes, converting axial → offset with col = q + floor(r/2).
@@ -56,20 +56,20 @@ describe('ScoutReport', () => {
     expect(screen.getByText(/see nothing/i)).toBeInTheDocument()
   })
 
-  it('Contested: shows the strength phrase and supply state', () => {
+  it('Contested: shows the count estimate range and supply state', () => {
     render(
       <ScoutReport
         scouting={{ band: 'Contested' }}
         enemy={{
           stance: 'camp',
           battleOffer: false,
-          strength: 'a large host',
+          count: { low: 400, high: 900 },
           supplies: 'well-provisioned',
         }}
       />,
     )
     expect(screen.getByTestId('scouting-band')).toHaveTextContent('Contested')
-    expect(screen.getByText(/a large host/)).toBeInTheDocument()
+    expect(screen.getByTestId('scout-count')).toHaveTextContent('400–900')
     expect(screen.getByText(/well-provisioned/)).toBeInTheDocument()
     expect(screen.queryByText(/see nothing/i)).not.toBeInTheDocument()
     expect(screen.queryByTestId('scout-composition')).not.toBeInTheDocument()
@@ -83,7 +83,7 @@ describe('ScoutReport', () => {
         enemy={{
           stance: 'shadowing',
           battleOffer: false,
-          strength: 'a large host',
+          count: { low: 500, high: 800 },
           supplies: 'strained',
           composition: { Foot: 97, Mounted: 3 },
         }}
@@ -100,7 +100,7 @@ describe('ScoutReport', () => {
         enemy={{
           stance: 'shadowing',
           battleOffer: false,
-          strength: 'a strong warband',
+          count: { low: 560, high: 560 },
           supplies: 'near starving',
           composition: { Foot: 98, Mounted: 2 },
           units: { Soldier: 540, LightCavalry: 20 },
@@ -108,6 +108,9 @@ describe('ScoutReport', () => {
         }}
       />,
     )
+    // Top recon level: the count collapses to a single exact figure (no range).
+    expect(screen.getByTestId('scout-count')).toHaveTextContent('560')
+    expect(screen.getByTestId('scout-count')).not.toHaveTextContent('–')
     expect(screen.getByTestId('scout-units')).toHaveTextContent('540 Soldier')
     expect(screen.getByTestId('scout-units')).toHaveTextContent('20 LightCavalry')
     expect(screen.getByText(/drawn on the field/i)).toBeInTheDocument()
@@ -198,7 +201,7 @@ describe('App: scouting reveal wiring', () => {
     render(<App />)
     await screen.findByText(/War Council/)
     expect(screen.getByTestId('scouting-band')).toHaveTextContent('Contested')
-    expect(screen.getByText(/a large host/)).toBeInTheDocument()
+    expect(screen.getByTestId('scout-count')).toHaveTextContent('400–900')
   })
 
   it('an Overwhelming reveal reaches the placement grid as red glyphs', async () => {

@@ -1,5 +1,5 @@
 import React from 'react'
-import { tons } from '../utils/format'
+import { tons, estimate } from '../utils/format'
 import useCampaignStore from '../stores/useCampaignStore'
 import { useRoster } from '../stores/selectors'
 
@@ -8,7 +8,9 @@ import { useRoster } from '../stores/selectors'
 // never re-derives campaign math), the player reads tonnes. Reads straight
 // from the campaign store — only ever mounted once a campaign exists.
 const CampaignHUD = () => {
-  const { day, resources, fortification, forage, meter, raid } = useCampaignStore((s) => s.campaign)
+  const { day, resources, fortification, forage, meter, raid, scouting } = useCampaignStore(
+    (s) => s.campaign,
+  )
   const roster = useRoster()
 
   const landLeft = forage?.rings?.reduce((s, r) => s + r.richness, 0) ?? 0
@@ -25,10 +27,15 @@ const CampaignHUD = () => {
       <span className="hud-forts" data-testid="hud-forts">Forts: Lv {fortification?.level ?? 0}</span>
       <span className="hud-land" data-testid="hud-land">Land: {landPct}% left</span>
       <span className="hud-meter" data-testid="hud-meter">
-        {meter?.revealed ? `Meter: ${meter.value}` : `Meter: ${meter?.band ?? 'calm'}`}
+        {/* Recon reveals the meter: a numeric estimate ([low,high], exact at the
+            top recon level) once recon.level > 0, the banded phrase while Blind. */}
+        {meter?.estimate ? `Meter: ${estimate(meter.estimate)}` : `Meter: ${meter?.band ?? 'calm'}`}
+      </span>
+      <span className="hud-recon" data-testid="hud-recon">
+        Recon: {scouting?.band ?? 'Blind'}
       </span>
       <span className="hud-scouting" data-testid="hud-scouting">
-        Scouting: {Math.floor(raid?.scoutingPoints ?? 0)}
+        Scout pts: {Math.floor(raid?.scoutingPoints ?? 0)}
       </span>
       <span className="hud-roster">
         {Object.entries(roster)

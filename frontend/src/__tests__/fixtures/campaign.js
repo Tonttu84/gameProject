@@ -8,8 +8,9 @@ export const campaignFixture = {
   status: 'active',
   battleFoughtToday: false,
   // Boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
-  // banded phrase only pre-reveal — value stays null until bought.
-  meter: { band: 'calm', revealed: false, value: null },
+  // banded phrase always; a numeric estimate ([low,high], exact {v,v} at the
+  // top recon level) once recon reveals it — null while Blind (recon level 0).
+  meter: { band: 'calm', estimate: null },
   bossFightDue: false,
   resources: { food: 50000, materials: 0, foodNeedPerTurn: 12432 },
   roster: { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10, LightCavalry: 12 },
@@ -42,13 +43,14 @@ export const campaignFixture = {
   augury: { consulted: false, rerollsRemaining: 1, visions: null },
   // Only the banded label crosses the boundary — never coverage numbers.
   scouting: { band: 'Contested' },
-  // Band-gated enemy view (Stage 4 1b): at Contested the scouts add a
-  // bucketed strength phrase + supply state; higher bands add composition,
-  // exact counts and the revealed placement (see scoutingReveal.test.jsx).
+  // Band-gated enemy view (Stage 4 1b + recon R2): at Contested the scouts add
+  // a numeric count estimate ([low,high], recon.js displayBracket) + supply
+  // state; higher bands add composition, exact counts and the revealed
+  // placement (see scoutingReveal.test.jsx).
   enemy: {
     stance: 'camp',
     battleOffer: false,
-    strength: 'a large host',
+    count: { low: 400, high: 900 },
     supplies: 'well-provisioned',
   },
   battles: [],

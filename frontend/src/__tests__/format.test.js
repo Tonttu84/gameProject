@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { tons } from '../utils/format'
+import { tons, estimate } from '../utils/format'
 
 describe('tons()', () => {
   it('formats tonne-scale values with one decimal, trailing .0 dropped', () => {
@@ -35,5 +35,15 @@ describe('tons()', () => {
     expect(tons(null)).toBe('?? t')
     expect(tons(NaN)).toBe('?? t')
     expect(tons('5000')).toBe('?? t')
+  })
+})
+
+describe('estimate()', () => {
+  it('shows an en-dashed range for a partial recon bracket', () => {
+    expect(estimate({ low: 600, high: 1100 })).toBe('600–1100')
+  })
+
+  it('collapses to a single figure when the bracket is exact (top recon level)', () => {
+    expect(estimate({ low: 560, high: 560 })).toBe('560')
   })
 })

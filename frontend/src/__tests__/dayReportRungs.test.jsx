@@ -111,7 +111,7 @@ describe('ScoutReport: free reveal (prisoners taken)', () => {
           stance: 'shadowing',
           battleOffer: false,
           revealed: true,
-          strength: 'a large host',
+          count: { low: 400, high: 400 },
           supplies: 'strained',
           composition: { Foot: 100 },
           units: { Soldier: 400 },
@@ -127,7 +127,7 @@ describe('ScoutReport: free reveal (prisoners taken)', () => {
     render(
       <ScoutReport
         scouting={{ band: 'Contested' }}
-        enemy={{ stance: 'camp', battleOffer: false, strength: 'a large host', supplies: 'strained' }}
+        enemy={{ stance: 'camp', battleOffer: false, count: { low: 400, high: 900 }, supplies: 'strained' }}
       />,
     )
     expect(screen.queryByTestId('scout-revealed')).not.toBeInTheDocument()

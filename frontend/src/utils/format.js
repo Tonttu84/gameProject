@@ -12,3 +12,9 @@ export const tons = (kg) => {
   if (Math.abs(rounded) < 1000) return `${rounded} kg`
   return `${+(kg / 1000).toFixed(1)} t`
 }
+
+// A recon numeric estimate ({low, high} from services/recon.js displayBracket)
+// as the player reads it: one number once the bracket has collapsed to exact
+// (top recon level or a free reveal, low === high), else an en-dashed range.
+// Callers handle the null case (recon level 0 — no estimate is shown at all).
+export const estimate = ({ low, high }) => (low === high ? `${low}` : `${low}–${high}`)

@@ -1,8 +1,9 @@
 /**
- * Boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop", Stage A):
- * the HUD gets a plain always-visible readout of the meter's band (or exact
- * value once revealed) and the scouting-points pool — user ask, so manual
- * playtesting/debugging each stage doesn't require digging into a panel.
+ * Boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop", Stage A;
+ * recon R2/R3): the HUD gets a plain always-visible readout of the meter's band
+ * (or the recon numeric estimate once recon reveals it), the recon band (level),
+ * and the raid scout-points pool — user ask, so manual playtesting/debugging
+ * each stage doesn't require digging into a panel.
  */
 
 import React from 'react'
@@ -17,19 +18,29 @@ const hudWith = (over) => {
   return render(<CampaignHUD />)
 }
 
-describe('CampaignHUD boss-fight meter + scouting readout', () => {
-  it('shows the banded phrase while the meter is hidden', () => {
-    hudWith({ meter: { band: 'restless', revealed: false, value: null } })
+describe('CampaignHUD boss-fight meter + recon readout', () => {
+  it('shows the banded phrase while recon reveals no estimate (Blind)', () => {
+    hudWith({ meter: { band: 'restless', estimate: null } })
     expect(screen.getByTestId('hud-meter')).toHaveTextContent('Meter: restless')
   })
 
-  it('shows the exact value once revealed', () => {
-    hudWith({ meter: { band: 'imminent', revealed: true, value: 812 } })
+  it('shows a numeric range once recon reveals a partial estimate', () => {
+    hudWith({ meter: { band: 'restless', estimate: { low: 600, high: 1100 } } })
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Meter: 600–1100')
+  })
+
+  it('shows a single exact value at the top recon level', () => {
+    hudWith({ meter: { band: 'imminent', estimate: { low: 812, high: 812 } } })
     expect(screen.getByTestId('hud-meter')).toHaveTextContent('Meter: 812')
   })
 
-  it('mirrors the raid scouting-points pool, floored', () => {
+  it('surfaces the recon band (level)', () => {
+    hudWith({ scouting: { band: 'Superior' } })
+    expect(screen.getByTestId('hud-recon')).toHaveTextContent('Recon: Superior')
+  })
+
+  it('mirrors the raid scout-points pool, floored', () => {
     hudWith({ raid: { ...campaignFixture.raid, scoutingPoints: 23.7 } })
-    expect(screen.getByTestId('hud-scouting')).toHaveTextContent('Scouting: 23')
+    expect(screen.getByTestId('hud-scouting')).toHaveTextContent('Scout pts: 23')
   })
 })

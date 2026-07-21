@@ -181,10 +181,13 @@ notes below over the git history if they ever disagree — the commits win.
 - **Recon rework — R2 ✅ COMPLETE 2026-07-21** (server-only; full `cs-test` suite **302/302 green**
   locally this session — mongo behaved for once). Numeric estimate brackets for the enemy total
   count + the boss-fight meter value; Stage C `reveal_meter` reverted. See the R2 SHIPPED handoff
-  in the "Recon rework" section below for the full detail. **NEXT: R3** (frontend readout —
-  recon level + brackets in `ScoutReport`/HUD; the live HUD currently reads the removed
-  `meter.revealed`/`meter.value`, so it shows nothing until R3 rewires it to `meter.estimate` —
-  the same "unwired until the frontend stage" pattern as Stage B/C).
+  in the "Recon rework" section below for the full detail.
+- **Recon rework — R3 ✅ COMPLETE 2026-07-21** (frontend readout; frontend vitest **230/230
+  green**). `CampaignHUD`/`ScoutReport` rewired off the removed `meter.revealed`/`meter.value`
+  onto `meter.estimate` + `enemy.count`, and the recon band (level) surfaced. **The recon rework
+  is now fully landed end-to-end. NEXT: the boss-fight campaign loop** (DESIGNED, not yet
+  implemented — see its section below), or the deferred `enemy.stance`/`battleOffer` cruft-removal
+  pass. See the R3 SHIPPED handoff in the "Recon rework" section for detail.
   Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
@@ -711,7 +714,8 @@ enemy-army coverage input is dead and thrown away.
   intervening end-day's accrual doesn't drift the pinned band). No brackets yet.
 - **R2 — numeric brackets + revert Stage C. ✅ SHIPPED 2026-07-21** (see the R2 handoff block
   immediately below).
-- **R3 — frontend readout.** Recon level + brackets in `ScoutReport`/HUD.
+- **R3 — frontend readout. ✅ SHIPPED 2026-07-21** (see the R3 handoff block below). Recon level +
+  brackets in `ScoutReport`/HUD.
 
 #### Recon R2 (numeric brackets + revert Stage C) ✅ SHIPPED 2026-07-21 — handoff
 
@@ -755,10 +759,33 @@ the sandbox mongo cooperated — no flake this time). Schema **v15→v16**.
   framing) — the `METER_BANDS` comment still describes the stance machine because the machine still
   EXISTS. Its removal is the separate "remove enemy.stance/battleOffer entirely" cleanup pass, NOT
   folded into recon. Deferred to that pass / code review.
-- **R3 will:** rewire `CampaignHUD`/`ScoutReport` off the removed `meter.revealed`/`meter.value`
-  onto `meter.estimate` + `enemy.count`, and surface the recon level. Until then the live HUD's
-  meter/exact-value spans read undefined (unwired — same pattern as Stage B/C's Fight!/reveal
-  buttons); frontend TESTS stay green (fixture-driven, not against the live server shape).
+- **R3 DID (✅ SHIPPED 2026-07-21):** rewired `CampaignHUD`/`ScoutReport` off the removed
+  `meter.revealed`/`meter.value` onto `meter.estimate` + `enemy.count`, and surfaced the recon
+  band (level). Frontend-only, frontend vitest **230/230 green**.
+
+#### Recon R3 (frontend readout) ✅ SHIPPED 2026-07-21 — handoff
+
+Frontend-only; no server or fixture-shape-vs-live drift left. Frontend vitest **230/230 green**,
+oxlint clean.
+
+- **New `estimate()` helper** in `frontend/src/utils/format.js`: a recon bracket (`{low, high}`
+  from `services/recon.js`'s `displayBracket`) → `"600–1100"` (en-dash range) or `"560"` once it
+  has collapsed to exact (top recon level / free reveal, `low === high`). Callers own the `null`
+  case (recon level 0 — no estimate shown at all). Unit-tested in `format.test.js`.
+- **`CampaignHUD.jsx`:** `hud-meter` now reads `meter.estimate ? estimate(meter.estimate) :
+  meter.band` (was `meter.revealed ? meter.value : meter.band`). Added a **`hud-recon`** span
+  (`Recon: <band>` from `scouting.band`) — surfaces the recon LEVEL on the always-visible HUD, per
+  the "frontend testing convenience" note below. The existing raid-pool span (`hud-scouting`) was
+  **relabeled `Scout pts:`** (was `Scouting:`) to disambiguate the per-turn raid points pool from
+  the new recon band readout — RaidPanel's own copy is untouched.
+- **`ScoutReport.jsx`:** the `enemy.strength` phrase block → an `enemy.count` block
+  (`data-testid="scout-count"`) rendering `estimate(enemy.count)` — a range while intel is partial,
+  a single exact figure at the top recon level (or a prisoners free reveal). `knowsAnything` now
+  keys off `enemy.count`.
+- **Fixture + tests:** `__tests__/fixtures/campaign.js` moved to `meter: {band, estimate:null}` and
+  `enemy.count {low,high}` (was `meter:{band,revealed,value}` + `enemy.strength`); `campaignHud`/
+  `scoutingReveal`/`dayReportRungs` test cases updated to the new shapes (range vs exact both
+  covered; the top-level exact case asserts NO en-dash).
 
 Constants (`RECON_LEVEL_THRESHOLDS`, per-level multipliers, jitter) are **rough/tunable** — calibrate
 against the real per-turn scouting-points pool in playtest.
@@ -771,13 +798,12 @@ all, and `raid.scoutingPoints` is otherwise only visible buried inside `RaidPane
 HUD is trivial to add and makes manual playtesting/debugging each stage far easier than digging
 into a panel or the network tab. Add as each value comes into existence, same commit as the
 stage that introduces it — don't defer to a cleanup pass:
-- **Stage A/C:** meter band (and exact value once `meter.revealed`) on the HUD, not just
-  wherever `enemy.stance`/`battleOffer` currently render; `raid.scoutingPoints` mirrored onto the
-  HUD too (RaidPanel keeps its own copy for the spend buttons — this is an additional, cheap
-  read of the same store field, not a move). **Stage A half ✅ SHIPPED 2026-07-20** (see the
-  Stage A handoff above) — `hud-meter`/`hud-scouting` spans landed same commit as the meter core;
-  the exact-value-once-revealed path is exercised by a fixture-driven test now but has no real
-  `revealed:true` producer yet (that's Stage C).
+- **Stage A/C + recon R3: ✅ FULLY SHIPPED.** meter band (plus its recon numeric estimate — the
+  `meter.revealed`/exact-value idea was replaced by the recon `meter.estimate` bracket in R2/R3),
+  the recon band (`hud-recon`), and `raid.scoutingPoints` (`hud-scouting`, labeled `Scout pts:`)
+  all on the always-visible HUD. Stage A landed `hud-meter`/`hud-scouting` (2026-07-20); recon
+  R3 (2026-07-21) rewired `hud-meter` onto `meter.estimate` and added `hud-recon`. RaidPanel keeps
+  its own scouting-points copy for the spend buttons (a cheap second read, not a move).
 - **Stage E:** the new `gold` resource and `horses` (whatever shape that ends up — a resource
   count or a roster-like pool) go on the HUD the moment they're added to `campaignView`'s
   `resources`, same line pattern as the existing `Food:`/`Materials:` spans.

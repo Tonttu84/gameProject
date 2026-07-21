@@ -1,4 +1,5 @@
 import React from 'react'
+import { estimate } from '../utils/format'
 
 // What the scouts can tell of the enemy this turn (Stage 4 1b). The server's
 // campaignView already gated the fields by scouting band — this renders ONLY
@@ -6,7 +7,7 @@ import React from 'react'
 // doesn't render, and the top-band deployment reveal is drawn by HexGrid, not
 // here (this just tells the player to look at the field).
 const ScoutReport = ({ scouting, enemy }) => {
-  const knowsAnything = enemy.strength || enemy.supplies || enemy.composition || enemy.units
+  const knowsAnything = enemy.count || enemy.supplies || enemy.composition || enemy.units
   return (
     <div className="scout-report" data-testid="scout-report">
       <h3>
@@ -20,9 +21,12 @@ const ScoutReport = ({ scouting, enemy }) => {
           Prisoners have betrayed the enemy camp — their host is laid bare this turn.
         </p>
       )}
-      {enemy.strength && (
-        <p>
-          The enemy musters <strong>{enemy.strength}</strong>.
+      {enemy.count && (
+        <p data-testid="scout-count">
+          {/* Recon numeric estimate: a [low,high] range while intel is partial,
+              a single exact figure at the top recon level (or a free reveal). */}
+          The enemy host numbers <strong>{estimate(enemy.count)}</strong>
+          {enemy.count.low === enemy.count.high ? '' : ', by our scouts’ reckoning'}.
         </p>
       )}
       {enemy.supplies && (
