@@ -74,10 +74,10 @@ const endDay = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
 // and the enemy view's keys are exactly what the scouting band licenses.
 const ENEMY_KEYS_BY_BAND = {
   Blind: ['battleOffer', 'stance'],
-  Outmatched: ['battleOffer', 'stance', 'strength', 'supplies'],
-  Contested: ['battleOffer', 'stance', 'strength', 'supplies'],
-  Superior: ['battleOffer', 'composition', 'stance', 'strength', 'supplies'],
-  Overwhelming: ['battleOffer', 'composition', 'placements', 'stance', 'strength', 'supplies', 'units'],
+  Outmatched: ['battleOffer', 'count', 'stance', 'supplies'],
+  Contested: ['battleOffer', 'count', 'stance', 'supplies'],
+  Superior: ['battleOffer', 'composition', 'count', 'stance', 'supplies'],
+  Overwhelming: ['battleOffer', 'composition', 'count', 'placements', 'stance', 'supplies', 'units'],
 }
 
 const expectNoHiddenInfo = (body) => {
@@ -103,8 +103,9 @@ const expectNoHiddenInfo = (body) => {
   }
   for (const c of [body, body.campaign]) {
     if (!c?.meter) continue
-    expect(Object.keys(c.meter).sort()).toEqual(['band', 'revealed', 'value'])
-    if (!c.meter.revealed) expect(c.meter.value).toBeNull()
+    expect(Object.keys(c.meter).sort()).toEqual(['band', 'estimate'])
+    const level0 = !c.scouting || c.scouting.band === 'Blind'
+    if (level0) expect(c.meter.estimate).toBeNull()
   }
 }
 
@@ -178,7 +179,14 @@ describe('the boss-fight meter drives stance', () => {
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.enemy).toEqual({ stance: 'camp', battleOffer: false })
-    expect(res.body.campaign.meter).toEqual({ band: 'calm', revealed: false, value: null })
+    // meter.value 50 → 'calm' band. (The end-day accrued this fresh army's
+    // scouting pool into recon, so the level climbed and a numeric estimate now
+    // shows — recon R2; the exact bracket carries jitter, so just its shape.)
+    expect(res.body.campaign.meter.band).toBe('calm')
+    expect(res.body.campaign.meter.estimate).toMatchObject({
+      low: expect.any(Number),
+      high: expect.any(Number),
+    })
     expect(res.body.campaign.bossFightDue).toBe(false)
     expect((await Campaign.findById(c.id)).meter.value).toBe(50)
   })

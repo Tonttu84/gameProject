@@ -177,11 +177,14 @@ notes below over the git history if they ever disagree — the commits win.
   preview asserts the scaled values (21/59), and the raw-number capacity/harvest tests pin
   `Contested` via the new `pinBand` helper (sets `recon.points` to a band's threshold + zeroes the
   leftover pool so an intervening end-day's accrual doesn't drift the band). No source change was
-  needed to make tests pass. **NEXT: R2** (numeric count/meter brackets — stored asym offsets,
-  live-tracked, floor ≥ 0, narrow on level-up, exact at top; revert Stage C `reveal_meter`; the
-  raid-casualty-shift test), then **R3** (frontend readout). See the "Recon rework" section below.
-  R2 has open design knobs to grill before coding: jitter magnitude, per-level multipliers, and
-  where the offsets live on the model.
+  needed to make tests pass.
+- **Recon rework — R2 ✅ COMPLETE 2026-07-21** (server-only; full `cs-test` suite **302/302 green**
+  locally this session — mongo behaved for once). Numeric estimate brackets for the enemy total
+  count + the boss-fight meter value; Stage C `reveal_meter` reverted. See the R2 SHIPPED handoff
+  in the "Recon rework" section below for the full detail. **NEXT: R3** (frontend readout —
+  recon level + brackets in `ScoutReport`/HUD; the live HUD currently reads the removed
+  `meter.revealed`/`meter.value`, so it shows nothing until R3 rewires it to `meter.estimate` —
+  the same "unwired until the frontend stage" pattern as Stage B/C).
   Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
@@ -706,10 +709,56 @@ enemy-army coverage input is dead and thrown away.
   21/59, and the raw-number capacity/harvest tests pin `Contested` via a new `pinBand(id, band)`
   helper (sets `recon.points` to the band's threshold + zeroes `raid.scoutingPoints` so an
   intervening end-day's accrual doesn't drift the pinned band). No brackets yet.
-- **R2 — numeric brackets + revert Stage C.** Enemy-count + meter brackets (stored asym offsets,
-  live-tracked, narrow on level-up, exact at top); remove `reveal_meter`; rework `meter.revealed/value`
-  into the meter bracket. Includes the raid-casualty-shift test.
+- **R2 — numeric brackets + revert Stage C. ✅ SHIPPED 2026-07-21** (see the R2 handoff block
+  immediately below).
 - **R3 — frontend readout.** Recon level + brackets in `ScoutReport`/HUD.
+
+#### Recon R2 (numeric brackets + revert Stage C) ✅ SHIPPED 2026-07-21 — handoff
+
+Server-only, TDD. Full `campaign-server` suite **302/302 green** locally this session (20 files;
+the sandbox mongo cooperated — no flake this time). Schema **v15→v16**.
+
+- **Grill outcome (design knobs the R1 note flagged).** Confirmed with the user before coding:
+  (1) **offsets live under `recon.brackets`** (`{enemyCount, meter}`, each
+  `{atLevel, floorOffset, ceilOffset}`) — grouped with `recon.points` since both are set at the
+  same recon-accrual moment; (2) **per-level multipliers** = the "Moderate" curve
+  `RECON_BRACKET_MULTIPLIERS` (L1 `[0.6,1.7]`, L2 `[0.78,1.4]`, L3 `[0.9,1.18]`, L4 `[1,1]`
+  exact); (3) **jitter is directional & widening** — the user corrected my first reading: floor is
+  pushed DOWN by up to 25% of truth, ceiling UP by up to 50% (`RECON_BRACKET_JITTER={floor:0.25,
+  ceil:0.5}`), so it can't invert an offset's sign or leak the truth via a fixed width; skipped at
+  the top level so exact stays exact. All three are **rough/tunable**.
+- **RECON_LEVEL_THRESHOLDS raised `[100,300,700,1400]`→`[200,700,2000,4500]`** (user flag mid-build:
+  with a ~600-pt/turn pool over a ~10-turn campaign the old top tier was trivially reached). Now the
+  top tier (exact intel) costs most of a campaign's unspent points, so a player who ALSO spends on
+  the raid board can't reach it. NB: because the fresh-army pool is ~1112/turn (R1 note), a fresh
+  campaign still climbs to **Contested (L2)** after its FIRST end-day — this shifted one enemyAi
+  test's meter assertion (line ~182) from "estimate null" to "estimate is a bracket". Still tunable.
+- **Mechanic (services/recon.js, pure + injectable `rand`):** `computeBracket(truth, level, rand)`
+  stores ABSOLUTE offsets (`floorOffset ≤ 0 ≤ ceilOffset`); `displayBracket(stored, liveTruth, level)`
+  renders `[max(0, live+floor), live+ceil]` (null at level 0, exact at top). Offsets are re-set ONLY
+  on a level-up (`bracketOnLevelUp`, wired into `dayResolution` step 7 right after the recon accrual,
+  reading the post-casualty enemy count + the just-filled meter value) — never re-rolled per turn, so
+  the estimate is stable across turns within a level and cross-turn triangulation leaks nothing.
+- **campaignView:** enemy `strength` phrase → `count {low,high}` (replaces `ENEMY_STRENGTH_BANDS`,
+  now deleted from config); meter `{band, revealed, value}` → `{band, estimate}` (estimate null at
+  L0, bracket above, exact `{v,v}` at top). A free reveal (prisoners) shows `count` exact.
+- **Reverted Stage C:** `reveal_meter` scout action + `METER_REVEAL_SCOUT_COST` + `meter.revealed`
+  field + its end-day reset all gone; the meter is now revealed by recon LEVEL, not a per-turn buy.
+- **Tests:** new `tests/recon.test.js` (10 pure-fn cases incl. narrowing, floor clamp, exact-at-top,
+  casualty slide); a new `describe('recon numeric brackets (R2)')` in `campaigns.test.js` with the
+  **delicate destroy_detachment casualty-shift** coverage (whole bracket slides down by exactly the
+  loss, same width; floor never negative) + an end-day level-up-sets-brackets-once case; the enemy
+  key-set tables + meter key-set assertions in `campaigns.test.js`/`enemyAi.test.js` updated
+  (`strength`→`count`, `{band,estimate}`); the 4 `reveal_meter` cases removed from `raid.test.js`.
+- **Leftover flagged for a later pass (user, 2026-07-20 deferred + reminded this session):** the
+  `enemy.stance`/`battleOffer` concept is outdated cruft (there's no army "stance" in the siege
+  framing) — the `METER_BANDS` comment still describes the stance machine because the machine still
+  EXISTS. Its removal is the separate "remove enemy.stance/battleOffer entirely" cleanup pass, NOT
+  folded into recon. Deferred to that pass / code review.
+- **R3 will:** rewire `CampaignHUD`/`ScoutReport` off the removed `meter.revealed`/`meter.value`
+  onto `meter.estimate` + `enemy.count`, and surface the recon level. Until then the live HUD's
+  meter/exact-value spans read undefined (unwired — same pattern as Stage B/C's Fight!/reveal
+  buttons); frontend TESTS stay green (fixture-driven, not against the live server shape).
 
 Constants (`RECON_LEVEL_THRESHOLDS`, per-level multipliers, jitter) are **rough/tunable** — calibrate
 against the real per-turn scouting-points pool in playtest.

@@ -67,10 +67,10 @@ afterEach(clearRolls)
 // day-report enemy summaries (no scouting sibling) stay stance-only.
 const ENEMY_KEYS_BY_BAND = {
   Blind: ['battleOffer', 'stance'],
-  Outmatched: ['battleOffer', 'stance', 'strength', 'supplies'],
-  Contested: ['battleOffer', 'stance', 'strength', 'supplies'],
-  Superior: ['battleOffer', 'composition', 'stance', 'strength', 'supplies'],
-  Overwhelming: ['battleOffer', 'composition', 'placements', 'stance', 'strength', 'supplies', 'units'],
+  Outmatched: ['battleOffer', 'count', 'stance', 'supplies'],
+  Contested: ['battleOffer', 'count', 'stance', 'supplies'],
+  Superior: ['battleOffer', 'composition', 'count', 'stance', 'supplies'],
+  Overwhelming: ['battleOffer', 'composition', 'count', 'placements', 'stance', 'supplies', 'units'],
 }
 
 const expectNoHiddenInfo = (body) => {
@@ -118,12 +118,16 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"ratio"')
   for (const scouting of [body.scouting, body.campaign?.scouting])
     if (scouting) expect(Object.keys(scouting)).toEqual(['band'])
-  // Boss-fight meter: banded phrase only pre-reveal — the exact value stays
-  // null until bought (meter.revealed, a later stage).
+  // Boss-fight meter (recon R2): the banded phrase always, plus a numeric
+  // `estimate` [low, high] that's null at recon level 0 and a bracket above it
+  // (exact at the top). No raw value key, no `revealed` flag — recon drives it.
   for (const c of [body, body.campaign]) {
     if (!c?.meter) continue
-    expect(Object.keys(c.meter).sort()).toEqual(['band', 'revealed', 'value'])
-    if (!c.meter.revealed) expect(c.meter.value).toBeNull()
+    expect(Object.keys(c.meter).sort()).toEqual(['band', 'estimate'])
+    // At level 0 (no scouting sibling / Blind) the estimate is withheld.
+    const level0 = !c.scouting || c.scouting.band === 'Blind'
+    if (level0) expect(c.meter.estimate).toBeNull()
+    else expect(c.meter.estimate).toMatchObject({ low: expect.any(Number), high: expect.any(Number) })
   }
   // Raid opportunities (Stage 4 Part 2 + the 2.5 scouting mini-game): the raw
   // hidden target-slice Map (`targetForce`) never crosses — the wire carries
@@ -280,30 +284,32 @@ describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
     expect(view.enemy).toEqual({ stance: 'camp', battleOffer: false })
   })
 
-  test('Outmatched: adds the strength phrase and supply state, nothing more', async () => {
+  test('Outmatched: adds the numeric count estimate and supply state, nothing more', async () => {
     const { body } = await createCampaign()
     await pinArmies(body.id, { enemyArmy: { LightCavalry: 50 } })
     await pinBand(body.id, 'Outmatched')
     const view = await getView(body.id)
     expect(view.scouting.band).toBe('Outmatched')
-    // 50 riders → 'a modest company'; 90,000 kg over 5,600 kg/turn ≈ 16 turns.
-    expect(view.enemy.strength).toBe('a modest company')
+    // pinBand only raises the points — no level-up ran to widen a bracket, so the
+    // stored offsets are 0 and the estimate reads exact (a real campaign reaches a
+    // level THROUGH the accrual that also sets the bracket — see the R2 describe).
+    expect(view.enemy.count).toEqual({ low: 50, high: 50 })
     expect(view.enemy.supplies).toBe('well-provisioned')
     expect(view.enemy.composition).toBeUndefined()
     expect(view.enemy.units).toBeUndefined()
     expect(view.enemy.placements).toBeUndefined()
   })
 
-  test('Contested: strength + supplies, nothing finer', async () => {
+  test('Contested: count + supplies, nothing finer', async () => {
     const { body } = await createCampaign()
     await pinBand(body.id, 'Contested')
     const view = await getView(body.id)
-    // Default ENEMY_ARMY armyTotal 721 → 'a large host'.
+    // Default ENEMY_ARMY armyTotal 721.
     expect(view.scouting.band).toBe('Contested')
     expect(view.enemy).toEqual({
       stance: 'camp',
       battleOffer: false,
-      strength: 'a large host',
+      count: { low: 721, high: 721 },
       supplies: 'well-provisioned',
     })
   })
@@ -324,7 +330,7 @@ describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
     await pinBand(body.id, 'Superior')
     const view = await getView(body.id)
     expect(view.scouting.band).toBe('Superior')
-    expect(view.enemy.strength).toBe('a large host') // 600 is the band's lower edge
+    expect(view.enemy.count).toEqual({ low: 600, high: 600 }) // exact under pinBand (no widening ran)
     expect(view.enemy.composition).toEqual({ Foot: 100 })
     expect(view.enemy.units).toBeUndefined()
     expect(view.enemy.placements).toBeUndefined()
@@ -350,6 +356,91 @@ describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
     expect(
       Object.fromEntries(view.enemy.placements.map((p) => [`${p.type}|${p.q}|${p.r}`, p.count])),
     ).toEqual(agg)
+  })
+})
+
+// ── Recon R2: graduated numeric brackets (enemy count + meter value) ──────────
+describe('recon numeric brackets (R2)', () => {
+  // Raw-set a subject's stored offsets (the widening a real level-up produces),
+  // independent of the accrual RNG, so the DISPLAY math against live truth can be
+  // asserted deterministically. Leaf writes so mongoose tracks the nested change.
+  const pinBracket = async (id, subject, { atLevel, floorOffset, ceilOffset }) => {
+    const doc = await Campaign.findById(id)
+    const b = doc.recon.brackets[subject]
+    b.atLevel = atLevel
+    b.floorOffset = floorOffset
+    b.ceilOffset = ceilOffset
+    await doc.save()
+  }
+
+  test('enemy count = stored offsets against the live truth', async () => {
+    const { body } = await createCampaign()
+    await pinArmies(body.id, { enemyArmy: { Soldier: 100 } }) // truth 100
+    await pinBand(body.id, 'Contested')
+    await pinBracket(body.id, 'enemyCount', { atLevel: 2, floorOffset: -30, ceilOffset: 50 })
+    const view = await getView(body.id)
+    expect(view.enemy.count).toEqual({ low: 70, high: 150 })
+  })
+
+  test('casualties slide the WHOLE bracket down by exactly the loss (same width)', async () => {
+    // The delicate destroy_detachment interaction: the main host shrinks (a real
+    // raid does the subtraction — see raid.test.js Stage D), and because the
+    // estimate is stored offsets against LIVE truth, floor + ceiling + truth all
+    // move together — no width change, nothing leaked across turns.
+    const { body } = await createCampaign()
+    await pinArmies(body.id, { enemyArmy: { Soldier: 100 } })
+    await pinBand(body.id, 'Contested')
+    await pinBracket(body.id, 'enemyCount', { atLevel: 2, floorOffset: -30, ceilOffset: 50 })
+    const before = (await getView(body.id)).enemy.count // {70, 150}
+
+    await pinArmies(body.id, { enemyArmy: { Soldier: 60 } }) // 40 casualties
+    const after = (await getView(body.id)).enemy.count
+    expect(after).toEqual({ low: 30, high: 110 })
+    expect(after.high - after.low).toBe(before.high - before.low) // width preserved
+    expect(before.low - after.low).toBe(40) // slid down by the casualties
+    expect(before.high - after.high).toBe(40)
+  })
+
+  test('the floor never reads negative even when casualties exceed the low offset', async () => {
+    const { body } = await createCampaign()
+    await pinArmies(body.id, { enemyArmy: { Soldier: 20 } }) // truth 20 < |floorOffset|
+    await pinBand(body.id, 'Contested')
+    await pinBracket(body.id, 'enemyCount', { atLevel: 2, floorOffset: -30, ceilOffset: 50 })
+    const view = await getView(body.id)
+    expect(view.enemy.count).toEqual({ low: 0, high: 70 })
+  })
+
+  test('meter estimate is withheld at recon level 0 and a numeric bracket above it', async () => {
+    const { body } = await createCampaign()
+    // Fresh campaign is Blind (level 0): band phrase only, no numeric estimate.
+    let view = await getView(body.id)
+    expect(view.meter.estimate).toBeNull()
+    expect(typeof view.meter.band).toBe('string')
+
+    await pinBand(body.id, 'Contested')
+    await pinBracket(body.id, 'meter', { atLevel: 2, floorOffset: -100, ceilOffset: 200 })
+    const doc = await Campaign.findById(body.id)
+    doc.meter.value = 400
+    await doc.save()
+    view = await getView(body.id)
+    expect(view.meter.estimate).toEqual({ low: 300, high: 600 })
+  })
+
+  test('an end-day level-up sets both brackets once, then holds within the level', async () => {
+    const { body } = await createCampaign()
+    // Seed just below the Contested threshold; the end-day accrual crosses it.
+    const doc = await Campaign.findById(body.id)
+    doc.recon.points = RECON_LEVEL_THRESHOLDS[1] - 1 // just under Contested
+    await doc.save()
+    await auth(api.post(`/api/campaigns/${body.id}/end-day`))
+
+    const after = await Campaign.findById(body.id)
+    // Level climbed to at least Contested (2): brackets stamped at that level,
+    // straddling the truth (floor ≤ 0 ≤ ceil).
+    expect(after.recon.brackets.enemyCount.atLevel).toBeGreaterThanOrEqual(2)
+    expect(after.recon.brackets.enemyCount.floorOffset).toBeLessThanOrEqual(0)
+    expect(after.recon.brackets.enemyCount.ceilOffset).toBeGreaterThanOrEqual(0)
+    expect(after.recon.brackets.meter.atLevel).toBe(after.recon.brackets.enemyCount.atLevel)
   })
 })
 

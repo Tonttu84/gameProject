@@ -3,19 +3,20 @@ import {
   armyFoodPerTurn,
   forageValue,
   reconBand,
+  reconLevel,
   SCOUTING_BANDS,
 } from '../utils/capabilities.js'
 import {
   FORAGE_KG_PER_POINT,
   AUGURY_DEBUG_SHOW_TRUTH,
   MAP_NAME,
-  ENEMY_STRENGTH_BANDS,
   ENEMY_SUPPLY_BANDS,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
 import { meterBand } from './meter.js'
+import { displayBracket } from './recon.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValenceFor, choiceRung } from './events.js'
@@ -89,7 +90,7 @@ const rewardView = (opp) => {
 // + exact counts and the REAL planned placement (aggregated per hex for the
 // placement grid). Everything stays a phrase or a band until the top rung —
 // tests/campaigns.test.js pins the exact key set per band.
-const enemyView = (enemy, band, catalog, revealed = false) => {
+const enemyView = (enemy, band, level, countBracket, catalog, revealed = false) => {
   const view = { stance: enemy.stance, battleOffer: enemy.stance === 'offering_battle' }
   // A free reveal (Stage 4 1c, the anticipated Night Raid's prisoners) opens
   // the full Overwhelming tier for the turn regardless of the band; the
@@ -100,7 +101,11 @@ const enemyView = (enemy, band, catalog, revealed = false) => {
   }
   const rank = SCOUTING_BANDS.indexOf(band)
   if (rank >= SCOUTING_BANDS.indexOf('Outmatched')) {
-    view.strength = bandLabel(armyTotal(enemy.army), ENEMY_STRENGTH_BANDS)
+    // Numeric estimate of the total host (recon R2) — replaces the old banded
+    // strength phrase. Stored offsets against the LIVE count (so casualties slide
+    // it without leaking width); a free reveal (prisoners) shows it exact.
+    const total = armyTotal(enemy.army)
+    view.count = revealed ? { low: total, high: total } : displayBracket(countBracket, total, level)
     view.supplies = bandLabel(
       enemy.supplies / Math.max(1, armyFoodPerTurn(enemy.army, catalog)),
       ENEMY_SUPPLY_BANDS,
@@ -150,21 +155,23 @@ const visionCard = ({ id, title, description, severity, effect }) => ({
 
 export async function campaignView(campaign) {
   const catalog = await getCatalog()
-  const band = reconBand(campaign.recon?.points ?? 0)
+  const points = campaign.recon?.points ?? 0
+  const band = reconBand(points)
+  const level = reconLevel(points)
   return {
     id: campaign.id,
     day: campaign.day,
     status: campaign.status,
     battleFoughtToday: campaign.battleFoughtToday,
     // The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
-    // hidden by default — only the banded phrase crosses the wire, same
-    // discipline as `scouting.band` below. `value` is null until bought
-    // (meter.revealed, a later stage). `bossFightDue` itself is own info —
-    // it's what unlocks the decisive battle, not a secret.
+    // hidden by default. At recon level 0 only the banded phrase crosses the
+    // wire; recon R2 adds a numeric `estimate` [low, high] above that (null at
+    // level 0), narrowing with the recon level and exact ({v, v}) at the top —
+    // same discipline as the enemy `count` below. `bossFightDue` itself is own
+    // info — it's what unlocks the decisive battle, not a secret.
     meter: {
       band: meterBand(campaign.meter.value),
-      revealed: campaign.meter.revealed,
-      value: campaign.meter.revealed ? campaign.meter.value : null,
+      estimate: displayBracket(campaign.recon?.brackets?.meter, campaign.meter.value, level),
     },
     bossFightDue: campaign.bossFightDue,
     resources: {
@@ -291,6 +298,8 @@ export async function campaignView(campaign) {
     enemy: enemyView(
       campaign.enemy,
       band,
+      level,
+      campaign.recon?.brackets?.enemyCount,
       catalog,
       (campaign.enemy.revealedUntilDay ?? 0) >= campaign.day,
     ),

@@ -80,7 +80,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 15 // v15: recon rework (campaign.recon.points drives the scouting level)
+export const CAMPAIGN_SCHEMA_VERSION = 16 // v16: recon R2 (recon.brackets numeric estimates; meter.revealed removed)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -98,11 +98,10 @@ const campaignSchema = new mongoose.Schema({
   // fills at end-of-day based on how many troops sat idle in camp (raiding/
   // foraging fills it faster), crossing BOSS_FIGHT_METER_THRESHOLD flips
   // `bossFightDue` — the decisive boss fight is due the NEXT day. Hidden by
-  // default (campaignView exposes only a banded phrase); `revealed` is bought
-  // with leftover scouting points (later stage) and shows the exact value.
+  // default (campaignView exposes only a banded phrase at recon level 0, a
+  // numeric bracket above that, exact at the top — see recon.brackets below).
   meter: {
     value: { type: Number, default: 0 },
-    revealed: { type: Boolean, default: false },
   },
   bossFightDue: { type: Boolean, default: false },
 
@@ -111,10 +110,26 @@ const campaignSchema = new mongoose.Schema({
   // `points` alone determines the scouting LEVEL (reconLevel/reconBand in
   // utils/capabilities.js) that drives the enemy reveal ladder, forage posture,
   // and recon-sensitive event rungs — the old passive troop-coverage band is
-  // gone. The graduated numeric brackets it also gates (enemy count + meter
-  // value) are added in recon R2.
+  // gone. `brackets` holds the graduated numeric estimates recon R2 gates: for
+  // the enemy total count and the meter value, a stored ABSOLUTE offset pair
+  // ({floorOffset ≤ 0, ceilOffset ≥ 0}) plus the recon level it was set at.
+  // Displayed as [live truth + floorOffset, live truth + ceilOffset] (floor
+  // clamped ≥ 0), so casualties slide the bracket without leaking width; re-set
+  // (narrower) only on a level-up, never re-rolled per turn (services/recon.js).
   recon: {
     points: { type: Number, default: 0 },
+    brackets: {
+      enemyCount: {
+        atLevel: { type: Number, default: 0 },
+        floorOffset: { type: Number, default: 0 },
+        ceilOffset: { type: Number, default: 0 },
+      },
+      meter: {
+        atLevel: { type: Number, default: 0 },
+        floorOffset: { type: Number, default: 0 },
+        ceilOffset: { type: Number, default: 0 },
+      },
+    },
   },
 
   resources: {

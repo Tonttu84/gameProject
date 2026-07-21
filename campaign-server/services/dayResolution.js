@@ -3,8 +3,10 @@ import { getCatalog } from '../utils/catalog.js'
 import {
   armyFoodPerTurn,
   reconBand,
+  reconLevel,
   scoutingPointsFor,
 } from '../utils/capabilities.js'
+import { bracketOnLevelUp } from './recon.js'
 import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
@@ -282,9 +284,21 @@ export async function endDay(campaign) {
     // Done BEFORE the pool refills below, so only the genuine leftover accrues.
     campaign.recon.points = (campaign.recon.points ?? 0) + Math.max(0, campaign.raid.scoutingPoints ?? 0)
     campaign.raid.scoutingPoints = scoutingPointsFor(campaign.roster, catalog)
-    // A meter reveal bought with this turn's points lapses with them — next
-    // turn shows the band again until re-bought (docs/CAMPAIGN_PLAN.md Stage C).
-    campaign.meter.revealed = false
+    // Recon R2: a level-up (re)sets the numeric estimate brackets ONCE, from the
+    // truth as it now stands (enemy count = live host size AFTER this turn's
+    // casualties; meter = the value just filled). Within a level they hold — only
+    // a climb narrows them (services/recon.js), so cross-turn triangulation leaks
+    // nothing (docs/CAMPAIGN_PLAN.md "Recon rework").
+    const newLevel = reconLevel(campaign.recon.points)
+    const setBracket = (target, truth) => {
+      const next = bracketOnLevelUp(target, truth, newLevel)
+      // Write leaf fields (not the object) so mongoose tracks the nested change.
+      target.atLevel = next.atLevel
+      target.floorOffset = next.floorOffset
+      target.ceilOffset = next.ceilOffset
+    }
+    setBracket(campaign.recon.brackets.enemyCount, armyTotal(campaign.enemy.army))
+    setBracket(campaign.recon.brackets.meter, campaign.meter.value)
   }
 
   campaign.log.push({ day: report.day, entries })

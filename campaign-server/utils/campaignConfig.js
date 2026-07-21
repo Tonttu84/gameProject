@@ -83,7 +83,35 @@ export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)
 // starts Blind and climbs as unspent points accrue. ROUGH/TUNABLE — the real
 // per-turn scouting pool is large relative to raid-board costs, so these want
 // calibration in playtest (balance stays rough until the loop is complete).
-export const RECON_LEVEL_THRESHOLDS = [100, 300, 700, 1400] // Outmatched, Contested, Superior, Overwhelming
+// Cumulative leftover-point thresholds to REACH each band above Blind. Raised
+// for recon R2 (2026-07-21): with a per-turn pool ~600 and a ~10-turn campaign,
+// the old [100,300,700,1400] made the TOP tier (exact intel) trivially reached
+// by mid-game. These make it a real hoard — top level costs most of a campaign's
+// unspent points, so a player who ALSO spends on the raid board can't reach it.
+export const RECON_LEVEL_THRESHOLDS = [200, 700, 2000, 4500] // Outmatched, Contested, Superior, Overwhelming
+
+// Recon R2 — graduated numeric brackets (enemy total count + boss-fight meter
+// value). At each recon LEVEL, the [low, high] estimate around the true value
+// is `truth × [floorMult, ceilMult]`, asymmetric (skewed to OVER-estimate the
+// enemy — floorMult < 1 < ceilMult). Level 0 (Blind) shows no number at all;
+// the top level (Overwhelming) is exact (×[1,1]). Indexed by recon level 0..4.
+// The offsets are stored ABSOLUTE and displayed against live truth, so
+// casualties slide the whole bracket down without leaking width, and the bracket
+// is re-set (narrower) only on a level-up — never re-rolled per turn. ROUGH/
+// TUNABLE (docs/CAMPAIGN_PLAN.md "Recon rework").
+export const RECON_BRACKET_MULTIPLIERS = [
+  [1.0, 1.0], // 0 Blind — no bracket shown (gated out before this is read)
+  [0.6, 1.7], // 1 Outmatched
+  [0.78, 1.4], // 2 Contested
+  [0.9, 1.18], // 3 Superior
+  [1.0, 1.0], // 4 Overwhelming — exact
+]
+// Widening jitter added on top of the multiplier bracket when it's set, so the
+// midpoint isn't the truth and the known multipliers can't be inverted to solve
+// it. Directional (always widens, never inverts): the floor is pushed DOWN by up
+// to `floor` × truth, the ceiling UP by up to `ceil` × truth. Skipped at the top
+// level so "exact" stays exact.
+export const RECON_BRACKET_JITTER = { floor: 0.25, ceil: 0.5 }
 
 // Which rung of a recon-sensitive event actually fires at each scouting band
 // (Stage 4 1c). 'blind' is the event itself (the full blow, and always what
@@ -132,11 +160,6 @@ export const FORAGE_CLASH_DAMPER_BY_BAND = {
 export const RAID_BASE_TARGETS = 1
 export const RAID_SCOUT_COST_ADD = 8 // scout a NEW target (~5 for a ~40-pt army)
 export const RAID_SCOUT_COST_REVEAL = 3 // reveal one field (reward OR enemy) one level
-// Pin the exact boss-fight meter value for this turn (otherwise only the band
-// crosses the wire). Cheap on purpose — the intent is to spend leftover points
-// just before they expire at turn start, "better than wasting them" rather
-// than a first-choice buy (docs/CAMPAIGN_PLAN.md Stage C). Rough balance.
-export const METER_REVEAL_SCOUT_COST = 5
 // scoutingPointValue = (accuracy / BASELINE_ACCURACY) × (speed / foot) + reconTag,
 // with accuracy = ballisticSkill × ACCURACY_PER_BALLISTIC. Named so no literal
 // 10s leak into the formula; baseline human (bs 2 → acc 10, speed 10) = 1.0.
@@ -163,8 +186,9 @@ export const RAID_LOOT_FOOD = [2000, 5000] // kg
 export const RAID_LOOT_MATERIALS = [10, 30]
 export const RAID_RESCUE_UNIT = 'Soldier'
 export const RAID_RESCUE_COUNT = [10, 25]
-// What the scouts SAY a raid target is — detachment-scale phrases (the whole
-// host uses ENEMY_STRENGTH_BANDS below), by unit count, descending.
+// What the scouts SAY a raid target is — detachment-scale phrases, by unit
+// count, descending. (The whole enemy host is now shown as a numeric recon
+// bracket, not a phrase — see RECON_BRACKET_MULTIPLIERS.)
 export const RAID_STRENGTH_BANDS = [
   { min: 60, label: 'a strong detachment' },
   { min: 25, label: 'a full company' },
@@ -172,18 +196,6 @@ export const RAID_STRENGTH_BANDS = [
   { min: 0, label: 'a handful' },
 ]
 
-// What a scouting report may SAY about the hidden enemy at each reveal tier
-// (Stage 4 1b) — bucketed phrases only, never a number the client could
-// invert back into the composition. Ordered descending; the first entry whose
-// `min` the value meets wins. armyTotal → strength phrase (the default host
-// of 721 reads as 'a large host').
-export const ENEMY_STRENGTH_BANDS = [
-  { min: 1200, label: 'a vast horde' },
-  { min: 600, label: 'a large host' },
-  { min: 250, label: 'a strong warband' },
-  { min: 50, label: 'a modest company' },
-  { min: 0, label: 'a scattered few' },
-]
 // Turns of food the enemy has left (supplies ÷ its per-turn need) → supply
 // phrase — flavour only now that the battle offer is meter-driven, not a
 // supply threshold.
@@ -318,8 +330,8 @@ export const ENEMY_WITHDRAW_FRACTION = 0.2 // withdraws (you win) below this str
 export const BOSS_FIGHT_METER_THRESHOLD = 1000
 export const BOSS_FIGHT_METER_FLOOR = 50
 export const BOSS_FIGHT_METER_CEILING = 100
-// Banded phrase (mirrors ENEMY_STRENGTH_BANDS/ENEMY_SUPPLY_BANDS) — the ONLY
-// form of the meter that reaches the client pre-reveal. Also drives the enemy
+// Banded phrase (mirrors ENEMY_SUPPLY_BANDS) — the meter's level-0 form on the
+// wire (recon R2 adds a numeric estimate above that). Also drives the enemy
 // stance machine directly (calm ⇒ camp, else ⇒ shadowing; offering_battle is
 // bossFightDue instead) — one banded signal instead of two systems that could
 // disagree.
