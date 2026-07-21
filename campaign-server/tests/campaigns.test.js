@@ -8,6 +8,7 @@ import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { fortifiedSidesFor } from '../services/fortification.js'
 import { EVENT_POOL } from '../services/events.js'
+import { RECON_LEVEL_THRESHOLDS } from '../utils/campaignConfig.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
 // C++ binary. getInfo feeds buildEnemyPlacement's zone geometry.
@@ -199,11 +200,11 @@ describe('POST /api/campaigns', () => {
     ])
     expect(res.body.forage.assignment).toEqual({})
     expect(res.body.forage.capacityKg).toBe(0)
-    expect(res.body.forage.kgPerUnit.Soldier).toBe(30)
-    expect(res.body.forage.kgPerUnit.LightCavalry).toBe(84)
-    // Fixture-catalog scouting coverages come out near parity (ratio ≈ 1),
-    // squarely Contested from turn 1.
-    expect(res.body.scouting).toEqual({ band: 'Contested' })
+    // A fresh campaign has done no recon yet (0 points) → Blind, whose 0.7
+    // forage posture already scales the preview: round(30 × 0.7), round(84 × 0.7).
+    expect(res.body.forage.kgPerUnit.Soldier).toBe(21)
+    expect(res.body.forage.kgPerUnit.LightCavalry).toBe(59)
+    expect(res.body.scouting).toEqual({ band: 'Blind' })
     expectNoHiddenInfo(res.body)
   })
 
@@ -247,6 +248,21 @@ const pinArmies = async (id, { roster, enemyArmy, enemySupplies } = {}) => {
   await doc.save()
 }
 
+// Recon rework: the scouting band now comes from accumulated recon points, not
+// troop coverage. Pin the campaign to the minimum points that land in `band`
+// (Blind = 0, then each RECON_LEVEL_THRESHOLD). A fresh campaign starts Blind.
+const RECON_BANDS = ['Blind', 'Outmatched', 'Contested', 'Superior', 'Overwhelming']
+const pinBand = async (id, band) => {
+  const idx = RECON_BANDS.indexOf(band)
+  const points = idx <= 0 ? 0 : RECON_LEVEL_THRESHOLDS[idx - 1]
+  const doc = await Campaign.findById(id)
+  doc.recon.points = points
+  // Zero the leftover scouting-points pool too, so an intervening end-day's
+  // recon accrual (step 7) doesn't drift the band off the pinned value.
+  doc.raid.scoutingPoints = 0
+  await doc.save()
+}
+
 const getView = async (id) => {
   const res = await auth(api.get(`/api/campaigns/${id}`))
   expect(res.status).toBe(200)
@@ -254,11 +270,11 @@ const getView = async (id) => {
   return res.body
 }
 
-describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
-  test('Blind: stance only, as before the stage', async () => {
+describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
+  test('Blind (a fresh campaign, 0 recon points): stance only', async () => {
     const { body } = await createCampaign()
-    // player 300/1000 = 0.30 vs enemy 850/1000 = 0.85 → ratio 0.35 → Blind
-    await pinArmies(body.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
+    // No recon yet → Blind, the enemy is unread.
+    await pinArmies(body.id, { enemyArmy: { LightCavalry: 50 } })
     const view = await getView(body.id)
     expect(view.scouting.band).toBe('Blind')
     expect(view.enemy).toEqual({ stance: 'camp', battleOffer: false })
@@ -266,8 +282,8 @@ describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
 
   test('Outmatched: adds the strength phrase and supply state, nothing more', async () => {
     const { body } = await createCampaign()
-    // default player 0.374 vs riders-only 0.85 → ratio 0.44 → Outmatched
     await pinArmies(body.id, { enemyArmy: { LightCavalry: 50 } })
+    await pinBand(body.id, 'Outmatched')
     const view = await getView(body.id)
     expect(view.scouting.band).toBe('Outmatched')
     // 50 riders → 'a modest company'; 90,000 kg over 5,600 kg/turn ≈ 16 turns.
@@ -278,11 +294,13 @@ describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
     expect(view.enemy.placements).toBeUndefined()
   })
 
-  test('Contested (the turn-1 default): strength + supplies on the create response', async () => {
-    const res = await createCampaign()
-    // armyTotal 721 → 'a large host'; 90,000 kg over 21,868 kg/turn ≈ 4.1 turns.
-    expect(res.body.scouting.band).toBe('Contested')
-    expect(res.body.enemy).toEqual({
+  test('Contested: strength + supplies, nothing finer', async () => {
+    const { body } = await createCampaign()
+    await pinBand(body.id, 'Contested')
+    const view = await getView(body.id)
+    // Default ENEMY_ARMY armyTotal 721 → 'a large host'.
+    expect(view.scouting.band).toBe('Contested')
+    expect(view.enemy).toEqual({
       stance: 'camp',
       battleOffer: false,
       strength: 'a large host',
@@ -292,16 +310,18 @@ describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
 
   test('supply state degrades as the enemy stores run out', async () => {
     const { body } = await createCampaign()
-    // 25,000 kg over 21,868 kg/turn ≈ 1.1 turns → the host is nearly starving.
+    // Supplies only cross the wire at Outmatched+; pin a band that shows them.
     await pinArmies(body.id, { enemySupplies: 25000 })
+    await pinBand(body.id, 'Contested')
     const view = await getView(body.id)
+    // 25,000 kg over 21,868 kg/turn ≈ 1.1 turns → the host is nearly starving.
     expect(view.enemy.supplies).toBe('near starving')
   })
 
   test('Superior: adds composition by category percent', async () => {
     const { body } = await createCampaign()
-    // enemy 1400/6000 = 0.233 vs player 0.374 → ratio 1.60 → Superior
     await pinArmies(body.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    await pinBand(body.id, 'Superior')
     const view = await getView(body.id)
     expect(view.scouting.band).toBe('Superior')
     expect(view.enemy.strength).toBe('a large host') // 600 is the band's lower edge
@@ -312,8 +332,8 @@ describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
 
   test('Overwhelming: exact counts and the real planned placement', async () => {
     const { body } = await createCampaign()
-    // enemy 620/4700 = 0.132 vs player 0.374 → ratio 2.83 → Overwhelming
     await pinArmies(body.id, { enemyArmy: { Zombie: 450, LightCavalry: 10 } })
+    await pinBand(body.id, 'Overwhelming')
     const view = await getView(body.id)
     expect(view.scouting.band).toBe('Overwhelming')
     expect(view.enemy.units).toEqual({ Zombie: 450, LightCavalry: 10 })
@@ -340,13 +360,14 @@ describe('scouting-graduated enemy reveal (Stage 4 1b)', () => {
 // foretells the Blind rung — prophecy says what's coming, scouting decides
 // whether it lands — and the day report names the FIRED rung plus the scouts'
 // hand, so a mitigated threat reads as the same event downgraded, never a
-// silent swap. Armies pin the band exactly as in the 1b describe above.
+// silent swap. `pinBand` sets the recon level exactly as in the 1b describe above.
 describe('recon-sensitive event rungs (Stage 4 1c)', () => {
   const NIGHT_RAID = EVENT_POOL.find((e) => e.id === 'night_raid')
   const AMBUSH = EVENT_POOL.find((e) => e.id === 'ambush')
 
-  test('Contested (the turn-1 default): the warned rung fires and is named in the report', async () => {
+  test('Contested: the warned rung fires and is named in the report', async () => {
     const { body: c } = await createCampaign()
+    await pinBand(c.id, 'Contested')
     await pinAugury(c.id, NIGHT_RAID, QUIET)
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expect(res.status).toBe(200)
@@ -367,7 +388,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
 
   test('Blind: the full event lands and no intervention is flagged', async () => {
     const { body: c } = await createCampaign()
-    // player 300/1000 = 0.30 vs enemy 850/1000 = 0.85 → ratio 0.35 → Blind
+    // A fresh campaign is Blind (0 recon); the Priest roster just sets upkeep.
     await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
     await pinAugury(c.id, NIGHT_RAID, QUIET)
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
@@ -396,8 +417,8 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
 
   test('Superior: the anticipated Counter-Ambush reverses the fate onto the enemy', async () => {
     const { body: c } = await createCampaign()
-    // enemy 1400/6000 = 0.233 vs player 0.374 → ratio 1.60 → Superior
     await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    await pinBand(c.id, 'Superior')
     await pinAugury(c.id, AMBUSH, QUIET)
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expectNoHiddenInfo(res.body)
@@ -417,7 +438,8 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
 
   test('anticipated Night Raid: prisoners lay the enemy bare for exactly one turn', async () => {
     const { body: c } = await createCampaign()
-    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } }) // Superior
+    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    await pinBand(c.id, 'Superior')
     await pinAugury(c.id, NIGHT_RAID, QUIET)
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expectNoHiddenInfo(res.body)
@@ -433,7 +455,10 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     const view = await getView(c.id)
     expect(view.enemy.revealed).toBe(true)
 
-    // The next end-day expires it: back to what the band licenses.
+    // The next end-day expires it: back to what the band licenses. Re-pin the
+    // band (end-day 1 refilled the scouting pool, which would otherwise accrue
+    // and lift the band to Overwhelming).
+    await pinBand(c.id, 'Superior')
     await pinAugury(c.id) // quiet fates so nothing re-reveals
     const next = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expectNoHiddenInfo(next.body)
@@ -443,7 +468,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
 
   test('the augur foretells the Blind rung even when the scouts will intervene', async () => {
     const { body: c } = await createCampaign()
-    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } }) // Superior
+    await pinBand(c.id, 'Superior') // scouts WILL intervene at end-day — prophecy still shows Blind
     await pinAugury(c.id, NIGHT_RAID, QUIET)
     // [4,1] readings: (4 + base 2 + mage 1 + pool-2 legibility 1) × 0.05 =
     // 0.40 → threshold 400; a 400 vision roll shows the truth.
@@ -672,6 +697,7 @@ describe('POST /api/campaigns/:id/forage', () => {
 
   test('sets the assignment and reports capacity; re-issuing replaces it', async () => {
     const { body: c } = await createCampaign()
+    await pinBand(c.id, 'Contested') // neutral posture (×1) — this tests raw capacity, not scouting scaling
 
     const res = await assign(c.id, { Soldier: 100, LightCavalry: 5 })
     expect(res.status).toBe(200)
@@ -707,7 +733,7 @@ describe('POST /api/campaigns/:id/forage', () => {
   // applies, so what the panel promises is what end-day delivers.
   test('Blind posture scales the forage preview the player plans against', async () => {
     const { body: c } = await createCampaign()
-    // Same Blind pin as the 1b reveal tests: 0.30 vs 0.85 → ratio 0.35.
+    // A fresh campaign is Blind (0 recon); the Priest roster sets the forage math.
     await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
     const view = await getView(c.id)
     expect(view.scouting.band).toBe('Blind')
@@ -1311,6 +1337,25 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.report.forage.clashes).toEqual([])
   })
 
+  // ── Recon rework: leftover scouting points accrue into the scouting level ──
+  test('unspent scouting points accrue into recon at end-of-turn and lift the band (fresh = Blind)', async () => {
+    const { body: c } = await createCampaign()
+    expect(c.scouting.band).toBe('Blind') // no recon done yet
+    await pinAugury(c.id) // QUIET keeps it a clean, side-effect-free turn
+    const before = await Campaign.findById(c.id)
+    const leftover = before.raid.scoutingPoints // this turn's pool, all unspent
+    expect(leftover).toBeGreaterThan(0)
+    expect(before.recon.points).toBe(0)
+
+    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const after = await Campaign.findById(c.id)
+    // Accrued from 0 by exactly the leftover, BEFORE the pool refilled.
+    expect(after.recon.points).toBeCloseTo(leftover, 5)
+    expect(after.raid.scoutingPoints).toBeGreaterThan(0) // pool refilled for the new turn
+    // That accrual lifted the scouting level off Blind.
+    expect(res.body.campaign.scouting.band).not.toBe('Blind')
+  })
+
   // ── Stage B: the boss fight is mandatory once due ─────────────────────
   test('cannot end the day while the boss fight is due and not yet fought', async () => {
     const { body: c } = await createCampaign()
@@ -1366,6 +1411,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
 
   test('foragers harvest at end of turn; the assignment clears for the new turn', async () => {
     const { body: c } = await createCampaign()
+    await pinBand(c.id, 'Contested') // neutral posture (×1) — this tests harvest math, not scouting scaling
     await pinAugury(c.id) // keep the food math free of event noise
     await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({
       assignment: { Soldier: 100 }, // capacity 3000 kg
@@ -1546,6 +1592,7 @@ describe('augury acceptance (fates at the tent)', () => {
     await pinAugury(c.id, NIGHT_RAID, QUIET)
     await setConsulted(c.id)
     await pinCounterRaid(c.id, 0)
+    await pinBand(c.id, 'Contested') // warned rung recorded at accept-time band
 
     const res = await accept(c.id)
     expect(res.status).toBe(200)
@@ -1571,6 +1618,7 @@ describe('augury acceptance (fates at the tent)', () => {
     await pinAugury(c.id, NIGHT_RAID, QUIET)
     await setConsulted(c.id)
     await pinCounterRaid(c.id, 0)
+    await pinBand(c.id, 'Contested')
 
     // Contested at accept → the warned rung (−500 kg) is what's recorded.
     const res = await accept(c.id)
@@ -1578,9 +1626,9 @@ describe('augury acceptance (fates at the tent)', () => {
     const doc = await Campaign.findById(c.id)
     expect(doc.augury.slots[0].firedRungName).toBe('warned')
 
-    // The hosts shift to Superior before nightfall — the recorded warned rung
+    // Recon jumps to Superior before nightfall — the recorded warned rung
     // still applies, NOT the anticipated one the new band would pick.
-    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    await pinBand(c.id, 'Superior')
     const end = await endDayReq(c.id)
     const after = await Campaign.findById(c.id)
     // Slots 1–2 applied −500 each at accept; slot 0's deferred warned rung

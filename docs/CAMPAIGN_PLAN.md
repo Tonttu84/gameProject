@@ -166,18 +166,22 @@ notes below over the git history if they ever disagree — the commits win.
   `reveal_meter` will be reverted in recon R2.
 - **Boss-fight campaign loop — Stage D (`destroy_detachment` rework) ✅ SHIPPED 2026-07-20** —
   committed `794a5e3` (casualties always, pursuit + prestige stub on win). See the Stage D handoff.
-- **Recon rework — R1 SOURCE committed as WIP (`ba1ec33` "preparing to switch computer"), R1 TESTS
-  IN PROGRESS (uncommitted).** NOTE: `ba1ec33` is in-progress work committed only to save context —
-  **not authoritative/frozen**; verify it and fix freely. It has the R1 source:
-  `campaign.recon.points` (schema **v15**), `reconLevel`/`reconBand`
+- **Recon rework — R1 ✅ COMPLETE** (source `ba1ec33`; tests finished + verified green this session).
+  R1 source: `campaign.recon.points` (schema **v15**), `reconLevel`/`reconBand`
   (`RECON_LEVEL_THRESHOLDS = [100,300,700,1400]`), end-of-turn accrual of leftover scouting points,
   all 3 band consumers swapped to `reconBand`, and `scoutingCoverage`/`scoutingBand`/`reconValue`
-  deleted. **Uncommitted WIP:** `capabilities.test.js` + `campaigns.test.js` recon test rewrites
-  (verify/finish these — likely not yet complete or green). **NEXT (extend `ba1ec33`, don't
-  needlessly redo R1 source, but fix it where tests demand):** finish the R1 tests, then
-  **R2** (numeric count/meter brackets — stored asym offsets, live-tracked, floor ≥ 0, narrow on
-  level-up, exact at top; revert Stage C `reveal_meter`; the raid-casualty-shift test), then **R3**
-  (frontend readout). See the "Recon rework" section below.
+  deleted. R1 tests: `capabilities.test.js` + `campaigns.test.js` rewritten to the recon band and
+  **99/99 green** (user-run; `capabilities` + `campaigns` files). The test churn was pure
+  expectation updates from ONE behavior change — a fresh campaign now scouts **Blind** (0 recon
+  points), not Contested, so its forage posture is Blind's ×0.7: the create-response `kgPerUnit`
+  preview asserts the scaled values (21/59), and the raw-number capacity/harvest tests pin
+  `Contested` via the new `pinBand` helper (sets `recon.points` to a band's threshold + zeroes the
+  leftover pool so an intervening end-day's accrual doesn't drift the band). No source change was
+  needed to make tests pass. **NEXT: R2** (numeric count/meter brackets — stored asym offsets,
+  live-tracked, floor ≥ 0, narrow on level-up, exact at top; revert Stage C `reveal_meter`; the
+  raid-casualty-shift test), then **R3** (frontend readout). See the "Recon rework" section below.
+  R2 has open design knobs to grill before coding: jitter magnitude, per-level multipliers, and
+  where the offsets live on the model.
   Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
@@ -691,14 +695,17 @@ determines the level, keeping the level's existing uses (enemy ladder + forage p
 enemy-army coverage input is dead and thrown away.
 
 **Staging (one thing at a time):**
-- **R1 — recon core + band-driver swap. ✅ SOURCE DONE (`ba1ec33`), TESTS WIP (uncommitted).**
-  `campaign.recon.points` (schema **v15**) + `reconLevel`/`reconBand`; leftover points accrue at
-  end-of-turn; all 3 consumers swapped to the recon band; `scoutingCoverage`/`scoutingBand`/
-  `reconValue` deleted. `RECON_LEVEL_THRESHOLDS = [100,300,700,1400]` (rough/tunable — the real
-  per-turn pool is large, calibrate in playtest). Coverage-band tests are being rewritten
-  (`capabilities.test.js` + `campaigns.test.js`, uncommitted) — **verify/finish + run before R2**;
-  fresh campaign now starts **Blind** (recon 0), which changes turn-1 default-band assertions
-  (was Contested) and the turn-1 forage posture. No brackets yet.
+- **R1 — recon core + band-driver swap. ✅ COMPLETE** (source `ba1ec33`; tests finished + verified
+  green this session). `campaign.recon.points` (schema **v15**) + `reconLevel`/`reconBand`; leftover
+  points accrue at end-of-turn; all 3 consumers swapped to the recon band; `scoutingCoverage`/
+  `scoutingBand`/`reconValue` deleted. `RECON_LEVEL_THRESHOLDS = [100,300,700,1400]` (rough/tunable
+  — the fresh starting-roster pool is ~1112 pts/turn, so a fully-unspent turn already jumps to
+  Superior; calibrate in playtest). Tests **99/99 green** (`capabilities` + `campaigns`). The whole
+  test delta was expectation-only: fresh campaign now starts **Blind** (recon 0), so its turn-1
+  forage posture is Blind's ×0.7 — the create response's `kgPerUnit` preview asserts the scaled
+  21/59, and the raw-number capacity/harvest tests pin `Contested` via a new `pinBand(id, band)`
+  helper (sets `recon.points` to the band's threshold + zeroes `raid.scoutingPoints` so an
+  intervening end-day's accrual doesn't drift the pinned band). No brackets yet.
 - **R2 — numeric brackets + revert Stage C.** Enemy-count + meter brackets (stored asym offsets,
   live-tracked, narrow on level-up, exact at top); remove `reveal_meter`; rework `meter.revealed/value`
   into the meter bracket. Includes the raid-casualty-shift test.
