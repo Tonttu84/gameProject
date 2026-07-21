@@ -385,9 +385,10 @@ time), 0 → **1000** threshold.
   **⚑ FLAGGED FOR PLAYTEST** (user: "I don't completely understand it… we'll see how it works"):
   the band→prose mapping is a first pass — revisit once the meter's pacing is felt in play.
   Verified: frontend vitest **235/235** + oxlint clean; server tests updated (`enemyAi`/`campaigns`/
-  `augury`, incl. a new `enemy_advance`→`bossFightDue` applyEffect case) but run by CI/user (local
-  `cs-test` sandbox-mongo flake). NB: this removes the last "stance still EXISTS" caveat the recon
-  R2 handoff flagged (`METER_BANDS` comment updated).
+  `augury`, incl. a new `enemy_advance`→`bossFightDue` applyEffect case) — **CI green on `main`
+  `8737ea1`** (local `cs-test` is unreliable here — sandbox-mongo flake — so CI is the gate). NB:
+  this removes the last "stance still EXISTS" caveat the recon R2 handoff flagged (`METER_BANDS`
+  comment updated).
 - **Visibility:** hidden by default, shown only as a banded phrase (mirrors
   `ENEMY_STRENGTH_BANDS`/`ENEMY_SUPPLY_BANDS` — e.g. calm / restless / imminent). The exact
   number can be bought: spending **leftover scouting points, just before they expire/refresh at
