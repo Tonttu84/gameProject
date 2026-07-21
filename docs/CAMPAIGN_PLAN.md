@@ -221,6 +221,28 @@ notes below over the git history if they ever disagree — the commits win.
   behind the loop.
 - **Balance stays rough** until the full campaign loop exists (plausible numbers suffice
   while features land).
+- **Event prerequisites (chains, part 1 of 2): ✅ SHIPPED 2026-07-20.** First half of the
+  "richer event system (prerequisites/chains)" follow-up. Events may now carry a declarative
+  `requires` block (`services/events.js`), tested by one `eventEligible(event, ctx)` predicate
+  against a duck-typed context `{day, roster, eventFlags}` (Mongoose Map on the live doc, plain
+  object at creation/in tests). Supported clauses, all ANDed: `minDay`/`maxDay`, `flags`
+  (all set), `notFlags` (none set), `hasUnit` (roster holds ≥1). `eligiblePool(ctx)` is the
+  filtered draw pool; `augury.js`'s `randomSlot`/decoy pick both draw from it, so a gated fate
+  reaches the player as **neither truth nor decoy** until its trigger is met. State is written by
+  a new `flag` effect type (`applyEffect`: `value` sets / `delta` increments / default 1, NO
+  player-visible log line — hidden bookkeeping) into a new hidden `eventFlags: Map` on the
+  campaign (schema **v13**). **Load-bearing invariant** (augury.test.js tripwire): the
+  *unconditional* events alone keep every severity tier legible (≥2 + mixed valence), so
+  prerequisites are purely additive and the same-pool pairing can never collapse — no runtime
+  collapse guard needed. Proof event: `horse_sickness` (severity 2, `requires:{hasUnit:'Cavalry'}`
+  — a murrain that can only befall an army that fields mounts). **The tier/legibility minigame is
+  untouched:** a gated fate still has a severity, still reads by `POOL_LEGIBILITY`, still pairs
+  with a same-tier decoy — smaller fates stay easy to read, majors stay murky. **NEXT (part 2 —
+  chains):** an outcome `schedule`s a guaranteed follow-up N turns out (a `scheduledEvents` queue
+  drained into forced slots at `drawAugury`; `chained:true` events kept out of the random pool so
+  they appear only when scheduled). `flag`/`eventFlags` are the primitive that also lets a
+  *randomly-eligible* follow-up be gated on a prior choice. Not yet click-tested in the live
+  browser (unit + route suites green: 275/275).
 - **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
   dated entries under the Stage-4 block and "Follow-ups" below. Not a new stage, bug fixes +
   a follow-up item landing early.
@@ -2357,7 +2379,11 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
     container; the previously ~1/8-flaky `campaign-loop` spec ran **8/8 then 12/12 = 20 consecutive
     clean** under `--repeat-each`, each hitting the deterministic 3-choice reveal.
 - **Follow-ups (not done):**
-  - **Event chains/prerequisites** (the long-standing "richer event system" follow-up) — next big slice.
+  - **Event chains/prerequisites** (the long-standing "richer event system" follow-up) — **part 1
+    (prerequisites) SHIPPED 2026-07-20**, see the dated SHIPPED bullet near the top. **Part 2
+    (chains) is the remaining slice:** `schedule` effect + `scheduledEvents` queue drained into
+    forced slots, `chained:true` events out of the random pool. The `flag`/`eventFlags` primitive
+    it needs already landed with part 1.
   - **A live in-browser click-through** of the new choice events (Horses→Cavalry especially). Windows
     serves the built bundle, so `docker compose up --build` is REQUIRED to see 28471e7/d1d97e2/283fce8.
     (Stack WAS rebuilt this session at localhost:5173; rebuild again for anything newer.)
@@ -2491,7 +2517,7 @@ pattern) over new subclasses; the catalog+tripwire SSOT is the thing to preserve
 class count.
 
 ## Follow-ups (out of scope now)
-Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (prerequisites/chains — distinct from Stage 4's event *transforms*).
+Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (chains — prerequisites shipped 2026-07-20; distinct from Stage 4's event *transforms*).
 
 **Playwright E2E harness — ✅ SHIPPED 2026-07-18.** First real end-to-end coverage: a browser
 driving login → council → forage → augur consult/reroll → **Accept the Fates** → muster → End Turn

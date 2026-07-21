@@ -272,7 +272,10 @@ export async function endDay(campaign) {
     campaign.militiaBoughtToday = 0
     campaign.forage.assignment = new Map()
     campaign.raid.assignment = new Map()
-    campaign.augury = drawAugury()
+    // The live doc IS the eligibility context (day already incremented above,
+    // roster + eventFlags as this turn's fates left them), so a prerequisite
+    // reads against next turn's state.
+    campaign.augury = drawAugury(campaign)
     campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
     // Tomorrow's board: one base target (+ a counter per FRESH bad fate drawn
     // above), and the scouting-points pool refilled from the roster as the
