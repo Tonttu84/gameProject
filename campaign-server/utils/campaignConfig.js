@@ -158,8 +158,8 @@ export const FORAGE_CLASH_DAMPER_BY_BAND = {
 // below (not by the generation formula), which keep "more scouting → more
 // raids" true while stopping a big army from trivially revealing everything.
 export const RAID_BASE_TARGETS = 1
-export const RAID_SCOUT_COST_ADD = 8 // scout a NEW target (~5 for a ~40-pt army)
-export const RAID_SCOUT_COST_REVEAL = 3 // reveal one field (reward OR enemy) one level
+export const RAID_SCOUT_COST_ADD = 200 // scout a NEW target
+export const RAID_SCOUT_COST_REVEAL = 50 // reveal one field (reward OR enemy) one level
 // scoutingPointValue = (accuracy / BASELINE_ACCURACY) × (speed / foot) + reconTag,
 // with accuracy = ballisticSkill × ACCURACY_PER_BALLISTIC. Named so no literal
 // 10s leak into the formula; baseline human (bs 2 → acc 10, speed 10) = 1.0.
