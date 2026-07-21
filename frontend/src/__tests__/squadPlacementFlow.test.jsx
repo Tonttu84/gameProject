@@ -47,6 +47,8 @@ const squad = { id: 1, name: '1st Cohort', composition: { Soldier: 2 } }
 const campaign = {
   ...campaignFixture,
   augury: consultedAugury,
+  // bossFightDue: Fight! is only offered on the pitched-battle day.
+  bossFightDue: true,
   roster: { Soldier: 2 },
   squads: [squad],
 }

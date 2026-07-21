@@ -38,7 +38,8 @@ const info = {
   units: [{ type: 'Soldier', symbol: 'S', placementSize: 1 }],
 }
 
-const campaign = { ...campaignFixture, augury: consultedAugury, roster: { Soldier: 3 }, squads: [] }
+// bossFightDue: Fight! is only offered on the pitched-battle day.
+const campaign = { ...campaignFixture, augury: consultedAugury, bossFightDue: true, roster: { Soldier: 3 }, squads: [] }
 
 const battleResponse = (tickCount) => ({
   id: 'b1',

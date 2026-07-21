@@ -185,9 +185,36 @@ notes below over the git history if they ever disagree — the commits win.
 - **Recon rework — R3 ✅ COMPLETE 2026-07-21** (frontend readout; frontend vitest **230/230
   green**). `CampaignHUD`/`ScoutReport` rewired off the removed `meter.revealed`/`meter.value`
   onto `meter.estimate` + `enemy.count`, and the recon band (level) surfaced. **The recon rework
-  is now fully landed end-to-end. NEXT: the boss-fight campaign loop** (DESIGNED, not yet
-  implemented — see its section below), or the deferred `enemy.stance`/`battleOffer` cruft-removal
-  pass. See the R3 SHIPPED handoff in the "Recon rework" section for detail.
+  is now fully landed end-to-end.** See the R3 SHIPPED handoff in the "Recon rework" section for detail.
+- **Boss-fight campaign loop — frontend wiring ("pitched battle") ✅ SHIPPED 2026-07-21** (frontend
+  only; vitest **235/235 green**, oxlint clean). This is the Stage-B/C frontend follow-ups that
+  were flagged unwired: the server-side loop (Stages A–D) was already live, but the browser still
+  rendered **Fight!** unconditionally and never surfaced the decisive-fight state. User steer: the
+  meter stays **recon-estimated, never fully revealed** (already the R2/R3 behavior — no change),
+  and the roguelite "boss fight" is renamed **"pitched battle"** in all player-facing copy (it's the
+  full decisive battle thematically). Landed in `App.jsx` + `CampaignHUD.jsx`:
+  - **Fight! is gated on `bossFightDue`** — hidden entirely on a quiet day (there is no full-army
+    battle pre-threshold; the button would only hit Stage B1's raw 400). On the pitched-battle day
+    it appears with the existing full-deployment `disabled` rules.
+  - **The pitched battle is mandatory in the UI too:** the "End Turn (no battle)" escape is
+    withheld while `bossFightDue && !battleFoughtToday` (server B4 already 400s it) — after the
+    fight the campaign is `won`/`lost`, which the existing generic `status !== 'active'` game-over
+    screen already handles (decisive win/loss routing needed NO new work).
+  - **The player is warned the pitched battle is due** on the **Council, Raids, and Deploy** screens
+    (`pitched-battle-warning`/`-raids`/`-deploy` testids), so forage/raid commitments that day are
+    made knowing the decisive fight is coming (the user's explicit requirement — allocation depends
+    on knowing the final fight is here). The Council warning replaced the old `enemy.battleOffer`
+    one (battleOffer ⟺ bossFightDue).
+  - **HUD meter relabelled** `Meter:` → `Pitched battle:` (band or recon estimate as before;
+    `now!` once due). Tutorial/stance copy reworded to "pitched battle".
+  - Tests: new `bossFightGate.test.jsx` (quiet day = no Fight!/no warning/End Turn stays; pitched
+    day = Fight! + mandatory, warnings on all three screens); `bossFightDue: true` threaded through
+    the fight-flow fixtures (battleVictory/Defeat, watchReplay, squad/holdOrder flows);
+    `campaignFlow` reached-deployment landmark moved off the now-conditional Fight! to `end-day`;
+    `campaignHud` meter-label assertions updated + a `now!` case. **Still unwired:** nothing new —
+    Stage C's `reveal_meter` button is moot (reverted in recon R2; the meter is recon-driven, not
+    point-bought). **NEXT: Stage E (hiring troops, still design-only)** or the deferred
+    `enemy.stance`/`battleOffer` cruft-removal pass.
   Stage E (hiring troops) stays design-only. **combat-score-per-hexside**
   ([[todo-combat-score-per-hexside]] — make `HexSide.combatScore` erode `fortDurability`
   mid-battle so the placeholder goes live) is still open but pushed further down the queue
@@ -559,12 +586,12 @@ tests are handed to the user; CI runs the full suite anyway).
   400s). `bossFightDue` was threaded through every existing battle case (folded into
   `shrinkRoster`/`setSquads`, a `dueBossFight` raw-update helper for the `createCampaign`-only
   cases, and the forage-block battle test).
-- **Frontend follow-up (NOT done in Stage B, flag for whoever wires the UI):** the Deploy screen
-  still renders the **Fight!** button unconditionally. On a fresh (non-boss) campaign, clicking it
-  now gets B1's raw 400 with no friendly handling. Intended end-state is: hide/disable Fight!
-  until `bossFightDue`, surface the mandatory-battle state on the boss day, and route the decisive
-  win/loss into the existing Victory!/Defeat screens. The e2e (`campaign-loop.spec.js`) stays green
-  because it reaches Deploy and ends the turn WITHOUT clicking Fight! on a non-boss day.
+- **Frontend follow-up ✅ DONE 2026-07-21** (see the "frontend wiring (pitched battle)" SHIPPED
+  entry near the top of this file): Fight! is now hidden until `bossFightDue`, the mandatory
+  boss-day state is surfaced (Council/Raids/Deploy warnings + End-Turn withheld), and the decisive
+  win/loss routes into the existing Victory!/Defeat screens (via the generic `status` game-over
+  check — no new work). The e2e (`campaign-loop.spec.js`) stays green because it reaches Deploy and
+  ends the turn WITHOUT clicking Fight! on a non-boss day (End Turn is still shown on quiet days).
 
 **Stage C — meter reveal via leftover scouting points**
 1. **RED→GREEN.** Extend the existing `POST /:id/raids/scout` action dispatch

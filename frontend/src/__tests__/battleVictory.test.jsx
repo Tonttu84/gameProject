@@ -41,7 +41,9 @@ const info = {
 
 // Fight requires the whole army on the field; this campaign owns exactly the
 // 3 Soldiers the test places (no squads — same shape as battleDefeat.test.jsx).
-const campaign = { ...campaignFixture, augury: consultedAugury, roster: { Soldier: 3 }, squads: [] }
+// The pitched-battle day: Fight! only appears (and End Turn is withheld) once
+// bossFightDue — that's the only time a full-army battle is offered.
+const campaign = { ...campaignFixture, augury: consultedAugury, bossFightDue: true, roster: { Soldier: 3 }, squads: [] }
 
 // The refreshed view after a won battle: campaign continues (still active),
 // one Soldier fell, and today's battle is spent.

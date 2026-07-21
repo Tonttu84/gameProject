@@ -43,7 +43,8 @@ const info = {
 }
 
 // Augur already consulted → the council goes straight to "Muster for Battle".
-const campaign = { ...campaignFixture, augury: consultedAugury }
+// bossFightDue: Fight! is only offered on the pitched-battle day.
+const campaign = { ...campaignFixture, augury: consultedAugury, bossFightDue: true }
 
 beforeEach(() => {
   vi.clearAllMocks()

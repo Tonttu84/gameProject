@@ -104,7 +104,7 @@ describe('campaign flow', () => {
     // raids; from there Deploy for Battle reaches the placement grid.
     fireEvent.click(screen.getByTestId('augury-continue'))
     fireEvent.click(await screen.findByTestId('to-deploy'))
-    await screen.findByText('Fight!')
+    await screen.findByTestId('end-day') // reached deployment (non-boss day: no Fight! button)
   })
 
   it('clicking a vision rerolls that slot only and spends the reroll', async () => {
@@ -152,7 +152,7 @@ describe('campaign flow', () => {
     expect(screen.queryByTestId('consult-augur')).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('augury-continue'))
     fireEvent.click(await screen.findByTestId('to-deploy'))
-    await screen.findByText('Fight!')
+    await screen.findByTestId('end-day') // reached deployment (non-boss day: no Fight! button)
   })
 
   it('a finished (won) campaign shows the victory screen and a new-campaign button', async () => {

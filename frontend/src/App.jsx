@@ -340,7 +340,7 @@ const App = () => {
               lines={[
                 'Each turn covers two weeks of campaigning: your army eats, the land empties, the augur reads the signs.',
                 'First prepare — send out foragers and see to your camp. Then read the omens, loose your raiders, and deploy your line.',
-                `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'offering battle' : 'shadowing your army'}.`,
+                `The enemy is ${campaign.enemy.stance === 'camp' ? 'sitting in camp' : campaign.enemy.stance === 'offering_battle' ? 'formed up for a pitched battle' : 'shadowing your army'}.`,
               ]}
             />
             <p>
@@ -351,8 +351,12 @@ const App = () => {
             {campaign.resources.food <= 0 && (
               <p className="warning">No food! Units will desert.</p>
             )}
-            {campaign.enemy.battleOffer && (
-              <p className="warning">Enemy banners are formed up — they offer battle this turn.</p>
+            {campaign.bossFightDue && (
+              <p className="warning" data-testid="pitched-battle-warning">
+                The enemy offers a pitched battle this turn — you must deploy your
+                whole army and give battle before the turn can end. Foragers and
+                raiders sent out now will be missing from the line.
+              </p>
             )}
             {campaign.scouting && (
               <ScoutReport scouting={campaign.scouting} enemy={campaign.enemy} />
@@ -414,6 +418,12 @@ const App = () => {
       {phase === 'raids' && (
         <div className="phase-raids">
           <h2>Targets of Opportunity</h2>
+          {campaign.bossFightDue && (
+            <p className="warning" data-testid="pitched-battle-raids">
+              The pitched battle is today — raiders you commit now will be absent
+              from the decisive line. Raid greedily, or hold them for the fight.
+            </p>
+          )}
           {campaign.scouting && (
             <ScoutReport scouting={campaign.scouting} enemy={campaign.enemy} />
           )}
@@ -460,10 +470,17 @@ const App = () => {
             lines={[
               'Click a highlighted hex in your half to place troops; the enemy waits beyond the red line.',
               'Give standing orders in the Orders section — set Hold (turns) to make a stack hold position instead of advancing; a ⌛ badge marks held hexes.',
-              'Battle commits the whole army: Fight unlocks once every unit is on the field. Only foragers, out sweeping the rings, stay behind.',
-              'Fight when ready — or end the turn without battle.',
+              'The pitched battle commits the whole army: Fight unlocks once every unit is on the field. Only foragers and raiders, out beyond the line, stay behind.',
+              'The pitched battle is decisive and mandatory — the turn cannot end until it is fought. On a quiet day there is no battle to give; just end the turn.',
             ]}
           />
+          {campaign.bossFightDue && (
+            <p className="warning" data-testid="pitched-battle-deploy">
+              Pitched battle! The enemy has committed to a decisive fight this turn.
+              Deploy your whole army — this battle decides the campaign, and the turn
+              cannot end until it is fought.
+            </p>
+          )}
           {campaign.scouting && (
             <ScoutReport scouting={campaign.scouting} enemy={campaign.enemy} />
           )}
@@ -481,17 +498,29 @@ const App = () => {
             </span>
             {phase === 'placement' && (
               <>
-                <button
-                  className="btn-primary"
-                  onClick={startBattle}
-                  disabled={(placedCount === 0 && squadPlacedCount === 0) || inCamp > 0 || campaign.battleFoughtToday}
-                  title={inCamp > 0 ? `Deploy your whole army — ${inCamp} still in camp` : undefined}
-                >
-                  Fight!
-                </button>
-                <button className="login-toggle" data-testid="end-day" onClick={nextDay}>
-                  End Turn{campaign.battleFoughtToday ? '' : ' (no battle)'}
-                </button>
+                {/* Fight! only exists on the pitched-battle day: before the
+                    meter fills the enemy offers no battle (server 400s the
+                    battle route), so deploying-to-fight is impossible and the
+                    button would only lead to a raw error. */}
+                {campaign.bossFightDue && (
+                  <button
+                    className="btn-primary"
+                    onClick={startBattle}
+                    disabled={(placedCount === 0 && squadPlacedCount === 0) || inCamp > 0 || campaign.battleFoughtToday}
+                    title={inCamp > 0 ? `Deploy your whole army — ${inCamp} still in camp` : undefined}
+                  >
+                    Fight!
+                  </button>
+                )}
+                {/* The pitched battle is mandatory: the turn cannot end until it
+                    is fought (the server 400s end-day otherwise), so the "end
+                    without battle" escape is withheld until the field is won or
+                    lost. */}
+                {!(campaign.bossFightDue && !campaign.battleFoughtToday) && (
+                  <button className="login-toggle" data-testid="end-day" onClick={nextDay}>
+                    End Turn{campaign.battleFoughtToday ? '' : ' (no battle)'}
+                  </button>
+                )}
               </>
             )}
             {phase === 'battling' && (

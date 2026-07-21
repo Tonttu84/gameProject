@@ -21,17 +21,22 @@ const hudWith = (over) => {
 describe('CampaignHUD boss-fight meter + recon readout', () => {
   it('shows the banded phrase while recon reveals no estimate (Blind)', () => {
     hudWith({ meter: { band: 'restless', estimate: null } })
-    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Meter: restless')
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: restless')
   })
 
   it('shows a numeric range once recon reveals a partial estimate', () => {
     hudWith({ meter: { band: 'restless', estimate: { low: 600, high: 1100 } } })
-    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Meter: 600–1100')
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: 600–1100')
   })
 
   it('shows a single exact value at the top recon level', () => {
     hudWith({ meter: { band: 'imminent', estimate: { low: 812, high: 812 } } })
-    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Meter: 812')
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: 812')
+  })
+
+  it('once the pitched battle is due, the estimate gives way to "now!"', () => {
+    hudWith({ bossFightDue: true, meter: { band: 'imminent', estimate: { low: 812, high: 812 } } })
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: now!')
   })
 
   it('surfaces the recon band (level)', () => {
