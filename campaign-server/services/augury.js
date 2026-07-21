@@ -104,14 +104,52 @@ const forcedSlot = () => {
 
 const drawSlot = (ctx) => forcedSlot() ?? randomSlot(ctx)
 
+// Event chains (part 2): drain the campaign's schedule queue into FORCED slots.
+// Every entry whose day has arrived (`day <= ctx.day`) becomes a slot with the
+// scheduled event as its truth and a same-tier eligible decoy — a guaranteed
+// beat. Drained entries are removed from ctx.scheduledEvents (reassigned so a
+// Mongoose DocumentArray records the change; a plain ctx is fine too); entries
+// not yet due, or beyond this turn's slot capacity, stay for a later draw. An
+// id no longer in the pool is dropped (the sealed-fate rule). This MUTATES ctx
+// — the single intended side effect, called only from drawAugury; dayResolution
+// saves the campaign after. An empty/absent queue is a no-op (creation ctx).
+const drainScheduled = (ctx) => {
+  const queue = ctx?.scheduledEvents
+  if (!queue || queue.length === 0) return []
+  const day = ctx.day ?? 1
+  const pool = eligiblePool(ctx)
+  const forced = []
+  const remaining = []
+  for (const entry of queue) {
+    const trueEvent = eventById.get(entry.eventId)
+    if (!trueEvent) continue // id gone from the pool: drop it, don't strand it
+    const peers = pool.filter(
+      (e) => e.severity === trueEvent.severity && e.id !== trueEvent.id,
+    )
+    if (entry.day <= day && forced.length < AUGURY_SLOTS && peers.length > 0) {
+      const falseEvent = peers[Math.floor(Math.random() * peers.length)]
+      forced.push(slotFrom(trueEvent, falseEvent))
+    } else {
+      remaining.push({ eventId: entry.eventId, day: entry.day })
+    }
+  }
+  ctx.scheduledEvents = remaining
+  return forced
+}
+
 // ctx is the campaign context the eligibility filter reads: {day, roster,
-// eventFlags}. The live doc IS a valid ctx (dayResolution passes `campaign`);
-// the creation route passes a plain {day, roster} before the doc exists. An
-// omitted ctx admits only ungated events.
+// eventFlags} — plus scheduledEvents, which this DRAINS (see drainScheduled).
+// The live doc IS a valid ctx (dayResolution passes `campaign`); the creation
+// route passes a plain {day, roster} before the doc exists. An omitted ctx
+// admits only ungated events and has no queue to drain.
 export function drawAugury(ctx = {}) {
   forcedDraws = [...config.DEV_AUGURY]
+  const scheduled = drainScheduled(ctx)
   return {
-    slots: Array.from({ length: AUGURY_SLOTS }, () => drawSlot(ctx)),
+    slots: Array.from(
+      { length: AUGURY_SLOTS },
+      (_, i) => scheduled[i] ?? drawSlot(ctx),
+    ),
     consulted: false,
     rerollsRemaining: AUGURY_REROLLS_PER_DAY,
   }

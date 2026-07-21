@@ -1938,3 +1938,71 @@ describe('events with choices', () => {
     expect(res.body.campaign.pendingChoices).toEqual([])
   })
 })
+
+// Event chains (part 2): an outcome `schedule`s a GUARANTEED follow-up N turns
+// out. The captured_courier choice → sprung_ambush chain is the proof, driven
+// through the real routes: reading the dispatches queues the follow-up, and the
+// NEXT turn's drawAugury drains it into a forced slot (the scheduled event as
+// truth). `chained:true` keeps sprung_ambush out of every random draw, so it
+// can only reach the player because the player's own choice put it there.
+describe('event chains (part 2)', () => {
+  const CAPTURED = EVENT_POOL.find((e) => e.id === 'captured_courier')
+
+  const accept = (id) => auth(api.post(`/api/campaigns/${id}/augury/accept`)).send({})
+  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const choose = (id, slot, choice) =>
+    auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send({ choice })
+  const setup = async (id) => {
+    const doc = await Campaign.findById(id)
+    doc.augury.slots = doc.augury.slots.map(() => ({
+      trueEvent: CAPTURED, falseEvent: QUIET, odds: null, shownTrue: null,
+    }))
+    doc.augury.consulted = true
+    doc.raid.opportunities = [] // no stray counter_event to defer a slot
+    await doc.save()
+  }
+
+  test('reading the courier schedules the follow-up; next turn drains it into a forced slot', async () => {
+    const { body: c } = await createCampaign()
+    await setup(c.id)
+
+    // The tent reveals the three couriers, each owing a decision.
+    const acc = await accept(c.id)
+    expect(acc.status).toBe(200)
+    expect(acc.body.campaign.pendingChoices).toHaveLength(3)
+
+    // Read the dispatches on one; ransom the rest (ransom schedules nothing).
+    expect((await choose(c.id, 0, 'read_dispatches')).status).toBe(200)
+    await choose(c.id, 1, 'ransom_courier')
+    await choose(c.id, 2, 'ransom_courier')
+
+    // The trap is queued for a fortnight hence — hidden state, day 1 + delay 1.
+    const queued = await Campaign.findById(c.id)
+    expect(queued.scheduledEvents.map((s) => ({ eventId: s.eventId, day: s.day })))
+      .toEqual([{ eventId: 'sprung_ambush', day: 2 }])
+
+    // End the turn: step-7 drawAugury (now day 2) drains the queue.
+    const end = await endDayReq(c.id)
+    expect(end.status).toBe(200)
+    const next = await Campaign.findById(c.id)
+    // The follow-up is GUARANTEED to have surfaced as a fate's truth...
+    expect(next.augury.slots.some((s) => s.trueEvent.id === 'sprung_ambush')).toBe(true)
+    // ...and the queue is drained, so it fires exactly once.
+    expect(next.scheduledEvents).toEqual([])
+  })
+
+  test('ransoming the courier schedules nothing — no chain without the choice', async () => {
+    const { body: c } = await createCampaign()
+    await setup(c.id)
+    await accept(c.id)
+    await choose(c.id, 0, 'ransom_courier')
+    await choose(c.id, 1, 'ransom_courier')
+    await choose(c.id, 2, 'ransom_courier')
+
+    const end = await endDayReq(c.id)
+    expect(end.status).toBe(200)
+    const next = await Campaign.findById(c.id)
+    expect(next.scheduledEvents).toEqual([])
+    expect(next.augury.slots.some((s) => s.trueEvent.id === 'sprung_ambush')).toBe(false)
+  })
+})
