@@ -1601,7 +1601,7 @@ describe('augury acceptance (fates at the tent)', () => {
     description: 'A hostile muster forms in the hills.',
     targetForce: { Soldier: 5 },
     strengthBand: 'a handful',
-    capacity: 100,
+    capacity: 500, // fits a whole starting squad (squad-only raiding, 2026-07-21)
     reward: { slot },
     resolved: false,
     outcome: null,
@@ -1741,16 +1741,18 @@ describe('augury acceptance (fates at the tent)', () => {
     const res = await accept(c.id)
     expect(res.body.campaign.resources.food).toBe(50000 - 2 * 999)
 
+    // Squad-only raiding (2026-07-21): send the 1st Cohort (squad 1), not a
+    // headcount.
     const raid = await auth(
       api.post(`/api/campaigns/${c.id}/raids/launch`),
-    ).send({ parties: { 'd1-0': { Soldier: 10 } } })
+    ).send({ parties: { 'd1-0': [1] } })
     expect(raid.status).toBe(201)
     const doc = await Campaign.findById(c.id)
     expect(doc.augury.slots[2].countered).toBe(true)
 
     const end = await endDayReq(c.id)
-    // The deferred −999 never lands; food only moves by upkeep (roster is
-    // 300−10+2 survivors of the raid + the rest, recompute via the report).
+    // The deferred −999 never lands; food only moves by upkeep (recompute via
+    // the report, which is self-consistent with whatever the raid left behind).
     expect(end.body.report.entries.join(' ')).toMatch(/Averted/)
     // The reveal reaches the report as a countered card (the raid unmade it).
     expect(end.body.report.augury.find((s) => s.fate === 2).countered).toBe(true)

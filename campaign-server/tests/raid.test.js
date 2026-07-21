@@ -88,7 +88,9 @@ const expectPublicOpportunities = (body) => {
   }
 }
 
-// A pinned opportunity so route tests control capacity/reward exactly.
+// A pinned opportunity so route tests control capacity/reward exactly. The
+// default capacity (500) comfortably fits the starting 1st Cohort squad
+// (40 Soldier × 7.5 = 300); tests that probe the cap pass a tighter one.
 const OPP = (over = {}) => ({
   id: 'd1-0',
   type: 'loot_supplies',
@@ -96,7 +98,7 @@ const OPP = (over = {}) => ({
   description: 'Laden wagons under light guard.',
   targetForce: { Soldier: 5 },
   strengthBand: 'a handful',
-  capacity: 100,
+  capacity: 500,
   reward: { food: 3000, materials: 20 },
   resolved: false,
   outcome: null,
@@ -124,6 +126,36 @@ const shrinkRoster = async (id, roster) => {
   const doc = await Campaign.findById(id)
   doc.roster = roster
   await doc.save()
+}
+
+const setSquads = async (id, squads) => {
+  const doc = await Campaign.findById(id)
+  doc.squads = squads
+  await doc.save()
+}
+
+// A `./game battle` result shaped for squad-only raiding: `blue_squads` is the
+// per-squad survivor breakdown the launch route reconciles each raided squad
+// against (composition = survivors, disbanded if wiped). blue_survivors is
+// derived from it so the flat roster reconciliation and the per-squad one stay
+// consistent (the invariant loose = roster − Σ squads.composition − forage).
+const sumSurvivors = (squads) => {
+  const acc = {}
+  for (const s of Object.values(squads))
+    for (const [t, n] of Object.entries(s.survivors ?? {})) acc[t] = (acc[t] ?? 0) + n
+  return acc
+}
+const battleResult = ({
+  winner = 'blue',
+  blue_squads = { 1: { survivors: { Soldier: 30 }, wiped: false } },
+  red_survivors = {},
+} = {}) => {
+  const r = structuredClone(battleResultFixture)
+  r.winner = winner
+  r.blue_squads = blue_squads
+  r.blue_survivors = sumSurvivors(blue_squads)
+  r.red_survivors = red_survivors
+  return r
 }
 
 // Neutral and bad fates for pinning (BAD_FATE's id is not in EVENT_POOL, so
@@ -302,23 +334,28 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
   })
 
   test('runs a short auto-placed battle through the one pipeline and applies the loot', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [OPP()])
 
-    const res = await launch(c.id, 'd1-0', { Soldier: 10 })
+    // The party is the 1st Cohort squad (id 1 = 40 Soldier), not a headcount.
+    const res = await launch(c.id, 'd1-0', [1])
     expect(res.status).toBe(201)
     expect(res.body.results).toEqual([expect.objectContaining({ raidId: 'd1-0', winner: 'blue' })])
     expectPublicOpportunities(res.body)
 
-    // Both sides auto-placed in their own zones; a short battle, no walls.
+    // Both sides auto-placed in their own zones; a short battle, no walls. The
+    // player's 40 Soldiers all carry the squad_id tag (→ blue_squads breakdown).
     const input = engine.runBattle.mock.calls[0][0]
     expect(input.map).toBe('sample_battle')
     expect(input.max_turns).toBe(RAID_MAX_TURNS)
     expect(input.fortified_sides).toBeUndefined()
-    expect(input.player_placement).toHaveLength(10)
+    expect(input.player_placement).toHaveLength(40)
     for (const p of input.player_placement) {
       expect(p.unit_type).toBe('Soldier')
+      expect(p.squad_id).toBe(1)
       expect(p.r).toBeGreaterThanOrEqual(infoFixture.playerZone.rowMin)
       expect(p.r).toBeLessThanOrEqual(infoFixture.playerZone.rowMax)
     }
@@ -328,8 +365,10 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
       expect(p.r).toBeLessThanOrEqual(infoFixture.enemyZone.rowMax)
     }
 
-    // Party replaced by survivors (fixture: 2 of 10 come back), loot applied.
-    expect(res.body.campaign.roster.Soldier).toBe(300 - 10 + 2)
+    // Roster reconciled by survivors (40 sent, 30 back) and the squad regrouped
+    // to its survivors; loot applied.
+    expect(res.body.campaign.roster.Soldier).toBe(300 - 40 + 30)
+    expect(res.body.campaign.squads.find((s) => s.id === 1).composition).toEqual({ Soldier: 30 })
     expect(res.body.campaign.resources.food).toBe(50000 + 3000)
     expect(res.body.campaign.resources.materials).toBe(200 + 20)
 
@@ -346,58 +385,63 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
 
   test('party capacity is enforced (Σ size × (40 − speed) / 40 ≤ capacity)', async () => {
     const { body: c } = await createCampaign()
-    await pinRaid(c.id, [OPP({ capacity: 100 })])
-    // Soldiers (speed 10) cost 7.5 each: 14 cost 105 > 100; 13 cost 97.5 would fit.
-    const res = await launch(c.id, 'd1-0', { Soldier: 14 })
+    await pinRaid(c.id, [OPP({ capacity: 200 })])
+    // The 1st Cohort (40 Soldier × 7.5 = 300) blows past a 200 budget.
+    const res = await launch(c.id, 'd1-0', [1])
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/capacity/)
     expect(engine.runBattle).not.toHaveBeenCalled()
   })
 
-  test('the party must come from the roster, minus foragers', async () => {
-    const { body: c } = await createCampaign()
-    await pinRaid(c.id, [OPP()])
-    expect((await launch(c.id, 'd1-0', { Soldier: 9999 })).status).toBe(400)
-
-    await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({ assignment: { Soldier: 295 } })
-    const res = await launch(c.id, 'd1-0', { Soldier: 10 }) // 300 − 295 = 5 in camp
-    expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/out foraging/)
-    expect(engine.runBattle).not.toHaveBeenCalled()
-  })
-
-  test('rejects malformed, empty, and non-placeable parties', async () => {
+  test('rejects malformed, empty, non-array, and unknown-squad parties', async () => {
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [OPP()])
     expect((await launch(c.id, 'd1-0', undefined)).status).toBe(400)
-    expect((await launch(c.id, 'd1-0', {})).status).toBe(400)
-    expect((await launch(c.id, 'd1-0', { Soldier: 1.5 })).status).toBe(400)
-    expect((await launch(c.id, 'd1-0', { Soldier: -1 })).status).toBe(400)
-    expect((await launch(c.id, 'd1-0', { Zombie: 2 })).status).toBe(400)
+    expect((await launch(c.id, 'd1-0', [])).status).toBe(400)          // empty
+    expect((await launch(c.id, 'd1-0', { 1: true })).status).toBe(400) // not an array
+    expect((await launch(c.id, 'd1-0', [1.5])).status).toBe(400)       // non-integer id
+    expect((await launch(c.id, 'd1-0', [999])).status).toBe(400)       // not one of your squads
     expect(engine.runBattle).not.toHaveBeenCalled()
   })
 
-  test('404 for an unknown opportunity, 400 for a resolved one', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+  test('a squad can raid even while loose troops are out foraging (separate pools)', async () => {
+    // Squads are a distinct pool from loose troops — foraging draws only on the
+    // loose remainder, so committing foragers never bars a squad from a raid.
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [OPP()])
-    expect((await launch(c.id, 'nope', { Soldier: 1 })).status).toBe(404)
-    expect((await launch(c.id, 'd1-0', { Soldier: 10 })).status).toBe(201)
-    const again = await launch(c.id, 'd1-0', { Soldier: 10 })
+    // 300 Soldier − 40 in the 1st Cohort = 260 loose; send them all foraging.
+    await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({ assignment: { Soldier: 260 } })
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(engine.runBattle).toHaveBeenCalledTimes(1)
+  })
+
+  test('404 for an unknown opportunity, 400 for a resolved one', async () => {
+    engine.runBattle.mockResolvedValue(battleResult())
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP()])
+    expect((await launch(c.id, 'nope', [1])).status).toBe(404)
+    expect((await launch(c.id, 'd1-0', [1])).status).toBe(201)
+    const again = await launch(c.id, 'd1-0', [1])
     expect(again.status).toBe(400)
     expect(again.body.error).toMatch(/resolved/)
   })
 
   test('destroy_detachment: a win subtracts the target force from the hidden host', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [OPP({
       type: 'destroy_detachment',
       targetForce: { Soldier: 30, Archer: 10 },
       reward: null,
-      capacity: 200,
+      capacity: 500,
     })])
-    expect((await launch(c.id, 'd1-0', { Soldier: 20 })).status).toBe(201)
+    expect((await launch(c.id, 'd1-0', [1])).status).toBe(201)
     const doc = await Campaign.findById(c.id)
     expect(doc.enemy.army.get('Soldier')).toBe(540 - 30)
     expect(doc.enemy.army.get('Archer')).toBe(150 - 10)
@@ -406,10 +450,11 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
   test('destroy_detachment: a LOSS still inflicts its real casualties on the hidden host', async () => {
     // Stage D: the mini-battle's actual dead (targetForce − red_survivors) are
     // subtracted even when the raid is lost — no reward, but real attrition.
-    const lost = structuredClone(battleResultFixture)
-    lost.winner = 'red'
-    lost.blue_survivors = { Soldier: 1 }
-    lost.red_survivors = { Soldier: 20, Archer: 5 } // 10 Soldier + 5 Archer fell
+    const lost = battleResult({
+      winner: 'red',
+      blue_squads: { 1: { survivors: { Soldier: 1 }, wiped: false } },
+      red_survivors: { Soldier: 20, Archer: 5 }, // 10 Soldier + 5 Archer fell
+    })
     engine.runBattle.mockResolvedValue(lost)
 
     const { body: c } = await createCampaign()
@@ -417,10 +462,10 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
       type: 'destroy_detachment',
       targetForce: { Soldier: 30, Archer: 10 },
       reward: null,
-      capacity: 200,
+      capacity: 500,
     })])
 
-    const res = await launch(c.id, 'd1-0', { Soldier: 20 })
+    const res = await launch(c.id, 'd1-0', [1])
     expect(res.status).toBe(201)
     expect(res.body.results[0].winner).toBe('red')
 
@@ -437,10 +482,11 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     // Casualties booked at the launch site (targetForce − survivors), then
     // applyRaidReward pursues the surviving remainder — the two together remove
     // the whole targetForce, matching the old all-or-nothing win number.
-    const won = structuredClone(battleResultFixture)
-    won.winner = 'blue'
-    won.blue_survivors = { Soldier: 2 }
-    won.red_survivors = { Soldier: 12, Archer: 4 } // survived the fight, then pursued
+    const won = battleResult({
+      winner: 'blue',
+      blue_squads: { 1: { survivors: { Soldier: 2 }, wiped: false } },
+      red_survivors: { Soldier: 12, Archer: 4 }, // survived the fight, then pursued
+    })
     engine.runBattle.mockResolvedValue(won)
 
     const { body: c } = await createCampaign()
@@ -448,10 +494,10 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
       type: 'destroy_detachment',
       targetForce: { Soldier: 30, Archer: 10 },
       reward: null,
-      capacity: 200,
+      capacity: 500,
     })])
 
-    const res = await launch(c.id, 'd1-0', { Soldier: 20 })
+    const res = await launch(c.id, 'd1-0', [1])
     expect(res.status).toBe(201)
 
     const doc = await Campaign.findById(c.id)
@@ -463,22 +509,28 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
   })
 
   test('rescue_troops: a win adds the freed prisoners to the roster', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [OPP({ type: 'rescue_troops', reward: { roster: { Soldier: 15 } } })])
-    const res = await launch(c.id, 'd1-0', { Soldier: 10 })
+    const res = await launch(c.id, 'd1-0', [1])
     expect(res.status).toBe(201)
-    expect(res.body.campaign.roster.Soldier).toBe(300 - 10 + 2 + 15)
+    expect(res.body.campaign.roster.Soldier).toBe(300 - 40 + 30 + 15)
   })
 
   test('counter_event: a win counters the slot; end-day skips the blow and reports it', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 9: { survivors: { Soldier: 2 }, wiped: false } } }),
+    )
     const { body: c } = await createCampaign()
+    // A small pinned squad matching a shrunk roster so the food math stays exact.
+    await setSquads(c.id, [{ id: 9, name: 'Outriders', composition: { Soldier: 2 } }])
     await shrinkRoster(c.id, { Soldier: 10 })
     await pinAugury(c.id, BAD_FATE)
     await pinRaid(c.id, [OPP({ type: 'counter_event', reward: { slot: 0 } })])
 
-    expect((await launch(c.id, 'd1-0', { Soldier: 2 })).status).toBe(201)
+    expect((await launch(c.id, 'd1-0', [9])).status).toBe(201)
     const doc = await Campaign.findById(c.id)
     expect(doc.augury.slots[0].countered).toBe(true)
     expect(doc.augury.slots[1].countered).toBe(false)
@@ -494,16 +546,19 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
   })
 
   test('a lost raid resolves the opportunity with no reward', async () => {
-    const lost = structuredClone(battleResultFixture)
-    lost.winner = 'red'
-    lost.blue_survivors = {}
+    const lost = battleResult({
+      winner: 'red',
+      blue_squads: { 1: { survivors: {}, wiped: true } },
+    })
     engine.runBattle.mockResolvedValue(lost)
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [OPP()])
 
-    const res = await launch(c.id, 'd1-0', { Soldier: 10 })
+    const res = await launch(c.id, 'd1-0', [1])
     expect(res.status).toBe(201)
-    expect(res.body.campaign.roster.Soldier).toBe(290) // the party is lost
+    expect(res.body.campaign.roster.Soldier).toBe(300 - 40) // the whole party is lost
+    // The wiped 1st Cohort is disbanded.
+    expect(res.body.campaign.squads.find((s) => s.id === 1)).toBeUndefined()
     expect(res.body.campaign.resources.food).toBe(50000) // no loot
     expect(res.body.campaign.resources.materials).toBe(200)
     const [opportunity] = res.body.campaign.raid.opportunities
@@ -712,50 +767,50 @@ describe('POST /api/campaigns/:id/raids/scout', () => {
   })
 })
 
-// ── Double-assignment (playtest finding, 2026-07-15) ─────────────────────────
-// Troops can't join two raids the same day: neither by overlapping within one
-// batch, nor across separate batch calls the same turn. The frontend clamps
-// its own party-builder against a shared pool, but these hit the route
-// directly — a hostile or buggy client must be denied exactly the same way.
+// ── Double-assignment (playtest finding, 2026-07-15; squad-only 2026-07-21) ──
+// A squad can't join two raids the same day: neither by appearing in two cards
+// of one batch, nor across separate batch calls the same turn. The frontend
+// locks its own picker, but these hit the route directly — a hostile or buggy
+// client must be denied exactly the same way.
 describe('raid double-assignment is rejected (server-side, not just the UI)', () => {
-  test('one batch cannot double-book the same troops across two raids', async () => {
+  test('one batch cannot send the same squad to two raids', async () => {
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [
       OPP({ id: 'd1-0', capacity: 5000 }),
       OPP({ id: 'd1-1', capacity: 5000 }),
     ])
 
-    // 300 Soldiers in the roster; 200 + 150 = 350 requested across the batch.
-    const res = await launchBatch(c.id, { 'd1-0': { Soldier: 200 }, 'd1-1': { Soldier: 150 } })
+    // The 1st Cohort (squad 1) drafted onto both cards of one batch.
+    const res = await launchBatch(c.id, { 'd1-0': [1], 'd1-1': [1] })
     expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/not enough Soldier in the roster/)
+    expect(res.body.error).toMatch(/assigned to two raids/)
     expect(engine.runBattle).not.toHaveBeenCalled()
 
-    // Nothing was applied: both opportunities are still open, roster intact.
+    // Nothing was applied: both opportunities are still open, ledgers intact.
     const doc = await Campaign.findById(c.id)
     expect(doc.raid.opportunities.every((o) => !o.resolved)).toBe(true)
     expect(doc.roster.get('Soldier')).toBe(300)
-    expect(doc.raid.assignment.size).toBe(0)
+    expect(doc.raid.squadAssignment.length).toBe(0)
   })
 
-  test('a later, separate batch is rejected against troops an earlier batch already committed', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+  test('a later, separate batch is rejected against a squad an earlier batch already committed', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
     const { body: c } = await createCampaign()
     await pinRaid(c.id, [
       OPP({ id: 'd1-0', capacity: 5000 }),
       OPP({ id: 'd1-1', capacity: 5000 }),
     ])
 
-    // First raid alone is well within the 300-Soldier roster.
-    const first = await launchBatch(c.id, { 'd1-0': { Soldier: 250 } })
+    // First raid sends the 1st Cohort; it lands in the squad ledger.
+    const first = await launchBatch(c.id, { 'd1-0': [1] })
     expect(first.status).toBe(201)
-    expect(first.body.campaign.raid.assignment).toEqual({ Soldier: 250 })
+    expect(first.body.campaign.raid.squadAssignment).toEqual([1])
 
-    // Roster still shows 300 − 250 + 2 survivors = 52 available — but the
-    // SECOND raid asks for 60, which the roster alone would allow were it
-    // not for the 250 already committed to the first raid today.
-    expect(first.body.campaign.roster.Soldier).toBe(52)
-    const second = await launchBatch(c.id, { 'd1-1': { Soldier: 60 } })
+    // The same squad — still in the roster as its 30 survivors — can't ride a
+    // second raid today.
+    const second = await launchBatch(c.id, { 'd1-1': [1] })
     expect(second.status).toBe(400)
     expect(second.body.error).toMatch(/already committed to a raid today/)
     expect(engine.runBattle).toHaveBeenCalledTimes(1) // only the first raid ran
@@ -764,23 +819,25 @@ describe('raid double-assignment is rejected (server-side, not just the UI)', ()
     expect(doc.raid.opportunities.find((o) => o.id === 'd1-1').resolved).toBe(false)
   })
 
-  test('raid.assignment clears at day rollover, freeing yesterday\'s raiders', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+  test('raid.squadAssignment clears at day rollover, freeing yesterday\'s raiders', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
     const { body: c } = await createCampaign()
     await pinAugury(c.id, QUIET)
     await pinRaid(c.id, [OPP({ id: 'd1-0', capacity: 5000 })])
 
-    const day1 = await launchBatch(c.id, { 'd1-0': { Soldier: 250 } })
+    const day1 = await launchBatch(c.id, { 'd1-0': [1] })
     expect(day1.status).toBe(201)
-    expect(day1.body.campaign.roster.Soldier).toBe(52) // 300 − 250 + 2 survivors
+    expect(day1.body.campaign.raid.squadAssignment).toEqual([1])
 
     const endDay = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
-    expect(endDay.body.campaign.raid.assignment).toEqual({})
+    expect(endDay.body.campaign.raid.squadAssignment).toEqual([])
 
-    // The 52 remaining Soldiers can raid again today — if assignment hadn't
-    // reset, 52 available minus a stale 250 committed would still reject.
+    // The 1st Cohort (regrouped to its survivors) can raid again today — if the
+    // ledger hadn't reset, squad 1 would still read as committed and reject.
     await pinRaid(c.id, [OPP({ id: 'd2-0', capacity: 5000 })])
-    const day2 = await launchBatch(c.id, { 'd2-0': { Soldier: 52 } })
+    const day2 = await launchBatch(c.id, { 'd2-0': [1] })
     expect(day2.status).toBe(201)
   })
 })

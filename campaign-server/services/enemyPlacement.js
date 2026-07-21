@@ -9,37 +9,54 @@ import UnitType from '../models/unitType.js'
 //
 // Placement entries are AXIAL {unit_type, q, r} — same convention the
 // frontend uses: q = col - floor(row / 2).
-export function spreadPlacement(army, { rowMin, rowMax, width, hexCapacity }, sizeOf) {
-  // Candidate hexes with remaining capacity, shuffled per placement call.
+//
+// A zone placer is a stateful spread over ONE shuffled hex pool: `add(army)`
+// may be called repeatedly and the shared cursor/used tracking carries across
+// calls, so several armies (e.g. one raid party's squads) fill the same zone
+// without overstacking each other. `extra` is merged onto every entry — this
+// is how squad members carry `squad_id` into the engine's placement JSON so a
+// raid returns a per-squad survivor breakdown (`blue_squads`), the same as the
+// main battle route.
+export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
+  // Candidate hexes with remaining capacity, shuffled once for this placer.
   const cells = []
   for (let row = rowMin; row <= rowMax; row++)
     for (let col = 0; col < width; col++)
       cells.push({ q: col - Math.floor(row / 2), r: row, used: 0 })
-
   const shuffled = cells.sort(() => Math.random() - 0.5)
 
   const placement = []
   let cursor = 0
-  const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
-  for (const [type, count] of entries) {
-    const size = sizeOf.get(type)
-    if (!size) continue // unknown type — engine would reject it anyway
-    for (let i = 0; i < count; i++) {
-      // Advance past full hexes; wrap once. If the zone is truly full the
-      // remaining units are left off the field (they guard the camp).
-      let tries = 0
-      while (tries < shuffled.length && shuffled[cursor % shuffled.length].used + size > hexCapacity) {
+  const add = (army, extra = {}) => {
+    const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
+    for (const [type, count] of entries) {
+      const size = sizeOf.get(type)
+      if (!size) continue // unknown type — engine would reject it anyway
+      for (let i = 0; i < count; i++) {
+        // Advance past full hexes; wrap once. If the zone is truly full the
+        // remaining units are left off the field (they guard the camp).
+        let tries = 0
+        while (tries < shuffled.length && shuffled[cursor % shuffled.length].used + size > hexCapacity) {
+          cursor++
+          tries++
+        }
+        const cell = shuffled[cursor % shuffled.length]
+        if (cell.used + size > hexCapacity) break
+        cell.used += size
+        placement.push({ unit_type: type, q: cell.q, r: cell.r, ...extra })
         cursor++
-        tries++
       }
-      const cell = shuffled[cursor % shuffled.length]
-      if (cell.used + size > hexCapacity) break
-      cell.used += size
-      placement.push({ unit_type: type, q: cell.q, r: cell.r })
-      cursor++
     }
   }
-  return placement
+  return { add, result: () => placement }
+}
+
+// One-shot spread of a single army over a zone (the enemy's daily plan and the
+// enemy side of a raid): a placer used once.
+export function spreadPlacement(army, zone, sizeOf) {
+  const placer = makeZonePlacer(zone, sizeOf)
+  placer.add(army)
+  return placer.result()
 }
 
 // Build a concrete enemy_placement array from the campaign's hidden enemy

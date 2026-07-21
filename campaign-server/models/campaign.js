@@ -80,7 +80,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 19 // v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 20 // v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -312,6 +312,11 @@ const campaignSchema = new mongoose.Schema({
     // does NOT gate the day's main battle (open decision, raids stay
     // independent of it) or foraging — only further raids.
     assignment: { type: Map, of: Number, default: {} },
+    // Squad-only raiding (2026-07-21): the ids of squads already sent on a raid
+    // this turn — the squad twin of `assignment`. A squad goes whole, so this
+    // ledger (not the per-type counts alone) is what stops a squad raiding
+    // twice in one day. Cleared at newDay alongside `assignment`.
+    squadAssignment: { type: [Number], default: [] },
   },
 
   enemy: {

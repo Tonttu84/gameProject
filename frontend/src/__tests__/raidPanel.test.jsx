@@ -93,14 +93,25 @@ const OPPORTUNITY_2 = {
   outcome: null,
 }
 
+// Squad-only raiding (2026-07-21): parties are whole squads. Two controlled
+// squads whose troop types both exist in `info.units` above, so their raid
+// cost is exactly assertable: 1st Cohort = 10 Soldier × 7.5 = 75, Outriders =
+// 5 LightCavalry × 6 = 30.
+const TEST_SQUADS = [
+  { id: 1, name: '1st Cohort', composition: { Soldier: 10 } },
+  { id: 2, name: 'Outriders', composition: { LightCavalry: 5 } },
+]
+
 // Raids are their own screen now, reached after the omens — so the fixture
 // needs an already-accepted augury for marchToRaids() to walk past the tent.
 // scoutingPoints defaults to a value comfortably above both action costs
 // (add=8, reveal=3) so tests don't trip disabled buttons unless they mean to.
-const withRaid = (opportunities, assignment = {}, scoutingPoints = 20) => ({
+// squadAssignment lists squads already spent on a raid today (greyed out).
+const withRaid = (opportunities, { squadAssignment = [], scoutingPoints = 20, squads = TEST_SQUADS } = {}) => ({
   ...campaignFixture,
   augury: consultedAugury,
-  raid: { opportunities, assignment, scoutingPoints, scoutCost: { addTarget: 8, reveal: 3 } },
+  squads,
+  raid: { opportunities, assignment: {}, squadAssignment, scoutingPoints, scoutCost: { addTarget: 8, reveal: 3 } },
 })
 
 beforeEach(() => {
@@ -156,7 +167,7 @@ describe('raid panel — opportunities', () => {
     expect(screen.queryByTestId('raid-panel')).not.toBeInTheDocument()
   })
 
-  it('clamps the party against the capacity budget and disables the combined launch', async () => {
+  it('sums the selected squads against the capacity budget and disables the combined launch', async () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
     postCampaignRaids.mockResolvedValue({
       results: [{ raidId: 'd1-0', winner: 'blue', id: 'b9' }],
@@ -168,18 +179,20 @@ describe('raid panel — opportunities', () => {
     await screen.findByText(/War Council/)
     await marchToRaids()
 
-    // 14 Soldiers (7.5 each) cost 105 > 100: over budget, launch disabled.
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '14' } })
+    // Both squads (75 + 30 = 105) exceed the 100 budget: over budget, launch
+    // disabled.
+    fireEvent.click(screen.getByTestId('raid-squad-d1-0-1'))
+    fireEvent.click(screen.getByTestId('raid-squad-d1-0-2'))
     expect(screen.getByTestId('raid-cost-d1-0')).toHaveTextContent('Party cost: 105 / 100')
     expect(screen.getByTestId('raid-launch-all')).toBeDisabled()
 
-    // 13 cost 97.5: within budget — the combined launch posts exactly the
-    // party, keyed by opportunity id (the batch shape the server expects).
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '13' } })
-    expect(screen.getByTestId('raid-cost-d1-0')).toHaveTextContent('Party cost: 98 / 100')
+    // Drop Outriders — 1st Cohort alone (75) fits — and the combined launch
+    // posts exactly the drafted squad ids, keyed by opportunity id.
+    fireEvent.click(screen.getByTestId('raid-squad-d1-0-2'))
+    expect(screen.getByTestId('raid-cost-d1-0')).toHaveTextContent('Party cost: 75 / 100')
     fireEvent.click(screen.getByTestId('raid-launch-all'))
     await waitFor(() =>
-      expect(postCampaignRaids).toHaveBeenCalledWith('c1', { 'd1-0': { Soldier: 13 } }),
+      expect(postCampaignRaids).toHaveBeenCalledWith('c1', { 'd1-0': [1] }),
     )
 
     // The refreshed view resolves the card: outcome + replay button.
@@ -195,52 +208,31 @@ describe('raid panel — opportunities', () => {
     expect(screen.getByTestId('raid-launch-all')).toBeDisabled()
   })
 
-  it('units out foraging shrink what the party-builder offers', async () => {
-    getCampaigns.mockResolvedValue([
-      {
-        ...withRaid([OPPORTUNITY]),
-        forage: { ...campaignFixture.forage, assignment: { Soldier: 295 } },
-      },
-    ])
+  it('a squad already sent on a raid today is not offered', async () => {
+    // raid.squadAssignment (server ledger, own resources — no hidden info): a
+    // squad that rode out earlier this turn is spent and never listed.
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY], { squadAssignment: [1] })])
     render(<App />)
     await screen.findByText(/War Council/)
     await marchToRaids()
-    // 300 − 295 foraging = 5 available; the input clamps to it.
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '10' } })
-    expect(screen.getByTestId('raid-input-d1-0-Soldier')).toHaveValue(5)
+    expect(screen.queryByTestId('raid-squad-d1-0-1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('raid-squad-d1-0-2')).toBeInTheDocument()
   })
 
-  it('troops already committed to a raid today shrink what the party-builder offers', async () => {
-    // raid.assignment (server ledger, own resources — no hidden info) works
-    // exactly like forage.assignment for this purpose.
-    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY], { Soldier: 291 })])
-    render(<App />)
-    await screen.findByText(/War Council/)
-    await marchToRaids()
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '10' } })
-    expect(screen.getByTestId('raid-input-d1-0-Soldier')).toHaveValue(9)
-  })
-
-  it('an illegal double-assignment is impossible: the shared pool clamps the second card', async () => {
+  it('an illegal double-assignment is impossible: a squad drafted on one card is locked on the other', async () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY, OPPORTUNITY_2])])
     render(<App />)
     await screen.findByText(/War Council/)
     await marchToRaids()
 
-    // Draft 250 of the 300 Soldiers into the first raid.
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '250' } })
-    expect(screen.getByTestId('raid-input-d1-0-Soldier')).toHaveValue(250)
+    // Draft 1st Cohort onto the first raid…
+    fireEvent.click(screen.getByTestId('raid-squad-d1-0-1'))
+    // …and it's locked (disabled) on the second — it can't ride two raids.
+    expect(screen.getByTestId('raid-squad-d1-1-1')).toBeDisabled()
 
-    // Only 50 Soldiers are left in the shared pool — trying to also draft 60
-    // into the second raid (which would double-book 60 of the same troops)
-    // clamps down to what's actually left, not what was typed.
-    fireEvent.change(screen.getByTestId('raid-input-d1-1-Soldier'), { target: { value: '60' } })
-    expect(screen.getByTestId('raid-input-d1-1-Soldier')).toHaveValue(50)
-
-    // Emptying the first card's draft frees the pool back up for the second.
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '0' } })
-    fireEvent.change(screen.getByTestId('raid-input-d1-1-Soldier'), { target: { value: '60' } })
-    expect(screen.getByTestId('raid-input-d1-1-Soldier')).toHaveValue(60)
+    // Releasing it from the first card frees it back up for the second.
+    fireEvent.click(screen.getByTestId('raid-squad-d1-0-1'))
+    expect(screen.getByTestId('raid-squad-d1-1-1')).toBeEnabled()
   })
 
   it('the combined button launches every drafted party together in one request', async () => {
@@ -259,15 +251,15 @@ describe('raid panel — opportunities', () => {
     await screen.findByText(/War Council/)
     await marchToRaids()
 
-    fireEvent.change(screen.getByTestId('raid-input-d1-0-Soldier'), { target: { value: '10' } })
-    fireEvent.change(screen.getByTestId('raid-input-d1-1-Soldier'), { target: { value: '5' } })
+    fireEvent.click(screen.getByTestId('raid-squad-d1-0-1'))
+    fireEvent.click(screen.getByTestId('raid-squad-d1-1-2'))
     fireEvent.click(screen.getByTestId('raid-launch-all'))
 
     // ONE call, both opportunities' parties together — not one call per card.
     await waitFor(() => expect(postCampaignRaids).toHaveBeenCalledTimes(1))
     expect(postCampaignRaids).toHaveBeenCalledWith('c1', {
-      'd1-0': { Soldier: 10 },
-      'd1-1': { Soldier: 5 },
+      'd1-0': [1],
+      'd1-1': [2],
     })
     expect(await screen.findByTestId('raid-outcome-d1-0')).toHaveTextContent('The raid succeeded.')
     expect(screen.getByTestId('raid-outcome-d1-1')).toHaveTextContent('The raid was beaten back.')
@@ -314,7 +306,7 @@ describe('raid panel — scouting mini-game', () => {
   it('revealing the reward spends points and swaps the range for the exact value', async () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
     scoutRaidTarget.mockResolvedValue({
-      campaign: withRaid([{ ...OPPORTUNITY, reward: { food: 2000, materials: 80 }, rewardReveal: 1 }], {}, 17),
+      campaign: withRaid([{ ...OPPORTUNITY, reward: { food: 2000, materials: 80 }, rewardReveal: 1 }], { scoutingPoints: 17 }),
     })
     render(<App />)
     await screen.findByText(/War Council/)
@@ -332,7 +324,7 @@ describe('raid panel — scouting mini-game', () => {
   it('revealing the enemy spends points and swaps the range for exact per-type counts', async () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
     scoutRaidTarget.mockResolvedValue({
-      campaign: withRaid([{ ...OPPORTUNITY, enemy: { Soldier: 11 }, enemyReveal: 1 }], {}, 17),
+      campaign: withRaid([{ ...OPPORTUNITY, enemy: { Soldier: 11 }, enemyReveal: 1 }], { scoutingPoints: 17 }),
     })
     render(<App />)
     await screen.findByText(/War Council/)
@@ -348,7 +340,7 @@ describe('raid panel — scouting mini-game', () => {
 
   it('scouting a new target appends a card and spends points', async () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
-    scoutRaidTarget.mockResolvedValue({ campaign: withRaid([OPPORTUNITY, OPPORTUNITY_2], {}, 12) })
+    scoutRaidTarget.mockResolvedValue({ campaign: withRaid([OPPORTUNITY, OPPORTUNITY_2], { scoutingPoints: 12 }) })
     render(<App />)
     await screen.findByText(/War Council/)
     await marchToRaids()
@@ -360,7 +352,7 @@ describe('raid panel — scouting mini-game', () => {
   })
 
   it('disables scout/reveal buttons once points fall short of their cost', async () => {
-    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY], {}, 1)])
+    getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY], { scoutingPoints: 1 })])
     render(<App />)
     await screen.findByText(/War Council/)
     await marchToRaids()

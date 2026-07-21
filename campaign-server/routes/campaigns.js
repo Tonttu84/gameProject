@@ -7,7 +7,7 @@ import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay, acceptFates, checkAnnihilation } from '../services/dayResolution.js'
 import { applyEffect, choiceRung } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
-import { buildEnemyPlacement, spreadPlacement } from '../services/enemyPlacement.js'
+import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget } from '../services/raid.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
@@ -393,13 +393,17 @@ router.post('/:id/battles', async (req, res) => {
 // now — no battleFoughtToday gate; explicitly a provisional call, see
 // docs/CAMPAIGN_PLAN.md Stage 4 open decisions.
 //
+// SQUAD-ONLY RAIDING (2026-07-21): a party is a set of SQUAD ids
+// (`parties[raidId] = [squadId, …]`), not loose troop counts. A squad goes
+// whole (its full composition); several squads may stack onto one opportunity.
+// The capacity cap still bites — the party's cost is Σ raidCapacityCost over
+// every troop in the sent squads.
+//
 // The whole batch is ONE request (not one call per opportunity) so overlap
-// between raids launched together is caught in one place: a unit type can't
-// be double-booked across two opportunities in the same click just because
-// each was validated in isolation. `campaign.raid.assignment` extends that
-// guarantee across SEPARATE requests within the same day (see the schema
-// comment) — a unit already sent on an earlier raid this turn is unavailable
-// to a later batch too, even if the roster count alone would look sufficient.
+// between raids launched together is caught in one place: a squad can't be
+// double-booked across two opportunities in the same click. `raid.squadAssignment`
+// extends that guarantee across SEPARATE requests within the same day — a squad
+// already sent on an earlier raid this turn is unavailable to a later batch too.
 // Validation runs to completion BEFORE any battle is spawned: battles are
 // external subprocesses that can't be rolled back, so a bad request must be
 // rejected wholesale, never partially applied.
@@ -417,59 +421,61 @@ router.post('/:id/raids/launch', async (req, res) => {
   if (raidIds.length === 0) return res.status(400).json({ error: 'parties required' })
 
   const catalog = await getCatalog()
-  const cleanedByRaid = {}
-  const requested = {} // Σ count per unit type, across every raid in this batch
+  const ownSquads = new Map(campaign.squads.map((s) => [s.id, s]))
+  // Squads already committed to a raid earlier today, plus the ones this batch
+  // draws on — a squad can raid only once per turn, and only once per batch.
+  const committedSquads = new Set(campaign.raid.squadAssignment)
+  const batchSquads = new Set()
+  const cleanedByRaid = {} // raidId -> {type: count} flattened from its squads
+  const squadsByRaid = {} // raidId -> [squad, …]
   for (const raidId of raidIds) {
     const opportunity = campaign.raid.opportunities.find((o) => o.id === raidId)
     if (!opportunity) return res.status(404).json({ error: `raid opportunity not found: ${raidId}` })
     if (opportunity.resolved)
       return res.status(400).json({ error: `this opportunity is already resolved: ${raidId}` })
 
-    const party = parties[raidId]
-    if (party === null || typeof party !== 'object' || Array.isArray(party))
-      return res.status(400).json({ error: `party required for ${raidId}` })
+    const squadIds = parties[raidId]
+    if (!Array.isArray(squadIds) || squadIds.length === 0)
+      return res.status(400).json({ error: `squad ids required for ${raidId}` })
 
+    const squads = []
     const cleaned = {}
     let cost = 0
-    for (const [type, count] of Object.entries(party)) {
-      if (!Number.isInteger(count) || count < 0)
-        return res.status(400).json({ error: `bad count for ${type}` })
-      if (count === 0) continue
-      const unitType = catalog.get(type)
-      if (!unitType?.placeable)
-        return res.status(400).json({ error: `not a placeable unit type: ${type}` })
-      cleaned[type] = count
-      requested[type] = (requested[type] ?? 0) + count
-      cost += count * raidCapacityCost(unitType.stats, unitType.size)
+    for (const sid of squadIds) {
+      if (!Number.isInteger(sid))
+        return res.status(400).json({ error: `bad squad id for ${raidId}` })
+      const squad = ownSquads.get(sid)
+      if (!squad) return res.status(400).json({ error: `not one of your squads: squad_id ${sid}` })
+      if (committedSquads.has(sid))
+        return res.status(400).json({ error: `squad ${sid} is already committed to a raid today` })
+      if (batchSquads.has(sid))
+        return res.status(400).json({ error: `squad ${sid} is assigned to two raids at once` })
+      batchSquads.add(sid)
+      squads.push(squad)
+      for (const [type, n] of squad.composition) {
+        if (n <= 0) continue
+        const unitType = catalog.get(type)
+        if (!unitType?.placeable)
+          return res.status(400).json({ error: `not a placeable unit type: ${type}` })
+        cleaned[type] = (cleaned[type] ?? 0) + n
+        cost += n * raidCapacityCost(unitType.stats, unitType.size)
+      }
     }
     if (Object.keys(cleaned).length === 0)
-      return res.status(400).json({ error: `party required for ${raidId}` })
+      return res.status(400).json({ error: `squad ids required for ${raidId}` })
     if (cost > opportunity.capacity)
       return res.status(400).json({
         error: `party for ${raidId} exceeds the raid's capacity: ${Math.ceil(cost)}/${opportunity.capacity}`,
       })
     cleanedByRaid[raidId] = cleaned
-  }
-
-  // Availability: roster minus today's foragers minus troops already
-  // committed to a raid this turn — checked against the BATCH TOTAL per type,
-  // so two raids in the same request can't each claim the same soldiers.
-  for (const [type, count] of Object.entries(requested)) {
-    const foraging = campaign.forage.assignment.get(type) ?? 0
-    const raiding = campaign.raid.assignment.get(type) ?? 0
-    if (count > (campaign.roster.get(type) ?? 0) - foraging - raiding)
-      return res.status(400).json({
-        error: foraging > 0
-          ? `not enough ${type} in camp (${foraging} out foraging)`
-          : raiding > 0
-            ? `not enough ${type} in camp (${raiding} already committed to a raid today)`
-            : `not enough ${type} in the roster`,
-      })
+    squadsByRaid[raidId] = squads
   }
 
   // Everything validated — now the irreversible part. Both sides of each
   // raid ride the shared zone spread (the same core the enemy's daily plan
-  // uses); a raid is a short battle with no fortifications.
+  // uses); a raid is a short battle with no fortifications. The player side is
+  // built per squad with a squad_id tag so the engine returns a per-squad
+  // survivor breakdown (blue_squads), the same as the main battle route.
   const info = await getInfo()
   const sizeOf = new Map([...catalog.values()].map((t) => [t.name, t.size]))
   const zoneOf = (zone) => ({
@@ -482,9 +488,12 @@ router.post('/:id/raids/launch', async (req, res) => {
   for (const raidId of raidIds) {
     const opportunity = campaign.raid.opportunities.find((o) => o.id === raidId)
     const cleaned = cleanedByRaid[raidId]
+    const squads = squadsByRaid[raidId]
+    const placer = makeZonePlacer(zoneOf(info.playerZone), sizeOf)
+    for (const squad of squads) placer.add(squad.composition, { squad_id: squad.id })
     const input = {
       map: MAP_NAME,
-      player_placement: spreadPlacement(cleaned, zoneOf(info.playerZone), sizeOf),
+      player_placement: placer.result(),
       enemy_placement: spreadPlacement(
         Object.fromEntries(opportunity.targetForce),
         zoneOf(info.enemyZone),
@@ -498,11 +507,28 @@ router.post('/:id/raids/launch', async (req, res) => {
     // The party is replaced by its survivors (same reconciliation as the main
     // battle route). The committed troops stay in raid.assignment for the rest
     // of the day regardless of survivors — they already spent today's raid on
-    // this opportunity.
+    // this opportunity — and the squads themselves in raid.squadAssignment.
     for (const [type, count] of Object.entries(cleaned)) {
       campaign.roster.set(type, (campaign.roster.get(type) ?? 0) - count + (summary.blue_survivors[type] ?? 0))
       campaign.raid.assignment.set(type, (campaign.raid.assignment.get(type) ?? 0) + count)
     }
+    // Reconcile each raided squad with its own battle survivors, exactly like
+    // the main battle route: composition = the squad's survivors, or the squad
+    // is disbanded if the engine reports the formation wiped. This keeps the
+    // invariant loose = roster − Σ squads.composition − forage intact.
+    const squadSurvivors = summary.blue_squads ?? {}
+    const raidedIds = new Set(squads.map((s) => s.id))
+    campaign.squads = campaign.squads
+      .filter((squad) => {
+        if (!raidedIds.has(squad.id)) return true
+        const result = squadSurvivors[String(squad.id)]
+        return Boolean(result) && !result.wiped
+      })
+      .map((squad) => {
+        if (raidedIds.has(squad.id)) squad.composition = squadSurvivors[String(squad.id)].survivors
+        return squad
+      })
+    campaign.raid.squadAssignment.push(...raidedIds)
 
     // destroy_detachment inflicts its REAL battle casualties on the hidden
     // enemy host, win OR lose (docs/CAMPAIGN_PLAN.md Stage D): the slice that

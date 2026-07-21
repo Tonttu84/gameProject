@@ -285,6 +285,7 @@ export async function endDay(campaign) {
     campaign.militiaBoughtToday = 0
     campaign.forage.assignment = new Map()
     campaign.raid.assignment = new Map()
+    campaign.raid.squadAssignment = []
     // The live doc IS the eligibility context (day already incremented above,
     // roster + eventFlags as this turn's fates left them), so a prerequisite
     // reads against next turn's state.

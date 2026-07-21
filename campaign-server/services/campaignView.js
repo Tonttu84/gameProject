@@ -269,6 +269,9 @@ export async function campaignView(campaign) {
       // info here), so the party-builder can share one pool across every
       // still-open opportunity. See the schema comment on raid.assignment.
       assignment: Object.fromEntries(campaign.raid.assignment),
+      // Squads already sent on a raid this turn (own info) — the squad-picker
+      // greys these out. See the schema comment on raid.squadAssignment.
+      squadAssignment: [...campaign.raid.squadAssignment],
       // The per-turn scouting-points pool + what each action costs, so the
       // client can render the mini-game and clamp its buttons.
       scoutingPoints: campaign.raid.scoutingPoints,

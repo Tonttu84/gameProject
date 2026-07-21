@@ -2514,6 +2514,56 @@ should be able to pin/slow slower units rather than just trade blows. The cavalr
 [[design_mounted_units]] and [[design_pursuit]] (screening/rearguard) in auto-memory. All of this
 is idea-stage — needs grilling before scoping into stages.
 
+**Squad-centric overhaul — direction firmed up (user, 2026-07-21).** The above sketch was
+grilled and given a concrete shape. The end-state the game is heading toward:
+
+- **Squads are the primary managed unit.** Everything the player commits to an action is a
+  squad, not a loose troop count.
+- **Prestige is a per-squad currency.** A squad earns prestige and spends it to buy **squad
+  upgrades**, each upgrade applying a bonus to *all* the troops in that squad. Upgrade levels
+  get **more expensive** each level.
+- **Prestige is earned, at first, from raids:** *participating* in a raid grants some prestige;
+  a *successful* raid grants more. (Makes the long-standing "prestige stub" in
+  `applyRaidReward`/`_prestige` real — see Stages C/D handoffs and the note above.) Other
+  earn sources can come later.
+- **The raiders upgrade (the first concrete squad upgrade).** A prestige-bought, per-squad,
+  escalating-cost upgrade that makes that squad **cheaper to send on raids** — i.e. it
+  discounts the squad's `raidCapacityCost` contribution so more/bigger squads fit within an
+  opportunity's `capacity`. Cost seam: `raidCapacityCost` (or its per-squad sum) multiplied by
+  a `raidDiscount(squad)` that reads the squad's raid-logistics level.
+- **Squad-only raiding (see below — the FIRST step, shipping now).** Raids can no longer be
+  crewed from loose troops; you send whole squads.
+- **Wiped squads can be re-bought / rebuilt** (identity/name/prestige retained) rather than
+  disbanding. **Reinforcement:** a squad refills casualties from the general (loose) roster,
+  but **only the correct troop type** — though some squads may be intentionally **mixed-type**.
+- **Attaching characters to a squad** (spellcasters at this stage) so they ride along and
+  contribute an effect. **Open decision: how many characters per squad** (1? a small cap? scale
+  with squad prestige/size?). Not yet decided.
+- **A way to acquire *more* squads** (recruit/buy new squad slots) — overlaps the deferred Stage
+  E hiring plan and the "recruiting a new unit/squad slot that absorbs idle troops" idea above.
+
+Everything in this bullet-list is still design-only EXCEPT the squad-only-raiding step below.
+The prestige economy (earning + spending), the raiders upgrade mechanic, attaching characters,
+re-buy/reinforcement, and acquiring squads are all deferred and want their own grilled stages.
+
+**Squad-only raiding — ✅ FIRST STEP (user, 2026-07-21).** Raids are launched by sending whole
+**squads** instead of hand-picked troop counts. Scoped decisions from the grilling:
+- A raid opportunity's party is a **set of squad ids** (`parties[raidId] = [squadId, …]`);
+  **multiple squads may stack** onto one opportunity. A squad goes **whole** (its full
+  `composition`) — no partial squads.
+- **Capacity stays a hard cap:** a party's cost is still `Σ raidCapacityCost` over every troop
+  in the sent squads, and must be `≤ opportunity.capacity`. A squad too big for a small target
+  simply can't be sent there. (`raidDiscount(squad)` — the raiders-upgrade seam — is noted but
+  reads 1.0 for now; nothing spends prestige yet.)
+- A squad can only raid **once per turn** (a new `raid.squadAssignment` ledger, the squad twin
+  of `raid.assignment`, cleared at `newDay`). Its troops still land in `raid.assignment` too, so
+  a raided squad's members remain excluded from the day's other raids and the main battle line.
+- Post-raid the squad is **reconciled from its battle survivors** exactly like the main battle
+  route (`blue_squads`): composition = survivors, disbanded if the formation was wiped. This
+  keeps the invariant `loose = roster − Σ squads.composition − forage`.
+- **Deferred alongside this step:** prestige earning from raids (the very next thing), the
+  raiders upgrade spend, and the whole rest of the overhaul above.
+
 **~~TODO~~ ✅ SHIPPED 2026-07-18 — tutorial-message pass over every menu/screen (user, 2026-07-18).**
 Walked the whole campaign UI and closed the `TutorialIntro` gaps the phased build left. Before this
 pass, intros existed on login, start, council/Prepare, forage, camp, omens/augur, raids, the
