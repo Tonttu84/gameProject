@@ -48,6 +48,7 @@ const ForagePanel = ({ onAssign }) => {
         enabled={tutorial}
         title="Foraging"
         lines={[
+          'The land around Karrowgate must feed your army through the siege — strip it before the enemy does.',
           'Send troops to strip the countryside for food and materials; riders sweep the widest area.',
           'The near ring empties first and nothing grows back — the land is a clock.',
           'The enemy forages the same rings: the further out and the more crowded, the likelier a clash.',

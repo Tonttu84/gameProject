@@ -328,9 +328,10 @@ notes below over the git history if they ever disagree — the commits win.
 > rework), Stage D (`destroy_detachment` casualty rework), and the whole recon rework (R1–R3) all
 > shipped, plus the `enemy.stance`/`battleOffer` removal (2026-07-21, see the DONE note below).
 > What remains: **Stage E — hiring troops** (still design-only, needs the `gold` resource +
-> numbers decided) and the deferred **narrative siege reframe** (gauge copy + themed events).
-> The per-stage SHIPPED handoff blocks below are the source of truth; this section was designed
-> up front, so read the ✅/DEFERRED tags per bullet, not just the heading.
+> numbers decided). The **narrative siege reframe** (Karrowgate walls gauge + intro + the Vael)
+> ✅ shipped 2026-07-21 — see its handoff below; only the deferred **themed/scripted siege events**
+> flavor-rework remains of it. The per-stage SHIPPED handoff blocks below are the source of truth;
+> this section was designed up front, so read the ✅/DEFERRED tags per bullet, not just the heading.
 
 Grilled end-to-end with the user before writing anything down (per the `grilling` skill rule in
 `CLAUDE.md`); this section **supersedes** the old `[[todo-multi-turn-campaign-loop]]` and
@@ -360,14 +361,49 @@ time), 0 → **1000** threshold.
   hold troops back — "likely the player will save troops unless there is a good raid that makes
   a greedy play justified." The tension is deliberate: raiding/foraging is faster meter growth
   (closer to the boss fight) traded for readiness on the day it lands.
-- **DEFERRED — narrative framing for the meter (user, 2026-07-20).** Fluff to make the mechanic
-  read right: the enemy is **besieging a city**; you've arrived to relieve it. The enemy can't just
-  turn and fight you (you'd retreat and the city would hold), so you **besiege the besiegers** — a
-  standoff. The more troops you keep in reserve (in camp), the more the enemy must hold back too, so
-  the **siege progresses more slowly** — which is exactly why idle camp troops slow the meter (the
-  meter = the siege clock). TODO when picked up: reword the meter/"final battle" gauge text and its
-  banded phrases to this frame, and add a few **events** that fit it (relief column, sortie from the
-  city, siege lines, etc.). Purely narrative + a bit of gauge copy — no mechanic change.
+- **✅ SHIPPED 2026-07-21 — narrative siege reframe (frontend copy + server band labels; ZERO
+  mechanics).** Grilled the fiction end-to-end with the user before writing (per the grilling rule),
+  then a pure-fluff pass. The setting: you command a **relief army** racing to save **Karrowgate**,
+  the one bridge-city across the **river Marn** (by the **Warden of the Marches**' old edict, no other
+  bridge may stand — so the frontier funnels through one crossing). A fast enemy **vanguard** has
+  rushed ahead of its main host to seize the bridge; too weak to meet it head-on, you shadow and
+  harass it (it can't chase you off without abandoning the assault and losing its race), digging in
+  beside the siege lines. The meter is now **Karrowgate's walls** under assault, and the bands were
+  renamed `calm/restless/imminent → **intact/damaged/breached**` (`METER_BANDS`,
+  `utils/campaignConfig.js` — the label is display *and* lookup key, so `enemyAi.test.js` band
+  expectations moved with it). Landed:
+  - **HUD walls gauge** (`CampaignHUD.jsx`): the meter renders as a **draining** integrity bar
+    (green→amber→red) + status word, *inverting* the server value for display
+    (`WALLS_METER_THRESHOLD` = display-only mirror of the server threshold; integrity = 1 −
+    value/threshold). Stays **coarse (3 band steps) while Blind** — the exact value is what recon
+    sells, so it's never leaked — and only shows a numeric **integrity range** (`~40–55% sound`) once
+    a recon estimate exists. `bossFightDue` ⇒ `BREACHED — give battle!`.
+  - **Reveal/council prose** reframed to intact/damaged/breached walls (`EventRevealScreen.jsx`
+    `BAND_LINES`/`EnemyBeat`, `App.jsx` council line + the pitched-battle warning). The band→prose
+    map keeps the PLAYTEST flag (revisit once meter pacing is felt).
+  - **One-time intro screen** (`CampaignIntro.jsx`): the full "Relief of Karrowgate" scene-setter,
+    shown on turn 1 before the council, **not** tutorial-gated (story, everyone sees it once);
+    dismissal is session-only UI state (`useUiStore.introSeen`, reset by `startCampaign`), gated in
+    `App.jsx` on `day === 1 && !introSeen`, "Take command" enters. The narrative doubles as the
+    mechanic's *why* (too weak to fight → shadow; reserves slow the walls' fall; the breach forces
+    the one decisive pitched battle).
+  - **Augur = the Vael** (`AuguryPanel.jsx` hints + the omens `TutorialIntro`): a proper invented
+    magic. Fate is unfixed, stirring in the **Vael** (the unsettled deep of days-to-come); the augur
+    reads it and, while it's still soft, **troubles a thread** to raise another — which is exactly
+    why a reroll *changes* the fate rather than clarifying it. Mechanics wrapped inside the flavor.
+  - **Light siege flavor** on the Forage/Camp/Raids tutorial intros (one lead line each).
+  - **Tests:** new `campaignIntro.test.jsx` (2), rewritten `campaignHud.test.jsx` meter cases (walls
+    gauge + integrity range), `eventReveal`/`campaignFlow` copy/flow touch-ups, `setup.js` defaults
+    `introSeen: true` so App tests bypass the intro. **Frontend vitest 237/237 green, oxlint clean.**
+    Server side is a label rename only (`enemyAi.test.js` updated) — **hand `cs-test` to CI** per the
+    sandbox-mongo caveat. NOT yet click-tested in a live browser.
+- **DEFERRED — themed siege events + scripted per-turn beats (user, 2026-07-21).** Events are the
+  vehicle for injecting story into the game loop, authored in a **later flavor-rework pass** (NOT in
+  the reframe above). Direction: **forced/scripted events on specific turns** with heavier fluff +
+  **narrative choices**, plus reworking the existing pool to match the siege fiction (relief column,
+  sortie from the walls, siege lines, etc.). Reuses the existing `schedule`/`requires`/choice
+  primitives and existing effect types — **no mechanic change** (nothing touches the meter directly;
+  there is no meter-delta effect and adding one would be a mechanic change).
 - **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
   branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
   `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns

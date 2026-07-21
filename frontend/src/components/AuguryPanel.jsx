@@ -37,7 +37,11 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
       {!augury.consulted ? (
         <>
           <p className="augury-hint">
-            The augur waits with bones and smoke, ready to read the coming fortnight.
+            What is to come is not yet fixed; it stirs in the Vael, the unsettled
+            deep of days unlived. Few can look into it and read what they see — your
+            augur is one such, and while the Vael is still soft can trouble its
+            surface to raise a different thread. The bones are cast and the smoke
+            rises; the augur is ready to read the coming fortnight.
           </p>
           <button className="btn-primary" data-testid="consult-augur" onClick={onConsult}>
             Consult the Augur
@@ -46,10 +50,10 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
       ) : (
         <>
           <p className="augury-hint">
-            Three fates for the fortnight.
+            Three threads drawn from the Vael, each shown as it may come to pass.
             {canReroll
-              ? ` Click a fate to cast its bones anew (${augury.rerollsRemaining} left) — it changes that fate itself, for better or worse.`
-              : ' The bones are still; fate is sealed.'}
+              ? ` Trouble a thread to let another rise in its place (${augury.rerollsRemaining} left) — for better or worse, and what you unmake cannot be recalled.`
+              : ' The Vael has set; these fates are sealed.'}
           </p>
           <div className="augury-cards">
             {(augury.visions ?? []).map((vision, i) => (
@@ -80,7 +84,7 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
                       : `In truth: ${vision.truth.title}`}
                   </div>
                 )}
-                {canReroll && <div className="augury-reroll-hint">Click to recast these bones</div>}
+                {canReroll && <div className="augury-reroll-hint">Trouble the Vael to redraw this thread</div>}
               </button>
             ))}
           </div>

@@ -64,7 +64,7 @@ describe('EventRevealScreen: one card per click', () => {
     expect(screen.getByTestId('reveal-beat-upkeep')).toHaveTextContent('40 soldiers deserted')
 
     reveal()
-    expect(screen.getByTestId('reveal-beat-enemy')).toHaveTextContent(/offer the field/)
+    expect(screen.getByTestId('reveal-beat-enemy')).toHaveTextContent(/give you battle/)
     expect(screen.queryByTestId('report-continue')).not.toBeInTheDocument()
 
     reveal()

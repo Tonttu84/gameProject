@@ -16,6 +16,11 @@ const initialState = () => ({
   demoLoading: false,
   tutorial: initialTutorial(),
   connectionError: null,
+  // The one-time narrative intro (CampaignIntro) is shown on turn 1 until the
+  // player takes command. Session-only UI state (a hard reload on day 1 re-shows
+  // it — harmless for fluff); startCampaign resets it so each new campaign opens
+  // on the scene-setter, not tutorial-gated (it's story, everyone sees it once).
+  introSeen: false,
 })
 
 // UI-only campaign state: which screen is showing, in-progress battle
@@ -31,6 +36,7 @@ const useUiStore = create((set) => ({
   setDemoBattle: (demoBattle) => set({ demoBattle }),
   setDemoLoading: (demoLoading) => set({ demoLoading }),
   setConnectionError: (connectionError) => set({ connectionError }),
+  setIntroSeen: (introSeen) => set({ introSeen }),
 
   toggleTutorial: () =>
     set((state) => {

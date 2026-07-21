@@ -17,14 +17,14 @@ import { tons } from '../utils/format'
 
 const FATE_NAMES = ['The First Fate', 'The Second Fate', 'The Third Fate']
 
-// Enemy-movement flavor, re-derived from the boss-fight meter band (+ the
-// bossFightDue flag) now that the standalone stance concept is retired.
-// FLAGGED FOR PLAYTEST (docs/CAMPAIGN_PLAN.md): the band→prose mapping is a
-// first pass — revisit once the meter's pacing is felt in play.
+// The state of Karrowgate's walls under the enemy's assault, keyed off the meter
+// band (intact/damaged/breached) — the same banded signal the HUD gauge reads.
+// FLAGGED FOR PLAYTEST (docs/CAMPAIGN_PLAN.md): revisit the wording once the
+// meter's pacing is felt in play.
 const BAND_LINES = {
-  calm: 'The enemy keeps to its camp.',
-  restless: 'The enemy shadows your line of march.',
-  imminent: 'The enemy host is massing — a reckoning nears.',
+  intact: "The enemy presses the assault, but Karrowgate's walls stand firm.",
+  damaged: "Karrowgate's walls are battered and breaking; the city's plight grows dire.",
+  breached: 'The walls are breached — the enemy will storm the city unless you break the siege.',
 }
 
 const CLASH_LINES = {
@@ -168,7 +168,7 @@ const EnemyBeat = ({ enemy }) => (
     <h3>The Enemy</h3>
     <p>
       {enemy.bossFightDue
-        ? 'The enemy has drawn up for battle — they offer the field.'
+        ? 'The walls are breached and the assault is at hand — the enemy turns from the city to give you battle.'
         : (BAND_LINES[enemy.band] ?? "The enemy's movements are unclear.")}
     </p>
     {enemy.bossFightDue && <p>Battle will be joined if you take the field.</p>}

@@ -1,7 +1,38 @@
 import React from 'react'
-import { tons, estimate } from '../utils/format'
+import { tons } from '../utils/format'
 import useCampaignStore from '../stores/useCampaignStore'
 import { useRoster } from '../stores/selectors'
+
+// Display-only mirror of the server's BOSS_FIGHT_METER_THRESHOLD, used purely to
+// scale the walls gauge (server owns the real value + all gating). The meter
+// climbs 0→threshold as the enemy batters Karrowgate; we render that as the
+// walls DRAINING from whole to breached, so integrity = 1 − value/threshold.
+const WALLS_METER_THRESHOLD = 1000
+const clamp01 = (x) => Math.max(0, Math.min(1, x))
+// Coarse fill per band while the player is Blind (exact integrity is what recon
+// sells — never leak it): a rough whole/half/low so the bar still reads.
+const BAND_FILL = { intact: 0.85, damaged: 0.5, breached: 0.2 }
+const BAND_COLOR = { intact: '#3f9d4f', damaged: '#d99a1c', breached: '#c0392b' }
+
+// Karrowgate's walls readout: a draining integrity bar (green→amber→red) plus a
+// status word, going finer (a recon estimate range) once scouting reveals one.
+// bossFightDue = the walls are breached and the pitched battle is upon you.
+const wallsGauge = ({ band = 'intact', estimate } = {}, bossFightDue) => {
+  if (bossFightDue)
+    return { fill: 0, color: BAND_COLOR.breached, status: 'BREACHED — give battle!' }
+  if (estimate) {
+    const intLow = clamp01(1 - estimate.high / WALLS_METER_THRESHOLD)
+    const intHigh = clamp01(1 - estimate.low / WALLS_METER_THRESHOLD)
+    const lo = Math.round(intLow * 100)
+    const hi = Math.round(intHigh * 100)
+    return {
+      fill: (intLow + intHigh) / 2,
+      color: BAND_COLOR[band] ?? BAND_COLOR.intact,
+      status: lo === hi ? `~${lo}% sound` : `~${lo}–${hi}% sound`,
+    }
+  }
+  return { fill: BAND_FILL[band] ?? BAND_FILL.intact, color: BAND_COLOR[band] ?? BAND_COLOR.intact, status: band }
+}
 
 // Top bar of the active campaign. One turn = two weeks; the server computes
 // food in kg (resources.foodNeedPerTurn comes from the view — the client
@@ -25,17 +56,38 @@ const CampaignHUD = () => {
       <span className="hud-materials">Materials: {resources.materials}</span>
       <span className="hud-forts" data-testid="hud-forts">Forts: Lv {fortification?.level ?? 0}</span>
       <span className="hud-land" data-testid="hud-land">Land: {landPct}% left</span>
-      <span className="hud-meter" data-testid="hud-meter">
-        {/* Progress toward the decisive pitched battle. Recon reveals it: a
-            numeric estimate ([low,high], exact at the top recon level) once
-            recon.level > 0, the banded phrase while Blind — never the exact
-            hidden value. Once it's due, the estimate is moot: the fight is now. */}
-        {bossFightDue
-          ? 'Pitched battle: now!'
-          : meter?.estimate
-            ? `Pitched battle: ${estimate(meter.estimate)}`
-            : `Pitched battle: ${meter?.band ?? 'calm'}`}
-      </span>
+      {/* Karrowgate's walls under the enemy's assault. The bar drains as the
+          hidden meter climbs; it stays coarse (3 band steps) while Blind and
+          only shows a numeric integrity range once recon buys an estimate —
+          never the exact hidden value. Breached ⇒ the pitched battle is now. */}
+      {(() => {
+        const { fill, color, status } = wallsGauge(meter, bossFightDue)
+        return (
+          <span className="hud-walls" data-testid="hud-meter" title="Karrowgate's walls">
+            <span className="hud-walls-label">Karrowgate&apos;s walls:</span>
+            <span
+              className="hud-walls-bar"
+              aria-hidden="true"
+              style={{
+                display: 'inline-block',
+                width: '70px',
+                height: '9px',
+                margin: '0 6px',
+                background: 'rgba(255,255,255,0.15)',
+                borderRadius: '3px',
+                overflow: 'hidden',
+                verticalAlign: 'middle',
+              }}
+            >
+              <span
+                className="hud-walls-fill"
+                style={{ display: 'block', height: '100%', width: `${Math.round(fill * 100)}%`, background: color }}
+              />
+            </span>
+            <span className="hud-walls-status" style={{ color }}>{status}</span>
+          </span>
+        )
+      })()}
       <span className="hud-recon" data-testid="hud-recon">
         Recon: {scouting?.band ?? 'Blind'}
       </span>

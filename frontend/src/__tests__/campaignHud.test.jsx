@@ -19,24 +19,28 @@ const hudWith = (over) => {
 }
 
 describe('CampaignHUD boss-fight meter + recon readout', () => {
-  it('shows the banded phrase while recon reveals no estimate (Blind)', () => {
-    hudWith({ meter: { band: 'restless', estimate: null } })
-    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: restless')
+  it("shows the walls' band word while recon reveals no estimate (Blind)", () => {
+    hudWith({ meter: { band: 'damaged', estimate: null } })
+    const gauge = screen.getByTestId('hud-meter')
+    expect(gauge).toHaveTextContent("Karrowgate's walls")
+    expect(gauge).toHaveTextContent('damaged')
   })
 
-  it('shows a numeric range once recon reveals a partial estimate', () => {
-    hudWith({ meter: { band: 'restless', estimate: { low: 600, high: 1100 } } })
-    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: 600–1100')
+  it('shows an integrity range once recon reveals a partial estimate', () => {
+    // meter estimate [600,1100] → integrity 1−value/1000 → ~0–40% sound.
+    hudWith({ meter: { band: 'damaged', estimate: { low: 600, high: 1100 } } })
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('~0–40% sound')
   })
 
-  it('shows a single exact value at the top recon level', () => {
-    hudWith({ meter: { band: 'imminent', estimate: { low: 812, high: 812 } } })
-    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: 812')
+  it('shows a single exact integrity at the top recon level', () => {
+    // exact meter 812 → 1−0.812 → ~19% sound.
+    hudWith({ meter: { band: 'breached', estimate: { low: 812, high: 812 } } })
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('~19% sound')
   })
 
-  it('once the pitched battle is due, the estimate gives way to "now!"', () => {
-    hudWith({ bossFightDue: true, meter: { band: 'imminent', estimate: { low: 812, high: 812 } } })
-    expect(screen.getByTestId('hud-meter')).toHaveTextContent('Pitched battle: now!')
+  it('once the walls are breached, the gauge calls for battle', () => {
+    hudWith({ bossFightDue: true, meter: { band: 'breached', estimate: { low: 812, high: 812 } } })
+    expect(screen.getByTestId('hud-meter')).toHaveTextContent('BREACHED — give battle!')
   })
 
   it('surfaces the recon band (level)', () => {

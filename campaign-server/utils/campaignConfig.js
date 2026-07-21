@@ -332,12 +332,15 @@ export const BOSS_FIGHT_METER_THRESHOLD = 1000
 export const BOSS_FIGHT_METER_FLOOR = 50
 export const BOSS_FIGHT_METER_CEILING = 100
 // Banded phrase (mirrors ENEMY_SUPPLY_BANDS) — the meter's level-0 form on the
-// wire (recon R2 adds a numeric estimate above that). Also the single signal
-// for the enemy's disposition: the reveal/council flavor is derived from this
-// band plus bossFightDue (calm/restless/imminent, then "offering battle" once
-// bossFightDue) — one banded signal, no separate stance machine.
+// wire (recon R2 adds a numeric estimate above that). Narratively this is the
+// state of Karrowgate's walls under the enemy's assault: the meter climbing 0→
+// threshold IS the walls going from intact to breached (the frontend renders it
+// as a DRAINING integrity gauge). Also the single signal for the enemy's
+// disposition: the reveal/council flavor is derived from this band plus
+// bossFightDue (intact/damaged/breached, then the pitched battle once the walls
+// are breached) — one banded signal, no separate stance machine.
 export const METER_BANDS = [
-  { min: 667, label: 'imminent' },
-  { min: 334, label: 'restless' },
-  { min: 0, label: 'calm' },
+  { min: 667, label: 'breached' },
+  { min: 334, label: 'damaged' },
+  { min: 0, label: 'intact' },
 ]

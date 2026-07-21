@@ -151,6 +151,7 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
         enabled={tutorial}
         title="Raids"
         lines={[
+          'Harrying the besiegers is how the weaker army fights — bleed their supply and slow their assault on the walls.',
           'Your scouts have found targets of opportunity — the better your scouting, the more they find.',
           'Each raid takes a small party, limited by the target: fast riders stretch the budget furthest.',
           'Every raid draws from one shared pool of troops — the same soldiers can\'t join two raids the same day.',

@@ -64,6 +64,9 @@ describe('campaign flow', () => {
 
     fireEvent.click(await screen.findByTestId('start-campaign'))
 
+    // A fresh campaign opens on the one-time scene-setter; take command to enter.
+    fireEvent.click(await screen.findByTestId('take-command'))
+
     await screen.findByText(/Turn 1 — War Council/)
     expect(createCampaign).toHaveBeenCalled()
   })

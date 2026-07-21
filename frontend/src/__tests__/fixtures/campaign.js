@@ -10,7 +10,7 @@ export const campaignFixture = {
   // Boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
   // banded phrase always; a numeric estimate ([low,high], exact {v,v} at the
   // top recon level) once recon reveals it — null while Blind (recon level 0).
-  meter: { band: 'calm', estimate: null },
+  meter: { band: 'intact', estimate: null },
   bossFightDue: false,
   resources: { food: 50000, materials: 0, foodNeedPerTurn: 12432 },
   roster: { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10, LightCavalry: 12 },

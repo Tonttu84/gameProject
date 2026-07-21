@@ -20,6 +20,7 @@ import ForagePanel from './components/ForagePanel'
 import RaidPanel from './components/RaidPanel'
 import CampPanel from './components/CampPanel'
 import CampaignHUD from './components/CampaignHUD'
+import CampaignIntro from './components/CampaignIntro'
 import ScoutReport from './components/ScoutReport'
 import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
@@ -41,6 +42,7 @@ const App = () => {
     phase, setPhase, battleResult, setBattleResult, raidBattle, setRaidBattle,
     dayReport, setDayReport, demoBattle, setDemoBattle, demoLoading,
     tutorial, toggleTutorial, connectionError, setConnectionError,
+    introSeen, setIntroSeen,
   } = useUiStore()
 
   const { placements, squadPlacements } = usePlacementStore()
@@ -289,6 +291,17 @@ const App = () => {
 
   // ── Active campaign ───────────────────────────────────────────────────────
 
+  // One-time scene-setter on turn 1: the situation at Karrowgate, before the
+  // war council. Not tutorial-gated (it's story); dismissed by "Take command".
+  if (campaign.day === 1 && !introSeen) {
+    return (
+      <div className="app">
+        {authBar}
+        <CampaignIntro onBegin={() => setIntroSeen(true)} />
+      </div>
+    )
+  }
+
   // Watching a raid replay takes over the screen; Back returns to whatever
   // phase the player was in (the phase state is untouched underneath).
   if (raidBattle) {
@@ -338,12 +351,12 @@ const App = () => {
               enabled={tutorial}
               title="The war council"
               lines={[
-                'Each turn covers two weeks of campaigning: your army eats, the land empties, the augur reads the signs.',
+                'Each turn covers two weeks of the siege: your army eats, the land around Karrowgate empties, the augur reads the signs.',
                 'First prepare — send out foragers and see to your camp. Then read the omens, loose your raiders, and deploy your line.',
-                // Enemy disposition re-derived from the boss-fight meter band
+                // Karrowgate's walls re-derived from the boss-fight meter band
                 // (+ bossFightDue), the single signal since stance was retired.
                 // FLAGGED FOR PLAYTEST: this band→prose mapping is a first pass.
-                `The enemy is ${campaign.bossFightDue ? 'formed up for a pitched battle' : campaign.meter?.band === 'imminent' ? 'massing for battle' : campaign.meter?.band === 'restless' ? 'shadowing your army' : 'sitting in camp'}.`,
+                `Karrowgate's walls ${campaign.bossFightDue ? 'are breached — the enemy turns to give battle this turn' : campaign.meter?.band === 'breached' ? 'are breached; the city cannot hold much longer' : campaign.meter?.band === 'damaged' ? 'are battered and breaking' : 'still stand firm'}.`,
               ]}
             />
             <p>
@@ -356,9 +369,10 @@ const App = () => {
             )}
             {campaign.bossFightDue && (
               <p className="warning" data-testid="pitched-battle-warning">
-                The enemy offers a pitched battle this turn — you must deploy your
-                whole army and give battle before the turn can end. Foragers and
-                raiders sent out now will be missing from the line.
+                Karrowgate&apos;s walls are breached — the pitched battle is upon you
+                this turn. You must deploy your whole army and give battle before the
+                turn can end. Foragers and raiders sent out now will be missing from
+                the line.
               </p>
             )}
             {campaign.scouting && (
@@ -391,11 +405,11 @@ const App = () => {
           <TutorialIntro
             id="augury"
             enabled={tutorial}
-            title="The augur's vision"
+            title="The augur and the Vael"
             lines={[
-              'The augur reads the coming fortnight and shows one vision for each of its three fates.',
-              'The augur may lie: severe omens are the hardest to read, and only the end of the turn tells truth from shadow.',
-              'Click a vision to recast its bones — that does not re-read the same fate, it changes that fate itself, for better or worse.',
+              'The augur reads the coming fortnight in the Vael — the unshaped stuff of what may yet be — and shows one vision for each of its three fates.',
+              'A vision may mislead: the gravest fates lie deepest and read least clearly, and only the end of the turn tells truth from shadow.',
+              'Click a vision to trouble its thread in the Vael — that does not re-read the same fate, it draws a different one in its place, for better or worse.',
             ]}
           />
           <p className="omens-context" data-testid="omens-context">

@@ -23,6 +23,9 @@ export const handleLogout = () => {
 
 export const startCampaign = guarded(async () => {
   await useCampaignStore.getState().create()
+  // Open the new campaign on its scene-setter (CampaignIntro), even if the
+  // player just finished one this session.
+  useUiStore.getState().setIntroSeen(false)
   useUiStore.getState().setPhase('prepare')
 })
 

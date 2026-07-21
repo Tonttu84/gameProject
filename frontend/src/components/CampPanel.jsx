@@ -92,6 +92,7 @@ const CampPanel = ({ onFortify, onBuyMilitia }) => {
         enabled={tutorial}
         title="The camp"
         lines={[
+          'Dug in within sight of the enemy siege lines, your camp is what lets you hold and harry instead of give battle.',
           'Spend salvaged materials on defensive works: each level walls a wider stretch of your front line.',
           'Deploy behind the wall — the enemy pays for every assault across it.',
           'Muster militia to fill out the ranks — both works and militia cost workers from your camp followers.',

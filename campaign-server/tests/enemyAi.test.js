@@ -167,8 +167,8 @@ describe('enemy supply depletion', () => {
 
 // The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop") is the
 // single signal for the enemy's disposition now that stance is retired. The day
-// report's enemy summary is { band, bossFightDue } — the meter band (calm/
-// restless/imminent) plus whether crossing BOSS_FIGHT_METER_THRESHOLD=1000 has
+// report's enemy summary is { band, bossFightDue } — the meter band (intact/
+// damaged/breached) plus whether crossing BOSS_FIGHT_METER_THRESHOLD=1000 has
 // set bossFightDue. A fresh campaign never forages or raids in these tests, so
 // troopsInCamp == the whole roster every turn — meterFillAmount is pinned at the
 // FLOOR (50)/turn, which these tests use to predict the post-end-day value from
@@ -181,11 +181,11 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     const res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ band: 'calm', bossFightDue: false })
-    // meter.value 50 → 'calm' band. (The end-day accrued this fresh army's
+    expect(res.body.report.enemy).toEqual({ band: 'intact', bossFightDue: false })
+    // meter.value 50 → 'intact' band. (The end-day accrued this fresh army's
     // scouting pool into recon, so the level climbed and a numeric estimate now
     // shows — recon R2; the exact bracket carries jitter, so just its shape.)
-    expect(res.body.campaign.meter.band).toBe('calm')
+    expect(res.body.campaign.meter.band).toBe('intact')
     expect(res.body.campaign.meter.estimate).toMatchObject({
       low: expect.any(Number),
       high: expect.any(Number),
@@ -194,22 +194,22 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     expect((await Campaign.findById(c.id)).meter.value).toBe(50)
   })
 
-  test('the report band tracks the meter: calm (< 334) then restless (>= 334)', async () => {
+  test('the report band tracks the meter: intact (< 334) then damaged (>= 334)', async () => {
     const { body: c } = await createCampaign()
 
     await pinAugury(c.id)
-    await pinMeter(c.id, 250) // + 50 floor fill = 300, still calm
+    await pinMeter(c.id, 250) // + 50 floor fill = 300, still intact
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ band: 'calm', bossFightDue: false })
+    expect(res.body.report.enemy).toEqual({ band: 'intact', bossFightDue: false })
 
     await pinAugury(c.id)
-    await pinMeter(c.id, 300) // + 50 = 350, restless
+    await pinMeter(c.id, 300) // + 50 = 350, damaged
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ band: 'restless', bossFightDue: false })
+    expect(res.body.report.enemy).toEqual({ band: 'damaged', bossFightDue: false })
   })
 
   test('crossing 1000 sets bossFightDue and the enemy offers battle that same day', async () => {
@@ -220,8 +220,8 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    // 999 ≥ 667 → 'imminent', but still not due.
-    expect(res.body.report.enemy).toEqual({ band: 'imminent', bossFightDue: false })
+    // 999 ≥ 667 → 'breached', but still not due.
+    expect(res.body.report.enemy).toEqual({ band: 'breached', bossFightDue: false })
     expect(res.body.campaign.bossFightDue).toBe(false)
     expect((await Campaign.findById(c.id)).meter.value).toBe(999)
 
@@ -229,7 +229,7 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    expect(res.body.report.enemy).toEqual({ band: 'imminent', bossFightDue: true })
+    expect(res.body.report.enemy).toEqual({ band: 'breached', bossFightDue: true })
     expect(res.body.campaign.bossFightDue).toBe(true)
     const doc = await Campaign.findById(c.id)
     expect(doc.bossFightDue).toBe(true)
@@ -262,8 +262,8 @@ describe('the withdraw threshold and the withdrawal win', () => {
     expectNoHiddenInfo(res.body)
 
     // The meter still filled (step 4 runs before the end check), so the report
-    // band is 'calm'; the win comes from the direct near-annihilation check.
-    expect(res.body.report.enemy).toEqual({ band: 'calm', bossFightDue: false })
+    // band is 'intact'; the win comes from the direct near-annihilation check.
+    expect(res.body.report.enemy).toEqual({ band: 'intact', bossFightDue: false })
     expect(res.body.report.status).toBe('won')
     expect(res.body.campaign.status).toBe('won')
     // The war ends where it stands: step 7 (new turn) never runs.

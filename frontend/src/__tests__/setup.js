@@ -16,4 +16,10 @@ beforeEach(async () => {
   window.localStorage.clear()
   const { resetAllStores } = await import('../stores')
   resetAllStores()
+  // The one-time turn-1 intro (CampaignIntro) would otherwise intercept every
+  // App test that seeds a day-1 campaign. It's story, not under test here — mark
+  // it seen by default; the intro's own behavior is covered by campaignIntro
+  // (direct render) and campaignFlow's start-campaign case (which opts back in).
+  const useUiStore = (await import('../stores/useUiStore')).default
+  useUiStore.setState({ introSeen: true })
 })
