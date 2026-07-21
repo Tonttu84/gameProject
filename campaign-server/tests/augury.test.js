@@ -215,7 +215,11 @@ describe('EVENT_POOL structure', () => {
   // freely without a collapse guard.
   test('the unconditional events alone keep every pool legible (≥2, mixed)', () => {
     for (const pool of pools) {
-      const base = EVENT_POOL.filter((e) => e.severity === pool && !e.requires)
+      // The guaranteed-available base excludes BOTH `requires`-gated events
+      // (part 1) and `chained` follow-ups (part 2) — neither is a candidate
+      // for a random draw or a decoy, so the collapse guarantee must hold
+      // without them.
+      const base = EVENT_POOL.filter((e) => e.severity === pool && !e.requires && !e.chained)
       expect(base.length).toBeGreaterThanOrEqual(2)
       expect(base.some(isGood)).toBe(true)
       expect(base.some(isBad)).toBe(true)
@@ -744,5 +748,106 @@ describe('the horse_sickness event: prerequisites in the pool', () => {
     expect(ev.requires).toEqual({ hasUnit: 'Cavalry' })
     expect(eventValenceFor(ev)).toBe('bad')
     expect(ev.effect).toMatchObject({ type: 'roster', unit: 'Cavalry' })
+  })
+})
+
+// ── Event chains (part 2) ──────────────────────────────────────────────────
+// An outcome's `schedule` effect queues a guaranteed follow-up on
+// campaign.scheduledEvents; drawAugury drains due entries into forced slots;
+// `chained` events stay out of the random pool so they surface only when
+// scheduled.
+describe('applyEffect — schedule (chain follow-ups)', () => {
+  const target = (day = 5) => ({ day, resources: { food: 0, materials: 0 }, roster: new Map(), scheduledEvents: [] })
+
+  test('queues the event for campaign.day + delay, with no player-visible number', () => {
+    const c = target(5)
+    const log = applyEffect(c, { type: 'schedule', event: 'sprung_ambush', delay: 1 })
+    expect(c.scheduledEvents).toEqual([{ eventId: 'sprung_ambush', day: 6 }])
+    // Scheduling is hidden state — no leaked log line about a coming beat.
+    expect(log).toEqual([])
+  })
+
+  test('delay defaults to the next turn', () => {
+    const c = target(3)
+    applyEffect(c, { type: 'schedule', event: 'sprung_ambush' })
+    expect(c.scheduledEvents).toEqual([{ eventId: 'sprung_ambush', day: 4 }])
+  })
+
+  test('rides inside a multi alongside a real effect', () => {
+    const c = target(2)
+    c.resources.food = 1000
+    applyEffect(c, { type: 'multi', effects: [{ type: 'food', delta: 500 }, { type: 'schedule', event: 'sprung_ambush', delay: 2 }] })
+    expect(c.resources.food).toBe(1500)
+    expect(c.scheduledEvents).toEqual([{ eventId: 'sprung_ambush', day: 4 }])
+  })
+})
+
+describe('eligiblePool excludes chained follow-ups', () => {
+  test('a chained event is never a random-draw or decoy candidate', () => {
+    const ids = new Set(eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) }).map((e) => e.id))
+    expect(ids.has('sprung_ambush')).toBe(false) // chained — only ever scheduled
+    expect(ids.has('captured_courier')).toBe(true) // the trigger IS a normal draw
+  })
+})
+
+describe('drawAugury drains the schedule queue into forced slots', () => {
+  test('a due entry becomes a forced slot (scheduled event as truth) and is drained', () => {
+    const ctx = {
+      day: 6,
+      roster: new Map([['Soldier', 100]]),
+      scheduledEvents: [{ eventId: 'sprung_ambush', day: 6 }],
+    }
+    const augury = drawAugury(ctx)
+    const forced = augury.slots.filter((s) => s.trueEvent.id === 'sprung_ambush')
+    expect(forced).toHaveLength(1)
+    // The decoy is a same-tier, non-chained peer (an honest pair).
+    const decoy = forced[0].falseEvent
+    expect(decoy.severity).toBe(2)
+    expect(decoy.id).not.toBe('sprung_ambush')
+    // Drained: the queue is now empty.
+    expect(ctx.scheduledEvents).toEqual([])
+  })
+
+  test('an entry not yet due stays in the queue and forces nothing', () => {
+    const ctx = {
+      day: 5,
+      roster: new Map([['Soldier', 100]]),
+      scheduledEvents: [{ eventId: 'sprung_ambush', day: 6 }],
+    }
+    const augury = drawAugury(ctx)
+    expect(augury.slots.some((s) => s.trueEvent.id === 'sprung_ambush')).toBe(false)
+    expect(ctx.scheduledEvents).toEqual([{ eventId: 'sprung_ambush', day: 6 }])
+  })
+
+  test('an unknown scheduled id is dropped, not stranded', () => {
+    const ctx = { day: 6, roster: new Map([['Soldier', 100]]), scheduledEvents: [{ eventId: 'gone_from_pool', day: 1 }] }
+    drawAugury(ctx)
+    expect(ctx.scheduledEvents).toEqual([])
+  })
+
+  test('an absent queue is a no-op (creation-route ctx)', () => {
+    expect(() => drawAugury({ day: 1, roster: new Map() })).not.toThrow()
+  })
+})
+
+describe('the captured_courier → sprung_ambush chain', () => {
+  const trigger = EVENT_POOL.find((e) => e.id === 'captured_courier')
+  const followUp = EVENT_POOL.find((e) => e.id === 'sprung_ambush')
+
+  test('the trigger is a normal choice whose read branch schedules the follow-up', () => {
+    expect(trigger).toBeTruthy()
+    expect(trigger.chained).toBeUndefined()
+    const read = trigger.choices.find((c) => c.id === 'read_dispatches')
+    expect(read.effect).toEqual({ type: 'schedule', event: 'sprung_ambush', delay: 1 })
+    // The other branch schedules nothing — the chain is the player's own choice.
+    const ransom = trigger.choices.find((c) => c.id === 'ransom_courier')
+    expect(ransom.effect.type).not.toBe('schedule')
+  })
+
+  test('the follow-up is chained, same tier, and cuts the enemy down', () => {
+    expect(followUp.chained).toBe(true)
+    expect(followUp.severity).toBe(trigger.severity)
+    expect(eventValenceFor(followUp)).toBe('good')
+    expect(followUp.effect).toEqual({ type: 'enemy_losses', factor: 0.9 })
   })
 })

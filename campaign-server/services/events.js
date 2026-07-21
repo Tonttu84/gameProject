@@ -78,6 +78,26 @@ export const EVENT_POOL = [
   // horse_sickness is the proof: a murrain among the mounts that can only
   // befall an army that actually fields cavalry.
   { id: 'horse_sickness', title: 'Horse Sickness', description: 'Murrain runs the picket lines; your mounts sicken and the worst must be put down.', severity: 2, effect: { type: 'roster', unit: 'Cavalry', factor: 0.9 }, requires: { hasUnit: 'Cavalry' } },
+  // ── event chains (part 2) ── An outcome may `schedule` a guaranteed
+  // follow-up fate N turns out (applyEffect `schedule` → campaign.scheduledEvents;
+  // drawAugury drains it into a forced slot when its day arrives). The
+  // follow-up carries `chained: true` so it never enters a random draw — it
+  // reaches the player ONLY when the chain scheduled it. `captured_courier`
+  // (a choice) → `sprung_ambush` is the proof: reading the enemy's dispatches
+  // sets a trap that springs a fortnight later. The `sell_herd`-style branch
+  // (ransom) schedules nothing, so the chain is the player's own choice echoing
+  // forward. (The flag/eventFlags primitive from part 1 already lets a
+  // *randomly-eligible* follow-up be gated on a prior choice via `requires`;
+  // `schedule` is the new part-2 primitive for a GUARANTEED beat.)
+  {
+    id: 'captured_courier', title: 'A Captured Courier', description: 'Your outriders run down an enemy courier; his saddlebags are stuffed with the warlord\'s own dispatches.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good',
+    choices: [
+      { id: 'read_dispatches', label: 'Read the dispatches and lay a trap', description: 'His orders name the roads their foragers will ride. Set an ambush and wait — the blow will fall a fortnight hence.', effect: { type: 'schedule', event: 'sprung_ambush', delay: 1 } },
+      { id: 'ransom_courier',  label: 'Ransom him back to the enemy',        description: 'Trade the man and his satchel back for supply, and learn nothing of what they intend.', effect: { type: 'food', delta: +2000 } },
+    ],
+  },
+  { id: 'sprung_ambush', title: 'The Trap Is Sprung', description: 'Just as the dispatches foretold, an enemy foraging column rides down the ambush road — into your waiting spears. It is cut apart.', severity: 2, effect: { type: 'enemy_losses', factor: 0.9 }, chained: true },
   // ── fates with choices (resolve-then-choose) ── The fired rung's `choices`
   // hand the player a decision instead of an effect: end-day pends it
   // (dayResolution) and a follow-up POST applies the picked branch. Branches
@@ -187,8 +207,11 @@ export const eventEligible = (event, ctx = {}) => {
 
 // The draw pool as the campaign state currently allows it. The augur draws
 // both the truth and the decoy from here (augury.js), so nothing ineligible
-// can ever reach the player.
-export const eligiblePool = (ctx) => EVENT_POOL.filter((e) => eventEligible(e, ctx))
+// can ever reach the player. `chained` events (part 2 follow-ups) are excluded
+// outright: they are guaranteed beats surfaced ONLY by the schedule queue
+// (drawAugury drains them into forced slots), never a random draw or a decoy.
+export const eligiblePool = (ctx) =>
+  EVENT_POOL.filter((e) => !e.chained && eventEligible(e, ctx))
 
 // The single source of an event's mood: good / bad / neutral, derived from its
 // own effect. The augur's header labels the SHOWN card with this (so a bluff
@@ -309,6 +332,18 @@ export function applyEffect(campaign, effect) {
     const next = effect.delta !== undefined ? cur + effect.delta : (effect.value ?? 1)
     if (flags instanceof Map) flags.set(effect.name, next)
     else flags[effect.name] = next
+  } else if (effect.type === 'schedule') {
+    // Chain follow-up (part 2): guarantee `event` surfaces as a fate `delay`
+    // turns from now (default the next turn). Queued as {eventId, day} on
+    // campaign.scheduledEvents; drawAugury (augury.js) drains it into a forced
+    // slot once campaign.day reaches the target. NO log line — the scheduling
+    // is hidden state (like `flag`); the beat announces itself when it lands,
+    // and a line here would leak that a follow-up is coming.
+    if (!campaign.scheduledEvents) campaign.scheduledEvents = []
+    campaign.scheduledEvents.push({
+      eventId: effect.event,
+      day: (campaign.day ?? 1) + (effect.delay ?? 1),
+    })
   } else if (effect.type === 'multi') {
     // A bundled fate: every part lands, in order.
     for (const part of effect.effects) log.push(...applyEffect(campaign, part))

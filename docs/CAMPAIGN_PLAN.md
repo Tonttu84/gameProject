@@ -238,12 +238,7 @@ notes below over the git history if they ever disagree — the commits win.
   collapse guard needed. Proof event: `horse_sickness` (severity 2, `requires:{hasUnit:'Cavalry'}`
   — a murrain that can only befall an army that fields mounts). **The tier/legibility minigame is
   untouched:** a gated fate still has a severity, still reads by `POOL_LEGIBILITY`, still pairs
-  with a same-tier decoy — smaller fates stay easy to read, majors stay murky. **NEXT (part 2 —
-  chains):** an outcome `schedule`s a guaranteed follow-up N turns out (a `scheduledEvents` queue
-  drained into forced slots at `drawAugury`; `chained:true` events kept out of the random pool so
-  they appear only when scheduled). `flag`/`eventFlags` are the primitive that also lets a
-  *randomly-eligible* follow-up be gated on a prior choice. Not yet click-tested in the live
-  browser (unit + route suites green: 275/275).
+  with a same-tier decoy — smaller fates stay easy to read, majors stay murky.
   - **Integrated 2026-07-21** (the branch sat unmerged for a day while main moved 21 commits
     ahead). Rebased onto main — clean except the one-line `CAMPAIGN_SCHEMA_VERSION` collision
     (v13 vs main's v16), reconciled to **v17**; `augury.js`/`events.js` had no overlap with
@@ -253,6 +248,44 @@ notes below over the git history if they ever disagree — the commits win.
     but left `e2e/tests/campaign-loop.spec.js` asserting `Fight!` visible on Turn 1 (a quiet
     day, button correctly absent → red CI); switched to the `end-day` deploy landmark, matching
     campaignFlow.test.jsx. Unrelated to prerequisites; committed straight to main first.
+- **Event chains (part 2 of 2): ✅ SHIPPED 2026-07-21.** Second half of the "richer event system"
+  follow-up — the `schedule` primitive for a GUARANTEED follow-up fate (part 1's `flag`/`requires`
+  already covered *randomly-eligible* gated follow-ups). Landed server-only, schema **v17→v18**:
+  - **`schedule` effect** (`services/events.js` `applyEffect`): `{type:'schedule', event, delay}`
+    pushes `{eventId, day: campaign.day + (delay ?? 1)}` onto a new hidden `scheduledEvents` queue
+    on the campaign (model, alongside `eventFlags`). NO log line — scheduling is hidden state, like
+    `flag`; the beat announces itself when it lands. Works inside a `multi` and from any effect
+    site (plain fate, choice branch, deferred pick) since they all funnel through `applyEffect`.
+  - **Queue drain at `drawAugury`** (`services/augury.js` new `drainScheduled(ctx)`): every entry
+    whose `day <= ctx.day` becomes a FORCED slot — the scheduled event as truth + a same-tier
+    *eligible* decoy — and is removed from `ctx.scheduledEvents` (reassigned so a Mongoose
+    DocumentArray tracks it). Forced slots take the first slots; the rest fill normally
+    (`DEV_AUGURY` force ?? random). Entries not yet due, beyond the turn's slot capacity, or whose
+    id is gone from the pool are handled (kept / kept / dropped). This is the one intended side
+    effect of `drawAugury` — called only from `dayResolution` step 7 (which saves after) and the
+    creation route (empty queue → no-op).
+  - **`chained:true`** (`services/events.js`) excludes an event from `eligiblePool` outright — a
+    follow-up beat is never a random draw or a decoy, only ever surfaced by the schedule queue.
+  - **Proof chain:** `captured_courier` (a severity-2 CHOICE, unconditional) → `sprung_ambush`
+    (severity 2, `chained:true`, `enemy_losses ×0.9`). Reading the courier's dispatches
+    (`read_dispatches` branch, effect `{type:'schedule', event:'sprung_ambush', delay:1}`) sets a
+    trap that springs the next turn; ransoming him (`ransom_courier`, food) schedules nothing — the
+    chain is the player's own choice echoing forward. **Timing nuance:** in the canonical tent flow
+    (consult → accept → choose on day N → end-day) the follow-up surfaces on N+1; if the choice is
+    instead resolved on the *never-accepted* path (choice pends at end-day, resolved on the new day
+    N+1) the schedule reads `campaign.day` = N+1 → follow-up on N+2. Both are correct ("a fortnight
+    hence" from when you decide).
+  - **Tripwire updated:** the augury.test.js "unconditional events alone keep every pool legible"
+    invariant now excludes `chained` too (base = `!requires && !chained`) — the collapse guarantee
+    must hold from the always-random-drawable set alone.
+  - **Tests:** `tests/augury.test.js` (+13 pure-service: `schedule` effect incl. inside `multi`,
+    `eligiblePool` excludes chained, `drawAugury` drains due/keeps not-due/drops unknown-id/no-op
+    on absent queue, chain wiring) — **68/68 green locally** (no DB). `tests/campaigns.test.js` new
+    `event chains (part 2)` describe (+2 route: full read→schedule→drain-next-turn through real
+    routes; ransom schedules nothing) — verified green via the user's own run / CI (sandbox mongo
+    unreliable here, see [[reference_laptop_mongo_tests]] / [[feedback_no_manual_cs_test]]). NOT yet
+    click-tested in the live browser. **NEXT:** Stage E (hiring troops, design-only) or the deferred
+    `enemy.stance`/`battleOffer` cruft-removal pass; more authored chains as content lands.
 - **Raid double-assignment fix + real Militia unit type: ✅ SHIPPED 2026-07-16** — see the
   dated entries under the Stage-4 block and "Follow-ups" below. Not a new stage, bug fixes +
   a follow-up item landing early.
@@ -2390,10 +2423,11 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
     clean** under `--repeat-each`, each hitting the deterministic 3-choice reveal.
 - **Follow-ups (not done):**
   - **Event chains/prerequisites** (the long-standing "richer event system" follow-up) — **part 1
-    (prerequisites) SHIPPED 2026-07-20**, see the dated SHIPPED bullet near the top. **Part 2
-    (chains) is the remaining slice:** `schedule` effect + `scheduledEvents` queue drained into
-    forced slots, `chained:true` events out of the random pool. The `flag`/`eventFlags` primitive
-    it needs already landed with part 1.
+    (prerequisites) SHIPPED 2026-07-20** and **part 2 (chains) SHIPPED 2026-07-21**; both fully
+    landed. See the dated SHIPPED bullets near the top. `schedule` effect + `scheduledEvents` queue
+    drained into forced slots + `chained:true` out of the random pool are all live, proven by the
+    `captured_courier → sprung_ambush` chain. Remaining is content only (more authored chains), not
+    mechanism.
   - **A live in-browser click-through** of the new choice events (Horses→Cavalry especially). Windows
     serves the built bundle, so `docker compose up --build` is REQUIRED to see 28471e7/d1d97e2/283fce8.
     (Stack WAS rebuilt this session at localhost:5173; rebuild again for anything newer.)
@@ -2527,7 +2561,7 @@ pattern) over new subclasses; the catalog+tripwire SSOT is the thing to preserve
 class count.
 
 ## Follow-ups (out of scope now)
-Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (chains — prerequisites shipped 2026-07-20; distinct from Stage 4's event *transforms*).
+Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (chains + prerequisites BOTH shipped 2026-07-20/21 — mechanism complete, only more authored chains remain; distinct from Stage 4's event *transforms*).
 
 **Playwright E2E harness — ✅ SHIPPED 2026-07-18.** First real end-to-end coverage: a browser
 driving login → council → forage → augur consult/reroll → **Accept the Fates** → muster → End Turn

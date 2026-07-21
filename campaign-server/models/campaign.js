@@ -80,7 +80,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 17 // v17: event prerequisites (eventFlags state + `requires`-gated draws); v16 was recon R2 (recon.brackets numeric estimates; meter.revealed removed)
+export const CAMPAIGN_SCHEMA_VERSION = 18 // v18: event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -188,6 +188,28 @@ const campaignSchema = new mongoose.Schema({
   // story reaches the player only through event text, never these values; do
   // not surface them through campaignView.
   eventFlags: { type: Map, of: Number, default: {} },
+
+  // Event chains (part 2): guaranteed follow-up fates an outcome scheduled
+  // (applyEffect `schedule`). Each entry names the event and the campaign day
+  // it is due; drawAugury drains every due entry into a FORCED augury slot
+  // (the scheduled event as truth + a same-tier decoy) and removes it, so a
+  // chained beat is guaranteed to reach the player when its turn comes.
+  // `chained:true` (events.js) keeps these follow-ups OUT of the random pool
+  // so they surface ONLY when scheduled. HIDDEN state like eventFlags — the
+  // player learns of a coming beat only when it lands as a fate, never from
+  // this queue; do not surface it through campaignView.
+  scheduledEvents: {
+    type: [
+      new mongoose.Schema(
+        {
+          eventId: { type: String, required: true },
+          day: { type: Number, required: true }, // campaign day it becomes due
+        },
+        { _id: false },
+      ),
+    ],
+    default: [],
+  },
 
   // The turn's fates: AUGURY_SLOTS independent true/false event pairs, each
   // with its own odds. Every slot's trueEvent applies at end-of-turn
