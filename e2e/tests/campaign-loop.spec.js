@@ -54,9 +54,13 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
   // owed on the pendingChoices overlay — this is a harmless no-op safety net.
   await clearPendingDecisions(page)
 
-  // ── Raids → deploy for battle ──────────────────────────────────────────
+  // ── Raids → deploy ─────────────────────────────────────────────────────
+  // Turn 1 is a quiet day: the pitched battle isn't due, so the deploy screen
+  // offers no Fight! (it's gated on bossFightDue) and instead surfaces the
+  // "End Turn (no battle)" escape. `end-day` is the reached-deployment landmark
+  // — the same move the vitest fixtures made off the now-conditional Fight!.
   await page.getByTestId('to-deploy').click()
-  await expect(page.getByRole('button', { name: 'Fight!' })).toBeVisible()
+  await expect(page.getByTestId('end-day')).toBeVisible()
 
   // ── End the turn without battle → the fortnight's report ───────────────
   await page.getByTestId('end-day').click()
