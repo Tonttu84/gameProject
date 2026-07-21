@@ -894,7 +894,14 @@ void Battlefield::loadArmies(Army red, Army blue)
 {
     _red.units  = std::move(red);
     _blue.units = std::move(blue);
-    _ticksRun   = 0; // new battle, fresh day
+    // New battle, fresh day: zero every per-battle accumulator so the result
+    // reflects THIS battle only. Production always reset()s first, but the
+    // engine tests reuse the Utility::getBattlefield() singleton across cases
+    // without one, so loadArmies must not inherit the prior battle's corpse
+    // count / tick log (that leak surfaced as corpses==1 on empty armies).
+    _ticksRun = 0;
+    corpses   = 0;
+    _tickLog.clear();
     // Red flees south (r = height-1); Blue flees north (r = 0).
     hexGrid.computeDistances(height - 1, 0);
 }
