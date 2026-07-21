@@ -15,6 +15,9 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
 
   // ── Start a campaign ───────────────────────────────────────────────────
   await page.getByTestId('start-campaign').click()
+  // Turn 1 opens on the one-time "Relief of Karrowgate" intro (CampaignIntro);
+  // "Take command" dismisses it into the War Council.
+  await page.getByTestId('take-command').click()
   await expect(page.getByRole('heading', { name: /Turn 1 — War Council/ })).toBeVisible()
 
   // ── Prepare: assign some foragers and send them out ────────────────────
