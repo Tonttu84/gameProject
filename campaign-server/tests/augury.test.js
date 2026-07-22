@@ -860,3 +860,32 @@ describe('the captured_courier → sprung_ambush chain', () => {
     expect(followUp.effect).toEqual({ type: 'enemy_losses', factor: 0.9 })
   })
 })
+
+// ── Siege content: the relief-host chain ─────────────────────────────────────
+// In the relief-army fiction (you are the mobile host racing to Karrowgate, NOT
+// the besieged garrison), `relief_rider` chains a guaranteed reinforcement a
+// fortnight out via the existing `schedule`/`chained` primitive: send guides to
+// speed the Warden's main host, or keep your scouts foraging.
+describe('siege events: the relief-host chain', () => {
+  const reliefRider = EVENT_POOL.find((e) => e.id === 'relief_rider')
+  const reliefArrives = EVENT_POOL.find((e) => e.id === 'relief_column_arrives')
+
+  test("the relief rider's send-guides branch schedules the chained reinforcement", () => {
+    expect(reliefRider.effect).toEqual({ type: 'choice' })
+    expect(reliefRider.chained).toBeUndefined()
+    const guides = reliefRider.choices.find((c) => c.id === 'send_guides')
+    expect(guides.effect).toEqual({ type: 'schedule', event: 'relief_column_arrives', delay: 1 })
+    // The forage branch schedules nothing — a plain supply gain instead.
+    const forage = reliefRider.choices.find((c) => c.id === 'keep_foraging')
+    expect(forage.effect.type).not.toBe('schedule')
+  })
+
+  test('the relief column is a chained, same-tier reinforcement kept out of the random pool', () => {
+    expect(reliefArrives.chained).toBe(true)
+    expect(reliefArrives.severity).toBe(reliefRider.severity)
+    expect(eventValenceFor(reliefArrives)).toBe('good')
+    const ids = new Set(eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) }).map((e) => e.id))
+    expect(ids.has('relief_column_arrives')).toBe(false)
+    expect(ids.has('relief_rider')).toBe(true)
+  })
+})

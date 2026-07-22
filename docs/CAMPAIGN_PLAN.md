@@ -404,6 +404,76 @@ time), 0 → **1000** threshold.
   sortie from the walls, siege lines, etc.). Reuses the existing `schedule`/`requires`/choice
   primitives and existing effect types — **no mechanic change** (nothing touches the meter directly;
   there is no meter-delta effect and adding one would be a mechanic change).
+  - **Pool flavor-rework — partially landed (2026-07-22, UNCOMMITTED — sitting on `main`, needs a
+    branch before commit).** The
+    generic `EVENT_POOL` prose was reworked into the Karrowgate siege fiction (`services/events.js`,
+    strings only — every `id` and `effect` unchanged, so DEV_AUGURY seeds + pinned tests still hold).
+    **Perspective correction (user, 2026-07-22):** you are the RELIEF ARMY (mobile, outside, harassing
+    the vanguard that besieges Karrowgate), **not** the besieged garrison — so "a wagon slips through
+    the line into camp" is wrong; supply comes from foraging/seizing enemy supply columns/river trade
+    from friendly country. `supply` → "Wagons Bound for the Siege" (seize an enemy supply column);
+    `traders`/`plague`/`tool_rot`/etc. de-besieged. Also added the `relief_rider → relief_column_arrives`
+    chain (relief-HOST cooperation, existing `schedule`/`chained` primitive). Augury 71/71, full
+    cs-test 329/329 green. **An earlier ad-hoc `sortie`/`garrison_signal`/`garrison_trust` arc was
+    BACKED OUT** — garrison cooperation must be a designed mechanism, not `enemy_losses` bolted on a
+    flavor card (see the Garrison Resolve design below).
+- **DESIGN (locked 2026-07-22, NOT yet built — user said "just write the plan") — Garrison Resolve:
+  the one mechanism all garrison cooperation hangs off.** The gap it fills: **the walls meter today
+  only ever fills — the player has no lever to push the breach back.** Karrowgate's garrison is the
+  natural home for that lever (every fortnight they hold is a fortnight you prepare / wait for the
+  Warden's host). One relationship track, three payoffs all sourced from it (so nothing is a bolted-on
+  effect), fed by events carrying any of three credible costs.
+  - **The track:** hidden per-campaign `garrison.resolve`, **0→100, starts ~40** — the standing
+    between your relief army and the besieged garrison. It is the single number every garrison event
+    moves. New sub-state on the campaign model (alongside `enemy`/`augury`/`meter`); **bump
+    `CAMPAIGN_SCHEMA_VERSION`** when it lands.
+  - **New effect primitive `garrison`:** a bounded delta on `resolve` (clamped 0..100), hidden-state
+    like `flag` — **no player-visible number in the log** (a leaked number would cheapen the fiction).
+    Handled in `applyEffect` (`services/events.js`); classified `neutral` by `eventValence` (it's a
+    relationship move, not a gain/loss — the event's *other* effects carry its valence). This is the
+    thing cooperation events award.
+  - **Payoff 1 — passive wall-slow (THE centerpiece; user-confirmed 2026-07-22).** Higher resolve
+    slows the wall-meter's end-of-turn fill: heartened, coordinated defenders hold better. **This is
+    the flagged mechanic change** — one hook in day resolution where the meter fills:
+    `fill × (1 − f(resolve))`, `f` mapping resolve→[0, ~0.4] (exact curve TBD at build; keep the
+    floor honest so a maxed garrison can't freeze the clock outright). This is what makes the track
+    matter every turn and is the lever the game currently lacks. Ties both ways: **decay** — resolve
+    slips a step when the walls cross a damage band (the garrison feels abandoned).
+  - **Payoff 2 — the sally (threshold, boss fight).** At the decisive battle, `resolve ≥ THRESHOLD`
+    → the garrison sallies from the gates: a wave on your side / `enemy_losses` applied at battle
+    start. One boss-fight hook keyed on the threshold.
+  - **Payoff 3 — eyes on the enemy (event).** Cooperation events may also pay immediate
+    `enemy_reveal`/`enemy_losses` (existing effects, no change) — the garrison signals what it sees
+    from the walls.
+  - **Resolve as an event GATE (`requires`, user 2026-07-22).** Resolve doesn't only get awarded and
+    read for payoffs — it also **gates which garrison fates can appear**, via the existing
+    prerequisite machinery. Extend `eventEligible`'s `requires` vocabulary with **`minResolve` /
+    `maxResolve`** clauses and thread `resolve` into its duck-typed `ctx` (alongside `day` / `roster`
+    / `eventFlags`, sourced from `campaign.garrison.resolve`). Then author gated content: **high-resolve**
+    fates the garrison offers only a trusted ally (a joint sortie, betraying the enemy's dispositions,
+    a runner slipped out with supplies for you), and **low-resolve** fates when the bond has soured
+    (the garrison spurns your signals, or a crisis on the walls you're powerless to answer). This is
+    ADDITIVE like every other `requires` gate — the augury legibility invariant already holds on the
+    unconditional base pool, so resolve-gated events only ever widen a tier (augury.test.js tripwire).
+    Cheap to build (one predicate clause + `ctx` field) and it makes the whole garrison pool feel
+    like a relationship that opens and closes doors rather than a flat list.
+  - **The events (each a different credible cost, all feeding the one track):** (a) **committed
+    troops** — a coordinated sortie as a raid-style troop assignment → `+resolve`, cost = battle-day
+    readiness (reuses the raid/forage assignment carve-out); (b) **supplies** — a lifeline smuggled
+    over the wall (spend food/materials) → `+resolve`, cost = economy; (c) **opportunity** — a
+    recurring "the garrison calls" choice → `+resolve` vs. tending your own army.
+  - **HUD:** a garrison-standing readout beside the walls gauge (coarse word while Blind, like the
+    walls meter — the exact number is hidden state).
+  - **Slice plan (TDD, one per session per the small-batches rule):**
+    1. `garrison.resolve` state + `garrison` delta effect + `minResolve`/`maxResolve` `requires`
+       gate (predicate clause + `ctx.resolve`) + 2–3 cooperation events (incl. one resolve-gated) +
+       HUD readout (pure track + content; **no meter hook yet**).
+    2. Passive wall-slow hook in day resolution + band-cross decay (**the mechanic change**).
+    3. Boss-fight sally hook (threshold → garrison joins the decisive fight).
+    4. Committed-troop sortie wired into the raid-assignment system.
+  - **Open at build time:** the exact `f(resolve)` curve + wall-slow floor; the sally THRESHOLD and
+    its battle-start effect magnitude; starting/step values for resolve; naming shown to the player
+    ("Garrison Resolve" / "Karrowgate's Resolve" / "the garrison's faith").
 - **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
   branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
   `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns

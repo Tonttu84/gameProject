@@ -22,12 +22,12 @@ export const POOL_LEGIBILITY = { 1: 2, 2: 1, 3: 0 } // reading-roll bonus by poo
 // tonnes, the effect values stay kg.
 export const EVENT_POOL = [
   // ── minor (severity 1): everyday ups and downs ──
-  { id: 'supply',        title: 'Supply Cache',      description: 'Scouts find an abandoned depot. +3 t of food.',           severity: 1, effect: { type: 'food',       delta: +3000 } },
-  { id: 'traders',       title: 'Traveling Traders', description: 'Merchants sell supplies. +1.5 t of food.',                severity: 1, effect: { type: 'food',       delta: +1500 } },
-  { id: 'weather',       title: 'Harsh Weather',     description: 'A hard fortnight drains rations. -1 t of food.',          severity: 1, effect: { type: 'food',       delta: -1000 } },
+  { id: 'supply',        title: 'Wagons Bound for the Siege', description: 'Your outriders fall on an enemy supply column making for the siege lines and drive off its laden wagons. +3 t of food.', severity: 1, effect: { type: 'food',       delta: +3000 } },
+  { id: 'traders',       title: 'Sutlers from Downriver',    description: 'Camp-followers pole their barges up the Marn from friendly country to sell provisions to your army. +1.5 t of food.', severity: 1, effect: { type: 'food',       delta: +1500 } },
+  { id: 'weather',       title: 'A Bitter Fortnight',        description: 'Cold rain rots the tents and spoils the stores in the trenches. -1 t of food.',           severity: 1, effect: { type: 'food',       delta: -1000 } },
   // ── normal (severity 2): the ranks swell or thin ──
-  { id: 'reinforcement', title: 'Reinforcements',    description: 'A company joins your banner. +20 Soldiers.',              severity: 2, effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
-  { id: 'desertion',     title: 'Desertion',         description: 'Low morale: 10% of soldiers desert overnight.',           severity: 2, effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
+  { id: 'reinforcement', title: 'The Rearguard Catches Up',  description: 'A company of your own rearguard, footsore from the march, rejoins the banner. +20 Soldiers.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
+  { id: 'desertion',     title: 'Desertion in the Lines',    description: 'The long watch beside the siege saps the men; some slip away by night. 10% of soldiers desert.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
   // ── recon-sensitive fates (Stage 4 1c): thematic threats — ambush / raid /
   // night-attack, never plague or weather — carry a three-rung ladder. The
   // event itself IS the Blind rung (the full blow, and always what the augur
@@ -54,8 +54,8 @@ export const EVENT_POOL = [
     },
   },
   // ── major (severity 3): fates that bend the campaign ──
-  { id: 'defection',     title: 'Mass Defection',    description: 'Enemy soldiers slip across in the night. +40 Soldiers.',  severity: 3, effect: { type: 'roster',     unit: 'Soldier', delta: +40 } },
-  { id: 'plague',        title: 'Plague',            description: 'Disease thins the ranks by 5%.',                          severity: 3, effect: { type: 'all_roster', factor: 0.95 } },
+  { id: 'defection',     title: 'Turncoats from the Vanguard', description: 'Enemy soldiers, sick of the siege and their warlord\'s whip, slip across to your banner in the night. +40 Soldiers.', severity: 3, effect: { type: 'roster',     unit: 'Soldier', delta: +40 } },
+  { id: 'plague',        title: 'Camp Fever',        description: 'Sickness runs your crowded camp; the ranks thin by 5%.',                                severity: 3, effect: { type: 'all_roster', factor: 0.95 } },
   // Blind and warned differ only in the telling until a battlefield surprise
   // penalty exists — the rung machinery is what the later mechanic hooks into.
   {
@@ -68,8 +68,8 @@ export const EVENT_POOL = [
     },
   },
   // ── materials fates (Stage 3 sink feeds fortifications/militia) ──
-  { id: 'quarry',        title: 'Quarry Found',      description: 'A workable seam of stone and timber. +25 materials.',     severity: 1, effect: { type: 'materials',  delta: +25 } },
-  { id: 'tool_rot',      title: 'Tool Rot',          description: 'Damp ruins tools and cordage. -15 materials.',            severity: 2, effect: { type: 'materials',  delta: -15 } },
+  { id: 'quarry',        title: 'A Workable Seam',   description: 'Your pioneers strike stone and timber enough to shore up the earthworks. +25 materials.', severity: 1, effect: { type: 'materials',  delta: +25 } },
+  { id: 'tool_rot',      title: 'Damp Ruins the Stores', description: 'Rain and river-mist rot the tools and cordage stacked in your camp. -15 materials.', severity: 2, effect: { type: 'materials',  delta: -15 } },
   // ── prerequisite-gated fates (R1) ── An event may carry a `requires` block
   // (eventEligible below); it only enters a draw when the campaign state
   // satisfies it, as truth OR decoy. Gated events are ADDITIVE — the
@@ -98,6 +98,19 @@ export const EVENT_POOL = [
     ],
   },
   { id: 'sprung_ambush', title: 'The Trap Is Sprung', description: 'Just as the dispatches foretold, an enemy foraging column rides down the ambush road — into your waiting spears. It is cut apart.', severity: 2, effect: { type: 'enemy_losses', factor: 0.9 }, chained: true },
+  // ── the relief chain ── `relief_rider` (a choice) can guarantee a
+  // reinforcement a fortnight out via `schedule`; `relief_column_arrives` is the
+  // `chained` follow-up (never a random draw or decoy). The forage branch
+  // schedules nothing, so the chain is the player's own choice echoing forward.
+  {
+    id: 'relief_rider', title: 'A Rider from the Relief Host', description: 'A mud-spattered rider gallops in from the west: the Warden\'s main host is a fortnight behind you, and its captains beg for guides who know the fords and the enemy\'s watch-lines.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good',
+    choices: [
+      { id: 'send_guides',  label: 'Send your best scouts to guide them in', description: 'Part with your surest scouts so the main host loses no time on the roads. They will not forage for you this fortnight — but a column of fresh spears is worth the lean days.', effect: { type: 'schedule', event: 'relief_column_arrives', delay: 1 } },
+      { id: 'keep_foraging', label: 'Keep your scouts foraging the valley', description: 'Let the main host find its own way. Your scouts stay at their sacks and snares, and the larder is the fuller for it.', effect: { type: 'food', delta: +2000 } },
+    ],
+  },
+  { id: 'relief_column_arrives', title: 'The Relief Column Arrives', description: 'Guided past the enemy\'s watch-lines by your scouts, a column of the Warden\'s spearmen tramps into camp, banners heavy with road-dust. +30 Soldiers.', severity: 2, effect: { type: 'roster', unit: 'Soldier', delta: +30 }, chained: true },
   // ── fates with choices (resolve-then-choose) ── The fired rung's `choices`
   // hand the player a decision instead of an effect: end-day pends it
   // (dayResolution) and a follow-up POST applies the picked branch. Branches
@@ -171,9 +184,9 @@ export const EVENT_POOL = [
   // so all three magnitudes of the "neutral" reading show up in play. A
   // `none` effect is a genuine no-op at end-of-turn — the drama is in the
   // reading, not the result (a "dire" omen that comes to nothing is a relief).
-  { id: 'lull',          title: 'A Quiet Fortnight', description: 'The days pass without incident — no gift, no blow.',       severity: 1, effect: { type: 'none' } },
-  { id: 'rains',         title: 'Season of Rains',   description: 'Downpours foul every bowstring, yours and theirs alike. Neither host gains an edge.', severity: 2, effect: { type: 'none' } },
-  { id: 'comet',         title: 'A Comet Overhead',  description: 'A comet burns across the sky for a fortnight. The men mutter of doom, but nothing comes of it.', severity: 3, effect: { type: 'none' } },
+  { id: 'lull',          title: 'A Quiet Fortnight', description: 'The siege grinds on without incident — no gift, no blow.',  severity: 1, effect: { type: 'none' } },
+  { id: 'rains',         title: 'Season of Rains',   description: 'Downpours foul every bowstring on both siege lines alike. Neither host gains an edge.', severity: 2, effect: { type: 'none' } },
+  { id: 'comet',         title: 'A Comet Overhead',  description: 'A comet burns over Karrowgate for a fortnight. The men mutter of doom, but nothing comes of it.', severity: 3, effect: { type: 'none' } },
 ]
 // (The old 'intel' event died with auguryScore; a defector event returns as a
 // scouting-points effect when the scouting stage lands.)
