@@ -549,14 +549,16 @@ router.post('/:id/raids/launch', async (req, res) => {
       })
     campaign.raid.squadAssignment.push(...raidedIds)
 
-    // destroy_detachment inflicts its REAL battle casualties on the hidden
-    // enemy host, win OR lose (docs/CAMPAIGN_PLAN.md Stage D): the slice that
-    // actually died is targetForce − red_survivors. A WIN additionally pursues
-    // the routing remainder — that second subtraction lives in applyRaidReward
-    // below, so a win removes the whole slice and a loss removes only the real
-    // dead. The other raid types never pre-subtract their (narrative) target
-    // force, so a lost loot/rescue/counter raid still leaves the host untouched.
-    if (opportunity.type === 'destroy_detachment')
+    // destroy_detachment (and a thins-enemy garrison_sortie, slice 4) inflict
+    // their REAL battle casualties on the hidden enemy host, win OR lose
+    // (docs/CAMPAIGN_PLAN.md Stage D): the slice that actually died is
+    // targetForce − red_survivors. For destroy_detachment a WIN additionally
+    // pursues the routing remainder (that second subtraction lives in
+    // applyRaidReward), so a win removes the whole slice and a loss removes only
+    // the real dead; a garrison_sortie is a spoiling attack — no pursuit, only
+    // the real casualties. Loot/rescue/counter raids never pre-subtract their
+    // (narrative) target force, so a lost one still leaves the host untouched.
+    if (opportunity.type === 'destroy_detachment' || opportunity.thinsEnemy)
       for (const [type, n] of opportunity.targetForce) {
         const casualties = Math.max(0, n - (summary.red_survivors[type] ?? 0))
         campaign.enemy.army.set(type, Math.max(0, (campaign.enemy.army.get(type) ?? 0) - casualties))

@@ -513,7 +513,51 @@ time), 0 → **1000** threshold.
        no-sally, clamp); two route cases in `campaigns.test.js` (devoted → thinned `enemy_placement` +
        sally log line; starting-resolve → placement untouched, no line). NO frontend change (HUD band
        readout from slice 1 already surfaces the standing). NEXT: slice 4 (committed-troop sortie).
-    4. Committed-troop sortie wired into the raid-assignment system.
+    4. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`) — payoff/cost (a), the committed-troop
+       sortie.** The third resolve-feeding cost: committed troops. A new **`garrison_sortie` raid
+       opportunity type** the garrison offers only once it trusts you — a coordinated sally that rides
+       the ENTIRE existing `/raids/launch` flow (squad party, capacity, real short engine battle, squad
+       reconciliation, and — the point — the `raid.assignment` carve-out, so the troops are unavailable
+       for the pitched battle that day). Grilled the shape with the user first (per the grilling rule):
+       real battle (not a forage-style no-battle commit); surfaced **as events gated by garrison
+       trust**; reward varies per version (thin the enemy OR pay other loot, user 2026-07-22).
+       - **Bridge, events→raid board (schema v21→v22):** authored `GARRISON_SORTIE_EVENTS`
+         (`services/events.js`, exported) — NOT in `EVENT_POOL`, so never an augury vision/decoy. They
+         are *events* purely to reuse the `requires` prerequisite machinery (`eventEligible`): each is
+         `requires.minResolve`-gated on the garrison's own standing. `generateRaidOpportunities`
+         (`raid.js`) spawns one `garrison_sortie` opportunity per event whose gate the campaign
+         currently clears (campaign doc IS the `requires` ctx — same as the augury draw), so the OFFER
+         is the raid, never a vision. **Both gates are ABOVE the 40 start** (probe `minResolve:50` =
+         steadfast, grand `minResolve:75` = devoted), so a fresh/wary campaign offers no sortie and the
+         existing raid-board tests + boards are byte-unchanged — the sorties are purely additive, earned.
+       - **Two versions (`sortie_probe` / `sortie_grand`)** carrying a `sortie:{resolve, …}` block:
+         probe `{resolve:10, thinsEnemy:true}` (a spoiling sally — the enemy-reduction IS its reward),
+         grand `{resolve:14, materials:250}` (throw the gates for the siege park — loot instead, so
+         `thinsEnemy:false`). `buildOpportunity` reads the event's flavour as the card and its `sortie`
+         block as the (hidden) reward + a new **`thinsEnemy` opportunity flag** (model field, default
+         false; the launch route's casualty step now fires on `type==='destroy_detachment' ||
+         opportunity.thinsEnemy`, booking real casualties win-or-lose but **no pursuit** — a sortie is a
+         spoiling attack, distinct from destroy_detachment's whole-slice kill).
+       - **Reward on a WIN** (`applyRaidReward`): `adjustResolve(campaign, reward.resolve)` — hidden
+         bookkeeping, **no number in the log**, only a sally phrase — plus any loot (materials/food/
+         roster). `resolve` never enters `rewardRange`/`rewardView` (they only key on food/materials/
+         roster), so it stays server-side; `thinsEnemy` isn't in the view whitelist either. NO view or
+         frontend change (the Raids panel renders any opportunity generically; the HUD band readout
+         from slice 1 already surfaces the standing).
+       - **The trust progression** this creates: a wary (40) start offers no sortie → climb to steadfast
+         (50) via `garrison_call` (supplies) to unlock the probe → sorties (troop cost) climb you toward
+         devoted (75), which opens the grand assault AND arms the boss-fight sally. ⚑ Note: today the
+         only resolve lever available AT the wary start is the random `garrison_call` augury choice — if
+         it never draws, resolve can stall below 50. Fine for now (content/balance, tunable); flagged.
+       - Tests: pure gen/reward in `augury.test.js` (**98**, +8: gate below/at steadfast/at devoted,
+         flavour+thinsEnemy+hidden-reward, win raises resolve with no leaked number, loot version, clamp);
+         three route cases in `raid.test.js` (thins-enemy win → resolve↑ + real casualties + assignment
+         carve-out + no leak; loot win → resolve↑ + stores + host untouched; loss → no resolve, thins
+         still books casualties). **augury 98/98, raid 41/41, full cs-test 364/364 green locally.** NO
+         frontend change; NOT yet click-tested in a live browser. **NEXT:** the Garrison Resolve design is
+         now fully built (slices 1–4) — remaining garrison work is content (more resolve-gated fates via
+         the `minResolve`/`maxResolve` doors) + the deferred themed/scripted siege-event flavor pass; the
+         bigger open items are Stage E (hiring troops, design-only) and combat-score-per-hexside.
   - **Open at build time:** ~~the exact `f(resolve)` curve + wall-slow floor~~ (RESOLVED slice 2:
     linear, `WALL_SLOW_MAX 0.4`, `BAND_CROSS_DECAY 10` — all tunable); ~~the sally THRESHOLD and
     its battle-start effect magnitude~~ (RESOLVED slice 3: `SALLY_THRESHOLD 75` = devoted-band floor,

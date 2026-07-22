@@ -213,6 +213,40 @@ export const EVENT_POOL = [
 // (The old 'intel' event died with auguryScore; a defector event returns as a
 // scouting-points effect when the scouting stage lands.)
 
+// Garrison sortie events (Garrison Resolve slice 4, docs/CAMPAIGN_PLAN.md) — the
+// third cost feeding the resolve track: committed troops. These are NOT augury
+// fates (they never appear in EVENT_POOL, so never a vision or decoy). They are
+// authored as events so they can reuse the event-prerequisite machinery — each
+// is `requires`-gated on the garrison's own standing (minResolve). The raid
+// board (generateRaidOpportunities, raid.js) spawns a `garrison_sortie` raid
+// opportunity for every one whose gate is currently met, so the OFFER itself is
+// the raid: commit a party (a raid-style battle, cost = battle-day readiness,
+// the troops land in raid.assignment) and a WIN feeds `sortie.resolve` back into
+// the track. A version either thins the besiegers (`thinsEnemy`) OR pays other
+// loot — the enemy-reduction is one possible reward, unneeded when there's
+// another (user, 2026-07-22). resolve gained is hidden bookkeeping (adjustResolve),
+// never a number in the log; the loot (if any) is a normal revealable reward.
+export const GARRISON_SORTIE_EVENTS = [
+  {
+    id: 'sortie_probe',
+    title: 'A Coordinated Sally',
+    description:
+      'Karrowgate\'s captains, heartened that you have stood with them, propose a joint stroke: your squads strike the siege lines from without while the garrison sallies from a postern to catch the besiegers between two fires. Commit a party and hit them together.',
+    // Steadfast trust or better — a garrison that has come to rely on you.
+    requires: { minResolve: 50 },
+    sortie: { resolve: 10, thinsEnemy: true },
+  },
+  {
+    id: 'sortie_grand',
+    title: 'A Sortie Against the Siege Train',
+    description:
+      'Trusting your banner utterly, the garrison offers to throw the gates wide for a combined blow at the enemy\'s siege park. Break in among the engines and wagons massed against the walls, and carry off what stores you can while the defenders cover your withdrawal.',
+    // Only a devoted garrison risks opening its own gates for you.
+    requires: { minResolve: 75 },
+    sortie: { resolve: 14, materials: 250 },
+  },
+]
+
 export const rosterTotal = (roster) =>
   [...roster.values()].reduce((a, b) => a + b, 0)
 

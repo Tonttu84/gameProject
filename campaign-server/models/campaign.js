@@ -36,7 +36,7 @@ const raidOpportunitySchema = new mongoose.Schema(
     id: { type: String, required: true },
     type: {
       type: String,
-      enum: ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event'],
+      enum: ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event', 'garrison_sortie'],
       required: true,
     },
     title: { type: String, required: true },
@@ -55,9 +55,14 @@ const raidOpportunitySchema = new mongoose.Schema(
     enemyReveal: { type: Number, default: 0 }, // 0 range, 1 exact
     source: {
       type: String,
-      enum: ['base', 'scouted', 'counter_event'],
+      enum: ['base', 'scouted', 'counter_event', 'garrison_sortie'],
       default: 'base',
     },
+    // Garrison sortie (slice 4): a WON sortie of this kind inflicts its real
+    // battle casualties on the hidden host, win or lose — like destroy_detachment
+    // but per-opportunity (a sortie version may thin the besiegers OR pay other
+    // loot instead). A control flag, never exposed by campaignView.
+    thinsEnemy: { type: Boolean, default: false },
     resolved: { type: Boolean, default: false },
     outcome: { type: mongoose.Schema.Types.Mixed, default: null }, // {winner, battleId} once resolved
   },
@@ -81,7 +86,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 21 // v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 22 // v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },

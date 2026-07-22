@@ -19,7 +19,9 @@ import {
   firedRung,
   eventEligible,
   eligiblePool,
+  GARRISON_SORTIE_EVENTS,
 } from '../services/events.js'
+import { generateRaidOpportunities, applyRaidReward } from '../services/raid.js'
 import {
   AUGURY_SLOTS,
   AUGURY_ODDS_MAX,
@@ -994,6 +996,102 @@ describe('garrisonSallies — the sally threshold (slice 3)', () => {
   test('clamps out-of-range resolve before comparing', () => {
     expect(garrisonSallies(200)).toBe(true)
     expect(garrisonSallies(-50)).toBe(false)
+  })
+})
+
+// Garrison sortie — payoff/cost (a): a coordinated sally the garrison offers
+// only once it trusts you (a resolve-gated raid opportunity). Committing a
+// party is a raid-style battle whose cost is battle-day readiness (the troops
+// land in raid.assignment) and whose reward FEEDS the resolve track. Surfaced
+// through the event-prerequisite machinery (each version is an `event` with a
+// `requires.minResolve` gate), but spawned onto the RAID board — not the augury
+// — so the offer IS the raid, never a vision. See docs/CAMPAIGN_PLAN.md slice 4.
+describe('garrison sortie (slice 4) — resolve-gated raid opportunities', () => {
+  // capacityOf falls back to size 10 for unknown types, so an empty catalog is
+  // enough to build opportunities in these pure tests.
+  const catalog = new Map()
+  const fakeCampaign = (resolve) => ({
+    day: 3,
+    augury: { slots: [] }, // no bad fates → the only opps are sorties (if any)
+    enemy: { army: { Soldier: 540, Archer: 150 } },
+    garrison: { resolve },
+  })
+  const sortiesOf = (resolve) =>
+    generateRaidOpportunities(fakeCampaign(resolve), catalog).filter(
+      (o) => o.type === 'garrison_sortie',
+    )
+  const probe = GARRISON_SORTIE_EVENTS.find((e) => e.id === 'sortie_probe')
+  const grand = GARRISON_SORTIE_EVENTS.find((e) => e.id === 'sortie_grand')
+
+  test('every sortie event is trust-gated (requires.minResolve) and feeds resolve', () => {
+    expect(GARRISON_SORTIE_EVENTS.length).toBeGreaterThanOrEqual(2)
+    for (const ev of GARRISON_SORTIE_EVENTS) {
+      expect(ev.requires.minResolve).toBeGreaterThan(GARRISON_RESOLVE_START)
+      expect(ev.sortie.resolve).toBeGreaterThan(0)
+    }
+  })
+
+  test('a wary (starting-resolve) garrison offers no sortie — the board is unchanged', () => {
+    expect(sortiesOf(GARRISON_RESOLVE_START)).toHaveLength(0)
+    expect(sortiesOf(GARRISON_RESOLVE_START - 5)).toHaveLength(0)
+  })
+
+  test('a steadfast garrison opens the probe; a devoted one opens both versions', () => {
+    const steadfast = sortiesOf(probe.requires.minResolve)
+    expect(steadfast.map((o) => o.source)).toEqual(['garrison_sortie'])
+    expect(steadfast).toHaveLength(1)
+    // The grand assault stays shut until devoted trust.
+    expect(sortiesOf(grand.requires.minResolve - 1)).toHaveLength(1)
+    expect(sortiesOf(grand.requires.minResolve)).toHaveLength(2)
+  })
+
+  test('a sortie opportunity carries the event flavour, a real target slice, and its thins-enemy flag', () => {
+    const [o] = sortiesOf(probe.requires.minResolve)
+    expect(o.title).toBe(probe.title)
+    expect(o.description).toBe(probe.description)
+    expect(o.thinsEnemy).toBe(true) // the probe's whole point is spoiling the besiegers
+    expect(Object.keys(o.targetForce).length).toBeGreaterThan(0)
+    expect(o.capacity).toBeGreaterThan(0)
+    // The resolve reward is hidden bookkeeping: it never becomes a buyable range.
+    expect(o.rewardRange).toBeNull()
+  })
+
+  test('the grand assault pays a real reward instead of thinning, and shows its loot range', () => {
+    const grandOpp = sortiesOf(grand.requires.minResolve).find((o) => o.title === grand.title)
+    expect(grandOpp.thinsEnemy).toBe(false)
+    expect(grandOpp.rewardRange.materials).toBeTruthy() // materials loot is a revealable range
+  })
+
+  // applyRaidReward runs only on a WON raid; the launch route books casualties
+  // (for thins-enemy sorties) separately. Here: the reward path itself.
+  const wonCampaign = () => ({
+    garrison: { resolve: GARRISON_RESOLVE_START },
+    resources: { food: 1000, materials: 100 },
+    roster: new Map(),
+    enemy: { army: new Map() },
+  })
+
+  test('winning the probe raises resolve — hidden, no number leaked to the log', () => {
+    const c = wonCampaign()
+    const opp = { type: 'garrison_sortie', reward: { resolve: probe.sortie.resolve } }
+    const entries = applyRaidReward(c, opp)
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + probe.sortie.resolve)
+    expect(entries.join(' ')).not.toMatch(/resolve|\+\d/i) // the number never shows
+    expect(entries.join(' ')).toMatch(/sortie|sally|garrison|karrowgate/i)
+  })
+
+  test('winning the grand assault raises resolve AND lands its loot', () => {
+    const c = wonCampaign()
+    const opp = { type: 'garrison_sortie', reward: { resolve: grand.sortie.resolve, materials: 250 } }
+    applyRaidReward(c, opp)
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + grand.sortie.resolve)
+    expect(c.resources.materials).toBe(100 + 250)
+  })
+
+  test('resolve gained by a sortie clamps at the track ceiling', () => {
+    const c = { ...wonCampaign(), garrison: { resolve: 95 } }
+    applyRaidReward(c, { type: 'garrison_sortie', reward: { resolve: 20 } })
+    expect(c.garrison.resolve).toBe(100)
   })
 })
 
