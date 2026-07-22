@@ -478,12 +478,32 @@ time), 0 → **1000** threshold.
        word only — raw resolve stays server-side); HUD `hud-garrison` readout. Tests: augury **82**
        (pure, +11) incl. effect/gate/events; frontend `campaignHud` garrison readout. **Full cs-test
        340/340, frontend green in isolation.** NO meter hook yet (slice 2).
-    2. Passive wall-slow hook in day resolution + band-cross decay (**the mechanic change**).
+    2. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`) — the mechanic change.** Passive
+       wall-slow + band-cross decay in day resolution. **No schema bump** (pure logic on existing
+       `garrison.resolve`/`meter.value`). The end-of-day meter fill (`dayResolution.js` step 4) is now
+       `+= Math.round(meterFillAmount × (1 − wallSlowFactor(resolve)))` — a heartened garrison holds
+       the walls, the player's ONE lever to push the breach back. `wallSlowFactor(resolve)`
+       (`services/garrison.js`) is **linear**, `GARRISON_WALL_SLOW_MAX × clamp(resolve)/MAX`, capped at
+       **0.4** so a devoted (100) garrison slows the fall 40% and a maxed one can NEVER freeze the clock
+       (the honest floor). **Band-cross decay:** the meter only rises, so a changed `meterBand` after the
+       fill means the walls were battered into a WORSE band (intact→damaged→breached) → resolve slips
+       `GARRISON_BAND_CROSS_DECAY` (**10**), hidden state like the `garrison` effect (player sees only the
+       band word drop); resolve is read BEFORE the decay so the turn's slow reflects the garrison as it
+       stood. **Refactor:** `adjustResolve` (init+clamp, the single resolve writer) + `clampResolve`
+       extracted to `garrison.js`; the `garrison` event effect (`events.js`) now routes through it (DRY,
+       one clamp site). Numbers (`WALL_SLOW_MAX 0.4`, `BAND_CROSS_DECAY 10`) are the "open at build time"
+       curve/floor/step — plausible, tunable; fresh-campaign resolve 40 → 0.16 slow → idle floor fill
+       50→**42**/turn. Server-only (view already exposed `garrison:{band}` from slice 1 — HUD needs
+       nothing). Tests: pure `wallSlowFactor`/`adjustResolve` in `augury.test.js` (**87**, +5); the 3
+       existing enemyAi meter tests retuned to the 42 fill; a new enemyAi route describe (devoted-vs-broken
+       slow, band-cross decays / in-band doesn't, decay clamps at 0). **Full cs-test 348/348 green
+       locally.** NEXT: slice 3 (boss-fight sally hook).
     3. Boss-fight sally hook (threshold → garrison joins the decisive fight).
     4. Committed-troop sortie wired into the raid-assignment system.
-  - **Open at build time:** the exact `f(resolve)` curve + wall-slow floor; the sally THRESHOLD and
-    its battle-start effect magnitude; starting/step values for resolve; naming shown to the player
-    ("Garrison Resolve" / "Karrowgate's Resolve" / "the garrison's faith").
+  - **Open at build time:** ~~the exact `f(resolve)` curve + wall-slow floor~~ (RESOLVED slice 2:
+    linear, `WALL_SLOW_MAX 0.4`, `BAND_CROSS_DECAY 10` — all tunable); the sally THRESHOLD and
+    its battle-start effect magnitude; naming shown to the player ("Garrison Resolve" /
+    "Karrowgate's Resolve" / "the garrison's faith").
 - **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
   branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
   `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns

@@ -144,6 +144,12 @@ const pinMeter = async (id, value) => {
   await doc.save()
 }
 
+const pinResolve = async (id, resolve) => {
+  const doc = await Campaign.findById(id)
+  doc.garrison.resolve = resolve
+  await doc.save()
+}
+
 describe('enemy supply depletion', () => {
   test('the host eats size²-scale food and forages 40% of its capacity — net −14,601 kg/turn', async () => {
     const { body: c } = await createCampaign()
@@ -171,10 +177,12 @@ describe('enemy supply depletion', () => {
 // damaged/breached) plus whether crossing BOSS_FIGHT_METER_THRESHOLD=1000 has
 // set bossFightDue. A fresh campaign never forages or raids in these tests, so
 // troopsInCamp == the whole roster every turn — meterFillAmount is pinned at the
-// FLOOR (50)/turn, which these tests use to predict the post-end-day value from
-// a pinned starting one.
+// FLOOR (50)/turn. Garrison Resolve slice 2 then SLOWS that fill by the starting
+// garrison's wallSlowFactor(40) = 0.16, so a fresh campaign's idle end-day fill
+// is round(50 x 0.84) = 42/turn — the value these tests use to predict the
+// post-end-day meter from a pinned starting one.
 describe('the boss-fight meter is the enemy-disposition signal', () => {
-  test('an idle army fills the meter by the floor amount (50) each end-day', async () => {
+  test('a fresh (resolve-40) idle army fills the meter by 42 each end-day (floor slowed by the garrison)', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
 
@@ -182,7 +190,7 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.enemy).toEqual({ band: 'intact', bossFightDue: false })
-    // meter.value 50 → 'intact' band. (The end-day accrued this fresh army's
+    // meter.value 42 → 'intact' band. (The end-day accrued this fresh army's
     // scouting pool into recon, so the level climbed and a numeric estimate now
     // shows — recon R2; the exact bracket carries jitter, so just its shape.)
     expect(res.body.campaign.meter.band).toBe('intact')
@@ -191,21 +199,21 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
       high: expect.any(Number),
     })
     expect(res.body.campaign.bossFightDue).toBe(false)
-    expect((await Campaign.findById(c.id)).meter.value).toBe(50)
+    expect((await Campaign.findById(c.id)).meter.value).toBe(42)
   })
 
   test('the report band tracks the meter: intact (< 334) then damaged (>= 334)', async () => {
     const { body: c } = await createCampaign()
 
     await pinAugury(c.id)
-    await pinMeter(c.id, 250) // + 50 floor fill = 300, still intact
+    await pinMeter(c.id, 250) // + 42 slowed fill = 292, still intact
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.enemy).toEqual({ band: 'intact', bossFightDue: false })
 
     await pinAugury(c.id)
-    await pinMeter(c.id, 300) // + 50 = 350, damaged
+    await pinMeter(c.id, 300) // + 42 = 342, damaged (and this cross decays resolve)
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
@@ -215,17 +223,17 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
   test('crossing 1000 sets bossFightDue and the enemy offers battle that same day', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
-    await pinMeter(c.id, 949) // + 50 floor fill = 999, just under the threshold
+    await pinMeter(c.id, 949) // + 42 slowed fill = 991, just under the threshold
 
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
-    // 999 ≥ 667 → 'breached', but still not due.
+    // 991 >= 667 -> 'breached', but still not due.
     expect(res.body.report.enemy).toEqual({ band: 'breached', bossFightDue: false })
     expect(res.body.campaign.bossFightDue).toBe(false)
-    expect((await Campaign.findById(c.id)).meter.value).toBe(999)
+    expect((await Campaign.findById(c.id)).meter.value).toBe(991)
 
-    await pinAugury(c.id) // second end-day: 999 + 50 = 1049, crosses 1000
+    await pinAugury(c.id) // second end-day: 991 + 42 = 1033, crosses 1000
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
@@ -233,7 +241,60 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     expect(res.body.campaign.bossFightDue).toBe(true)
     const doc = await Campaign.findById(c.id)
     expect(doc.bossFightDue).toBe(true)
-    expect(doc.meter.value).toBe(1049)
+    expect(doc.meter.value).toBe(1033)
+  })
+})
+
+// Garrison Resolve slice 2 — the passive wall-slow + band-cross decay, seen end
+// to end through the real end-day route. A heartened garrison (higher resolve)
+// slows the walls' fall (a smaller meter fill); battering the walls into a
+// worse band saps resolve. An idle army pins meterFillAmount at the FLOOR (50),
+// so the whole slow is legible: fill = round(50 x (1 - 0.4 x resolve/100)).
+describe('the garrison slows the walls (resolve wall-slow + band-cross decay)', () => {
+  test('a devoted garrison (100) slows the floor fill to 30; a broken one (0) leaves it at the full 50', async () => {
+    const { body: hi } = await createCampaign()
+    await pinAugury(hi.id)
+    await pinResolve(hi.id, 100) // wallSlowFactor 0.4 -> round(50 x 0.6) = 30
+    await endDay(hi.id)
+    expect((await Campaign.findById(hi.id)).meter.value).toBe(30)
+
+    const { body: lo } = await createCampaign()
+    await pinAugury(lo.id)
+    await pinResolve(lo.id, 0) // no slow -> the full floor
+    await endDay(lo.id)
+    expect((await Campaign.findById(lo.id)).meter.value).toBe(50)
+  })
+
+  test('battering the walls into a worse band decays resolve by a step; staying in-band leaves it untouched', async () => {
+    // Cross intact -> damaged: resolve 50 slips to 40. The fill uses the
+    // pre-decay resolve (50 -> slow 0.2 -> round(50 x 0.8) = 40): 300 + 40 = 340.
+    const { body: cross } = await createCampaign()
+    await pinAugury(cross.id)
+    await pinResolve(cross.id, 50)
+    await pinMeter(cross.id, 300)
+    await endDay(cross.id)
+    let doc = await Campaign.findById(cross.id)
+    expect(doc.meter.value).toBe(340)
+    expect(doc.garrison.resolve).toBe(40)
+
+    // No cross (stays intact): resolve holds. 100 + 40 = 140, still intact.
+    const { body: same } = await createCampaign()
+    await pinAugury(same.id)
+    await pinResolve(same.id, 50)
+    await pinMeter(same.id, 100)
+    await endDay(same.id)
+    doc = await Campaign.findById(same.id)
+    expect(doc.meter.value).toBe(140)
+    expect(doc.garrison.resolve).toBe(50)
+  })
+
+  test('the decay never drops resolve below the floor (0)', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id)
+    await pinResolve(c.id, 5) // slow ~0.02 -> round(50 x 0.98) = 49; 320 + 49 = 369 crosses
+    await pinMeter(c.id, 320)
+    await endDay(c.id)
+    expect((await Campaign.findById(c.id)).garrison.resolve).toBe(0)
   })
 })
 

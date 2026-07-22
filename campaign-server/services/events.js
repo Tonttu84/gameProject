@@ -1,9 +1,8 @@
 import {
   EVENT_RUNG_BY_BAND,
-  GARRISON_RESOLVE_MIN,
-  GARRISON_RESOLVE_MAX,
   GARRISON_RESOLVE_START,
 } from '../utils/campaignConfig.js'
+import { adjustResolve } from './garrison.js'
 
 // Fortnightly event pool + effect application. Events reach the player only
 // as the augur's prophecy (services/augury.js): each turn one TRUE event and
@@ -388,14 +387,9 @@ export function applyEffect(campaign, effect) {
     // the standing track by `delta`, clamped to [MIN, MAX]. Hidden state like
     // `flag` — the relationship's story lives in the event text, so NO
     // player-visible number (a leaked figure would cheapen the fiction and the
-    // band is all the player is meant to read). Initializes the track from the
-    // starting value if the campaign predates the field.
-    if (!campaign.garrison) campaign.garrison = { resolve: GARRISON_RESOLVE_START }
-    const cur = campaign.garrison.resolve ?? GARRISON_RESOLVE_START
-    campaign.garrison.resolve = Math.max(
-      GARRISON_RESOLVE_MIN,
-      Math.min(GARRISON_RESOLVE_MAX, cur + effect.delta),
-    )
+    // band is all the player is meant to read). adjustResolve (garrison.js) is
+    // the single writer — init from the starting value + clamp live there.
+    adjustResolve(campaign, effect.delta)
   } else if (effect.type === 'schedule') {
     // Chain follow-up (part 2): guarantee `event` surfaces as a fate `delay`
     // turns from now (default the next turn). Queued as {eventId, day} on

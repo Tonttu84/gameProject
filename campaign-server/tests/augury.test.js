@@ -25,7 +25,9 @@ import {
   AUGURY_ODDS_MAX,
   AUGURY_REROLLS_PER_DAY,
   GARRISON_RESOLVE_START,
+  GARRISON_WALL_SLOW_MAX,
 } from '../utils/campaignConfig.js'
+import { wallSlowFactor, adjustResolve } from '../services/garrison.js'
 
 // Pure-service tests on a plain campaign-shaped object (the service only
 // touches augury/roster/character, all mutated in place like the Mongoose
@@ -933,6 +935,44 @@ describe('applyEffect — garrison (Resolve delta)', () => {
   test('classifies as neutral — a relationship move, not a gain or loss', () => {
     expect(eventValence({ type: 'garrison', delta: 15 })).toBe('neutral')
     expect(eventValence({ type: 'garrison', delta: -15 })).toBe('neutral')
+  })
+})
+
+// Slice 2 — the passive wall-slow: the fraction the boss-fight-meter fill is
+// reduced by, linear in resolve and capped below 1 so the walls never freeze.
+describe('wallSlowFactor — the passive wall-slow (slice 2)', () => {
+  test('is 0 at a broken garrison and the full MAX at a devoted one', () => {
+    expect(wallSlowFactor(0)).toBe(0)
+    expect(wallSlowFactor(100)).toBeCloseTo(GARRISON_WALL_SLOW_MAX)
+  })
+
+  test('scales linearly with resolve', () => {
+    expect(wallSlowFactor(50)).toBeCloseTo(GARRISON_WALL_SLOW_MAX / 2)
+    expect(wallSlowFactor(GARRISON_RESOLVE_START)).toBeCloseTo(0.16)
+  })
+
+  test('is capped below 1, so a maxed garrison can never freeze the clock', () => {
+    expect(wallSlowFactor(GARRISON_RESOLVE_START)).toBeLessThan(1)
+    expect(wallSlowFactor(200)).toBe(GARRISON_WALL_SLOW_MAX) // clamps the resolve
+    expect(GARRISON_WALL_SLOW_MAX).toBeLessThan(1)
+  })
+})
+
+// adjustResolve is the single writer for the track (the `garrison` effect and
+// the band-cross decay both go through it); the applyEffect tests above pin its
+// event path — here just the init + clamp contract it owns.
+describe('adjustResolve — the single resolve writer', () => {
+  test('initializes an absent track from the starting value', () => {
+    const c = {}
+    adjustResolve(c, 5)
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + 5)
+  })
+
+  test('clamps both ends and returns the new value', () => {
+    const c = { garrison: { resolve: 5 } }
+    expect(adjustResolve(c, -20)).toBe(0)
+    const hi = { garrison: { resolve: 95 } }
+    expect(adjustResolve(hi, 20)).toBe(100)
   })
 })
 

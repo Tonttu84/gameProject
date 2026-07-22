@@ -356,6 +356,19 @@ export const METER_BANDS = [
 export const GARRISON_RESOLVE_MIN = 0
 export const GARRISON_RESOLVE_MAX = 100
 export const GARRISON_RESOLVE_START = 40
+// Slice 2 — the passive wall-slow (the centerpiece: this is the ONE lever the
+// player has to push the breach back). A heartened, coordinated garrison holds
+// Karrowgate's walls better, so the boss-fight meter (the walls under assault)
+// fills more slowly: the day's fill is reduced by wallSlowFactor(resolve) ∈
+// [0, GARRISON_WALL_SLOW_MAX], linear in resolve (services/garrison.js). Capped
+// well below 1 so even a devoted garrison can't freeze the clock outright — the
+// walls always give a little each turn (the floor kept honest, per the design).
+export const GARRISON_WALL_SLOW_MAX = 0.4
+// Band-cross decay: when the walls are battered into a worse damage band
+// (METER_BANDS: intact→damaged→breached), the garrison feels abandoned and
+// their resolve slips this much (hidden, like the `garrison` effect — the
+// player reads only the band word dropping). Tunable; balance stays rough.
+export const GARRISON_BAND_CROSS_DECAY = 10
 // Descending {min, label} (same convention as METER_BANDS/ENEMY_SUPPLY_BANDS).
 export const GARRISON_BANDS = [
   { min: 75, label: 'devoted' },

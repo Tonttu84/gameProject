@@ -2,6 +2,8 @@ import {
   DESERTION_FRACTION,
   BOSS_FIGHT_METER_THRESHOLD,
   ENEMY_WITHDRAW_FRACTION,
+  GARRISON_BAND_CROSS_DECAY,
+  GARRISON_RESOLVE_START,
 } from '../utils/campaignConfig.js'
 import { getCatalog } from '../utils/catalog.js'
 import {
@@ -15,6 +17,7 @@ import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
 import { meterFillAmount, meterBand } from './meter.js'
+import { wallSlowFactor, adjustResolve } from './garrison.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging } from './forage.js'
@@ -233,9 +236,22 @@ export async function endDay(campaign) {
 
   // 4. Boss-fight meter, THEN the enemy turn (enemy upkeep/forage plan).
   // Read against the day's pre-reset forage/raid assignments — step 7 below
-  // clears them for the new turn.
-  campaign.meter.value += meterFillAmount(campaign)
+  // clears them for the new turn. Garrison Resolve slice 2: the day's fill is
+  // slowed by wallSlowFactor(resolve) — a heartened garrison holds the walls
+  // (the player's one lever to push the breach back), rounded to keep the
+  // meter integer. Read resolve BEFORE the decay below so this turn's slow
+  // reflects the garrison as it stood.
+  const resolve = campaign.garrison?.resolve ?? GARRISON_RESOLVE_START
+  const bandBefore = meterBand(campaign.meter.value)
+  campaign.meter.value += Math.round(meterFillAmount(campaign) * (1 - wallSlowFactor(resolve)))
   if (campaign.meter.value >= BOSS_FIGHT_METER_THRESHOLD) campaign.bossFightDue = true
+  // Band-cross decay: the meter only ever rises, so a changed band means the
+  // walls were battered into a WORSE one — the garrison feels abandoned and
+  // their resolve slips a step (hidden state, like the `garrison` effect; the
+  // player sees only the band word drop).
+  if (meterBand(campaign.meter.value) !== bandBefore) {
+    adjustResolve(campaign, -GARRISON_BAND_CROSS_DECAY)
+  }
   entries.push(...enemyTurn(campaign, catalog))
 
   // 5. Player upkeep — size² × kg/day × days-per-turn, from live catalog sizes.
