@@ -498,12 +498,27 @@ time), 0 → **1000** threshold.
        existing enemyAi meter tests retuned to the 42 fill; a new enemyAi route describe (devoted-vs-broken
        slow, band-cross decays / in-band doesn't, decay clamps at 0). **Full cs-test 348/348 green
        locally.** NEXT: slice 3 (boss-fight sally hook).
-    3. Boss-fight sally hook (threshold → garrison joins the decisive fight).
+    3. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`) — payoff 2, the sally.** Boss-fight
+       hook: a **devoted** garrison (`resolve ≥ GARRISON_SALLY_THRESHOLD` **75**, the `devoted` band
+       floor — only a garrison that trusts you to the last risks a sortie) sallies from Karrowgate's
+       gates as the decisive battle opens, thinning the hidden enemy host by `GARRISON_SALLY_FACTOR`
+       (**0.85** → kills ~15%) BEFORE the fight. **No schema bump** (reads existing
+       `garrison.resolve`). `garrisonSallies(resolve)` predicate (`services/garrison.js`, clamps then
+       compares). Wired into `POST /:id/battles` (`routes/campaigns.js`) just before the battle input
+       is built: scale `campaign.enemy.army` by the factor and **rebuild** `enemy.plannedPlacement`
+       from it (the placement, not `enemy.army`, is what the input carries — so the engine fields the
+       thinned host), then a player-visible sally **log line** (phrase only, no numbers). Read once,
+       on the decisive battle only. Both constants tunable (`campaignConfig.js`), balance stays rough.
+       Tests: pure `garrisonSallies` in `augury.test.js` (**90**, +3: threshold on/off, fresh-resolve
+       no-sally, clamp); two route cases in `campaigns.test.js` (devoted → thinned `enemy_placement` +
+       sally log line; starting-resolve → placement untouched, no line). NO frontend change (HUD band
+       readout from slice 1 already surfaces the standing). NEXT: slice 4 (committed-troop sortie).
     4. Committed-troop sortie wired into the raid-assignment system.
   - **Open at build time:** ~~the exact `f(resolve)` curve + wall-slow floor~~ (RESOLVED slice 2:
-    linear, `WALL_SLOW_MAX 0.4`, `BAND_CROSS_DECAY 10` — all tunable); the sally THRESHOLD and
-    its battle-start effect magnitude; naming shown to the player ("Garrison Resolve" /
-    "Karrowgate's Resolve" / "the garrison's faith").
+    linear, `WALL_SLOW_MAX 0.4`, `BAND_CROSS_DECAY 10` — all tunable); ~~the sally THRESHOLD and
+    its battle-start effect magnitude~~ (RESOLVED slice 3: `SALLY_THRESHOLD 75` = devoted-band floor,
+    `SALLY_FACTOR 0.85` = ~15% enemy losses at battle start — both tunable); naming shown to the
+    player ("Garrison Resolve" / "Karrowgate's Resolve" / "the garrison's faith").
 - **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
   branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
   `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns

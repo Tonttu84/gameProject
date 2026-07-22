@@ -34,7 +34,10 @@ import {
   MILITIA_UNIT,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
+  GARRISON_RESOLVE_START,
+  GARRISON_SALLY_FACTOR,
 } from '../utils/campaignConfig.js'
+import { garrisonSallies } from '../services/garrison.js'
 
 const router = Router()
 
@@ -323,6 +326,19 @@ router.post('/:id/battles', async (req, res) => {
       error: `the whole army must take the field — ${inCamp} units still in camp`,
     })
 
+  // Garrison Resolve payoff 2 — the sally (slice 3). A devoted garrison
+  // (resolve ≥ threshold) sorties from Karrowgate's gates as the pitched
+  // battle opens, thinning the enemy host before your lines close. Scale the
+  // hidden enemy army by the sally factor and REBUILD its planned placement so
+  // the engine fields the thinned host (the placement, not enemy.army, is what
+  // the battle input carries). Read once, here, on the decisive battle only.
+  const sallied = garrisonSallies(campaign.garrison?.resolve ?? GARRISON_RESOLVE_START)
+  if (sallied) {
+    for (const [type, n] of campaign.enemy.army)
+      campaign.enemy.army.set(type, Math.floor(n * GARRISON_SALLY_FACTOR))
+    campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
+  }
+
   const input = {
     map: MAP_NAME,
     player_placement: placement,
@@ -375,6 +391,9 @@ router.post('/:id/battles', async (req, res) => {
   campaign.log.push({
     day: campaign.day,
     entries: [
+      ...(sallied
+        ? ['Karrowgate\'s garrison sallies from the gates as the lines close — the enemy host is thinned before the blow falls.']
+        : []),
       `Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`,
       won
         ? 'The enemy host is broken. The country is yours.'

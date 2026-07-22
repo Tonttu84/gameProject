@@ -954,6 +954,48 @@ describe('POST /api/campaigns/:id/battles', () => {
     expect(input.fortified_sides).toEqual([])
   })
 
+  // Garrison Resolve payoff 2 — the sally (slice 3). A devoted garrison
+  // (resolve ≥ threshold) sorties as the pitched battle opens, thinning the
+  // hidden enemy host before the fight; a wavering one does nothing.
+  test('a devoted garrison sallies — the enemy host is thinned before the pitched battle', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 1 }
+    doc.bossFightDue = true
+    doc.garrison = { resolve: 80 } // devoted — above GARRISON_SALLY_THRESHOLD (75)
+    await doc.save()
+    const preLen = doc.enemy.plannedPlacement.length
+
+    await fightSoldiers(c.id)
+
+    // The engine fielded a THINNED enemy (the garrison's sortie), so the
+    // rebuilt placement carries fewer units than the pre-battle plan.
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.enemy_placement.length).toBeLessThan(preLen)
+
+    // ...and the sally is narrated in the decisive battle's log.
+    const after = await Campaign.findById(c.id)
+    expect(after.log.at(-1).entries.some((e) => /garrison sallies/i.test(e))).toBe(true)
+  })
+
+  test('a wavering garrison does not sally — the enemy host is untouched before the battle', async () => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 1 }
+    doc.bossFightDue = true // garrison left at the starting resolve (40, below the threshold)
+    await doc.save()
+    const preLen = doc.enemy.plannedPlacement.length
+
+    await fightSoldiers(c.id)
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.enemy_placement.length).toBe(preLen)
+    const after = await Campaign.findById(c.id)
+    expect(after.log.at(-1).entries.some((e) => /sallies/i.test(e))).toBe(false)
+  })
+
   test('a partial deployment is rejected — the whole army takes the field', async () => {
     // Playtest 2026-07-05: 212 of 378 placed still offered Fight. The server
     // now rejects any placement that leaves non-foraging units in camp.

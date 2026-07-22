@@ -369,6 +369,14 @@ export const GARRISON_WALL_SLOW_MAX = 0.4
 // their resolve slips this much (hidden, like the `garrison` effect — the
 // player reads only the band word dropping). Tunable; balance stays rough.
 export const GARRISON_BAND_CROSS_DECAY = 10
+// Slice 3 — the sally (payoff 2). At the decisive pitched battle a devoted
+// garrison (resolve ≥ threshold) sorties from Karrowgate's gates as the lines
+// close, thinning the enemy host before the blow falls: the hidden enemy army
+// is scaled by the sally factor (kills 1 − factor of it) just before the fight.
+// Threshold keyed to the `devoted` band — only a garrison that trusts you to
+// the last risks a sortie. Both tunable; balance stays rough.
+export const GARRISON_SALLY_THRESHOLD = 75
+export const GARRISON_SALLY_FACTOR = 0.85
 // Descending {min, label} (same convention as METER_BANDS/ENEMY_SUPPLY_BANDS).
 export const GARRISON_BANDS = [
   { min: 75, label: 'devoted' },

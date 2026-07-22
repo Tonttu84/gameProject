@@ -4,6 +4,7 @@ import {
   GARRISON_RESOLVE_MAX,
   GARRISON_RESOLVE_START,
   GARRISON_WALL_SLOW_MAX,
+  GARRISON_SALLY_THRESHOLD,
 } from '../utils/campaignConfig.js'
 
 // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): the standing
@@ -42,3 +43,11 @@ export const adjustResolve = (campaign, delta) => {
 // each turn — the garrison can slow the breach but never freeze it.
 export const wallSlowFactor = (resolve = GARRISON_RESOLVE_START) =>
   (GARRISON_WALL_SLOW_MAX * clampResolve(resolve)) / GARRISON_RESOLVE_MAX
+
+// Slice 3 payoff 2 — the sally. True when the garrison is devoted enough
+// (resolve ≥ threshold) to risk a sortie at the decisive pitched battle. The
+// battle route (campaigns.js) reads this once and, if it fires, thins the
+// hidden enemy army by GARRISON_SALLY_FACTOR before building the enemy's
+// placement — the garrison joins the fight from the gates.
+export const garrisonSallies = (resolve = GARRISON_RESOLVE_START) =>
+  clampResolve(resolve) >= GARRISON_SALLY_THRESHOLD

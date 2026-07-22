@@ -26,8 +26,9 @@ import {
   AUGURY_REROLLS_PER_DAY,
   GARRISON_RESOLVE_START,
   GARRISON_WALL_SLOW_MAX,
+  GARRISON_SALLY_THRESHOLD,
 } from '../utils/campaignConfig.js'
-import { wallSlowFactor, adjustResolve } from '../services/garrison.js'
+import { wallSlowFactor, adjustResolve, garrisonSallies } from '../services/garrison.js'
 
 // Pure-service tests on a plain campaign-shaped object (the service only
 // touches augury/roster/character, all mutated in place like the Mongoose
@@ -973,6 +974,26 @@ describe('adjustResolve — the single resolve writer', () => {
     expect(adjustResolve(c, -20)).toBe(0)
     const hi = { garrison: { resolve: 95 } }
     expect(adjustResolve(hi, 20)).toBe(100)
+  })
+})
+
+// garrisonSallies — the boss-fight sally predicate (slice 3). The battle route
+// reads it once and, if true, thins the enemy before the pitched battle.
+describe('garrisonSallies — the sally threshold (slice 3)', () => {
+  test('fires only at or above the sally threshold', () => {
+    expect(garrisonSallies(GARRISON_SALLY_THRESHOLD)).toBe(true)
+    expect(garrisonSallies(GARRISON_SALLY_THRESHOLD - 1)).toBe(false)
+    expect(garrisonSallies(100)).toBe(true)
+  })
+
+  test('a fresh (starting-resolve) garrison does not sally', () => {
+    expect(garrisonSallies(GARRISON_RESOLVE_START)).toBe(false)
+    expect(garrisonSallies()).toBe(false)
+  })
+
+  test('clamps out-of-range resolve before comparing', () => {
+    expect(garrisonSallies(200)).toBe(true)
+    expect(garrisonSallies(-50)).toBe(false)
   })
 })
 
