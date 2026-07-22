@@ -344,3 +344,22 @@ export const METER_BANDS = [
   { min: 334, label: 'damaged' },
   { min: 0, label: 'intact' },
 ]
+
+// ── Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve") ──────────────
+// Standing between your relief army and Karrowgate's besieged garrison, a
+// hidden 0..100 track (campaign.garrison.resolve). Cooperation events AWARD it
+// (the `garrison` effect); it's read as an event GATE now (requires
+// minResolve/maxResolve, events.js eventEligible) and — in later slices — to
+// slow the wall meter (passive centerpiece) and trigger the boss-fight sally.
+// Own info, but shown to the player only as a coarse band word (garrisonBand,
+// services/garrison.js) to hold the fiction — never the raw number.
+export const GARRISON_RESOLVE_MIN = 0
+export const GARRISON_RESOLVE_MAX = 100
+export const GARRISON_RESOLVE_START = 40
+// Descending {min, label} (same convention as METER_BANDS/ENEMY_SUPPLY_BANDS).
+export const GARRISON_BANDS = [
+  { min: 75, label: 'devoted' },
+  { min: 50, label: 'steadfast' },
+  { min: 25, label: 'wary' },
+  { min: 0, label: 'faltering' },
+]

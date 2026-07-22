@@ -39,7 +39,7 @@ const wallsGauge = ({ band = 'intact', estimate } = {}, bossFightDue) => {
 // never re-derives campaign math), the player reads tonnes. Reads straight
 // from the campaign store — only ever mounted once a campaign exists.
 const CampaignHUD = () => {
-  const { day, resources, fortification, forage, meter, bossFightDue, raid, scouting } =
+  const { day, resources, fortification, forage, meter, bossFightDue, garrison, raid, scouting } =
     useCampaignStore((s) => s.campaign)
   const roster = useRoster()
 
@@ -88,6 +88,12 @@ const CampaignHUD = () => {
           </span>
         )
       })()}
+      {/* Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): the
+          standing between your relief army and Karrowgate's garrison. Own info,
+          shown as a coarse band word (the server never sends the raw number). */}
+      <span className="hud-garrison" data-testid="hud-garrison" title="Karrowgate's garrison">
+        Garrison: {garrison?.band ?? '—'}
+      </span>
       <span className="hud-recon" data-testid="hud-recon">
         Recon: {scouting?.band ?? 'Blind'}
       </span>

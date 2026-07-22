@@ -16,6 +16,7 @@ import {
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
 import { meterBand } from './meter.js'
+import { garrisonBand } from './garrison.js'
 import { displayBracket } from './recon.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
@@ -176,6 +177,12 @@ export async function campaignView(campaign) {
       estimate: displayBracket(campaign.recon?.brackets?.meter, campaign.meter.value, level),
     },
     bossFightDue: campaign.bossFightDue,
+    // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): own info, but
+    // shown ONLY as a coarse band word — the raw resolve number stays
+    // server-side (it's what the wall-slow/sally read, and a phrase holds the
+    // fiction better than a figure). Defaults to the starting band for a
+    // campaign that predates the field.
+    garrison: { band: garrisonBand(campaign.garrison?.resolve) },
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,

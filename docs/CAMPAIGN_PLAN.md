@@ -465,9 +465,19 @@ time), 0 → **1000** threshold.
   - **HUD:** a garrison-standing readout beside the walls gauge (coarse word while Blind, like the
     walls meter — the exact number is hidden state).
   - **Slice plan (TDD, one per session per the small-batches rule):**
-    1. `garrison.resolve` state + `garrison` delta effect + `minResolve`/`maxResolve` `requires`
-       gate (predicate clause + `ctx.resolve`) + 2–3 cooperation events (incl. one resolve-gated) +
-       HUD readout (pure track + content; **no meter hook yet**).
+    1. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`).** `garrison.resolve` sub-state
+       (model **schema v20→v21**, default `GARRISON_RESOLVE_START` 40) + the `garrison` bounded-delta
+       effect (`applyEffect`, clamped 0..100, hidden-state like `flag` — no leaked number) + the
+       `requires` `minResolve`/`maxResolve` gate (`eventEligible`, reads `ctx.garrison?.resolve`,
+       defaults to START for a creation-time draw) + `garrison`→neutral in the valence classifier.
+       Config: `GARRISON_RESOLVE_MIN/MAX/START` + `GARRISON_BANDS` (faltering/wary/steadfast/devoted);
+       `services/garrison.js` `garrisonBand(resolve)`. Three cooperation events: `garrison_call`
+       (choice — spend food to raise resolve, or keep stores), `garrison_lookout` (gated
+       `minResolve:60`, an `enemy_reveal` the trusting garrison hands you), `garrison_spurned` (gated
+       `maxResolve:20`, a soured-relationship morale slip). View exposes `garrison:{band}` (coarse
+       word only — raw resolve stays server-side); HUD `hud-garrison` readout. Tests: augury **82**
+       (pure, +11) incl. effect/gate/events; frontend `campaignHud` garrison readout. **Full cs-test
+       340/340, frontend green in isolation.** NO meter hook yet (slice 2).
     2. Passive wall-slow hook in day resolution + band-cross decay (**the mechanic change**).
     3. Boss-fight sally hook (threshold → garrison joins the decisive fight).
     4. Committed-troop sortie wired into the raid-assignment system.

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import config from '../utils/config.js'
+import { GARRISON_RESOLVE_START } from '../utils/campaignConfig.js'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
 // plain fields — enemy.army, enemy.plannedPlacement, augury.trueEvent/
@@ -80,7 +81,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 20 // v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 21 // v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -104,6 +105,17 @@ const campaignSchema = new mongoose.Schema({
     value: { type: Number, default: 0 },
   },
   bossFightDue: { type: Boolean, default: false },
+
+  // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): the standing
+  // between your relief army and Karrowgate's besieged garrison, 0..100.
+  // Cooperation events AWARD it (applyEffect `garrison`) and a later fate GATES
+  // on it (events.js `requires` minResolve/maxResolve). Own info — campaignView
+  // exposes only a coarse band word (garrisonBand), never this raw number.
+  // Slice 1: the track + gate + readout; the passive wall-slow and boss-fight
+  // sally hang off the same value in later slices.
+  garrison: {
+    resolve: { type: Number, default: GARRISON_RESOLVE_START },
+  },
 
   // Recon (docs/CAMPAIGN_PLAN.md "Recon rework"): leftover scouting points that
   // weren't spent on the raid board accumulate here at end-of-turn (no decay).

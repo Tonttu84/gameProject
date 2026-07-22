@@ -1,4 +1,9 @@
-import { EVENT_RUNG_BY_BAND } from '../utils/campaignConfig.js'
+import {
+  EVENT_RUNG_BY_BAND,
+  GARRISON_RESOLVE_MIN,
+  GARRISON_RESOLVE_MAX,
+  GARRISON_RESOLVE_START,
+} from '../utils/campaignConfig.js'
 
 // Fortnightly event pool + effect application. Events reach the player only
 // as the augur's prophecy (services/augury.js): each turn one TRUE event and
@@ -111,6 +116,24 @@ export const EVENT_POOL = [
     ],
   },
   { id: 'relief_column_arrives', title: 'The Relief Column Arrives', description: 'Guided past the enemy\'s watch-lines by your scouts, a column of the Warden\'s spearmen tramps into camp, banners heavy with road-dust. +30 Soldiers.', severity: 2, effect: { type: 'roster', unit: 'Soldier', delta: +30 }, chained: true },
+  // ── Garrison Resolve cooperation (docs/CAMPAIGN_PLAN.md "Garrison Resolve",
+  // slice 1) ── Fates that move the standing track (the `garrison` effect) and,
+  // via the `requires` minResolve/maxResolve gate, appear only at the right
+  // standing. `garrison_call` FEEDS the track (a choice: spend stores to raise
+  // it, or keep them); `garrison_lookout` is the high-trust PAYOFF it unlocks
+  // (gated minResolve, an `enemy_reveal` the walls hand you); `garrison_spurned`
+  // is the soured-relationship fate (gated maxResolve). The passive wall-slow +
+  // boss-fight sally that also hang off resolve come in later slices.
+  {
+    id: 'garrison_call', title: 'The Garrison Calls', description: 'A runner slips out of a Karrowgate sally-port at dusk: the garrison begs you to help hold a stretch of wall the enemy has been battering thin.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral',
+    choices: [
+      { id: 'answer_the_call', label: 'Send provisions and a working party to the walls', description: 'Spend from your own stores to stiffen the threatened stretch. The garrison marks who stood with them when the wall shook — and stands the taller for it.', effect: { type: 'multi', effects: [{ type: 'food', delta: -1500 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'tend_your_own',   label: 'Keep your men and stores at their own work', description: 'The wall is theirs to hold. You keep every sack and every hand for your own column.', effect: { type: 'none' } },
+    ],
+  },
+  { id: 'garrison_lookout', title: 'Word from the Ramparts', description: 'Trusting the banner that has stood with them, Karrowgate\'s watch signal down what they can see from the high walls — the enemy\'s dispositions, laid plain.', severity: 2, effect: { type: 'enemy_reveal' }, requires: { minResolve: 60 } },
+  { id: 'garrison_spurned', title: 'The Garrison Turns Its Back', description: 'Bitter at a relief army that lets their wall be ground down, the defenders jeer your scouts from the parapet; the slight runs through your own camp and a few men slink off.', severity: 2, effect: { type: 'roster', unit: 'Soldier', factor: 0.97 }, requires: { maxResolve: 20 } },
   // ── fates with choices (resolve-then-choose) ── The fired rung's `choices`
   // hand the player a decision instead of an effect: end-day pends it
   // (dayResolution) and a follow-up POST applies the picked branch. Branches
@@ -215,6 +238,15 @@ export const eventEligible = (event, ctx = {}) => {
   if (req.flags && !req.flags.every((f) => bagGet(ctx.eventFlags, f) > 0)) return false
   if (req.notFlags && req.notFlags.some((f) => bagGet(ctx.eventFlags, f) > 0)) return false
   if (req.hasUnit && bagGet(ctx.roster, req.hasUnit) <= 0) return false
+  // Garrison Resolve gate: the standing track opens high-trust garrison fates
+  // and closes them (or unlocks soured-relationship ones) as the relationship
+  // shifts. Absent garrison context reads as the starting resolve, so a
+  // creation-time draw gates exactly as a fresh campaign would.
+  if (req.minResolve != null || req.maxResolve != null) {
+    const resolve = ctx.garrison?.resolve ?? GARRISON_RESOLVE_START
+    if (req.minResolve != null && resolve < req.minResolve) return false
+    if (req.maxResolve != null && resolve > req.maxResolve) return false
+  }
   return true
 }
 
@@ -252,6 +284,10 @@ export const eventValence = (effect) => {
     // Upgrading units in place (mount soldiers as cavalry) is a gain.
     case 'convert':
       return 'good'
+    // A Garrison Resolve move is a relationship shift, neither gain nor loss —
+    // its sibling effects in a bundle carry the fate's actual mood.
+    case 'garrison':
+      return 'neutral'
     // A bundle reads as its parts' shared mood; genuinely mixed bundles
     // (a gain and a loss in one fate) net out to neutral.
     case 'multi': {
@@ -347,6 +383,19 @@ export function applyEffect(campaign, effect) {
     const next = effect.delta !== undefined ? cur + effect.delta : (effect.value ?? 1)
     if (flags instanceof Map) flags.set(effect.name, next)
     else flags[effect.name] = next
+  } else if (effect.type === 'garrison') {
+    // Garrison Resolve delta (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): move
+    // the standing track by `delta`, clamped to [MIN, MAX]. Hidden state like
+    // `flag` — the relationship's story lives in the event text, so NO
+    // player-visible number (a leaked figure would cheapen the fiction and the
+    // band is all the player is meant to read). Initializes the track from the
+    // starting value if the campaign predates the field.
+    if (!campaign.garrison) campaign.garrison = { resolve: GARRISON_RESOLVE_START }
+    const cur = campaign.garrison.resolve ?? GARRISON_RESOLVE_START
+    campaign.garrison.resolve = Math.max(
+      GARRISON_RESOLVE_MIN,
+      Math.min(GARRISON_RESOLVE_MAX, cur + effect.delta),
+    )
   } else if (effect.type === 'schedule') {
     // Chain follow-up (part 2): guarantee `event` surfaces as a fate `delay`
     // turns from now (default the next turn). Queued as {eventId, day} on

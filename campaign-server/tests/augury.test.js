@@ -24,6 +24,7 @@ import {
   AUGURY_SLOTS,
   AUGURY_ODDS_MAX,
   AUGURY_REROLLS_PER_DAY,
+  GARRISON_RESOLVE_START,
 } from '../utils/campaignConfig.js'
 
 // Pure-service tests on a plain campaign-shaped object (the service only
@@ -887,5 +888,106 @@ describe('siege events: the relief-host chain', () => {
     const ids = new Set(eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) }).map((e) => e.id))
     expect(ids.has('relief_column_arrives')).toBe(false)
     expect(ids.has('relief_rider')).toBe(true)
+  })
+})
+
+// ── Garrison Resolve (slice 1): the standing track + its event gate ──────────
+// A hidden 0..100 relationship track (campaign.garrison.resolve) fed by the
+// `garrison` effect and read as an event prerequisite (requires
+// minResolve/maxResolve). Later slices hang the passive wall-slow + boss-fight
+// sally off the same number; slice 1 is the track, the gate, and the
+// cooperation events.
+describe('applyEffect — garrison (Resolve delta)', () => {
+  const target = (resolve = 40) => ({
+    day: 1, resources: { food: 5000, materials: 0 }, roster: new Map(), garrison: { resolve },
+  })
+
+  test('moves resolve by the delta and leaves no player-visible number', () => {
+    const c = target(40)
+    const log = applyEffect(c, { type: 'garrison', delta: 15 })
+    expect(c.garrison.resolve).toBe(55)
+    // Hidden state like `flag` — the relationship's story is the event text.
+    expect(log.join(' ')).not.toMatch(/\d/)
+  })
+
+  test('clamps to [0, 100]', () => {
+    const hi = target(95); applyEffect(hi, { type: 'garrison', delta: 20 })
+    expect(hi.garrison.resolve).toBe(100)
+    const lo = target(10); applyEffect(lo, { type: 'garrison', delta: -25 })
+    expect(lo.garrison.resolve).toBe(0)
+  })
+
+  test('initializes the track from the starting value when the campaign has none', () => {
+    const c = { day: 1, resources: { food: 0, materials: 0 }, roster: new Map() }
+    applyEffect(c, { type: 'garrison', delta: 5 })
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + 5)
+  })
+
+  test('rides inside a multi alongside a real effect', () => {
+    const c = target(40)
+    applyEffect(c, { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'garrison', delta: 15 }] })
+    expect(c.resources.food).toBe(3000)
+    expect(c.garrison.resolve).toBe(55)
+  })
+
+  test('classifies as neutral — a relationship move, not a gain or loss', () => {
+    expect(eventValence({ type: 'garrison', delta: 15 })).toBe('neutral')
+    expect(eventValence({ type: 'garrison', delta: -15 })).toBe('neutral')
+  })
+})
+
+describe('eventEligible — resolve gate (minResolve/maxResolve)', () => {
+  const ev = (requires) => ({ id: 'x', title: 'X', severity: 2, effect: { type: 'none' }, requires })
+
+  test('minResolve gates on the garrison standing', () => {
+    expect(eventEligible(ev({ minResolve: 60 }), { garrison: { resolve: 60 } })).toBe(true)
+    expect(eventEligible(ev({ minResolve: 60 }), { garrison: { resolve: 59 } })).toBe(false)
+  })
+
+  test('maxResolve gates the other way', () => {
+    expect(eventEligible(ev({ maxResolve: 20 }), { garrison: { resolve: 20 } })).toBe(true)
+    expect(eventEligible(ev({ maxResolve: 20 }), { garrison: { resolve: 21 } })).toBe(false)
+  })
+
+  test('absent garrison context reads as the starting resolve', () => {
+    expect(eventEligible(ev({ minResolve: GARRISON_RESOLVE_START }), {})).toBe(true)
+    expect(eventEligible(ev({ minResolve: GARRISON_RESOLVE_START + 1 }), {})).toBe(false)
+    expect(eventEligible(ev({ maxResolve: GARRISON_RESOLVE_START }), {})).toBe(true)
+    expect(eventEligible(ev({ maxResolve: GARRISON_RESOLVE_START - 1 }), {})).toBe(false)
+  })
+})
+
+describe('the garrison cooperation events', () => {
+  const call = EVENT_POOL.find((e) => e.id === 'garrison_call')
+  const lookout = EVENT_POOL.find((e) => e.id === 'garrison_lookout')
+  const spurned = EVENT_POOL.find((e) => e.id === 'garrison_spurned')
+
+  test('the garrison call is a choice; answering it spends stores to raise resolve', () => {
+    expect(call.effect).toEqual({ type: 'choice' })
+    expect(['good', 'bad', 'neutral']).toContain(call.valence)
+    const answer = call.choices.find((c) => c.id === 'answer_the_call')
+    const parts = answer.effect.type === 'multi' ? answer.effect.effects : [answer.effect]
+    expect(parts.some((p) => p.type === 'garrison' && p.delta > 0)).toBe(true)
+    // The other branch spends nothing and moves the track not at all.
+    const decline = call.choices.find((c) => c.id === 'tend_your_own')
+    expect(decline.effect).toEqual({ type: 'none' })
+  })
+
+  test('a high-resolve boon is gated on minResolve and lays the enemy bare', () => {
+    expect(lookout.requires.minResolve).toBeGreaterThan(GARRISON_RESOLVE_START)
+    expect(lookout.effect).toEqual({ type: 'enemy_reveal' })
+    const low = eligiblePool({ garrison: { resolve: GARRISON_RESOLVE_START }, roster: new Map() })
+    expect(low.some((e) => e.id === 'garrison_lookout')).toBe(false)
+    const high = eligiblePool({ garrison: { resolve: 100 }, roster: new Map() })
+    expect(high.some((e) => e.id === 'garrison_lookout')).toBe(true)
+  })
+
+  test('a soured-relationship fate is gated on maxResolve', () => {
+    expect(spurned.requires.maxResolve).toBeLessThan(GARRISON_RESOLVE_START)
+    expect(eventValenceFor(spurned)).toBe('bad')
+    const bitter = eligiblePool({ garrison: { resolve: 10 }, roster: new Map() })
+    expect(bitter.some((e) => e.id === 'garrison_spurned')).toBe(true)
+    const warm = eligiblePool({ garrison: { resolve: GARRISON_RESOLVE_START }, roster: new Map() })
+    expect(warm.some((e) => e.id === 'garrison_spurned')).toBe(false)
   })
 })

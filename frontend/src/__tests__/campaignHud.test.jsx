@@ -48,6 +48,11 @@ describe('CampaignHUD boss-fight meter + recon readout', () => {
     expect(screen.getByTestId('hud-recon')).toHaveTextContent('Recon: Superior')
   })
 
+  it("shows the garrison's standing as a coarse band word", () => {
+    hudWith({ garrison: { band: 'wary' } })
+    expect(screen.getByTestId('hud-garrison')).toHaveTextContent('Garrison: wary')
+  })
+
   it('mirrors the raid scout-points pool, floored', () => {
     hudWith({ raid: { ...campaignFixture.raid, scoutingPoints: 23.7 } })
     expect(screen.getByTestId('hud-scouting')).toHaveTextContent('Scout pts: 23')
