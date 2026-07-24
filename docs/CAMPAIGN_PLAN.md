@@ -592,7 +592,10 @@ time), 0 → **1000** threshold.
   as allied reinforcements from the enemy's rear at turn X** (user), modelled as an **auto-cast
   spell** (see S6).
 
-**S5 — model rework (server + frontend; THIS is the current slice, 2026-07-24).** No engine work.
+**S5 — model rework (server + frontend). ✅ SHIPPED 2026-07-24 (branch `feat/garrison-resolve`,
+commit `1979774`; cs-test 371/371, fe 237/237 green solo — the mongo-startup flake needs a solo
+run, and running fe+cs concurrently starves the machine into timeout flakes, so run them one at a
+time).** No engine work.
   - Config (`campaignConfig.js`): `GARRISON_RESOLVE_START` 40→**45**; `GARRISON_BANDS` → the 3
     levels above; add `GARRISON_SURRENDER_FLOOR = 0`; re-point `GARRISON_SALLY_THRESHOLD` 75→**67**
     (the determined-level floor — keeps the interim enemy-thinning sally firing for any determined
