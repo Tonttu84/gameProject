@@ -621,20 +621,38 @@ time).** No engine work.
     (the old faltering/wary/steadfast/devoted band tests get rewritten to the 3 levels); a
     `dayResolution` surrender-loss route case; `campaignHud.test.jsx` garrison-gauge cases.
 
-**S6 — engine: garrison-sally reinforcements as an auto-cast spell (C++ engine + server).** Model
-  the sally as a **spell in `SpellList`** (template: `castRaiseDead`, which already summons allied
-  units to a team at a hex mid-battle and marks them `battleSummon` so they don't persist as
-  survivors) that **auto-casts at turn X**, placing N allied units at the **enemy's rear edge**.
-  User steer: "write it like a spell that gets autocast, so if we add manual control later the
-  player can cast it when he wants." Wrinkle to solve: `raise_dead` is cast BY an on-field
-  Necromancer; a garrison sally has no caster → needs a **casterless / virtual trigger** (a
-  team-level scheduled autocast keyed on the tick counter). **Print:** the spell calls
-  `Battlefield::logEvent("Karrowgate's garrison throws open its gates — allies storm the enemy's
-  rear!")` at the cast tick, so a player watching the replay SEES it — the per-tick log pipeline is
-  fully live (engine `logEvent` → `ReplayRecorder` `takeTickLog` → `tick.log` → ReplayView
-  `replay-log` panel; verified 2026-07-24). `battleSummon` reinforcements don't cross back as
-  survivors. Engine tests (unit appears at turn X on the right edge/team; gone from survivors).
-  BattleInput gains a `reinforcements`/sally spec the campaign layer fills (S7).
+**S6 — engine: garrison-sally reinforcements as an auto-cast spell (C++ engine + server). ✅
+  SHIPPED 2026-07-24 (branch `feat/garrison-resolve`).** The sally is `Spells::castGarrisonSally`
+  (`SpellList.cpp`), modelled on `castRaiseDead`: it summons `r.count` allied units of `r.unitType`
+  (via `makeUnitByName`), marks them `battleSummon` (so `extractResult` filters them out — they
+  never cross back as survivors), and places them at the **enemy's rear edge** — the far rows of
+  the enemy's home end (Red flees south → Blue's sally lands rows ≥ height-3; derived from
+  `3 - team`), reusing `randomPlaceArmy` with a rear `PlacementZone`. **The casterless wrinkle:**
+  unlike the roster spells it takes no `AUnit&` caster — a garrison has no mage on the field — so it
+  is a free function (still in `SpellList`, so a future manual-cast path can call the same body),
+  invoked by a new **team-level tick scheduler**: `Battlefield::_reinforcements`
+  (`std::vector<Reinforcement>`, cleared by reset()/loadArmies like the tick log) +
+  `scheduleReinforcement()` + `fireScheduledReinforcements()` called at the top of `tick()` (after
+  `onTurnStart`, before the special phase, so arrivals act that turn). A wave fires **exactly once**,
+  on the first turn where `tick <= _ticksRun+1`. `BattleInput` gained a validated, attacker-clamped
+  `reinforcements: [{tick, team, count, unit_type, message}]` array (`runBattleFromJson`,
+  `MAX_REINFORCE_COUNT` 500), scheduled AFTER `loadArmies`.
+  - **Deviation from the plan's literal spec, flagged:** the log line is **caller-supplied** (the
+    `Reinforcement.message`), not the hardcoded "Karrowgate…" string — the engine stays free of
+    campaign fiction (its ethos everywhere else), logging a generic "Reinforcements storm the enemy's
+    rear!" when `message` is empty. The **campaign/server layer supplies the Karrowgate wording** via
+    the BattleInput `message` field (S7), and the replay still SHOWS it (verified end-to-end:
+    `echo '{...,"reinforcements":[{...,"message":"Karrowgate garrison sallies!"}]}' | ./game battle`
+    emits the line into `tick.log`). If the user wants the literal string baked into the engine
+    instead, it's a one-line default change.
+  - Tests: `backend/engine/tests/test_garrison_sally.cpp` (3 cases: wave summons allies at the
+    enemy's rear on its turn / battleSummon units don't cross back as survivors / fires exactly once)
+    — named distinctly from `test_reinforce.cpp` (that's reserve *redistribution* between hexes, an
+    unrelated concept). **Full suite 347 cases / 3783 assertions green; `./game` links clean.**
+  - **NEXT: S7** — translate garrison level → sally spec at the decisive battle and feed it into the
+    BattleInput `reinforcements` (server-only); **remove** the interim slice-3 enemy-thinning sally
+    (`campaign.enemy.army` scaling + placement rebuild in `routes/campaigns.js`), keeping the
+    day-report sally log line.
 
 **S7 — wire pitched-battle support by level (server).** At the decisive battle, translate garrison
   **level → sally spec** (normal → some troops, determined → more; low → none) and feed it into the

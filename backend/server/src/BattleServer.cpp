@@ -308,6 +308,29 @@ void runBattleFromJson(Battlefield& field)
     if (j.contains("max_turns") && j["max_turns"].is_number_integer())
         maxTicks = clampMaxTurns(j["max_turns"].get<int>());
 
+    // Optional scheduled reinforcement waves (garrison sally, S6/S7): the
+    // campaign layer injects allied troops that storm the enemy's rear at a
+    // given turn. Attacker-controlled → every field type-checked and clamped;
+    // malformed entries are skipped, never thrown. Scheduled AFTER loadArmies so
+    // loadArmies' own clear doesn't wipe them.
+    constexpr int MAX_REINFORCE_COUNT = 500;
+    if (j.contains("reinforcements") && j["reinforcements"].is_array()) {
+        for (const auto& e : j["reinforcements"]) {
+            if (!e.is_object()) continue;
+            Reinforcement r;
+            if (e.contains("tick")  && e["tick"].is_number_integer())  r.tick  = e["tick"].get<int>();
+            if (e.contains("team")  && e["team"].is_number_integer())  r.team  = e["team"].get<int>();
+            if (e.contains("count") && e["count"].is_number_integer()) r.count = e["count"].get<int>();
+            if (e.contains("unit_type") && e["unit_type"].is_string()) r.unitType = e["unit_type"].get<std::string>();
+            if (e.contains("message")   && e["message"].is_string())   r.message  = e["message"].get<std::string>();
+            if (r.team != REDTEAM && r.team != BLUETEAM) continue;
+            if (r.count <= 0) continue;
+            if (r.count > MAX_REINFORCE_COUNT) r.count = MAX_REINFORCE_COUNT;
+            if (r.tick < 1) r.tick = 1;
+            field.scheduleReinforcement(std::move(r));
+        }
+    }
+
     runAndEmitBattle(field, mapName, "BATTLE", maxTicks);
 }
 

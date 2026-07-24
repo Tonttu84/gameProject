@@ -26,6 +26,24 @@ struct BattleResult
     size_t corpses;
 };
 
+// A scheduled mid-battle reinforcement wave — e.g. Karrowgate's garrison
+// sallying to the player's aid. Casterless (a garrison throwing its gates has
+// no mage on the field): fired by Battlefield::tick() at its turn, not by an
+// on-field caster via AUnit::castSpells. The effect body lives in SpellList
+// (Spells::castGarrisonSally), modelled on raise_dead. The campaign layer (S7)
+// fills these from the garrison's support level; the `message` is replay
+// fiction supplied by that layer (a generic line is logged when it is empty,
+// keeping the engine free of campaign-specific prose).
+struct Reinforcement
+{
+    int         tick     = 1;         // fires at the start of this 1-based turn
+    int         team     = BLUETEAM;  // team the summoned units join
+    int         count    = 0;         // how many units to summon
+    std::string unitType = "Soldier"; // UnitCatalog type name
+    std::string message;              // replay log line; generic fallback if empty
+    bool        fired    = false;     // set once it has fired (fires exactly once)
+};
+
 // ─── Team ────────────────────────────────────────────────────────────────────
 // Owns all data belonging to one side of a battle: units, squads, wings.
 // Centralises operations that currently scatter across Battlefield (prune dead,
@@ -168,6 +186,13 @@ class Battlefield
         // them once per tick via takeTickLog(). Not required to be exhaustive —
         // it exists so a replay can show roughly what happened, not to be a
         // combat audit trail.
+        // ── Scheduled reinforcements (garrison sally) ──────────────────────────
+        // Queue a casterless reinforcement wave, fired by tick() when its turn
+        // arrives. Filled by the campaign layer (S7) from BattleInput's
+        // "reinforcements" spec. Cleared by reset()/loadArmies() like the other
+        // per-battle accumulators.
+        void scheduleReinforcement(Reinforcement r) { _reinforcements.push_back(std::move(r)); }
+
         void logEvent(std::string line) { _tickLog.push_back(std::move(line)); }
         std::vector<std::string> takeTickLog() {
             std::vector<std::string> out;
@@ -179,11 +204,16 @@ class Battlefield
         void onTurnStart();
         void onTurnEnd();
         void logDeaths(const Team& team);
+        // Summon any reinforcement wave whose turn has arrived. Called once at
+        // the top of each tick(), before the special/movement phases so fresh
+        // arrivals act this turn.
+        void fireScheduledReinforcements();
 
         Team   _red{REDTEAM};
         Team   _blue{BLUETEAM};
         size_t corpses = 0;
         std::vector<std::string> _tickLog;
+        std::vector<Reinforcement> _reinforcements;
         int    _maxTicks = DEFAULT_MAX_BATTLE_TICKS;
         int    _ticksRun = 0;
 };
