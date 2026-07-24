@@ -29,8 +29,9 @@ import {
   GARRISON_RESOLVE_START,
   GARRISON_WALL_SLOW_MAX,
   GARRISON_SALLY_THRESHOLD,
+  GARRISON_SALLY_TROOPS,
 } from '../utils/campaignConfig.js'
-import { wallSlowFactor, adjustResolve, garrisonSallies, garrisonLevel, garrisonSurrendered } from '../services/garrison.js'
+import { wallSlowFactor, adjustResolve, garrisonSallies, garrisonSallyTroops, garrisonLevel, garrisonSurrendered } from '../services/garrison.js'
 
 // Pure-service tests on a plain campaign-shaped object (the service only
 // touches augury/roster/character, all mutated in place like the Mongoose
@@ -996,6 +997,28 @@ describe('garrisonSallies — the sally threshold (slice 3)', () => {
   test('clamps out-of-range resolve before comparing', () => {
     expect(garrisonSallies(200)).toBe(true)
     expect(garrisonSallies(-50)).toBe(false)
+  })
+})
+
+// garrisonSallyTroops — the graduated sally (S7). Troop count the garrison
+// commits to the decisive battle, keyed on garrisonLevel: low none, normal
+// some, determined more. The battle route turns a >0 count into a BattleInput
+// reinforcement wave.
+describe('garrisonSallyTroops — graduated by level (S7)', () => {
+  test('a determined garrison sends the most troops', () => {
+    expect(garrisonSallyTroops(80)).toBe(GARRISON_SALLY_TROOPS.determined)
+    expect(garrisonSallyTroops(100)).toBe(GARRISON_SALLY_TROOPS.determined)
+  })
+
+  test('a normal garrison sends fewer', () => {
+    expect(garrisonSallyTroops(50)).toBe(GARRISON_SALLY_TROOPS.normal)
+    expect(garrisonSallyTroops(GARRISON_RESOLVE_START)).toBe(GARRISON_SALLY_TROOPS.normal)
+    expect(GARRISON_SALLY_TROOPS.normal).toBeLessThan(GARRISON_SALLY_TROOPS.determined)
+  })
+
+  test('a low garrison sends none', () => {
+    expect(garrisonSallyTroops(20)).toBe(0)
+    expect(GARRISON_SALLY_TROOPS.low).toBe(0)
   })
 })
 

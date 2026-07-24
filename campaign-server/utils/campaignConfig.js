@@ -378,15 +378,27 @@ export const GARRISON_WALL_SLOW_MAX = 0.4
 // player reads only the band word dropping). Tunable; balance stays rough.
 export const GARRISON_BAND_CROSS_DECAY = 10
 // The sally (payoff 2). At the decisive pitched battle a garrison that trusts
-// you sorties from Karrowgate's gates. S5→S7 makes this GRADUATED by level
-// (low → no help, normal → some troops, determined → more, entering the battle
-// as allied reinforcements from the enemy rear — an auto-cast spell, S6). Until
-// S7 lands that, the INTERIM implementation is slice 3's enemy-thinning: the
-// hidden enemy army is scaled by the sally factor (kills 1 − factor) just before
-// the fight, fired once the garrison is `determined`. Threshold keyed to the
-// determined-level floor. Both tunable; balance stays rough.
+// you sorties from Karrowgate's gates. GRADUATED by level (S7): the garrison's
+// men enter the fight as allied reinforcements storming the enemy's rear — the
+// casterless auto-cast spell (S6), fed via BattleInput's `reinforcements`. The
+// count is keyed on garrisonLevel: low sends no one, normal some, determined
+// more. All tunable; balance stays rough.
+//   - GARRISON_SALLY_TROOPS: units the garrison commits, by level.
+//   - GARRISON_SALLY_TICK: the turn they arrive at the enemy rear.
+//   - GARRISON_SALLY_UNIT: what they field (foot for now).
+//   - GARRISON_SALLY_TEAM: 2 = BLUETEAM, the player's side (engine Defines.hpp).
+//   - GARRISON_SALLY_BATTLE_MESSAGE: the replay log line the sally prints (the
+//     engine keeps campaign fiction out of itself and logs whatever we pass).
+export const GARRISON_SALLY_TROOPS = { low: 0, normal: 40, determined: 80 }
+export const GARRISON_SALLY_TICK = 4
+export const GARRISON_SALLY_UNIT = 'Soldier'
+export const GARRISON_SALLY_TEAM = 2
+export const GARRISON_SALLY_BATTLE_MESSAGE =
+  "Karrowgate's garrison throws open its gates — allies storm the enemy's rear!"
+// The determined-level floor (67). Retained as the `garrisonSallies` predicate's
+// threshold (services/garrison.js) — "is the garrison determined?"; the sally
+// itself is now graduated via GARRISON_SALLY_TROOPS above.
 export const GARRISON_SALLY_THRESHOLD = 67
-export const GARRISON_SALLY_FACTOR = 0.85
 // The three garrison LEVELS shown to the player (S5 redesign — replaces the old
 // faltering/wary/steadfast/devoted bands). Descending {min, label} (same
 // convention as METER_BANDS). 0 is the surrender floor (campaign lost), so the

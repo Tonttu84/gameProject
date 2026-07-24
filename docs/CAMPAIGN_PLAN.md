@@ -654,11 +654,31 @@ time).** No engine work.
     (`campaign.enemy.army` scaling + placement rebuild in `routes/campaigns.js`), keeping the
     day-report sally log line.
 
-**S7 — wire pitched-battle support by level (server).** At the decisive battle, translate garrison
-  **level → sally spec** (normal → some troops, determined → more; low → none) and feed it into the
-  BattleInput for the S6 spell. **Replaces** the interim slice-3 enemy-thinning sally (remove the
-  `campaign.enemy.army` scaling + placement rebuild in `routes/campaigns.js`; keep the day-report
-  sally log line). Route tests: normal/determined inject the right reinforcement count, low none.
+**S7 — wire pitched-battle support by level (server). ✅ SHIPPED 2026-07-24 (branch
+  `feat/garrison-resolve`).** At the decisive battle the garrison's support is now GRADUATED by
+  level and delivered as S6 reinforcements, replacing slice 3's enemy-thinning.
+  - **Graduated sally count:** `garrisonSallyTroops(resolve)` (`services/garrison.js`) →
+    `GARRISON_SALLY_TROOPS[garrisonLevel]` = `{low:0, normal:40, determined:80}` (config; tunable).
+    `garrisonSallies` (the determined-threshold boolean) is retained as a pure predicate but is no
+    longer the battle trigger — normal now sends troops too.
+  - **Fed into the BattleInput** (`routes/campaigns.js` battle route): a `>0` count becomes one
+    `reinforcements: [{ tick: GARRISON_SALLY_TICK (4), team: 2 (BLUETEAM), count, unit_type:
+    'Soldier', message: GARRISON_SALLY_BATTLE_MESSAGE }]` entry — the S6 casterless spell then
+    storms the enemy's rear at that turn. The Karrowgate replay wording lives in `message` (config),
+    keeping the engine fiction-free (per the S6 deviation).
+  - **Interim slice-3 sally REMOVED:** the `campaign.enemy.army` ×`GARRISON_SALLY_FACTOR` scaling +
+    `plannedPlacement` rebuild are gone (config const `GARRISON_SALLY_FACTOR` deleted); the enemy
+    host is no longer pre-thinned — the reinforcements do their damage in the fight. The day-report
+    sally log line is KEPT (gated on `sallied = count>0`), reworded off "the enemy host is thinned"
+    to "its men storm the enemy's rear to fight at your side."
+  - Tests: pure `garrisonSallyTroops` (augury.test.js, +3: determined/normal/low); the slice-3 route
+    pair rewritten into 3 (campaigns.test.js: determined → larger wave + enemy untouched + sally
+    narrated; normal → smaller wave; low → no reinforcements + no line). **Full cs-test 375/375
+    green; C++ suite 347 green (unchanged).** NOT yet click-tested in a live browser.
+  - **NEXT: S8** (scripted siege spine — 3 guaranteed `chained` beats seeded at creation) or **S9**
+    (resolve-gated pool fates). Both are the content passes, deliberately last. Frontend still shows
+    the garrison gauge (S5) but nothing surfaces the sally pre-battle — a "the garrison will sally"
+    hint on the Deploy screen is possible polish, not required.
 
 **S8 — scripted siege spine (server; the user's task 2).** Three GUARANTEED beats, seeded onto
   `campaign.scheduledEvents` at creation (`routes/campaigns.js`), each authored `chained: true` so

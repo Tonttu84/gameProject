@@ -35,9 +35,12 @@ import {
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
   GARRISON_RESOLVE_START,
-  GARRISON_SALLY_FACTOR,
+  GARRISON_SALLY_TICK,
+  GARRISON_SALLY_UNIT,
+  GARRISON_SALLY_TEAM,
+  GARRISON_SALLY_BATTLE_MESSAGE,
 } from '../utils/campaignConfig.js'
-import { garrisonSallies } from '../services/garrison.js'
+import { garrisonSallyTroops } from '../services/garrison.js'
 
 const router = Router()
 
@@ -326,18 +329,25 @@ router.post('/:id/battles', async (req, res) => {
       error: `the whole army must take the field — ${inCamp} units still in camp`,
     })
 
-  // Garrison Resolve payoff 2 — the sally (slice 3). A devoted garrison
-  // (resolve ≥ threshold) sorties from Karrowgate's gates as the pitched
-  // battle opens, thinning the enemy host before your lines close. Scale the
-  // hidden enemy army by the sally factor and REBUILD its planned placement so
-  // the engine fields the thinned host (the placement, not enemy.army, is what
-  // the battle input carries). Read once, here, on the decisive battle only.
-  const sallied = garrisonSallies(campaign.garrison?.resolve ?? GARRISON_RESOLVE_START)
-  if (sallied) {
-    for (const [type, n] of campaign.enemy.army)
-      campaign.enemy.army.set(type, Math.floor(n * GARRISON_SALLY_FACTOR))
-    campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
-  }
+  // Garrison Resolve payoff 2 — the sally (S7), GRADUATED by garrison level.
+  // A garrison that trusts you commits men to the decisive battle: they enter
+  // as allied reinforcements storming the enemy's rear at GARRISON_SALLY_TICK
+  // (the S6 casterless auto-cast spell), fed via the BattleInput `reinforcements`
+  // spec — low sends no one, normal some, determined more. This REPLACES the
+  // interim slice-3 enemy-thinning (the enemy host is no longer pre-scaled; the
+  // reinforcements do their damage in the fight itself). Read once, here, on the
+  // decisive battle only.
+  const sallyTroops = garrisonSallyTroops(campaign.garrison?.resolve ?? GARRISON_RESOLVE_START)
+  const sallied = sallyTroops > 0
+  const reinforcements = sallied
+    ? [{
+        tick: GARRISON_SALLY_TICK,
+        team: GARRISON_SALLY_TEAM,
+        count: sallyTroops,
+        unit_type: GARRISON_SALLY_UNIT,
+        message: GARRISON_SALLY_BATTLE_MESSAGE,
+      }]
+    : []
 
   const input = {
     map: MAP_NAME,
@@ -346,6 +356,8 @@ router.post('/:id/battles', async (req, res) => {
     // The player's paid-for fortifications for this battle: the map file is
     // static, the level is dynamic, so the walled sides are injected here.
     fortified_sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
+    // The garrison's sally, if any: allied reinforcements at the enemy rear.
+    reinforcements,
   }
   const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
   if (error) return res.status(400).json({ error })
@@ -392,7 +404,7 @@ router.post('/:id/battles', async (req, res) => {
     day: campaign.day,
     entries: [
       ...(sallied
-        ? ['Karrowgate\'s garrison sallies from the gates as the lines close — the enemy host is thinned before the blow falls.']
+        ? ['Karrowgate\'s garrison sallies from the gates as the lines close — its men storm the enemy\'s rear to fight at your side.']
         : []),
       `Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`,
       won

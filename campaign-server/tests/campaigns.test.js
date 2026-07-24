@@ -8,7 +8,13 @@ import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { fortifiedSidesFor } from '../services/fortification.js'
 import { EVENT_POOL } from '../services/events.js'
-import { RECON_LEVEL_THRESHOLDS } from '../utils/campaignConfig.js'
+import {
+  RECON_LEVEL_THRESHOLDS,
+  GARRISON_SALLY_TROOPS,
+  GARRISON_SALLY_TICK,
+  GARRISON_SALLY_TEAM,
+  GARRISON_SALLY_UNIT,
+} from '../utils/campaignConfig.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
 // C++ binary. getInfo feeds buildEnemyPlacement's zone geometry.
@@ -954,44 +960,62 @@ describe('POST /api/campaigns/:id/battles', () => {
     expect(input.fortified_sides).toEqual([])
   })
 
-  // Garrison Resolve payoff 2 — the sally (slice 3). A devoted garrison
-  // (resolve ≥ threshold) sorties as the pitched battle opens, thinning the
-  // hidden enemy host before the fight; a wavering one does nothing.
-  test('a devoted garrison sallies — the enemy host is thinned before the pitched battle', async () => {
+  // Garrison Resolve payoff 2 — the sally (S7), GRADUATED by level. The garrison
+  // commits men to the decisive battle as allied reinforcements storming the
+  // enemy's rear (BattleInput `reinforcements`), NOT by pre-thinning the enemy:
+  // determined sends more, normal some, low none. The enemy host is untouched
+  // before the fight in every case now.
+  const setupBossFight = async (resolve) => {
     engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
     const { body: c } = await createCampaign()
     const doc = await Campaign.findById(c.id)
     doc.roster = { Soldier: 1 }
     doc.bossFightDue = true
-    doc.garrison = { resolve: 80 } // determined — above GARRISON_SALLY_THRESHOLD (67)
+    doc.garrison = { resolve }
     await doc.save()
-    const preLen = doc.enemy.plannedPlacement.length
+    return { c, preLen: doc.enemy.plannedPlacement.length }
+  }
 
+  test('a determined garrison sends the larger reinforcement wave — enemy untouched', async () => {
+    const { c, preLen } = await setupBossFight(80) // determined (≥ 67)
     await fightSoldiers(c.id)
 
-    // The engine fielded a THINNED enemy (the garrison's sortie), so the
-    // rebuilt placement carries fewer units than the pre-battle plan.
     const input = engine.runBattle.mock.calls[0][0]
-    expect(input.enemy_placement.length).toBeLessThan(preLen)
+    expect(input.reinforcements).toEqual([{
+      tick: GARRISON_SALLY_TICK,
+      team: GARRISON_SALLY_TEAM,
+      count: GARRISON_SALLY_TROOPS.determined,
+      unit_type: GARRISON_SALLY_UNIT,
+      message: expect.stringMatching(/garrison/i),
+    }])
+    // The enemy is no longer pre-thinned — its placement is the full plan.
+    expect(input.enemy_placement.length).toBe(preLen)
 
     // ...and the sally is narrated in the decisive battle's log.
     const after = await Campaign.findById(c.id)
     expect(after.log.at(-1).entries.some((e) => /garrison sallies/i.test(e))).toBe(true)
   })
 
-  test('a wavering garrison does not sally — the enemy host is untouched before the battle', async () => {
-    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
-    const { body: c } = await createCampaign()
-    const doc = await Campaign.findById(c.id)
-    doc.roster = { Soldier: 1 }
-    doc.bossFightDue = true // garrison left at the starting resolve (45, below the threshold)
-    await doc.save()
-    const preLen = doc.enemy.plannedPlacement.length
-
+  test('a normal garrison sends the smaller reinforcement wave', async () => {
+    const { c } = await setupBossFight(50) // normal (34..66)
     await fightSoldiers(c.id)
 
     const input = engine.runBattle.mock.calls[0][0]
+    expect(input.reinforcements).toHaveLength(1)
+    expect(input.reinforcements[0].count).toBe(GARRISON_SALLY_TROOPS.normal)
+
+    const after = await Campaign.findById(c.id)
+    expect(after.log.at(-1).entries.some((e) => /sallies/i.test(e))).toBe(true)
+  })
+
+  test('a low garrison sends no reinforcements and no sally is narrated', async () => {
+    const { c, preLen } = await setupBossFight(20) // low (1..33)
+    await fightSoldiers(c.id)
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.reinforcements).toEqual([])
     expect(input.enemy_placement.length).toBe(preLen)
+
     const after = await Campaign.findById(c.id)
     expect(after.log.at(-1).entries.some((e) => /sallies/i.test(e))).toBe(false)
   })

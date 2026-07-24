@@ -6,6 +6,7 @@ import {
   GARRISON_SURRENDER_FLOOR,
   GARRISON_WALL_SLOW_MAX,
   GARRISON_SALLY_THRESHOLD,
+  GARRISON_SALLY_TROOPS,
 } from '../utils/campaignConfig.js'
 
 // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): the standing
@@ -53,12 +54,18 @@ export const adjustResolve = (campaign, delta) => {
 export const wallSlowFactor = (resolve = GARRISON_RESOLVE_START) =>
   (GARRISON_WALL_SLOW_MAX * clampResolve(resolve)) / GARRISON_RESOLVE_MAX
 
-// The sally (payoff 2) — INTERIM until S7 swaps in graduated reinforcements.
-// True when the garrison is `determined` (resolve ≥ threshold) enough to risk a
-// sortie at the decisive pitched battle. The battle route (campaigns.js) reads
-// this once and, if it fires, thins the hidden enemy army by GARRISON_SALLY_FACTOR
-// before building the enemy's placement — the garrison joins the fight from the
-// gates. (S7 will replace this with garrison allies entering the battle as
-// reinforcements from the enemy rear, graduated by level.)
+// The sally threshold predicate — "is the garrison `determined` (resolve ≥
+// threshold)?" Superseded as the battle trigger by the graduated
+// garrisonSallyTroops below (S7 sends troops for `normal` too), but retained as
+// a pure determined-level predicate.
 export const garrisonSallies = (resolve = GARRISON_RESOLVE_START) =>
   clampResolve(resolve) >= GARRISON_SALLY_THRESHOLD
+
+// The sally (payoff 2), GRADUATED by level (S7): how many troops the garrison
+// commits to the decisive pitched battle — low none, normal some, determined
+// more (GARRISON_SALLY_TROOPS). They enter the fight as allied reinforcements
+// storming the enemy's rear (the S6 casterless spell), NOT by pre-thinning the
+// enemy. The battle route reads this once, builds the BattleInput
+// `reinforcements` spec from it, and narrates the sally when it is > 0.
+export const garrisonSallyTroops = (resolve = GARRISON_RESOLVE_START) =>
+  GARRISON_SALLY_TROOPS[garrisonLevel(resolve)] ?? 0
