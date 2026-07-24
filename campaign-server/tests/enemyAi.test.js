@@ -178,11 +178,11 @@ describe('enemy supply depletion', () => {
 // set bossFightDue. A fresh campaign never forages or raids in these tests, so
 // troopsInCamp == the whole roster every turn — meterFillAmount is pinned at the
 // FLOOR (50)/turn. Garrison Resolve slice 2 then SLOWS that fill by the starting
-// garrison's wallSlowFactor(40) = 0.16, so a fresh campaign's idle end-day fill
-// is round(50 x 0.84) = 42/turn — the value these tests use to predict the
-// post-end-day meter from a pinned starting one.
+// garrison's wallSlowFactor(45) = 0.18 (S5 start 45), so a fresh campaign's idle
+// end-day fill is round(50 x 0.82) = 41/turn — the value these tests use to
+// predict the post-end-day meter from a pinned starting one.
 describe('the boss-fight meter is the enemy-disposition signal', () => {
-  test('a fresh (resolve-40) idle army fills the meter by 42 each end-day (floor slowed by the garrison)', async () => {
+  test('a fresh (resolve-45) idle army fills the meter by 41 each end-day (floor slowed by the garrison)', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
 
@@ -190,7 +190,7 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.enemy).toEqual({ band: 'intact', bossFightDue: false })
-    // meter.value 42 → 'intact' band. (The end-day accrued this fresh army's
+    // meter.value 41 → 'intact' band. (The end-day accrued this fresh army's
     // scouting pool into recon, so the level climbed and a numeric estimate now
     // shows — recon R2; the exact bracket carries jitter, so just its shape.)
     expect(res.body.campaign.meter.band).toBe('intact')
@@ -199,21 +199,21 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
       high: expect.any(Number),
     })
     expect(res.body.campaign.bossFightDue).toBe(false)
-    expect((await Campaign.findById(c.id)).meter.value).toBe(42)
+    expect((await Campaign.findById(c.id)).meter.value).toBe(41)
   })
 
   test('the report band tracks the meter: intact (< 334) then damaged (>= 334)', async () => {
     const { body: c } = await createCampaign()
 
     await pinAugury(c.id)
-    await pinMeter(c.id, 250) // + 42 slowed fill = 292, still intact
+    await pinMeter(c.id, 250) // + 41 slowed fill = 291, still intact
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.enemy).toEqual({ band: 'intact', bossFightDue: false })
 
     await pinAugury(c.id)
-    await pinMeter(c.id, 300) // + 42 = 342, damaged (and this cross decays resolve)
+    await pinMeter(c.id, 300) // + 41 = 341, damaged (and this cross decays resolve)
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
@@ -223,7 +223,7 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
   test('crossing 1000 sets bossFightDue and the enemy offers battle that same day', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
-    await pinMeter(c.id, 949) // + 42 slowed fill = 991, just under the threshold
+    await pinMeter(c.id, 950) // + 41 slowed fill = 991, just under the threshold
 
     let res = await endDay(c.id)
     expect(res.status).toBe(200)
@@ -233,7 +233,7 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     expect(res.body.campaign.bossFightDue).toBe(false)
     expect((await Campaign.findById(c.id)).meter.value).toBe(991)
 
-    await pinAugury(c.id) // second end-day: 991 + 42 = 1033, crosses 1000
+    await pinAugury(c.id) // second end-day: 991 + 41 = 1032, crosses 1000
     res = await endDay(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
@@ -241,7 +241,7 @@ describe('the boss-fight meter is the enemy-disposition signal', () => {
     expect(res.body.campaign.bossFightDue).toBe(true)
     const doc = await Campaign.findById(c.id)
     expect(doc.bossFightDue).toBe(true)
-    expect(doc.meter.value).toBe(1033)
+    expect(doc.meter.value).toBe(1032)
   })
 })
 
@@ -295,6 +295,42 @@ describe('the garrison slows the walls (resolve wall-slow + band-cross decay)', 
     await pinMeter(c.id, 320)
     await endDay(c.id)
     expect((await Campaign.findById(c.id)).garrison.resolve).toBe(0)
+  })
+})
+
+// Garrison surrender (S5) — the second loss clock. Resolve reaching the floor at
+// end-of-day ends the campaign, regardless of the walls meter: the garrison
+// opens Karrowgate's gates. Checked in dayResolution step 6, after the turn's
+// resolve moves (here the band-cross decay) settle.
+describe('the garrison surrenders when resolve reaches the floor', () => {
+  test('a band-cross decay to 0 loses the campaign — the garrison opens the gates', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id)
+    // resolve 8 -> a wall band-cross decays it by 10 -> clamps to 0 -> surrender.
+    await pinResolve(c.id, 8)
+    await pinMeter(c.id, 320) // fills across intact->damaged, triggering the decay
+    const res = await endDay(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+    expect(res.body.report.status).toBe('lost')
+    expect(res.body.campaign.status).toBe('lost')
+    expect(res.body.report.entries.some((e) => /opens? .*gates|throws open its gates/i.test(e))).toBe(true)
+    // The war ends where it stands: step 7 (new turn) never runs.
+    expect(res.body.report.newDay).toBe(1)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.status).toBe('lost')
+    expect(doc.day).toBe(1)
+  })
+
+  test('a garrison above the floor does NOT surrender', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id)
+    await pinResolve(c.id, 30) // a band-cross decay leaves 20 > floor
+    await pinMeter(c.id, 320)
+    const res = await endDay(c.id)
+    expect(res.status).toBe(200)
+    expect(res.body.report.status).toBe('active')
+    expect(res.body.report.newDay).toBe(2)
   })
 })
 

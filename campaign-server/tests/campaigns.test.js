@@ -963,7 +963,7 @@ describe('POST /api/campaigns/:id/battles', () => {
     const doc = await Campaign.findById(c.id)
     doc.roster = { Soldier: 1 }
     doc.bossFightDue = true
-    doc.garrison = { resolve: 80 } // devoted — above GARRISON_SALLY_THRESHOLD (75)
+    doc.garrison = { resolve: 80 } // determined — above GARRISON_SALLY_THRESHOLD (67)
     await doc.save()
     const preLen = doc.enemy.plannedPlacement.length
 
@@ -984,7 +984,7 @@ describe('POST /api/campaigns/:id/battles', () => {
     const { body: c } = await createCampaign()
     const doc = await Campaign.findById(c.id)
     doc.roster = { Soldier: 1 }
-    doc.bossFightDue = true // garrison left at the starting resolve (40, below the threshold)
+    doc.bossFightDue = true // garrison left at the starting resolve (45, below the threshold)
     await doc.save()
     const preLen = doc.enemy.plannedPlacement.length
 

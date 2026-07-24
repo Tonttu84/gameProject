@@ -48,9 +48,10 @@ describe('CampaignHUD boss-fight meter + recon readout', () => {
     expect(screen.getByTestId('hud-recon')).toHaveTextContent('Recon: Superior')
   })
 
-  it("shows the garrison's standing as a coarse band word", () => {
-    hudWith({ garrison: { band: 'wary' } })
-    expect(screen.getByTestId('hud-garrison')).toHaveTextContent('Garrison: wary')
+  it("shows the garrison's standing as a gauge with a coarse level word", () => {
+    hudWith({ garrison: { level: 'determined' } })
+    expect(screen.getByTestId('hud-garrison')).toHaveTextContent('Garrison:')
+    expect(screen.getByTestId('hud-garrison')).toHaveTextContent('determined')
   })
 
   it('mirrors the raid scout-points pool, floored', () => {

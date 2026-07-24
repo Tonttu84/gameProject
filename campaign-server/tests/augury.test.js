@@ -30,7 +30,7 @@ import {
   GARRISON_WALL_SLOW_MAX,
   GARRISON_SALLY_THRESHOLD,
 } from '../utils/campaignConfig.js'
-import { wallSlowFactor, adjustResolve, garrisonSallies } from '../services/garrison.js'
+import { wallSlowFactor, adjustResolve, garrisonSallies, garrisonLevel, garrisonSurrendered } from '../services/garrison.js'
 
 // Pure-service tests on a plain campaign-shaped object (the service only
 // touches augury/roster/character, all mutated in place like the Mongoose
@@ -951,7 +951,7 @@ describe('wallSlowFactor — the passive wall-slow (slice 2)', () => {
 
   test('scales linearly with resolve', () => {
     expect(wallSlowFactor(50)).toBeCloseTo(GARRISON_WALL_SLOW_MAX / 2)
-    expect(wallSlowFactor(GARRISON_RESOLVE_START)).toBeCloseTo(0.16)
+    expect(wallSlowFactor(GARRISON_RESOLVE_START)).toBeCloseTo(0.18) // start 45 -> 0.4*0.45
   })
 
   test('is capped below 1, so a maxed garrison can never freeze the clock', () => {
@@ -996,6 +996,44 @@ describe('garrisonSallies — the sally threshold (slice 3)', () => {
   test('clamps out-of-range resolve before comparing', () => {
     expect(garrisonSallies(200)).toBe(true)
     expect(garrisonSallies(-50)).toBe(false)
+  })
+})
+
+// garrisonLevel — the three player-facing support levels (S5 redesign). low /
+// normal / determined, by descending threshold; the HUD renders a gauge from it.
+describe('garrisonLevel — the 3 support levels (S5)', () => {
+  test('low 1..33, normal 34..66, determined 67..100', () => {
+    expect(garrisonLevel(1)).toBe('low')
+    expect(garrisonLevel(33)).toBe('low')
+    expect(garrisonLevel(34)).toBe('normal')
+    expect(garrisonLevel(66)).toBe('normal')
+    expect(garrisonLevel(67)).toBe('determined')
+    expect(garrisonLevel(100)).toBe('determined')
+  })
+
+  test('a resolve of 0 still resolves to a level (low) before surrender ends the campaign', () => {
+    expect(garrisonLevel(0)).toBe('low')
+  })
+
+  test('the starting resolve reads normal', () => {
+    expect(garrisonLevel(GARRISON_RESOLVE_START)).toBe('normal')
+    expect(garrisonLevel()).toBe('normal') // defaulted
+  })
+})
+
+// garrisonSurrendered — the second loss clock (S5). At/under the surrender floor
+// the garrison opens Karrowgate's gates and the campaign is lost (dayResolution).
+describe('garrisonSurrendered — the surrender floor (S5)', () => {
+  test('true only at/under the floor (0)', () => {
+    expect(garrisonSurrendered(0)).toBe(true)
+    expect(garrisonSurrendered(1)).toBe(false)
+    expect(garrisonSurrendered(GARRISON_RESOLVE_START)).toBe(false)
+    expect(garrisonSurrendered()).toBe(false) // defaulted
+  })
+
+  test('clamps out-of-range resolve before comparing', () => {
+    expect(garrisonSurrendered(-50)).toBe(true)
+    expect(garrisonSurrendered(200)).toBe(false)
   })
 })
 

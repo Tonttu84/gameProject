@@ -345,17 +345,25 @@ export const METER_BANDS = [
   { min: 0, label: 'intact' },
 ]
 
-// ── Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve") ──────────────
+// ── Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison-support epic") ─────────
 // Standing between your relief army and Karrowgate's besieged garrison, a
-// hidden 0..100 track (campaign.garrison.resolve). Cooperation events AWARD it
-// (the `garrison` effect); it's read as an event GATE now (requires
-// minResolve/maxResolve, events.js eventEligible) and — in later slices — to
-// slow the wall meter (passive centerpiece) and trigger the boss-fight sally.
-// Own info, but shown to the player only as a coarse band word (garrisonBand,
-// services/garrison.js) to hold the fiction — never the raw number.
+// 0..100 track (campaign.garrison.resolve). Cooperation events AWARD it (the
+// `garrison` effect); it's read as an event GATE (requires minResolve/maxResolve,
+// events.js eventEligible), it slows the wall meter (the passive centerpiece,
+// slice 2), and it drives the pitched-battle sally support (S5→S7). The S5
+// redesign (2026-07-24): the garrison is now SHOWN as a visible HUD gauge — a
+// proportional bar + one of three LEVEL words (garrisonLevel, services/
+// garrison.js) — since you're in signalling contact with them; only the raw
+// integer stays hidden. And resolve at/under the surrender floor ends the
+// campaign: the garrison opens Karrowgate's gates (a second loss condition,
+// independent of the walls meter — checked in dayResolution).
 export const GARRISON_RESOLVE_MIN = 0
 export const GARRISON_RESOLVE_MAX = 100
-export const GARRISON_RESOLVE_START = 40
+export const GARRISON_RESOLVE_START = 45
+// At/under this the garrison surrenders and the campaign is LOST (dayResolution
+// step 6), regardless of the walls. Neglect the relationship and Karrowgate
+// falls before the walls ever breach. Tunable; the clamp floor is the MIN above.
+export const GARRISON_SURRENDER_FLOOR = 0
 // Slice 2 — the passive wall-slow (the centerpiece: this is the ONE lever the
 // player has to push the breach back). A heartened, coordinated garrison holds
 // Karrowgate's walls better, so the boss-fight meter (the walls under assault)
@@ -369,18 +377,23 @@ export const GARRISON_WALL_SLOW_MAX = 0.4
 // their resolve slips this much (hidden, like the `garrison` effect — the
 // player reads only the band word dropping). Tunable; balance stays rough.
 export const GARRISON_BAND_CROSS_DECAY = 10
-// Slice 3 — the sally (payoff 2). At the decisive pitched battle a devoted
-// garrison (resolve ≥ threshold) sorties from Karrowgate's gates as the lines
-// close, thinning the enemy host before the blow falls: the hidden enemy army
-// is scaled by the sally factor (kills 1 − factor of it) just before the fight.
-// Threshold keyed to the `devoted` band — only a garrison that trusts you to
-// the last risks a sortie. Both tunable; balance stays rough.
-export const GARRISON_SALLY_THRESHOLD = 75
+// The sally (payoff 2). At the decisive pitched battle a garrison that trusts
+// you sorties from Karrowgate's gates. S5→S7 makes this GRADUATED by level
+// (low → no help, normal → some troops, determined → more, entering the battle
+// as allied reinforcements from the enemy rear — an auto-cast spell, S6). Until
+// S7 lands that, the INTERIM implementation is slice 3's enemy-thinning: the
+// hidden enemy army is scaled by the sally factor (kills 1 − factor) just before
+// the fight, fired once the garrison is `determined`. Threshold keyed to the
+// determined-level floor. Both tunable; balance stays rough.
+export const GARRISON_SALLY_THRESHOLD = 67
 export const GARRISON_SALLY_FACTOR = 0.85
-// Descending {min, label} (same convention as METER_BANDS/ENEMY_SUPPLY_BANDS).
+// The three garrison LEVELS shown to the player (S5 redesign — replaces the old
+// faltering/wary/steadfast/devoted bands). Descending {min, label} (same
+// convention as METER_BANDS). 0 is the surrender floor (campaign lost), so the
+// `low` band nominally covers 1..33, `normal` 34..66, `determined` 67..100; a
+// resolve of 0 reads `low` for the brief moment before dayResolution ends it.
 export const GARRISON_BANDS = [
-  { min: 75, label: 'devoted' },
-  { min: 50, label: 'steadfast' },
-  { min: 25, label: 'wary' },
-  { min: 0, label: 'faltering' },
+  { min: 67, label: 'determined' },
+  { min: 34, label: 'normal' },
+  { min: 0, label: 'low' },
 ]

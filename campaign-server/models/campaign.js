@@ -111,13 +111,14 @@ const campaignSchema = new mongoose.Schema({
   },
   bossFightDue: { type: Boolean, default: false },
 
-  // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): the standing
-  // between your relief army and Karrowgate's besieged garrison, 0..100.
-  // Cooperation events AWARD it (applyEffect `garrison`) and a later fate GATES
-  // on it (events.js `requires` minResolve/maxResolve). Own info — campaignView
-  // exposes only a coarse band word (garrisonBand), never this raw number.
-  // Slice 1: the track + gate + readout; the passive wall-slow and boss-fight
-  // sally hang off the same value in later slices.
+  // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison-support epic"): the
+  // standing between your relief army and Karrowgate's besieged garrison, 0..100.
+  // Cooperation events AWARD it (applyEffect `garrison`) and fates GATE on it
+  // (events.js `requires` minResolve/maxResolve). It slows the wall meter
+  // (wallSlowFactor), drives the pitched-battle sally support, and — S5 — a
+  // resolve of 0 SURRENDERS the garrison (a second loss condition). campaignView
+  // exposes it as one of three level words (garrisonLevel) for the HUD gauge;
+  // the raw number stays server-side.
   garrison: {
     resolve: { type: Number, default: GARRISON_RESOLVE_START },
   },

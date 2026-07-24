@@ -17,7 +17,7 @@ import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyAi.js'
 import { meterFillAmount, meterBand } from './meter.js'
-import { wallSlowFactor, adjustResolve } from './garrison.js'
+import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging } from './forage.js'
@@ -288,6 +288,15 @@ export async function endDay(campaign) {
   ) {
     campaign.status = 'won'
     entries.push('The enemy host is melting away down the road it came by. The country is yours.')
+  }
+  // Garrison surrender (S5): a second, parallel loss clock. Once this turn's
+  // resolve moves (event effects + the band-cross decay above) have settled, a
+  // garrison at/under the surrender floor gives up and opens Karrowgate's gates —
+  // the bridge is lost, regardless of the walls meter. Read AFTER the decay so a
+  // wall band-cross that pushes resolve to 0 loses the campaign the same turn.
+  if (campaign.status === 'active' && garrisonSurrendered(campaign.garrison?.resolve ?? GARRISON_RESOLVE_START)) {
+    campaign.status = 'lost'
+    entries.push('Karrowgate throws open its gates — the garrison, abandoned once too often, has made its own peace. The bridge, and the campaign, is lost.')
   }
   // Game over outranks an owed decision: without this, the choose route's
   // active-guard would strand the pending entries (and the client's gate)

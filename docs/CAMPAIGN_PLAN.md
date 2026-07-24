@@ -563,6 +563,104 @@ time), 0 → **1000** threshold.
     its battle-start effect magnitude~~ (RESOLVED slice 3: `SALLY_THRESHOLD 75` = devoted-band floor,
     `SALLY_FACTOR 0.85` = ~15% enemy losses at battle start — both tunable); naming shown to the
     player ("Garrison Resolve" / "Karrowgate's Resolve" / "the garrison's faith").
+
+### Garrison-support epic (redesign, grilled + locked 2026-07-24) — S5–S9
+
+> The garrison track from slices 1–4 (shipped) gets **reworked and extended** into a visible,
+> three-level relationship with a **second loss condition** and **graduated battle support**.
+> Grilled end-to-end with the user (2026-07-24) before writing. This SUPERSEDES the "shown only
+> as a coarse band word / hidden number" visibility rule for the garrison track (the walls meter
+> stays recon-gated; the garrison is now openly visible — you're in signalling contact with them).
+> Plus the two content passes that kicked this off (scripted siege spine + resolve-gated fates)
+> land as the last two slices, so they build on the settled model. **Build order S5→S9, one slice
+> per session per the small-batches rule.** The content (S8/S9 — the user's original "tasks 1 & 2")
+> is deliberately LAST: gating fates against thresholds that are about to move would be rework.
+
+**The redesign (user, 2026-07-24):**
+- **Three levels replace the four bands.** `faltering/wary/steadfast/devoted` → **low / normal /
+  determined**. Thresholds: **low = 1–33**, **normal = 34–66**, **determined = 67–100**. Start
+  **45** (mid-normal — real buffer both ways). All tunable; balance stays rough.
+- **0 (or below) = the garrison surrenders = campaign LOST**, regardless of the walls meter. A
+  second, parallel failure clock: neglect the garrison and Karrowgate opens its gates before the
+  walls ever breach. Makes the whole resolve track load-bearing every turn (beat-2 refusal,
+  `garrison_spurned`, band-cross decay all now have terminal stakes).
+- **The garrison is SHOWN as a visible meter** — a HUD gauge (proportional bar + level word),
+  always visible (NOT recon-gated, unlike the walls). Raw integer still hidden (the bar + word is
+  the read, matching the walls gauge's coarse display).
+- **Graduated pitched-battle support by level** (replaces slice 3's binary devoted→sally): **low →
+  no help**, **normal → some troops**, **determined → more troops**. The troops **enter the battle
+  as allied reinforcements from the enemy's rear at turn X** (user), modelled as an **auto-cast
+  spell** (see S6).
+
+**S5 — model rework (server + frontend; THIS is the current slice, 2026-07-24).** No engine work.
+  - Config (`campaignConfig.js`): `GARRISON_RESOLVE_START` 40→**45**; `GARRISON_BANDS` → the 3
+    levels above; add `GARRISON_SURRENDER_FLOOR = 0`; re-point `GARRISON_SALLY_THRESHOLD` 75→**67**
+    (the determined-level floor — keeps the interim enemy-thinning sally firing for any determined
+    garrison until S7 swaps in the reinforcement spell).
+  - `services/garrison.js`: rename `garrisonBand`→**`garrisonLevel`** (labels are now levels); add
+    **`garrisonSurrendered(resolve)`** = `clampResolve(resolve) <= GARRISON_SURRENDER_FLOOR`.
+    `wallSlowFactor`/`adjustResolve`/`clampResolve`/`garrisonSallies` unchanged (sally re-points via
+    the constant).
+  - `services/dayResolution.js`: end-of-day **surrender loss check** in step 6 (end conditions),
+    after the band-cross decay has settled resolve — `status === 'active' && garrisonSurrendered(...)`
+    → `status = 'lost'` + a player-visible entry ("Karrowgate throws open its gates…"). Follows the
+    annihilation/withdraw pattern (status + entry, NO new `endReason` field — the day report carries
+    the narrative, same as those paths).
+  - `services/campaignView.js`: `garrison: { band }` → `garrison: { **level** }`.
+  - `frontend/CampaignHUD.jsx`: replace the plain `Garrison: {band}` text with a **gauge** (bar +
+    level word) in the walls-gauge style; coarse fill per level (low/normal/determined), green/amber
+    /red. testid stays `hud-garrison`.
+  - **NO `CAMPAIGN_SCHEMA_VERSION` bump** — no stored-shape change (`garrison.resolve` already
+    exists; START/labels/surrender are behavior + display, and an old v22 doc loads and behaves
+    correctly under the new rules). The sortie event `requires` gates (probe 50 / grand 75) stay
+    RAW resolve values (they work regardless of level boundaries) — align to levels later if wanted.
+  - Tests: pure `garrisonLevel`/`garrisonSurrendered`/re-pointed `garrisonSallies` in `augury.test.js`
+    (the old faltering/wary/steadfast/devoted band tests get rewritten to the 3 levels); a
+    `dayResolution` surrender-loss route case; `campaignHud.test.jsx` garrison-gauge cases.
+
+**S6 — engine: garrison-sally reinforcements as an auto-cast spell (C++ engine + server).** Model
+  the sally as a **spell in `SpellList`** (template: `castRaiseDead`, which already summons allied
+  units to a team at a hex mid-battle and marks them `battleSummon` so they don't persist as
+  survivors) that **auto-casts at turn X**, placing N allied units at the **enemy's rear edge**.
+  User steer: "write it like a spell that gets autocast, so if we add manual control later the
+  player can cast it when he wants." Wrinkle to solve: `raise_dead` is cast BY an on-field
+  Necromancer; a garrison sally has no caster → needs a **casterless / virtual trigger** (a
+  team-level scheduled autocast keyed on the tick counter). **Print:** the spell calls
+  `Battlefield::logEvent("Karrowgate's garrison throws open its gates — allies storm the enemy's
+  rear!")` at the cast tick, so a player watching the replay SEES it — the per-tick log pipeline is
+  fully live (engine `logEvent` → `ReplayRecorder` `takeTickLog` → `tick.log` → ReplayView
+  `replay-log` panel; verified 2026-07-24). `battleSummon` reinforcements don't cross back as
+  survivors. Engine tests (unit appears at turn X on the right edge/team; gone from survivors).
+  BattleInput gains a `reinforcements`/sally spec the campaign layer fills (S7).
+
+**S7 — wire pitched-battle support by level (server).** At the decisive battle, translate garrison
+  **level → sally spec** (normal → some troops, determined → more; low → none) and feed it into the
+  BattleInput for the S6 spell. **Replaces** the interim slice-3 enemy-thinning sally (remove the
+  `campaign.enemy.army` scaling + placement rebuild in `routes/campaigns.js`; keep the day-report
+  sally log line). Route tests: normal/determined inject the right reinforcement count, low none.
+
+**S8 — scripted siege spine (server; the user's task 2).** Three GUARANTEED beats, seeded onto
+  `campaign.scheduledEvents` at creation (`routes/campaigns.js`), each authored `chained: true` so
+  it never enters a random augury draw — `drainScheduled` forces it into a slot on its day. All
+  EARLY turns (before a meter-driven breach can plausibly land) so no clash with the walls gauge.
+  The spine is the **garrison relationship's on-ramp** (fixes the flagged "resolve can stall at the
+  wary start if `garrison_call` never draws"). Approved beats (numbers tunable):
+  - **Turn 2 — "The Siege Lines Close"** (choice): send a working party (−1.5 t food, **+resolve**,
+    the guaranteed early lever) vs. hold your stores (nothing).
+  - **Turn 5 — "A Breach Threatens"** (choice, two-way): throw men into the breach (−2 t food,
+    Soldiers ×0.98, **+resolve**) vs. cannot spare them (**−resolve** — the bond frays; user
+    confirmed the penalty-on-refusal is wanted).
+  - **Turn 8 — "The Warden's Van"** (choice): pin the besiegers → `schedule` a guaranteed
+    `relief_van_arrives` (+25 Soldiers) two turns out vs. husband your strength (+2 t food, no chain).
+
+**S9 — resolve-gated pool fates (server; the user's task 1).** More garrison fates via the
+  `requires` minResolve/maxResolve doors, so the pool feels like a relationship opening/closing
+  doors. Additive (augury legibility tripwire holds on the unconditional base pool). Draft set
+  (finalize at build): a high-trust **supplies** gift (minResolve, +food — a runner brings you the
+  garrison's own stores), a high-trust autonomous **night sally** gift (minResolve, `enemy_losses` —
+  distinct from the player-committed sortie raid), a low-resolve **recovery choice** (maxResolve,
+  spend food → +resolve to mend the bond, or turn away → −resolve) pairing with the existing
+  `garrison_spurned`. Gates align to the new level thresholds.
 - **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
   branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
   `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns
