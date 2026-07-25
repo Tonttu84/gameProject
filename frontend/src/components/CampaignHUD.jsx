@@ -34,12 +34,26 @@ const wallsGauge = ({ band = 'intact', estimate } = {}, bossFightDue) => {
   return { fill: BAND_FILL[band] ?? BAND_FILL.intact, color: BAND_COLOR[band] ?? BAND_COLOR.intact, status: band }
 }
 
+// Garrison standing (docs/CAMPAIGN_PLAN.md "Garrison-support epic"): unlike the
+// walls, the garrison is openly visible (you're in signalling contact) — a
+// gauge FILLING as their resolve grows, one of three levels. The server sends
+// only the level word (raw resolve stays hidden), so the fill is coarse per
+// level. Low = the garrison wavers toward surrender; determined = they'll sally
+// for you at the pitched battle.
+const GARRISON_FILL = { low: 0.22, normal: 0.55, determined: 0.9 }
+const GARRISON_COLOR = { low: '#c0392b', normal: '#d99a1c', determined: '#3f9d4f' }
+const garrisonGauge = (level = 'normal') => ({
+  fill: GARRISON_FILL[level] ?? GARRISON_FILL.normal,
+  color: GARRISON_COLOR[level] ?? GARRISON_COLOR.normal,
+  status: level,
+})
+
 // Top bar of the active campaign. One turn = two weeks; the server computes
 // food in kg (resources.foodNeedPerTurn comes from the view — the client
 // never re-derives campaign math), the player reads tonnes. Reads straight
 // from the campaign store — only ever mounted once a campaign exists.
 const CampaignHUD = () => {
-  const { day, resources, fortification, forage, meter, bossFightDue, raid, scouting } =
+  const { day, resources, fortification, forage, meter, bossFightDue, garrison, raid, scouting } =
     useCampaignStore((s) => s.campaign)
   const roster = useRoster()
 
@@ -85,6 +99,39 @@ const CampaignHUD = () => {
               />
             </span>
             <span className="hud-walls-status" style={{ color }}>{status}</span>
+          </span>
+        )
+      })()}
+      {/* Garrison standing (docs/CAMPAIGN_PLAN.md "Garrison-support epic"): a
+          gauge that FILLS with the garrison's resolve, openly visible (you're in
+          signalling contact with them, unlike the enemy host you must scout).
+          Coarse per level — the server sends the level word, never the raw
+          number. Low warns of surrender; determined means they'll sally for you. */}
+      {(() => {
+        const { fill, color, status } = garrisonGauge(garrison?.level)
+        return (
+          <span className="hud-garrison" data-testid="hud-garrison" title="Karrowgate's garrison">
+            <span className="hud-garrison-label">Garrison:</span>
+            <span
+              className="hud-garrison-bar"
+              aria-hidden="true"
+              style={{
+                display: 'inline-block',
+                width: '70px',
+                height: '9px',
+                margin: '0 6px',
+                background: 'rgba(255,255,255,0.15)',
+                borderRadius: '3px',
+                overflow: 'hidden',
+                verticalAlign: 'middle',
+              }}
+            >
+              <span
+                className="hud-garrison-fill"
+                style={{ display: 'block', height: '100%', width: `${Math.round(fill * 100)}%`, background: color }}
+              />
+            </span>
+            <span className="hud-garrison-status" style={{ color }}>{garrison?.level ? status : '—'}</span>
           </span>
         )
       })()}

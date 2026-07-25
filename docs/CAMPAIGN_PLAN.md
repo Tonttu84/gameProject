@@ -404,6 +404,345 @@ time), 0 → **1000** threshold.
   sortie from the walls, siege lines, etc.). Reuses the existing `schedule`/`requires`/choice
   primitives and existing effect types — **no mechanic change** (nothing touches the meter directly;
   there is no meter-delta effect and adding one would be a mechanic change).
+  - **Pool flavor-rework — partially landed (2026-07-22, UNCOMMITTED — sitting on `main`, needs a
+    branch before commit).** The
+    generic `EVENT_POOL` prose was reworked into the Karrowgate siege fiction (`services/events.js`,
+    strings only — every `id` and `effect` unchanged, so DEV_AUGURY seeds + pinned tests still hold).
+    **Perspective correction (user, 2026-07-22):** you are the RELIEF ARMY (mobile, outside, harassing
+    the vanguard that besieges Karrowgate), **not** the besieged garrison — so "a wagon slips through
+    the line into camp" is wrong; supply comes from foraging/seizing enemy supply columns/river trade
+    from friendly country. `supply` → "Wagons Bound for the Siege" (seize an enemy supply column);
+    `traders`/`plague`/`tool_rot`/etc. de-besieged. Also added the `relief_rider → relief_column_arrives`
+    chain (relief-HOST cooperation, existing `schedule`/`chained` primitive). Augury 71/71, full
+    cs-test 329/329 green. **An earlier ad-hoc `sortie`/`garrison_signal`/`garrison_trust` arc was
+    BACKED OUT** — garrison cooperation must be a designed mechanism, not `enemy_losses` bolted on a
+    flavor card (see the Garrison Resolve design below).
+- **DESIGN (locked 2026-07-22, NOT yet built — user said "just write the plan") — Garrison Resolve:
+  the one mechanism all garrison cooperation hangs off.** The gap it fills: **the walls meter today
+  only ever fills — the player has no lever to push the breach back.** Karrowgate's garrison is the
+  natural home for that lever (every fortnight they hold is a fortnight you prepare / wait for the
+  Warden's host). One relationship track, three payoffs all sourced from it (so nothing is a bolted-on
+  effect), fed by events carrying any of three credible costs.
+  - **The track:** hidden per-campaign `garrison.resolve`, **0→100, starts ~40** — the standing
+    between your relief army and the besieged garrison. It is the single number every garrison event
+    moves. New sub-state on the campaign model (alongside `enemy`/`augury`/`meter`); **bump
+    `CAMPAIGN_SCHEMA_VERSION`** when it lands.
+  - **New effect primitive `garrison`:** a bounded delta on `resolve` (clamped 0..100), hidden-state
+    like `flag` — **no player-visible number in the log** (a leaked number would cheapen the fiction).
+    Handled in `applyEffect` (`services/events.js`); classified `neutral` by `eventValence` (it's a
+    relationship move, not a gain/loss — the event's *other* effects carry its valence). This is the
+    thing cooperation events award.
+  - **Payoff 1 — passive wall-slow (THE centerpiece; user-confirmed 2026-07-22).** Higher resolve
+    slows the wall-meter's end-of-turn fill: heartened, coordinated defenders hold better. **This is
+    the flagged mechanic change** — one hook in day resolution where the meter fills:
+    `fill × (1 − f(resolve))`, `f` mapping resolve→[0, ~0.4] (exact curve TBD at build; keep the
+    floor honest so a maxed garrison can't freeze the clock outright). This is what makes the track
+    matter every turn and is the lever the game currently lacks. Ties both ways: **decay** — resolve
+    slips a step when the walls cross a damage band (the garrison feels abandoned).
+  - **Payoff 2 — the sally (threshold, boss fight).** At the decisive battle, `resolve ≥ THRESHOLD`
+    → the garrison sallies from the gates: a wave on your side / `enemy_losses` applied at battle
+    start. One boss-fight hook keyed on the threshold.
+  - **Payoff 3 — eyes on the enemy (event).** Cooperation events may also pay immediate
+    `enemy_reveal`/`enemy_losses` (existing effects, no change) — the garrison signals what it sees
+    from the walls.
+  - **Resolve as an event GATE (`requires`, user 2026-07-22).** Resolve doesn't only get awarded and
+    read for payoffs — it also **gates which garrison fates can appear**, via the existing
+    prerequisite machinery. Extend `eventEligible`'s `requires` vocabulary with **`minResolve` /
+    `maxResolve`** clauses and thread `resolve` into its duck-typed `ctx` (alongside `day` / `roster`
+    / `eventFlags`, sourced from `campaign.garrison.resolve`). Then author gated content: **high-resolve**
+    fates the garrison offers only a trusted ally (a joint sortie, betraying the enemy's dispositions,
+    a runner slipped out with supplies for you), and **low-resolve** fates when the bond has soured
+    (the garrison spurns your signals, or a crisis on the walls you're powerless to answer). This is
+    ADDITIVE like every other `requires` gate — the augury legibility invariant already holds on the
+    unconditional base pool, so resolve-gated events only ever widen a tier (augury.test.js tripwire).
+    Cheap to build (one predicate clause + `ctx` field) and it makes the whole garrison pool feel
+    like a relationship that opens and closes doors rather than a flat list.
+  - **The events (each a different credible cost, all feeding the one track):** (a) **committed
+    troops** — a coordinated sortie as a raid-style troop assignment → `+resolve`, cost = battle-day
+    readiness (reuses the raid/forage assignment carve-out); (b) **supplies** — a lifeline smuggled
+    over the wall (spend food/materials) → `+resolve`, cost = economy; (c) **opportunity** — a
+    recurring "the garrison calls" choice → `+resolve` vs. tending your own army.
+  - **HUD:** a garrison-standing readout beside the walls gauge (coarse word while Blind, like the
+    walls meter — the exact number is hidden state).
+  - **Slice plan (TDD, one per session per the small-batches rule):**
+    1. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`).** `garrison.resolve` sub-state
+       (model **schema v20→v21**, default `GARRISON_RESOLVE_START` 40) + the `garrison` bounded-delta
+       effect (`applyEffect`, clamped 0..100, hidden-state like `flag` — no leaked number) + the
+       `requires` `minResolve`/`maxResolve` gate (`eventEligible`, reads `ctx.garrison?.resolve`,
+       defaults to START for a creation-time draw) + `garrison`→neutral in the valence classifier.
+       Config: `GARRISON_RESOLVE_MIN/MAX/START` + `GARRISON_BANDS` (faltering/wary/steadfast/devoted);
+       `services/garrison.js` `garrisonBand(resolve)`. Three cooperation events: `garrison_call`
+       (choice — spend food to raise resolve, or keep stores), `garrison_lookout` (gated
+       `minResolve:60`, an `enemy_reveal` the trusting garrison hands you), `garrison_spurned` (gated
+       `maxResolve:20`, a soured-relationship morale slip). View exposes `garrison:{band}` (coarse
+       word only — raw resolve stays server-side); HUD `hud-garrison` readout. Tests: augury **82**
+       (pure, +11) incl. effect/gate/events; frontend `campaignHud` garrison readout. **Full cs-test
+       340/340, frontend green in isolation.** NO meter hook yet (slice 2).
+    2. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`) — the mechanic change.** Passive
+       wall-slow + band-cross decay in day resolution. **No schema bump** (pure logic on existing
+       `garrison.resolve`/`meter.value`). The end-of-day meter fill (`dayResolution.js` step 4) is now
+       `+= Math.round(meterFillAmount × (1 − wallSlowFactor(resolve)))` — a heartened garrison holds
+       the walls, the player's ONE lever to push the breach back. `wallSlowFactor(resolve)`
+       (`services/garrison.js`) is **linear**, `GARRISON_WALL_SLOW_MAX × clamp(resolve)/MAX`, capped at
+       **0.4** so a devoted (100) garrison slows the fall 40% and a maxed one can NEVER freeze the clock
+       (the honest floor). **Band-cross decay:** the meter only rises, so a changed `meterBand` after the
+       fill means the walls were battered into a WORSE band (intact→damaged→breached) → resolve slips
+       `GARRISON_BAND_CROSS_DECAY` (**10**), hidden state like the `garrison` effect (player sees only the
+       band word drop); resolve is read BEFORE the decay so the turn's slow reflects the garrison as it
+       stood. **Refactor:** `adjustResolve` (init+clamp, the single resolve writer) + `clampResolve`
+       extracted to `garrison.js`; the `garrison` event effect (`events.js`) now routes through it (DRY,
+       one clamp site). Numbers (`WALL_SLOW_MAX 0.4`, `BAND_CROSS_DECAY 10`) are the "open at build time"
+       curve/floor/step — plausible, tunable; fresh-campaign resolve 40 → 0.16 slow → idle floor fill
+       50→**42**/turn. Server-only (view already exposed `garrison:{band}` from slice 1 — HUD needs
+       nothing). Tests: pure `wallSlowFactor`/`adjustResolve` in `augury.test.js` (**87**, +5); the 3
+       existing enemyAi meter tests retuned to the 42 fill; a new enemyAi route describe (devoted-vs-broken
+       slow, band-cross decays / in-band doesn't, decay clamps at 0). **Full cs-test 348/348 green
+       locally.** NEXT: slice 3 (boss-fight sally hook).
+    3. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`) — payoff 2, the sally.** Boss-fight
+       hook: a **devoted** garrison (`resolve ≥ GARRISON_SALLY_THRESHOLD` **75**, the `devoted` band
+       floor — only a garrison that trusts you to the last risks a sortie) sallies from Karrowgate's
+       gates as the decisive battle opens, thinning the hidden enemy host by `GARRISON_SALLY_FACTOR`
+       (**0.85** → kills ~15%) BEFORE the fight. **No schema bump** (reads existing
+       `garrison.resolve`). `garrisonSallies(resolve)` predicate (`services/garrison.js`, clamps then
+       compares). Wired into `POST /:id/battles` (`routes/campaigns.js`) just before the battle input
+       is built: scale `campaign.enemy.army` by the factor and **rebuild** `enemy.plannedPlacement`
+       from it (the placement, not `enemy.army`, is what the input carries — so the engine fields the
+       thinned host), then a player-visible sally **log line** (phrase only, no numbers). Read once,
+       on the decisive battle only. Both constants tunable (`campaignConfig.js`), balance stays rough.
+       Tests: pure `garrisonSallies` in `augury.test.js` (**90**, +3: threshold on/off, fresh-resolve
+       no-sally, clamp); two route cases in `campaigns.test.js` (devoted → thinned `enemy_placement` +
+       sally log line; starting-resolve → placement untouched, no line). NO frontend change (HUD band
+       readout from slice 1 already surfaces the standing). NEXT: slice 4 (committed-troop sortie).
+    4. **✅ SHIPPED 2026-07-22 (branch `feat/garrison-resolve`) — payoff/cost (a), the committed-troop
+       sortie.** The third resolve-feeding cost: committed troops. A new **`garrison_sortie` raid
+       opportunity type** the garrison offers only once it trusts you — a coordinated sally that rides
+       the ENTIRE existing `/raids/launch` flow (squad party, capacity, real short engine battle, squad
+       reconciliation, and — the point — the `raid.assignment` carve-out, so the troops are unavailable
+       for the pitched battle that day). Grilled the shape with the user first (per the grilling rule):
+       real battle (not a forage-style no-battle commit); surfaced **as events gated by garrison
+       trust**; reward varies per version (thin the enemy OR pay other loot, user 2026-07-22).
+       - **Bridge, events→raid board (schema v21→v22):** authored `GARRISON_SORTIE_EVENTS`
+         (`services/events.js`, exported) — NOT in `EVENT_POOL`, so never an augury vision/decoy. They
+         are *events* purely to reuse the `requires` prerequisite machinery (`eventEligible`): each is
+         `requires.minResolve`-gated on the garrison's own standing. `generateRaidOpportunities`
+         (`raid.js`) spawns one `garrison_sortie` opportunity per event whose gate the campaign
+         currently clears (campaign doc IS the `requires` ctx — same as the augury draw), so the OFFER
+         is the raid, never a vision. **Both gates are ABOVE the 40 start** (probe `minResolve:50` =
+         steadfast, grand `minResolve:75` = devoted), so a fresh/wary campaign offers no sortie and the
+         existing raid-board tests + boards are byte-unchanged — the sorties are purely additive, earned.
+       - **Two versions (`sortie_probe` / `sortie_grand`)** carrying a `sortie:{resolve, …}` block:
+         probe `{resolve:10, thinsEnemy:true}` (a spoiling sally — the enemy-reduction IS its reward),
+         grand `{resolve:14, materials:250}` (throw the gates for the siege park — loot instead, so
+         `thinsEnemy:false`). `buildOpportunity` reads the event's flavour as the card and its `sortie`
+         block as the (hidden) reward + a new **`thinsEnemy` opportunity flag** (model field, default
+         false; the launch route's casualty step now fires on `type==='destroy_detachment' ||
+         opportunity.thinsEnemy`, booking real casualties win-or-lose but **no pursuit** — a sortie is a
+         spoiling attack, distinct from destroy_detachment's whole-slice kill).
+       - **Reward on a WIN** (`applyRaidReward`): `adjustResolve(campaign, reward.resolve)` — hidden
+         bookkeeping, **no number in the log**, only a sally phrase — plus any loot (materials/food/
+         roster). `resolve` never enters `rewardRange`/`rewardView` (they only key on food/materials/
+         roster), so it stays server-side; `thinsEnemy` isn't in the view whitelist either. NO view or
+         frontend change (the Raids panel renders any opportunity generically; the HUD band readout
+         from slice 1 already surfaces the standing).
+       - **The trust progression** this creates: a wary (40) start offers no sortie → climb to steadfast
+         (50) via `garrison_call` (supplies) to unlock the probe → sorties (troop cost) climb you toward
+         devoted (75), which opens the grand assault AND arms the boss-fight sally. ⚑ Note: today the
+         only resolve lever available AT the wary start is the random `garrison_call` augury choice — if
+         it never draws, resolve can stall below 50. Fine for now (content/balance, tunable); flagged.
+       - Tests: pure gen/reward in `augury.test.js` (**98**, +8: gate below/at steadfast/at devoted,
+         flavour+thinsEnemy+hidden-reward, win raises resolve with no leaked number, loot version, clamp);
+         three route cases in `raid.test.js` (thins-enemy win → resolve↑ + real casualties + assignment
+         carve-out + no leak; loot win → resolve↑ + stores + host untouched; loss → no resolve, thins
+         still books casualties). **augury 98/98, raid 41/41, full cs-test 364/364 green locally.** NO
+         frontend change; NOT yet click-tested in a live browser. **NEXT:** the Garrison Resolve design is
+         now fully built (slices 1–4) — remaining garrison work is content (more resolve-gated fates via
+         the `minResolve`/`maxResolve` doors) + the deferred themed/scripted siege-event flavor pass; the
+         bigger open items are Stage E (hiring troops, design-only) and combat-score-per-hexside.
+  - **Open at build time:** ~~the exact `f(resolve)` curve + wall-slow floor~~ (RESOLVED slice 2:
+    linear, `WALL_SLOW_MAX 0.4`, `BAND_CROSS_DECAY 10` — all tunable); ~~the sally THRESHOLD and
+    its battle-start effect magnitude~~ (RESOLVED slice 3: `SALLY_THRESHOLD 75` = devoted-band floor,
+    `SALLY_FACTOR 0.85` = ~15% enemy losses at battle start — both tunable); naming shown to the
+    player ("Garrison Resolve" / "Karrowgate's Resolve" / "the garrison's faith").
+
+### Garrison-support epic (redesign, grilled + locked 2026-07-24) — S5–S9
+
+> The garrison track from slices 1–4 (shipped) gets **reworked and extended** into a visible,
+> three-level relationship with a **second loss condition** and **graduated battle support**.
+> Grilled end-to-end with the user (2026-07-24) before writing. This SUPERSEDES the "shown only
+> as a coarse band word / hidden number" visibility rule for the garrison track (the walls meter
+> stays recon-gated; the garrison is now openly visible — you're in signalling contact with them).
+> Plus the two content passes that kicked this off (scripted siege spine + resolve-gated fates)
+> land as the last two slices, so they build on the settled model. **Build order S5→S9, one slice
+> per session per the small-batches rule.** The content (S8/S9 — the user's original "tasks 1 & 2")
+> is deliberately LAST: gating fates against thresholds that are about to move would be rework.
+
+**The redesign (user, 2026-07-24):**
+- **Three levels replace the four bands.** `faltering/wary/steadfast/devoted` → **low / normal /
+  determined**. Thresholds: **low = 1–33**, **normal = 34–66**, **determined = 67–100**. Start
+  **45** (mid-normal — real buffer both ways). All tunable; balance stays rough.
+- **0 (or below) = the garrison surrenders = campaign LOST**, regardless of the walls meter. A
+  second, parallel failure clock: neglect the garrison and Karrowgate opens its gates before the
+  walls ever breach. Makes the whole resolve track load-bearing every turn (beat-2 refusal,
+  `garrison_spurned`, band-cross decay all now have terminal stakes).
+- **The garrison is SHOWN as a visible meter** — a HUD gauge (proportional bar + level word),
+  always visible (NOT recon-gated, unlike the walls). Raw integer still hidden (the bar + word is
+  the read, matching the walls gauge's coarse display).
+- **Graduated pitched-battle support by level** (replaces slice 3's binary devoted→sally): **low →
+  no help**, **normal → some troops**, **determined → more troops**. The troops **enter the battle
+  as allied reinforcements from the enemy's rear at turn X** (user), modelled as an **auto-cast
+  spell** (see S6).
+
+**S5 — model rework (server + frontend). ✅ SHIPPED 2026-07-24 (branch `feat/garrison-resolve`,
+commit `1979774`; cs-test 371/371, fe 237/237 green solo — the mongo-startup flake needs a solo
+run, and running fe+cs concurrently starves the machine into timeout flakes, so run them one at a
+time).** No engine work.
+  - Config (`campaignConfig.js`): `GARRISON_RESOLVE_START` 40→**45**; `GARRISON_BANDS` → the 3
+    levels above; add `GARRISON_SURRENDER_FLOOR = 0`; re-point `GARRISON_SALLY_THRESHOLD` 75→**67**
+    (the determined-level floor — keeps the interim enemy-thinning sally firing for any determined
+    garrison until S7 swaps in the reinforcement spell).
+  - `services/garrison.js`: rename `garrisonBand`→**`garrisonLevel`** (labels are now levels); add
+    **`garrisonSurrendered(resolve)`** = `clampResolve(resolve) <= GARRISON_SURRENDER_FLOOR`.
+    `wallSlowFactor`/`adjustResolve`/`clampResolve`/`garrisonSallies` unchanged (sally re-points via
+    the constant).
+  - `services/dayResolution.js`: end-of-day **surrender loss check** in step 6 (end conditions),
+    after the band-cross decay has settled resolve — `status === 'active' && garrisonSurrendered(...)`
+    → `status = 'lost'` + a player-visible entry ("Karrowgate throws open its gates…"). Follows the
+    annihilation/withdraw pattern (status + entry, NO new `endReason` field — the day report carries
+    the narrative, same as those paths).
+  - `services/campaignView.js`: `garrison: { band }` → `garrison: { **level** }`.
+  - `frontend/CampaignHUD.jsx`: replace the plain `Garrison: {band}` text with a **gauge** (bar +
+    level word) in the walls-gauge style; coarse fill per level (low/normal/determined), green/amber
+    /red. testid stays `hud-garrison`.
+  - **NO `CAMPAIGN_SCHEMA_VERSION` bump** — no stored-shape change (`garrison.resolve` already
+    exists; START/labels/surrender are behavior + display, and an old v22 doc loads and behaves
+    correctly under the new rules). The sortie event `requires` gates (probe 50 / grand 75) stay
+    RAW resolve values (they work regardless of level boundaries) — align to levels later if wanted.
+  - Tests: pure `garrisonLevel`/`garrisonSurrendered`/re-pointed `garrisonSallies` in `augury.test.js`
+    (the old faltering/wary/steadfast/devoted band tests get rewritten to the 3 levels); a
+    `dayResolution` surrender-loss route case; `campaignHud.test.jsx` garrison-gauge cases.
+
+**S6 — engine: garrison-sally reinforcements as an auto-cast spell (C++ engine + server). ✅
+  SHIPPED 2026-07-24 (branch `feat/garrison-resolve`).** The sally is `Spells::castGarrisonSally`
+  (`SpellList.cpp`), modelled on `castRaiseDead`: it summons `r.count` allied units of `r.unitType`
+  (via `makeUnitByName`), marks them `battleSummon` (so `extractResult` filters them out — they
+  never cross back as survivors), and places them at the **enemy's rear edge** — the far rows of
+  the enemy's home end (Red flees south → Blue's sally lands rows ≥ height-3; derived from
+  `3 - team`), reusing `randomPlaceArmy` with a rear `PlacementZone`. **The casterless wrinkle:**
+  unlike the roster spells it takes no `AUnit&` caster — a garrison has no mage on the field — so it
+  is a free function (still in `SpellList`, so a future manual-cast path can call the same body),
+  invoked by a new **team-level tick scheduler**: `Battlefield::_reinforcements`
+  (`std::vector<Reinforcement>`, cleared by reset()/loadArmies like the tick log) +
+  `scheduleReinforcement()` + `fireScheduledReinforcements()` called at the top of `tick()` (after
+  `onTurnStart`, before the special phase, so arrivals act that turn). A wave fires **exactly once**,
+  on the first turn where `tick <= _ticksRun+1`. `BattleInput` gained a validated, attacker-clamped
+  `reinforcements: [{tick, team, count, unit_type, message}]` array (`runBattleFromJson`,
+  `MAX_REINFORCE_COUNT` 500), scheduled AFTER `loadArmies`.
+  - **Deviation from the plan's literal spec, flagged:** the log line is **caller-supplied** (the
+    `Reinforcement.message`), not the hardcoded "Karrowgate…" string — the engine stays free of
+    campaign fiction (its ethos everywhere else), logging a generic "Reinforcements storm the enemy's
+    rear!" when `message` is empty. The **campaign/server layer supplies the Karrowgate wording** via
+    the BattleInput `message` field (S7), and the replay still SHOWS it (verified end-to-end:
+    `echo '{...,"reinforcements":[{...,"message":"Karrowgate garrison sallies!"}]}' | ./game battle`
+    emits the line into `tick.log`). If the user wants the literal string baked into the engine
+    instead, it's a one-line default change.
+  - Tests: `backend/engine/tests/test_garrison_sally.cpp` (3 cases: wave summons allies at the
+    enemy's rear on its turn / battleSummon units don't cross back as survivors / fires exactly once)
+    — named distinctly from `test_reinforce.cpp` (that's reserve *redistribution* between hexes, an
+    unrelated concept). **Full suite 347 cases / 3783 assertions green; `./game` links clean.**
+  - **NEXT: S7** — translate garrison level → sally spec at the decisive battle and feed it into the
+    BattleInput `reinforcements` (server-only); **remove** the interim slice-3 enemy-thinning sally
+    (`campaign.enemy.army` scaling + placement rebuild in `routes/campaigns.js`), keeping the
+    day-report sally log line.
+
+**S7 — wire pitched-battle support by level (server). ✅ SHIPPED 2026-07-24 (branch
+  `feat/garrison-resolve`).** At the decisive battle the garrison's support is now GRADUATED by
+  level and delivered as S6 reinforcements, replacing slice 3's enemy-thinning.
+  - **Graduated sally count:** `garrisonSallyTroops(resolve)` (`services/garrison.js`) →
+    `GARRISON_SALLY_TROOPS[garrisonLevel]` = `{low:0, normal:40, determined:80}` (config; tunable).
+    `garrisonSallies` (the determined-threshold boolean) is retained as a pure predicate but is no
+    longer the battle trigger — normal now sends troops too.
+  - **Fed into the BattleInput** (`routes/campaigns.js` battle route): a `>0` count becomes one
+    `reinforcements: [{ tick: GARRISON_SALLY_TICK (4), team: 2 (BLUETEAM), count, unit_type:
+    'Soldier', message: GARRISON_SALLY_BATTLE_MESSAGE }]` entry — the S6 casterless spell then
+    storms the enemy's rear at that turn. The Karrowgate replay wording lives in `message` (config),
+    keeping the engine fiction-free (per the S6 deviation).
+  - **Interim slice-3 sally REMOVED:** the `campaign.enemy.army` ×`GARRISON_SALLY_FACTOR` scaling +
+    `plannedPlacement` rebuild are gone (config const `GARRISON_SALLY_FACTOR` deleted); the enemy
+    host is no longer pre-thinned — the reinforcements do their damage in the fight. The day-report
+    sally log line is KEPT (gated on `sallied = count>0`), reworded off "the enemy host is thinned"
+    to "its men storm the enemy's rear to fight at your side."
+  - Tests: pure `garrisonSallyTroops` (augury.test.js, +3: determined/normal/low); the slice-3 route
+    pair rewritten into 3 (campaigns.test.js: determined → larger wave + enemy untouched + sally
+    narrated; normal → smaller wave; low → no reinforcements + no line). **Full cs-test 375/375
+    green; C++ suite 347 green (unchanged).** NOT yet click-tested in a live browser.
+  - **NEXT: S8** (scripted siege spine — 3 guaranteed `chained` beats seeded at creation) or **S9**
+    (resolve-gated pool fates). Both are the content passes, deliberately last. Frontend still shows
+    the garrison gauge (S5) but nothing surfaces the sally pre-battle — a "the garrison will sally"
+    hint on the Deploy screen is possible polish, not required.
+
+**S8 — scripted siege spine (server; the user's task 2). ✅ SHIPPED 2026-07-25 (branch
+  `feat/garrison-resolve`).** Three GUARANTEED beats, seeded onto `campaign.scheduledEvents` at
+  creation (`routes/campaigns.js`), each authored `chained: true` so it never enters a random
+  augury draw — `drainScheduled` forces it into a slot on its day. All EARLY turns (before a
+  meter-driven breach can plausibly land) so no clash with the walls gauge. The spine is the
+  **garrison relationship's on-ramp** (fixes the flagged "resolve can stall at the wary start if
+  `garrison_call` never draws"). Landed:
+  - **The beats (all `chained: true` choice fates in `EVENT_POOL`, severity 2 so the schedule
+    drain always finds a same-tier decoy; numbers inline + tunable, balance rough):**
+    - **Turn 2 `siege_lines_close`** — `send_working_party` (`−1.5 t food` + `+15 resolve`, the
+      guaranteed early lever) vs. `hold_stores` (`none`).
+    - **Turn 5 `breach_threatens`** — `into_the_breach` (`−2 t food`, `Soldiers ×0.98`,
+      `+15 resolve`) vs. `cannot_spare` (`−10 resolve` — the bond frays).
+    - **Turn 8 `wardens_van`** — `pin_the_van` (`schedule relief_van_arrives`, delay 2) vs.
+      `husband_strength` (`+2 t food`).
+    - **`relief_van_arrives`** — `chained` follow-up, `+25 Soldiers` (mirrors `relief_column_arrives`).
+  - **The schedule** is the exported `SIEGE_SPINE` const (`services/events.js`), seeded at creation
+    as `scheduledEvents: SIEGE_SPINE.map(...)`. Rides the exact `chained`/`scheduledEvents`
+    machinery an event chain uses — but guaranteed from turn 1 rather than a player choice. The
+    creation-time day-1 draw never sees the queue (ctx has no `scheduledEvents`), so the beats
+    surface only on their days.
+  - **Schema `CAMPAIGN_SCHEMA_VERSION` 22→23** — no stored-shape change (`scheduledEvents` already
+    exists), but bumped so fresh campaigns actually carry the spine (old docs are wiped, per the
+    no-back-compat norm). NO frontend change — `scheduledEvents` is hidden state (not in
+    `campaignView`), and the spine's choice beats render through the existing tent/choice UI like
+    any other choice fate.
+  - Tests: augury.test.js `siege spine (S8)` describe (+8 pure: schedule shape, each beat
+    chained/choice/out-of-pool with a same-tier decoy, branch effects, follow-up, drain-on-day-2);
+    campaigns.test.js `siege spine (S8)` route describe (seeded at creation; ending T1 drains the
+    T2 beat, later two stay queued). Fixed the two pre-existing event-chains-part-2 tests to clear
+    the now-seeded spine in their `setup` (test isolation). **Full cs-test 384/384 green locally
+    (mongo cooperated this session); C++ unchanged.** NOT yet click-tested in a live browser.
+  - **NEXT: S9** (resolve-gated pool fates — the last garrison-support content slice). Then the
+    bigger opens: Stage E (hiring troops, design-only) and combat-score-per-hexside.
+
+**S9 — resolve-gated pool fates (server; the user's task 1). ✅ SHIPPED 2026-07-25 (branch
+  `feat/garrison-resolve`).** More garrison fates via the `requires` minResolve/maxResolve doors,
+  so the pool feels like a relationship opening/closing doors. Additive (augury legibility tripwire
+  holds on the unconditional base pool — every new fate carries `requires`). Gates aligned to the
+  S5 level thresholds (`garrisonLevel`: low 1–33 / normal 34–66 / determined 67–100). Landed in
+  `services/events.js` (`EVENT_POOL`), pure content — NO schema bump (adding gated pool fates +
+  tweaking one gate value is no stored-shape change; an existing v23 doc draws them from the shared
+  pool once its resolve qualifies):
+  - **Determined (≥67) opens two trust-gifts:** `garrison_stores` (sev 1, `+2 t food` — a runner
+    lowers the garrison's own stores over the wall) and `garrison_night_sally` (sev 3,
+    `enemy_losses ×0.92` — the defenders sally on their own to maul the siege lines, distinct from
+    the player-committed `garrison_sortie` raid).
+  - **Low (≤33) opens the soured band:** `garrison_recovery` (sev 2 choice, valence neutral —
+    `mend_the_bond` spends `−2 t food` for `+15 resolve`, or `turn_away` frays it `−10 resolve`),
+    and the existing `garrison_spurned` gate was **realigned `maxResolve` 20→33** (the low-band
+    ceiling) so the two soured fates share the whole low level. (`garrison_lookout` stays at its
+    slice-1 `minResolve: 60` and the sortie gates stay raw 50/75 — deliberately not swept into the
+    realign; only the S9 fates + their direct pair moved.)
+  - Tests: augury.test.js `garrison resolve-gated pool fates (S9)` describe (+5 pure: determined
+    gifts gated at the determined floor with eligibility flips at 66/67; the supplies food-boon +
+    the autonomous enemy blow; the recovery choice's mend/turn-away branches gated to the low band
+    with flips at 33/34; the realigned spurned pairing). **augury 118/118 green; full cs-test
+    running (expected green — S9 is additive pool content, route tests keep resolve at the normal
+    start where none of the new fates are eligible).** NOT yet click-tested in a live browser.
+  - **The garrison-support epic (S5–S9) is now fully built.** Remaining garrison work is pure
+    content authoring (more resolve-gated fates as desired) + the deferred themed/scripted
+    siege-event flavor pass. **NEXT (bigger opens): Stage E (hiring troops, design-only — needs the
+    `gold` resource + numbers decided) and combat-score-per-hexside.**
 - **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
   branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
   `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns

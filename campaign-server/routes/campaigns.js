@@ -5,7 +5,7 @@ import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay, acceptFates, checkAnnihilation } from '../services/dayResolution.js'
-import { applyEffect, choiceRung } from '../services/events.js'
+import { applyEffect, choiceRung, SIEGE_SPINE } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
@@ -34,7 +34,13 @@ import {
   MILITIA_UNIT,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
+  GARRISON_RESOLVE_START,
+  GARRISON_SALLY_TICK,
+  GARRISON_SALLY_UNIT,
+  GARRISON_SALLY_TEAM,
+  GARRISON_SALLY_BATTLE_MESSAGE,
 } from '../utils/campaignConfig.js'
+import { garrisonSallyTroops } from '../services/garrison.js'
 
 const router = Router()
 
@@ -100,6 +106,11 @@ router.post('/', async (req, res) => {
       enemyPlan: enemyForagePlanKg(ENEMY_ARMY, catalog),
     },
     augury,
+    // The scripted siege spine (S8): three GUARANTEED beats forced into their
+    // day's augury by drawAugury's schedule drain (turns 2/5/8). Seeded here so
+    // they ride the same `chained`/scheduledEvents machinery as an event chain,
+    // but guaranteed from the campaign's first turn rather than a player choice.
+    scheduledEvents: SIEGE_SPINE.map((s) => ({ ...s })),
     // Day-1 raid board: one base target (+ any counters), plus the turn's
     // scouting-points pool derived from the starting roster's recon capability.
     // end-day redeals both each new turn.
@@ -323,6 +334,26 @@ router.post('/:id/battles', async (req, res) => {
       error: `the whole army must take the field — ${inCamp} units still in camp`,
     })
 
+  // Garrison Resolve payoff 2 — the sally (S7), GRADUATED by garrison level.
+  // A garrison that trusts you commits men to the decisive battle: they enter
+  // as allied reinforcements storming the enemy's rear at GARRISON_SALLY_TICK
+  // (the S6 casterless auto-cast spell), fed via the BattleInput `reinforcements`
+  // spec — low sends no one, normal some, determined more. This REPLACES the
+  // interim slice-3 enemy-thinning (the enemy host is no longer pre-scaled; the
+  // reinforcements do their damage in the fight itself). Read once, here, on the
+  // decisive battle only.
+  const sallyTroops = garrisonSallyTroops(campaign.garrison?.resolve ?? GARRISON_RESOLVE_START)
+  const sallied = sallyTroops > 0
+  const reinforcements = sallied
+    ? [{
+        tick: GARRISON_SALLY_TICK,
+        team: GARRISON_SALLY_TEAM,
+        count: sallyTroops,
+        unit_type: GARRISON_SALLY_UNIT,
+        message: GARRISON_SALLY_BATTLE_MESSAGE,
+      }]
+    : []
+
   const input = {
     map: MAP_NAME,
     player_placement: placement,
@@ -330,6 +361,8 @@ router.post('/:id/battles', async (req, res) => {
     // The player's paid-for fortifications for this battle: the map file is
     // static, the level is dynamic, so the walled sides are injected here.
     fortified_sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
+    // The garrison's sally, if any: allied reinforcements at the enemy rear.
+    reinforcements,
   }
   const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
   if (error) return res.status(400).json({ error })
@@ -375,6 +408,9 @@ router.post('/:id/battles', async (req, res) => {
   campaign.log.push({
     day: campaign.day,
     entries: [
+      ...(sallied
+        ? ['Karrowgate\'s garrison sallies from the gates as the lines close — its men storm the enemy\'s rear to fight at your side.']
+        : []),
       `Battle joined — ${summary.winner === 'blue' ? 'victory' : summary.winner === 'red' ? 'defeat' : 'stalemate'} after ${summary.tickCount} turns.`,
       won
         ? 'The enemy host is broken. The country is yours.'
@@ -530,14 +566,16 @@ router.post('/:id/raids/launch', async (req, res) => {
       })
     campaign.raid.squadAssignment.push(...raidedIds)
 
-    // destroy_detachment inflicts its REAL battle casualties on the hidden
-    // enemy host, win OR lose (docs/CAMPAIGN_PLAN.md Stage D): the slice that
-    // actually died is targetForce − red_survivors. A WIN additionally pursues
-    // the routing remainder — that second subtraction lives in applyRaidReward
-    // below, so a win removes the whole slice and a loss removes only the real
-    // dead. The other raid types never pre-subtract their (narrative) target
-    // force, so a lost loot/rescue/counter raid still leaves the host untouched.
-    if (opportunity.type === 'destroy_detachment')
+    // destroy_detachment (and a thins-enemy garrison_sortie, slice 4) inflict
+    // their REAL battle casualties on the hidden enemy host, win OR lose
+    // (docs/CAMPAIGN_PLAN.md Stage D): the slice that actually died is
+    // targetForce − red_survivors. For destroy_detachment a WIN additionally
+    // pursues the routing remainder (that second subtraction lives in
+    // applyRaidReward), so a win removes the whole slice and a loss removes only
+    // the real dead; a garrison_sortie is a spoiling attack — no pursuit, only
+    // the real casualties. Loot/rescue/counter raids never pre-subtract their
+    // (narrative) target force, so a lost one still leaves the host untouched.
+    if (opportunity.type === 'destroy_detachment' || opportunity.thinsEnemy)
       for (const [type, n] of opportunity.targetForce) {
         const casualties = Math.max(0, n - (summary.red_survivors[type] ?? 0))
         campaign.enemy.army.set(type, Math.max(0, (campaign.enemy.army.get(type) ?? 0) - casualties))

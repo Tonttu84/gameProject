@@ -8,7 +8,13 @@ import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { fortifiedSidesFor } from '../services/fortification.js'
 import { EVENT_POOL } from '../services/events.js'
-import { RECON_LEVEL_THRESHOLDS } from '../utils/campaignConfig.js'
+import {
+  RECON_LEVEL_THRESHOLDS,
+  GARRISON_SALLY_TROOPS,
+  GARRISON_SALLY_TICK,
+  GARRISON_SALLY_TEAM,
+  GARRISON_SALLY_UNIT,
+} from '../utils/campaignConfig.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
 // C++ binary. getInfo feeds buildEnemyPlacement's zone geometry.
@@ -952,6 +958,66 @@ describe('POST /api/campaigns/:id/battles', () => {
     await fightSoldiers(c.id)
     const input = engine.runBattle.mock.calls[0][0]
     expect(input.fortified_sides).toEqual([])
+  })
+
+  // Garrison Resolve payoff 2 — the sally (S7), GRADUATED by level. The garrison
+  // commits men to the decisive battle as allied reinforcements storming the
+  // enemy's rear (BattleInput `reinforcements`), NOT by pre-thinning the enemy:
+  // determined sends more, normal some, low none. The enemy host is untouched
+  // before the fight in every case now.
+  const setupBossFight = async (resolve) => {
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.roster = { Soldier: 1 }
+    doc.bossFightDue = true
+    doc.garrison = { resolve }
+    await doc.save()
+    return { c, preLen: doc.enemy.plannedPlacement.length }
+  }
+
+  test('a determined garrison sends the larger reinforcement wave — enemy untouched', async () => {
+    const { c, preLen } = await setupBossFight(80) // determined (≥ 67)
+    await fightSoldiers(c.id)
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.reinforcements).toEqual([{
+      tick: GARRISON_SALLY_TICK,
+      team: GARRISON_SALLY_TEAM,
+      count: GARRISON_SALLY_TROOPS.determined,
+      unit_type: GARRISON_SALLY_UNIT,
+      message: expect.stringMatching(/garrison/i),
+    }])
+    // The enemy is no longer pre-thinned — its placement is the full plan.
+    expect(input.enemy_placement.length).toBe(preLen)
+
+    // ...and the sally is narrated in the decisive battle's log.
+    const after = await Campaign.findById(c.id)
+    expect(after.log.at(-1).entries.some((e) => /garrison sallies/i.test(e))).toBe(true)
+  })
+
+  test('a normal garrison sends the smaller reinforcement wave', async () => {
+    const { c } = await setupBossFight(50) // normal (34..66)
+    await fightSoldiers(c.id)
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.reinforcements).toHaveLength(1)
+    expect(input.reinforcements[0].count).toBe(GARRISON_SALLY_TROOPS.normal)
+
+    const after = await Campaign.findById(c.id)
+    expect(after.log.at(-1).entries.some((e) => /sallies/i.test(e))).toBe(true)
+  })
+
+  test('a low garrison sends no reinforcements and no sally is narrated', async () => {
+    const { c, preLen } = await setupBossFight(20) // low (1..33)
+    await fightSoldiers(c.id)
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.reinforcements).toEqual([])
+    expect(input.enemy_placement.length).toBe(preLen)
+
+    const after = await Campaign.findById(c.id)
+    expect(after.log.at(-1).entries.some((e) => /sallies/i.test(e))).toBe(false)
   })
 
   test('a partial deployment is rejected — the whole army takes the field', async () => {
@@ -1964,6 +2030,7 @@ describe('event chains (part 2)', () => {
     }))
     doc.augury.consulted = true
     doc.raid.opportunities = [] // no stray counter_event to defer a slot
+    doc.scheduledEvents = [] // isolate the courier chain from the seeded siege spine (S8)
     await doc.save()
   }
 
@@ -2009,5 +2076,48 @@ describe('event chains (part 2)', () => {
     const next = await Campaign.findById(c.id)
     expect(next.scheduledEvents).toEqual([])
     expect(next.augury.slots.some((s) => s.trueEvent.id === 'sprung_ambush')).toBe(false)
+  })
+})
+
+// Siege spine (S8): three GUARANTEED scripted beats seeded onto scheduledEvents
+// at campaign creation (turns 2/5/8), each `chained` so it never enters a random
+// draw — the schedule queue forces it into an augury slot on its day.
+describe('siege spine (S8): scripted guaranteed beats', () => {
+  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  // Neutralise the day-1 random augury so ending turn 1 pends nothing and
+  // resolves clean — the spine drain is the only thing under test.
+  const quietDay1 = async (id) => {
+    const doc = await Campaign.findById(id)
+    doc.augury.slots = doc.augury.slots.map(() => ({
+      trueEvent: QUIET, falseEvent: QUIET, odds: null, shownTrue: null,
+    }))
+    await doc.save()
+  }
+
+  test('a fresh campaign is seeded with the three siege beats', async () => {
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    expect(doc.scheduledEvents.map((s) => ({ eventId: s.eventId, day: s.day })))
+      .toEqual([
+        { eventId: 'siege_lines_close', day: 2 },
+        { eventId: 'breach_threatens', day: 5 },
+        { eventId: 'wardens_van', day: 8 },
+      ])
+  })
+
+  test('ending turn 1 drains the Turn-2 beat into a forced slot; the later two stay queued', async () => {
+    const { body: c } = await createCampaign()
+    await quietDay1(c.id)
+
+    const end = await endDayReq(c.id)
+    expect(end.status).toBe(200)
+
+    const next = await Campaign.findById(c.id)
+    expect(next.augury.slots.some((s) => s.trueEvent.id === 'siege_lines_close')).toBe(true)
+    expect(next.scheduledEvents.map((s) => ({ eventId: s.eventId, day: s.day })))
+      .toEqual([
+        { eventId: 'breach_threatens', day: 5 },
+        { eventId: 'wardens_van', day: 8 },
+      ])
   })
 })

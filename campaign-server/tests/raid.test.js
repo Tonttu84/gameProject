@@ -35,6 +35,7 @@ const {
   RAID_STRENGTH_BANDS,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
+  GARRISON_RESOLVE_START,
 } = await import('../utils/campaignConfig.js')
 
 const api = supertest(app)
@@ -610,6 +611,100 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     const docHeavy = await Campaign.findById(heavy.id)
     expect(baseBoard(docHeavy.raid.opportunities)).toBe(RAID_BASE_TARGETS)
     expect(docHeavy.raid.scoutingPoints).toBeGreaterThan(docLight.raid.scoutingPoints)
+  })
+})
+
+// ── Garrison sortie (Garrison Resolve slice 4) ───────────────────────────────
+// A resolve-gated raid the garrison offers only once it trusts you. It rides the
+// ordinary /raids/launch flow (party, capacity, battle, squad reconciliation,
+// the raid.assignment carve-out) — what differs is the reward: a WON sally feeds
+// the hidden resolve track (never a number in the log), and a thins-enemy
+// version books its real casualties on the host like destroy_detachment.
+describe('POST .../raids/launch — garrison sortie', () => {
+  const SORTIE = (over = {}) =>
+    OPP({
+      type: 'garrison_sortie',
+      title: 'A Coordinated Sally',
+      source: 'garrison_sortie',
+      targetForce: { Soldier: 30, Archer: 10 },
+      reward: { resolve: 10 },
+      thinsEnemy: true,
+      capacity: 500,
+      ...over,
+    })
+
+  test('a thins-enemy sortie: a win raises resolve (hidden) and inflicts real casualties', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({
+        blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } },
+        red_survivors: { Soldier: 20, Archer: 5 }, // 10 Soldier + 5 Archer fell
+      }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [SORTIE()])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expectPublicOpportunities(res.body) // thinsEnemy/reward.resolve never cross the wire
+
+    const doc = await Campaign.findById(c.id)
+    // Real casualties (targetForce − red_survivors), like destroy_detachment,
+    // but NO pursuit of the remainder — a sortie is a spoiling attack.
+    expect(doc.enemy.army.get('Soldier')).toBe(540 - 10)
+    expect(doc.enemy.army.get('Archer')).toBe(150 - 5)
+    // Resolve rose by the reward; the number itself never shows in the log.
+    expect(doc.garrison.resolve).toBe(GARRISON_RESOLVE_START + 10)
+    const entries = doc.log.flatMap((l) => l.entries).join(' ')
+    expect(entries).not.toMatch(/resolve/i)
+    expect(entries).toMatch(/sally|Karrowgate/i)
+    // The committed troops are carved out of the pitched-battle readiness check.
+    expect(doc.raid.assignment.get('Soldier')).toBe(40)
+  })
+
+  test('a loot sortie: a win raises resolve and lands stores, host untouched', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [
+      SORTIE({
+        title: 'A Sortie Against the Siege Train',
+        targetForce: { Soldier: 5 },
+        reward: { resolve: 14, materials: 250 },
+        thinsEnemy: false,
+      }),
+    ])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.garrison.resolve).toBe(GARRISON_RESOLVE_START + 14)
+    expect(doc.resources.materials).toBe(200 + 250)
+    expect(doc.enemy.army.get('Soldier')).toBe(540) // a loot sortie never thins
+  })
+
+  test('a lost sortie awards no resolve, but a thins-enemy one still books real casualties', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({
+        winner: 'red',
+        blue_squads: { 1: { survivors: { Soldier: 1 }, wiped: false } },
+        red_survivors: { Soldier: 25, Archer: 10 }, // 5 Soldier fell; no Archer
+      }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [SORTIE()])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(res.body.results[0].winner).toBe('red')
+
+    const doc = await Campaign.findById(c.id)
+    expect(doc.garrison.resolve).toBe(GARRISON_RESOLVE_START) // no reward on a loss
+    expect(doc.enemy.army.get('Soldier')).toBe(540 - 5) // 30 sent − 25 survived
+    expect(doc.enemy.army.get('Archer')).toBe(150) // 10 sent − 10 survived = 0 dead
+    // No win → no sally/loot lines.
+    const entries = doc.log.flatMap((l) => l.entries).join(' ')
+    expect(entries).not.toMatch(/stands the taller/i)
   })
 })
 

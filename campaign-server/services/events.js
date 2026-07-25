@@ -1,4 +1,8 @@
-import { EVENT_RUNG_BY_BAND } from '../utils/campaignConfig.js'
+import {
+  EVENT_RUNG_BY_BAND,
+  GARRISON_RESOLVE_START,
+} from '../utils/campaignConfig.js'
+import { adjustResolve } from './garrison.js'
 
 // Fortnightly event pool + effect application. Events reach the player only
 // as the augur's prophecy (services/augury.js): each turn one TRUE event and
@@ -22,12 +26,12 @@ export const POOL_LEGIBILITY = { 1: 2, 2: 1, 3: 0 } // reading-roll bonus by poo
 // tonnes, the effect values stay kg.
 export const EVENT_POOL = [
   // ── minor (severity 1): everyday ups and downs ──
-  { id: 'supply',        title: 'Supply Cache',      description: 'Scouts find an abandoned depot. +3 t of food.',           severity: 1, effect: { type: 'food',       delta: +3000 } },
-  { id: 'traders',       title: 'Traveling Traders', description: 'Merchants sell supplies. +1.5 t of food.',                severity: 1, effect: { type: 'food',       delta: +1500 } },
-  { id: 'weather',       title: 'Harsh Weather',     description: 'A hard fortnight drains rations. -1 t of food.',          severity: 1, effect: { type: 'food',       delta: -1000 } },
+  { id: 'supply',        title: 'Wagons Bound for the Siege', description: 'Your outriders fall on an enemy supply column making for the siege lines and drive off its laden wagons. +3 t of food.', severity: 1, effect: { type: 'food',       delta: +3000 } },
+  { id: 'traders',       title: 'Sutlers from Downriver',    description: 'Camp-followers pole their barges up the Marn from friendly country to sell provisions to your army. +1.5 t of food.', severity: 1, effect: { type: 'food',       delta: +1500 } },
+  { id: 'weather',       title: 'A Bitter Fortnight',        description: 'Cold rain rots the tents and spoils the stores in the trenches. -1 t of food.',           severity: 1, effect: { type: 'food',       delta: -1000 } },
   // ── normal (severity 2): the ranks swell or thin ──
-  { id: 'reinforcement', title: 'Reinforcements',    description: 'A company joins your banner. +20 Soldiers.',              severity: 2, effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
-  { id: 'desertion',     title: 'Desertion',         description: 'Low morale: 10% of soldiers desert overnight.',           severity: 2, effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
+  { id: 'reinforcement', title: 'The Rearguard Catches Up',  description: 'A company of your own rearguard, footsore from the march, rejoins the banner. +20 Soldiers.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
+  { id: 'desertion',     title: 'Desertion in the Lines',    description: 'The long watch beside the siege saps the men; some slip away by night. 10% of soldiers desert.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
   // ── recon-sensitive fates (Stage 4 1c): thematic threats — ambush / raid /
   // night-attack, never plague or weather — carry a three-rung ladder. The
   // event itself IS the Blind rung (the full blow, and always what the augur
@@ -54,8 +58,8 @@ export const EVENT_POOL = [
     },
   },
   // ── major (severity 3): fates that bend the campaign ──
-  { id: 'defection',     title: 'Mass Defection',    description: 'Enemy soldiers slip across in the night. +40 Soldiers.',  severity: 3, effect: { type: 'roster',     unit: 'Soldier', delta: +40 } },
-  { id: 'plague',        title: 'Plague',            description: 'Disease thins the ranks by 5%.',                          severity: 3, effect: { type: 'all_roster', factor: 0.95 } },
+  { id: 'defection',     title: 'Turncoats from the Vanguard', description: 'Enemy soldiers, sick of the siege and their warlord\'s whip, slip across to your banner in the night. +40 Soldiers.', severity: 3, effect: { type: 'roster',     unit: 'Soldier', delta: +40 } },
+  { id: 'plague',        title: 'Camp Fever',        description: 'Sickness runs your crowded camp; the ranks thin by 5%.',                                severity: 3, effect: { type: 'all_roster', factor: 0.95 } },
   // Blind and warned differ only in the telling until a battlefield surprise
   // penalty exists — the rung machinery is what the later mechanic hooks into.
   {
@@ -68,8 +72,8 @@ export const EVENT_POOL = [
     },
   },
   // ── materials fates (Stage 3 sink feeds fortifications/militia) ──
-  { id: 'quarry',        title: 'Quarry Found',      description: 'A workable seam of stone and timber. +25 materials.',     severity: 1, effect: { type: 'materials',  delta: +25 } },
-  { id: 'tool_rot',      title: 'Tool Rot',          description: 'Damp ruins tools and cordage. -15 materials.',            severity: 2, effect: { type: 'materials',  delta: -15 } },
+  { id: 'quarry',        title: 'A Workable Seam',   description: 'Your pioneers strike stone and timber enough to shore up the earthworks. +25 materials.', severity: 1, effect: { type: 'materials',  delta: +25 } },
+  { id: 'tool_rot',      title: 'Damp Ruins the Stores', description: 'Rain and river-mist rot the tools and cordage stacked in your camp. -15 materials.', severity: 2, effect: { type: 'materials',  delta: -15 } },
   // ── prerequisite-gated fates (R1) ── An event may carry a `requires` block
   // (eventEligible below); it only enters a draw when the campaign state
   // satisfies it, as truth OR decoy. Gated events are ADDITIVE — the
@@ -98,6 +102,91 @@ export const EVENT_POOL = [
     ],
   },
   { id: 'sprung_ambush', title: 'The Trap Is Sprung', description: 'Just as the dispatches foretold, an enemy foraging column rides down the ambush road — into your waiting spears. It is cut apart.', severity: 2, effect: { type: 'enemy_losses', factor: 0.9 }, chained: true },
+  // ── the relief chain ── `relief_rider` (a choice) can guarantee a
+  // reinforcement a fortnight out via `schedule`; `relief_column_arrives` is the
+  // `chained` follow-up (never a random draw or decoy). The forage branch
+  // schedules nothing, so the chain is the player's own choice echoing forward.
+  {
+    id: 'relief_rider', title: 'A Rider from the Relief Host', description: 'A mud-spattered rider gallops in from the west: the Warden\'s main host is a fortnight behind you, and its captains beg for guides who know the fords and the enemy\'s watch-lines.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good',
+    choices: [
+      { id: 'send_guides',  label: 'Send your best scouts to guide them in', description: 'Part with your surest scouts so the main host loses no time on the roads. They will not forage for you this fortnight — but a column of fresh spears is worth the lean days.', effect: { type: 'schedule', event: 'relief_column_arrives', delay: 1 } },
+      { id: 'keep_foraging', label: 'Keep your scouts foraging the valley', description: 'Let the main host find its own way. Your scouts stay at their sacks and snares, and the larder is the fuller for it.', effect: { type: 'food', delta: +2000 } },
+    ],
+  },
+  { id: 'relief_column_arrives', title: 'The Relief Column Arrives', description: 'Guided past the enemy\'s watch-lines by your scouts, a column of the Warden\'s spearmen tramps into camp, banners heavy with road-dust. +30 Soldiers.', severity: 2, effect: { type: 'roster', unit: 'Soldier', delta: +30 }, chained: true },
+  // ── the scripted siege spine (S8, docs/CAMPAIGN_PLAN.md) ── Three GUARANTEED
+  // beats seeded onto campaign.scheduledEvents at creation (SIEGE_SPINE below,
+  // turns 2/5/8), all `chained: true` so they never enter a random draw — the
+  // schedule queue forces each into a slot on its day. All early (before a
+  // walls breach can plausibly land), so no clash with the meter. The spine is
+  // the garrison relationship's on-ramp: the Turn-2 beat is the guaranteed early
+  // resolve lever (fixes "resolve can stall at the start if garrison_call never
+  // draws"). Each is a choice; numbers are tunable, balance stays rough.
+  {
+    id: 'siege_lines_close', title: 'The Siege Lines Close', description: 'The enemy pushes their saps and gabions ever closer to Karrowgate\'s wall, and a runner slips out to beg a working party before the next stretch is battered open.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral', chained: true,
+    choices: [
+      { id: 'send_working_party', label: 'Send a working party to shore up the wall', description: 'Spend from your own stores to strengthen the threatened stretch. The garrison marks who came when the siege lines tightened.', effect: { type: 'multi', effects: [{ type: 'food', delta: -1500 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'hold_stores',        label: 'Hold your stores and your men',            description: 'The wall is theirs to hold. You keep every sack and every hand for your own column.', effect: { type: 'none' } },
+    ],
+  },
+  {
+    id: 'breach_threatens', title: 'A Breach Threatens', description: 'The enemy\'s engines have gnawed a stretch of Karrowgate\'s wall to rubble; by nightfall it may be practicable. The garrison sends up a desperate plea for spears to hold the gap.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral', chained: true,
+    choices: [
+      { id: 'into_the_breach', label: 'Throw men into the breach beside them', description: 'Send your own into the rubble to fight shoulder to shoulder with the garrison — costly in stores and blood, but a bond forged under fire holds.', effect: { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'roster', unit: 'Soldier', factor: 0.98 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'cannot_spare',    label: 'You cannot spare them',                 description: 'You need every spear for the pitched battle to come. The garrison holds the breach alone — and does not forget who stayed in camp.', effect: { type: 'garrison', delta: -10 } },
+    ],
+  },
+  {
+    id: 'wardens_van', title: 'The Warden\'s Van', description: 'Word comes that the Warden\'s vanguard is nearing the Marn — but the enemy has thrown out a screen to hold them off. Pin the besiegers in place, and the van breaks through; let them fend for themselves, and hoard your own strength.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good', chained: true,
+    choices: [
+      { id: 'pin_the_van',      label: 'Pin the besiegers so the van breaks through', description: 'Harry the screen hard enough to fix it in place. It costs you the fortnight\'s rest, but a column of the Warden\'s own men is coming — a fortnight or so behind.', effect: { type: 'schedule', event: 'relief_van_arrives', delay: 2 } },
+      { id: 'husband_strength', label: 'Husband your strength for the walls',           description: 'Let the van shift for itself. Your men rest and forage the valley, and the larder is the fuller for it.', effect: { type: 'food', delta: +2000 } },
+    ],
+  },
+  { id: 'relief_van_arrives', title: 'The Warden\'s Van Arrives', description: 'Held in place by your harrying, the enemy screen could not stop them: the Warden\'s vanguard tramps into your lines, weary but eager for the fight. +25 Soldiers.', severity: 2, effect: { type: 'roster', unit: 'Soldier', delta: +25 }, chained: true },
+  // ── Garrison Resolve cooperation (docs/CAMPAIGN_PLAN.md "Garrison Resolve",
+  // slice 1) ── Fates that move the standing track (the `garrison` effect) and,
+  // via the `requires` minResolve/maxResolve gate, appear only at the right
+  // standing. `garrison_call` FEEDS the track (a choice: spend stores to raise
+  // it, or keep them); `garrison_lookout` is the high-trust PAYOFF it unlocks
+  // (gated minResolve, an `enemy_reveal` the walls hand you); `garrison_spurned`
+  // is the soured-relationship fate (gated maxResolve). The passive wall-slow +
+  // boss-fight sally that also hang off resolve come in later slices.
+  {
+    id: 'garrison_call', title: 'The Garrison Calls', description: 'A runner slips out of a Karrowgate sally-port at dusk: the garrison begs you to help hold a stretch of wall the enemy has been battering thin.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral',
+    choices: [
+      { id: 'answer_the_call', label: 'Send provisions and a working party to the walls', description: 'Spend from your own stores to stiffen the threatened stretch. The garrison marks who stood with them when the wall shook — and stands the taller for it.', effect: { type: 'multi', effects: [{ type: 'food', delta: -1500 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'tend_your_own',   label: 'Keep your men and stores at their own work', description: 'The wall is theirs to hold. You keep every sack and every hand for your own column.', effect: { type: 'none' } },
+    ],
+  },
+  { id: 'garrison_lookout', title: 'Word from the Ramparts', description: 'Trusting the banner that has stood with them, Karrowgate\'s watch signal down what they can see from the high walls — the enemy\'s dispositions, laid plain.', severity: 2, effect: { type: 'enemy_reveal' }, requires: { minResolve: 60 } },
+  { id: 'garrison_spurned', title: 'The Garrison Turns Its Back', description: 'Bitter at a relief army that lets their wall be ground down, the defenders jeer your scouts from the parapet; the slight runs through your own camp and a few men slink off.', severity: 2, effect: { type: 'roster', unit: 'Soldier', factor: 0.97 }, requires: { maxResolve: 33 } },
+  // ── Garrison-support S9: resolve-gated pool fates ── More garrison fates
+  // through the `requires` minResolve/maxResolve doors, gates aligned to the S5
+  // level thresholds (low 1..33 / normal 34..66 / determined 67..100). A
+  // DETERMINED garrison (≥67) opens two trust-gifts: `garrison_stores` (a runner
+  // brings you the garrison's own stores) and `garrison_night_sally` (the
+  // defenders sally on their own to maul the besiegers — distinct from the
+  // player-committed sortie raid). A LOW garrison (≤33) opens the soured band:
+  // `garrison_recovery` (mend the bond with stores, or turn away and fray it
+  // further), pairing with the realigned `garrison_spurned`. All additive — each
+  // carries `requires`, so the unconditional base pool the legibility tripwire
+  // guards is untouched.
+  { id: 'garrison_stores', title: 'Stores from the Wall', description: 'Under cover of dark a file of the garrison lowers sacks and casks from a sally-port and passes them out to your foragers — their own stores, shared with the army that has stood by them. +2 t of food.', severity: 1, effect: { type: 'food', delta: +2000 }, requires: { minResolve: 67 } },
+  { id: 'garrison_night_sally', title: 'A Sally in the Night', description: 'Needing no prompting from you, the garrison throws open a postern in the small hours and falls on the sleeping siege lines; by dawn the enemy\'s forward works are a shambles of cut ropes and dead men.', severity: 3, effect: { type: 'enemy_losses', factor: 0.92 }, requires: { minResolve: 67 } },
+  {
+    id: 'garrison_recovery', title: 'A Chance to Mend the Bond', description: 'The garrison\'s trust has worn thin, but a grey-haired captain sends word over the wall: stand with them now, and the old faith might be rekindled.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral', requires: { maxResolve: 33 },
+    choices: [
+      { id: 'mend_the_bond', label: 'Send stores and stand the watch with them', description: 'Spend from your larder to prove your word. The garrison marks it, and something of the old trust comes back.', effect: { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'turn_away',      label: 'Turn away — you have your own to feed',      description: 'Keep your stores whole. The captain\'s face closes, and word of it hardens every heart on the wall against you.', effect: { type: 'garrison', delta: -10 } },
+    ],
+  },
   // ── fates with choices (resolve-then-choose) ── The fired rung's `choices`
   // hand the player a decision instead of an effect: end-day pends it
   // (dayResolution) and a follow-up POST applies the picked branch. Branches
@@ -171,12 +260,56 @@ export const EVENT_POOL = [
   // so all three magnitudes of the "neutral" reading show up in play. A
   // `none` effect is a genuine no-op at end-of-turn — the drama is in the
   // reading, not the result (a "dire" omen that comes to nothing is a relief).
-  { id: 'lull',          title: 'A Quiet Fortnight', description: 'The days pass without incident — no gift, no blow.',       severity: 1, effect: { type: 'none' } },
-  { id: 'rains',         title: 'Season of Rains',   description: 'Downpours foul every bowstring, yours and theirs alike. Neither host gains an edge.', severity: 2, effect: { type: 'none' } },
-  { id: 'comet',         title: 'A Comet Overhead',  description: 'A comet burns across the sky for a fortnight. The men mutter of doom, but nothing comes of it.', severity: 3, effect: { type: 'none' } },
+  { id: 'lull',          title: 'A Quiet Fortnight', description: 'The siege grinds on without incident — no gift, no blow.',  severity: 1, effect: { type: 'none' } },
+  { id: 'rains',         title: 'Season of Rains',   description: 'Downpours foul every bowstring on both siege lines alike. Neither host gains an edge.', severity: 2, effect: { type: 'none' } },
+  { id: 'comet',         title: 'A Comet Overhead',  description: 'A comet burns over Karrowgate for a fortnight. The men mutter of doom, but nothing comes of it.', severity: 3, effect: { type: 'none' } },
 ]
 // (The old 'intel' event died with auguryScore; a defector event returns as a
 // scouting-points effect when the scouting stage lands.)
+
+// Garrison sortie events (Garrison Resolve slice 4, docs/CAMPAIGN_PLAN.md) — the
+// third cost feeding the resolve track: committed troops. These are NOT augury
+// fates (they never appear in EVENT_POOL, so never a vision or decoy). They are
+// authored as events so they can reuse the event-prerequisite machinery — each
+// is `requires`-gated on the garrison's own standing (minResolve). The raid
+// board (generateRaidOpportunities, raid.js) spawns a `garrison_sortie` raid
+// opportunity for every one whose gate is currently met, so the OFFER itself is
+// the raid: commit a party (a raid-style battle, cost = battle-day readiness,
+// the troops land in raid.assignment) and a WIN feeds `sortie.resolve` back into
+// the track. A version either thins the besiegers (`thinsEnemy`) OR pays other
+// loot — the enemy-reduction is one possible reward, unneeded when there's
+// another (user, 2026-07-22). resolve gained is hidden bookkeeping (adjustResolve),
+// never a number in the log; the loot (if any) is a normal revealable reward.
+export const GARRISON_SORTIE_EVENTS = [
+  {
+    id: 'sortie_probe',
+    title: 'A Coordinated Sally',
+    description:
+      'Karrowgate\'s captains, heartened that you have stood with them, propose a joint stroke: your squads strike the siege lines from without while the garrison sallies from a postern to catch the besiegers between two fires. Commit a party and hit them together.',
+    // Steadfast trust or better — a garrison that has come to rely on you.
+    requires: { minResolve: 50 },
+    sortie: { resolve: 10, thinsEnemy: true },
+  },
+  {
+    id: 'sortie_grand',
+    title: 'A Sortie Against the Siege Train',
+    description:
+      'Trusting your banner utterly, the garrison offers to throw the gates wide for a combined blow at the enemy\'s siege park. Break in among the engines and wagons massed against the walls, and carry off what stores you can while the defenders cover your withdrawal.',
+    // Only a devoted garrison risks opening its own gates for you.
+    requires: { minResolve: 75 },
+    sortie: { resolve: 14, materials: 250 },
+  },
+]
+
+// The scripted siege spine (S8): the schedule seeded onto campaign.scheduledEvents
+// at creation (routes/campaigns.js). Each entry forces its `chained` beat (above)
+// into an augury slot when the campaign reaches `day` (drawAugury → drainScheduled).
+// All early turns, before a walls breach can plausibly land.
+export const SIEGE_SPINE = [
+  { eventId: 'siege_lines_close', day: 2 },
+  { eventId: 'breach_threatens', day: 5 },
+  { eventId: 'wardens_van', day: 8 },
+]
 
 export const rosterTotal = (roster) =>
   [...roster.values()].reduce((a, b) => a + b, 0)
@@ -202,6 +335,15 @@ export const eventEligible = (event, ctx = {}) => {
   if (req.flags && !req.flags.every((f) => bagGet(ctx.eventFlags, f) > 0)) return false
   if (req.notFlags && req.notFlags.some((f) => bagGet(ctx.eventFlags, f) > 0)) return false
   if (req.hasUnit && bagGet(ctx.roster, req.hasUnit) <= 0) return false
+  // Garrison Resolve gate: the standing track opens high-trust garrison fates
+  // and closes them (or unlocks soured-relationship ones) as the relationship
+  // shifts. Absent garrison context reads as the starting resolve, so a
+  // creation-time draw gates exactly as a fresh campaign would.
+  if (req.minResolve != null || req.maxResolve != null) {
+    const resolve = ctx.garrison?.resolve ?? GARRISON_RESOLVE_START
+    if (req.minResolve != null && resolve < req.minResolve) return false
+    if (req.maxResolve != null && resolve > req.maxResolve) return false
+  }
   return true
 }
 
@@ -239,6 +381,10 @@ export const eventValence = (effect) => {
     // Upgrading units in place (mount soldiers as cavalry) is a gain.
     case 'convert':
       return 'good'
+    // A Garrison Resolve move is a relationship shift, neither gain nor loss —
+    // its sibling effects in a bundle carry the fate's actual mood.
+    case 'garrison':
+      return 'neutral'
     // A bundle reads as its parts' shared mood; genuinely mixed bundles
     // (a gain and a loss in one fate) net out to neutral.
     case 'multi': {
@@ -334,6 +480,14 @@ export function applyEffect(campaign, effect) {
     const next = effect.delta !== undefined ? cur + effect.delta : (effect.value ?? 1)
     if (flags instanceof Map) flags.set(effect.name, next)
     else flags[effect.name] = next
+  } else if (effect.type === 'garrison') {
+    // Garrison Resolve delta (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): move
+    // the standing track by `delta`, clamped to [MIN, MAX]. Hidden state like
+    // `flag` — the relationship's story lives in the event text, so NO
+    // player-visible number (a leaked figure would cheapen the fiction and the
+    // band is all the player is meant to read). adjustResolve (garrison.js) is
+    // the single writer — init from the starting value + clamp live there.
+    adjustResolve(campaign, effect.delta)
   } else if (effect.type === 'schedule') {
     // Chain follow-up (part 2): guarantee `event` surfaces as a fate `delay`
     // turns from now (default the next turn). Queued as {eventId, day} on

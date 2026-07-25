@@ -16,6 +16,7 @@ import {
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
 import { meterBand } from './meter.js'
+import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
@@ -176,6 +177,12 @@ export async function campaignView(campaign) {
       estimate: displayBracket(campaign.recon?.brackets?.meter, campaign.meter.value, level),
     },
     bossFightDue: campaign.bossFightDue,
+    // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison-support epic"): shown as
+    // one of three LEVEL words (low/normal/determined) — the HUD renders a gauge
+    // from it. The raw resolve number stays server-side (it's what the
+    // wall-slow/sally/surrender read); the level is the player's read. Defaults
+    // to the starting level for a campaign that predates the field.
+    garrison: { level: garrisonLevel(campaign.garrison?.resolve) },
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,

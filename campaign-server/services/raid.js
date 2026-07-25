@@ -1,4 +1,5 @@
-import { eventValenceFor } from './events.js'
+import { eventValenceFor, eventEligible, GARRISON_SORTIE_EVENTS } from './events.js'
+import { adjustResolve } from './garrison.js'
 import {
   RAID_BASE_TARGETS,
   RAID_RANGE_JITTER,
@@ -119,9 +120,15 @@ const enemyRangeOf = (targetForce) => {
 
 // Build ONE opportunity of the given type, or null if the host is exhausted.
 // counterSlot (for counter_event) is the augury slot this counter unmakes.
-const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot }) => {
+// sortieEvent (for garrison_sortie) is the GARRISON_SORTIE_EVENTS entry whose
+// gate is met: its flavour becomes the card, and its `sortie` block the reward
+// (resolve — hidden — plus any loot) and the thins-enemy flag.
+const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot, sortieEvent }) => {
   const targetForce = sliceTargetForce(campaign.enemy.army)
   if (Object.keys(targetForce).length === 0) return null // nothing left to raid
+  // garrison_sortie carries its reward on the event; strip the control flag out
+  // of what becomes the (hidden) reward object — reward holds resolve + any loot.
+  const { thinsEnemy = false, ...sortieReward } = sortieEvent?.sortie ?? {}
   const reward =
     type === 'loot_supplies'
       ? { food: randInt(RAID_LOOT_FOOD), materials: randInt(RAID_LOOT_MATERIALS) }
@@ -129,12 +136,18 @@ const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot })
         ? { roster: { [RAID_RESCUE_UNIT]: randInt(RAID_RESCUE_COUNT) } }
         : type === 'counter_event'
           ? { slot: counterSlot }
-          : null
+          : type === 'garrison_sortie'
+            ? sortieReward
+            : null
+  const flavor =
+    type === 'garrison_sortie'
+      ? { title: sortieEvent.title, description: sortieEvent.description }
+      : FLAVOR[type]
   const totalUnits = Object.values(targetForce).reduce((a, b) => a + b, 0)
   return {
     id: `d${campaign.day}-${seq}`,
     type,
-    ...FLAVOR[type],
+    ...flavor,
     targetForce, // HIDDEN ground truth
     strengthBand: bandLabel(totalUnits, RAID_STRENGTH_BANDS),
     capacity: capacityOf(targetForce, catalog),
@@ -144,6 +157,9 @@ const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot })
     rewardReveal: 0,
     enemyReveal: 0,
     source,
+    // A garrison sortie may inflict its real casualties on the host (like
+    // destroy_detachment) or pay other loot instead — carried per-opportunity.
+    thinsEnemy,
     resolved: false,
     outcome: null,
   }
@@ -187,6 +203,21 @@ export function generateRaidOpportunities(campaign, catalog) {
         counterSlot: bad.i,
       }),
     )
+  // Garrison sortie (slice 4): one per sortie event whose resolve gate the
+  // garrison currently clears — the standing opens these cooperation raids, so
+  // they only appear once trust is earned (a wary garrison offers none). The
+  // campaign doc is a valid `requires` context (day/roster/eventFlags/garrison),
+  // exactly as the augury draw uses it.
+  for (const event of GARRISON_SORTIE_EVENTS)
+    if (eventEligible(event, campaign))
+      push(
+        buildOpportunity(campaign, catalog, {
+          type: 'garrison_sortie',
+          seq,
+          source: 'garrison_sortie',
+          sortieEvent: event,
+        }),
+      )
   return opportunities
 }
 
@@ -239,6 +270,26 @@ export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
       campaign.roster.set(type, (campaign.roster.get(type) ?? 0) + n)
       entries.push(`${n} freed prisoners rejoin your banner.`)
     }
+  } else if (opportunity.type === 'garrison_sortie') {
+    // Garrison sortie (slice 4): a won sally feeds the resolve track (hidden —
+    // adjustResolve, never a number in the log) and lands whatever loot the
+    // version carries. Its real casualties (thins-enemy versions) are booked at
+    // the launch site win-or-lose, like destroy_detachment, not here.
+    const { resolve = 0, food = 0, materials = 0, roster } = opportunity.reward ?? {}
+    if (resolve) adjustResolve(campaign, resolve)
+    if (food) campaign.resources.food += food
+    if (materials) campaign.resources.materials += materials
+    for (const [type, n] of Object.entries(roster ?? {})) {
+      campaign.roster.set(type, (campaign.roster.get(type) ?? 0) + n)
+      entries.push(`${n} of Karrowgate's own ride out to join your banner.`)
+    }
+    entries.push(
+      'The sally strikes home — sally-port and siege-line, you fought as one; Karrowgate stands the taller for it.',
+    )
+    if (food || materials)
+      entries.push(
+        `Stores carried off from the siege park: +${+(food / 1000).toFixed(1)} t of food, +${materials} materials.`,
+      )
   } else if (opportunity.type === 'counter_event') {
     const slot = campaign.augury.slots[opportunity.reward?.slot]
     if (slot) slot.countered = true

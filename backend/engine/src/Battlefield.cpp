@@ -1,5 +1,6 @@
 #include "Battlefield.hpp"
 #include "RangedCombat.hpp"
+#include "SpellList.hpp"
 #include "UnitCatalog.hpp"
 #include <algorithm>
 #include <climits>
@@ -886,6 +887,7 @@ void Battlefield::reset()
     _blue.units.clear();
     corpses = 0;
     _tickLog.clear();
+    _reinforcements.clear();
     _ticksRun = 0;
     _maxTicks = DEFAULT_MAX_BATTLE_TICKS;
 }
@@ -902,6 +904,7 @@ void Battlefield::loadArmies(Army red, Army blue)
     _ticksRun = 0;
     corpses   = 0;
     _tickLog.clear();
+    _reinforcements.clear(); // per-battle; scheduled AFTER loadArmies by callers
     // Red flees south (r = height-1); Blue flees north (r = 0).
     hexGrid.computeDistances(height - 1, 0);
 }
@@ -1292,12 +1295,23 @@ void Battlefield::onTurnEnd()
     cleanup();
 }
 
+void Battlefield::fireScheduledReinforcements()
+{
+    const int turn = _ticksRun + 1; // tick() has not yet incremented _ticksRun
+    for (Reinforcement& r : _reinforcements)
+        if (!r.fired && r.tick <= turn) {
+            Spells::castGarrisonSally(*this, r);
+            r.fired = true; // fires exactly once, even if its turn is overshot
+        }
+}
+
 bool Battlefield::tick()
 {
     // Turn header first, so the events of this tick follow it in the replay
     // log (and in the DB's per-tick log via ReplayRecorder).
     logEvent("Turn " + std::to_string(_ticksRun + 1));
     onTurnStart();
+    fireScheduledReinforcements();
     triggerSpecialPhase();
     moveUnits();
     resolveEngagements();

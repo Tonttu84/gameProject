@@ -1,7 +1,9 @@
 #include "SpellList.hpp"
 #include "AUnit.hpp"
 #include "Battlefield.hpp"
+#include "BattleSetup.hpp"
 #include "RangedCombat.hpp"
+#include "UnitCatalog.hpp"
 #include "Utility.hpp"
 #include "units/Zombie.hpp"
 #include "units/Skeleton.hpp"
@@ -174,5 +176,46 @@ namespace Spells
                 || s.requirement.exactUnitType == unitTypeName)
                 known.push_back(&s);
         return known;
+    }
+
+    // How many rows of the enemy's home end count as its "rear edge".
+    static constexpr int SALLY_REAR_BAND = 3;
+
+    int castGarrisonSally(Battlefield& field, const Reinforcement& r)
+    {
+        if (r.count <= 0) return 0;
+        const int enemyTeam = 3 - r.team;
+
+        // The enemy's rear edge, in visual-col space (matching randomPlaceArmy).
+        // Red flees south (r = height-1), Blue north (r = 0); the sally lands on
+        // whichever home edge belongs to the enemy of the reinforcing team.
+        const int band = std::min(SALLY_REAR_BAND, Battlefield::height);
+        PlacementZone zone = (enemyTeam == REDTEAM)
+            ? PlacementZone{0, Battlefield::width - 1, Battlefield::height - band, Battlefield::height - 1}
+            : PlacementZone{0, Battlefield::width - 1, 0, band - 1};
+
+        Army wave;
+        for (int i = 0; i < r.count; ++i) {
+            std::unique_ptr<AUnit> u = makeUnitByName(r.unitType, r.team);
+            if (u) { u->setBattleSummon(true); wave.push_back(std::move(u)); }
+        }
+        if (wave.empty()) return 0;
+
+        // Partial placement is tolerated, exactly like raise_dead: if the rear
+        // edge is full, the units that found no hex simply never arrive.
+        randomPlaceArmy(wave, field, zone);
+
+        int placed = 0;
+        for (auto& u : wave) {
+            if (u && u->getHex()) {
+                field.getTeam(r.team).push_back(std::move(u));
+                ++placed;
+            }
+        }
+        if (placed > 0)
+            field.logEvent(r.message.empty()
+                ? "Reinforcements storm the enemy's rear!"
+                : r.message);
+        return placed;
     }
 }

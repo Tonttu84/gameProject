@@ -19,12 +19,20 @@ import {
   firedRung,
   eventEligible,
   eligiblePool,
+  GARRISON_SORTIE_EVENTS,
+  SIEGE_SPINE,
 } from '../services/events.js'
+import { generateRaidOpportunities, applyRaidReward } from '../services/raid.js'
 import {
   AUGURY_SLOTS,
   AUGURY_ODDS_MAX,
   AUGURY_REROLLS_PER_DAY,
+  GARRISON_RESOLVE_START,
+  GARRISON_WALL_SLOW_MAX,
+  GARRISON_SALLY_THRESHOLD,
+  GARRISON_SALLY_TROOPS,
 } from '../utils/campaignConfig.js'
+import { wallSlowFactor, adjustResolve, garrisonSallies, garrisonSallyTroops, garrisonLevel, garrisonSurrendered } from '../services/garrison.js'
 
 // Pure-service tests on a plain campaign-shaped object (the service only
 // touches augury/roster/character, all mutated in place like the Mongoose
@@ -858,5 +866,501 @@ describe('the captured_courier → sprung_ambush chain', () => {
     expect(followUp.severity).toBe(trigger.severity)
     expect(eventValenceFor(followUp)).toBe('good')
     expect(followUp.effect).toEqual({ type: 'enemy_losses', factor: 0.9 })
+  })
+})
+
+// ── Siege content: the relief-host chain ─────────────────────────────────────
+// In the relief-army fiction (you are the mobile host racing to Karrowgate, NOT
+// the besieged garrison), `relief_rider` chains a guaranteed reinforcement a
+// fortnight out via the existing `schedule`/`chained` primitive: send guides to
+// speed the Warden's main host, or keep your scouts foraging.
+describe('siege events: the relief-host chain', () => {
+  const reliefRider = EVENT_POOL.find((e) => e.id === 'relief_rider')
+  const reliefArrives = EVENT_POOL.find((e) => e.id === 'relief_column_arrives')
+
+  test("the relief rider's send-guides branch schedules the chained reinforcement", () => {
+    expect(reliefRider.effect).toEqual({ type: 'choice' })
+    expect(reliefRider.chained).toBeUndefined()
+    const guides = reliefRider.choices.find((c) => c.id === 'send_guides')
+    expect(guides.effect).toEqual({ type: 'schedule', event: 'relief_column_arrives', delay: 1 })
+    // The forage branch schedules nothing — a plain supply gain instead.
+    const forage = reliefRider.choices.find((c) => c.id === 'keep_foraging')
+    expect(forage.effect.type).not.toBe('schedule')
+  })
+
+  test('the relief column is a chained, same-tier reinforcement kept out of the random pool', () => {
+    expect(reliefArrives.chained).toBe(true)
+    expect(reliefArrives.severity).toBe(reliefRider.severity)
+    expect(eventValenceFor(reliefArrives)).toBe('good')
+    const ids = new Set(eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) }).map((e) => e.id))
+    expect(ids.has('relief_column_arrives')).toBe(false)
+    expect(ids.has('relief_rider')).toBe(true)
+  })
+})
+
+// ── Siege content: the scripted siege spine (S8) ─────────────────────────────
+// Three GUARANTEED beats seeded onto campaign.scheduledEvents at creation, each
+// authored `chained: true` so it never enters a random augury draw — the
+// schedule queue forces it into a slot on its day (early turns, before a walls
+// breach can land). The spine is the garrison relationship's on-ramp: the
+// Turn-2 beat is the guaranteed early resolve lever (fixes "resolve can stall at
+// the start if garrison_call never draws").
+describe('siege spine (S8): three scripted guaranteed beats', () => {
+  const bump = (id) => EVENT_POOL.find((e) => e.id === id)
+
+  test('the SIEGE_SPINE schedule seeds three beats on early turns', () => {
+    expect(SIEGE_SPINE).toEqual([
+      { eventId: 'siege_lines_close', day: 2 },
+      { eventId: 'breach_threatens', day: 5 },
+      { eventId: 'wardens_van', day: 8 },
+    ])
+  })
+
+  test('every spine beat is a chained choice with a same-tier eligible decoy, out of the random pool', () => {
+    const pool = eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) })
+    for (const { eventId } of SIEGE_SPINE) {
+      const beat = bump(eventId)
+      expect(beat, eventId).toBeTruthy()
+      expect(beat.chained, eventId).toBe(true)
+      expect(beat.effect, eventId).toEqual({ type: 'choice' })
+      expect(beat.choices.length, eventId).toBe(2)
+      // Never a random draw or decoy...
+      expect(pool.some((e) => e.id === eventId), eventId).toBe(false)
+      // ...but the schedule drain needs a same-tier eligible peer for the decoy.
+      expect(pool.some((e) => e.severity === beat.severity && e.id !== eventId), eventId).toBe(true)
+    }
+  })
+
+  test('Turn 2 — the working party is the guaranteed resolve lever (spend stores → +resolve; or hold)', () => {
+    const beat = bump('siege_lines_close')
+    const send = beat.choices.find((c) => c.id === 'send_working_party')
+    const parts = send.effect.effects
+    expect(parts.find((p) => p.type === 'food').delta).toBeLessThan(0)
+    expect(parts.find((p) => p.type === 'garrison').delta).toBeGreaterThan(0)
+    const hold = beat.choices.find((c) => c.id === 'hold_stores')
+    expect(hold.effect).toEqual({ type: 'none' })
+  })
+
+  test('Turn 5 — the breach forks: throw men in (cost + resolve) vs refuse (the bond frays, −resolve)', () => {
+    const beat = bump('breach_threatens')
+    const into = beat.choices.find((c) => c.id === 'into_the_breach')
+    const parts = into.effect.effects
+    expect(parts.find((p) => p.type === 'food').delta).toBeLessThan(0)
+    expect(parts.find((p) => p.type === 'roster' && p.unit === 'Soldier').factor).toBeLessThan(1)
+    expect(parts.find((p) => p.type === 'garrison').delta).toBeGreaterThan(0)
+    const spare = beat.choices.find((c) => c.id === 'cannot_spare')
+    expect(spare.effect.type).toBe('garrison')
+    expect(spare.effect.delta).toBeLessThan(0)
+  })
+
+  test("Turn 8 — the Warden's van forks: pin them → a scheduled relief, or husband strength", () => {
+    const beat = bump('wardens_van')
+    const pin = beat.choices.find((c) => c.id === 'pin_the_van')
+    expect(pin.effect).toEqual({ type: 'schedule', event: 'relief_van_arrives', delay: 2 })
+    const husband = beat.choices.find((c) => c.id === 'husband_strength')
+    expect(husband.effect.type).toBe('food')
+    expect(husband.effect.delta).toBeGreaterThan(0)
+  })
+
+  test("the Warden's van follow-up is a chained, same-tier reinforcement out of the random pool", () => {
+    const van = bump('relief_van_arrives')
+    const trigger = bump('wardens_van')
+    expect(van.chained).toBe(true)
+    expect(van.severity).toBe(trigger.severity)
+    expect(eventValenceFor(van)).toBe('good')
+    expect(van.effect).toEqual({ type: 'roster', unit: 'Soldier', delta: 25 })
+    const ids = new Set(eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) }).map((e) => e.id))
+    expect(ids.has('relief_van_arrives')).toBe(false)
+  })
+
+  test('a due spine beat drains into a forced slot on its day', () => {
+    const ctx = {
+      day: 2,
+      roster: new Map([['Soldier', 100]]),
+      scheduledEvents: [...SIEGE_SPINE.map((s) => ({ ...s }))],
+    }
+    const augury = drawAugury(ctx)
+    expect(augury.slots.some((s) => s.trueEvent.id === 'siege_lines_close')).toBe(true)
+    // Only the due beat drains; the later two stay queued for their turns.
+    expect(ctx.scheduledEvents).toEqual([
+      { eventId: 'breach_threatens', day: 5 },
+      { eventId: 'wardens_van', day: 8 },
+    ])
+  })
+})
+
+// ── Garrison Resolve (slice 1): the standing track + its event gate ──────────
+// A hidden 0..100 relationship track (campaign.garrison.resolve) fed by the
+// `garrison` effect and read as an event prerequisite (requires
+// minResolve/maxResolve). Later slices hang the passive wall-slow + boss-fight
+// sally off the same number; slice 1 is the track, the gate, and the
+// cooperation events.
+describe('applyEffect — garrison (Resolve delta)', () => {
+  const target = (resolve = 40) => ({
+    day: 1, resources: { food: 5000, materials: 0 }, roster: new Map(), garrison: { resolve },
+  })
+
+  test('moves resolve by the delta and leaves no player-visible number', () => {
+    const c = target(40)
+    const log = applyEffect(c, { type: 'garrison', delta: 15 })
+    expect(c.garrison.resolve).toBe(55)
+    // Hidden state like `flag` — the relationship's story is the event text.
+    expect(log.join(' ')).not.toMatch(/\d/)
+  })
+
+  test('clamps to [0, 100]', () => {
+    const hi = target(95); applyEffect(hi, { type: 'garrison', delta: 20 })
+    expect(hi.garrison.resolve).toBe(100)
+    const lo = target(10); applyEffect(lo, { type: 'garrison', delta: -25 })
+    expect(lo.garrison.resolve).toBe(0)
+  })
+
+  test('initializes the track from the starting value when the campaign has none', () => {
+    const c = { day: 1, resources: { food: 0, materials: 0 }, roster: new Map() }
+    applyEffect(c, { type: 'garrison', delta: 5 })
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + 5)
+  })
+
+  test('rides inside a multi alongside a real effect', () => {
+    const c = target(40)
+    applyEffect(c, { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'garrison', delta: 15 }] })
+    expect(c.resources.food).toBe(3000)
+    expect(c.garrison.resolve).toBe(55)
+  })
+
+  test('classifies as neutral — a relationship move, not a gain or loss', () => {
+    expect(eventValence({ type: 'garrison', delta: 15 })).toBe('neutral')
+    expect(eventValence({ type: 'garrison', delta: -15 })).toBe('neutral')
+  })
+})
+
+// Slice 2 — the passive wall-slow: the fraction the boss-fight-meter fill is
+// reduced by, linear in resolve and capped below 1 so the walls never freeze.
+describe('wallSlowFactor — the passive wall-slow (slice 2)', () => {
+  test('is 0 at a broken garrison and the full MAX at a devoted one', () => {
+    expect(wallSlowFactor(0)).toBe(0)
+    expect(wallSlowFactor(100)).toBeCloseTo(GARRISON_WALL_SLOW_MAX)
+  })
+
+  test('scales linearly with resolve', () => {
+    expect(wallSlowFactor(50)).toBeCloseTo(GARRISON_WALL_SLOW_MAX / 2)
+    expect(wallSlowFactor(GARRISON_RESOLVE_START)).toBeCloseTo(0.18) // start 45 -> 0.4*0.45
+  })
+
+  test('is capped below 1, so a maxed garrison can never freeze the clock', () => {
+    expect(wallSlowFactor(GARRISON_RESOLVE_START)).toBeLessThan(1)
+    expect(wallSlowFactor(200)).toBe(GARRISON_WALL_SLOW_MAX) // clamps the resolve
+    expect(GARRISON_WALL_SLOW_MAX).toBeLessThan(1)
+  })
+})
+
+// adjustResolve is the single writer for the track (the `garrison` effect and
+// the band-cross decay both go through it); the applyEffect tests above pin its
+// event path — here just the init + clamp contract it owns.
+describe('adjustResolve — the single resolve writer', () => {
+  test('initializes an absent track from the starting value', () => {
+    const c = {}
+    adjustResolve(c, 5)
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + 5)
+  })
+
+  test('clamps both ends and returns the new value', () => {
+    const c = { garrison: { resolve: 5 } }
+    expect(adjustResolve(c, -20)).toBe(0)
+    const hi = { garrison: { resolve: 95 } }
+    expect(adjustResolve(hi, 20)).toBe(100)
+  })
+})
+
+// garrisonSallies — the boss-fight sally predicate (slice 3). The battle route
+// reads it once and, if true, thins the enemy before the pitched battle.
+describe('garrisonSallies — the sally threshold (slice 3)', () => {
+  test('fires only at or above the sally threshold', () => {
+    expect(garrisonSallies(GARRISON_SALLY_THRESHOLD)).toBe(true)
+    expect(garrisonSallies(GARRISON_SALLY_THRESHOLD - 1)).toBe(false)
+    expect(garrisonSallies(100)).toBe(true)
+  })
+
+  test('a fresh (starting-resolve) garrison does not sally', () => {
+    expect(garrisonSallies(GARRISON_RESOLVE_START)).toBe(false)
+    expect(garrisonSallies()).toBe(false)
+  })
+
+  test('clamps out-of-range resolve before comparing', () => {
+    expect(garrisonSallies(200)).toBe(true)
+    expect(garrisonSallies(-50)).toBe(false)
+  })
+})
+
+// garrisonSallyTroops — the graduated sally (S7). Troop count the garrison
+// commits to the decisive battle, keyed on garrisonLevel: low none, normal
+// some, determined more. The battle route turns a >0 count into a BattleInput
+// reinforcement wave.
+describe('garrisonSallyTroops — graduated by level (S7)', () => {
+  test('a determined garrison sends the most troops', () => {
+    expect(garrisonSallyTroops(80)).toBe(GARRISON_SALLY_TROOPS.determined)
+    expect(garrisonSallyTroops(100)).toBe(GARRISON_SALLY_TROOPS.determined)
+  })
+
+  test('a normal garrison sends fewer', () => {
+    expect(garrisonSallyTroops(50)).toBe(GARRISON_SALLY_TROOPS.normal)
+    expect(garrisonSallyTroops(GARRISON_RESOLVE_START)).toBe(GARRISON_SALLY_TROOPS.normal)
+    expect(GARRISON_SALLY_TROOPS.normal).toBeLessThan(GARRISON_SALLY_TROOPS.determined)
+  })
+
+  test('a low garrison sends none', () => {
+    expect(garrisonSallyTroops(20)).toBe(0)
+    expect(GARRISON_SALLY_TROOPS.low).toBe(0)
+  })
+})
+
+// garrisonLevel — the three player-facing support levels (S5 redesign). low /
+// normal / determined, by descending threshold; the HUD renders a gauge from it.
+describe('garrisonLevel — the 3 support levels (S5)', () => {
+  test('low 1..33, normal 34..66, determined 67..100', () => {
+    expect(garrisonLevel(1)).toBe('low')
+    expect(garrisonLevel(33)).toBe('low')
+    expect(garrisonLevel(34)).toBe('normal')
+    expect(garrisonLevel(66)).toBe('normal')
+    expect(garrisonLevel(67)).toBe('determined')
+    expect(garrisonLevel(100)).toBe('determined')
+  })
+
+  test('a resolve of 0 still resolves to a level (low) before surrender ends the campaign', () => {
+    expect(garrisonLevel(0)).toBe('low')
+  })
+
+  test('the starting resolve reads normal', () => {
+    expect(garrisonLevel(GARRISON_RESOLVE_START)).toBe('normal')
+    expect(garrisonLevel()).toBe('normal') // defaulted
+  })
+})
+
+// garrisonSurrendered — the second loss clock (S5). At/under the surrender floor
+// the garrison opens Karrowgate's gates and the campaign is lost (dayResolution).
+describe('garrisonSurrendered — the surrender floor (S5)', () => {
+  test('true only at/under the floor (0)', () => {
+    expect(garrisonSurrendered(0)).toBe(true)
+    expect(garrisonSurrendered(1)).toBe(false)
+    expect(garrisonSurrendered(GARRISON_RESOLVE_START)).toBe(false)
+    expect(garrisonSurrendered()).toBe(false) // defaulted
+  })
+
+  test('clamps out-of-range resolve before comparing', () => {
+    expect(garrisonSurrendered(-50)).toBe(true)
+    expect(garrisonSurrendered(200)).toBe(false)
+  })
+})
+
+// Garrison sortie — payoff/cost (a): a coordinated sally the garrison offers
+// only once it trusts you (a resolve-gated raid opportunity). Committing a
+// party is a raid-style battle whose cost is battle-day readiness (the troops
+// land in raid.assignment) and whose reward FEEDS the resolve track. Surfaced
+// through the event-prerequisite machinery (each version is an `event` with a
+// `requires.minResolve` gate), but spawned onto the RAID board — not the augury
+// — so the offer IS the raid, never a vision. See docs/CAMPAIGN_PLAN.md slice 4.
+describe('garrison sortie (slice 4) — resolve-gated raid opportunities', () => {
+  // capacityOf falls back to size 10 for unknown types, so an empty catalog is
+  // enough to build opportunities in these pure tests.
+  const catalog = new Map()
+  const fakeCampaign = (resolve) => ({
+    day: 3,
+    augury: { slots: [] }, // no bad fates → the only opps are sorties (if any)
+    enemy: { army: { Soldier: 540, Archer: 150 } },
+    garrison: { resolve },
+  })
+  const sortiesOf = (resolve) =>
+    generateRaidOpportunities(fakeCampaign(resolve), catalog).filter(
+      (o) => o.type === 'garrison_sortie',
+    )
+  const probe = GARRISON_SORTIE_EVENTS.find((e) => e.id === 'sortie_probe')
+  const grand = GARRISON_SORTIE_EVENTS.find((e) => e.id === 'sortie_grand')
+
+  test('every sortie event is trust-gated (requires.minResolve) and feeds resolve', () => {
+    expect(GARRISON_SORTIE_EVENTS.length).toBeGreaterThanOrEqual(2)
+    for (const ev of GARRISON_SORTIE_EVENTS) {
+      expect(ev.requires.minResolve).toBeGreaterThan(GARRISON_RESOLVE_START)
+      expect(ev.sortie.resolve).toBeGreaterThan(0)
+    }
+  })
+
+  test('a wary (starting-resolve) garrison offers no sortie — the board is unchanged', () => {
+    expect(sortiesOf(GARRISON_RESOLVE_START)).toHaveLength(0)
+    expect(sortiesOf(GARRISON_RESOLVE_START - 5)).toHaveLength(0)
+  })
+
+  test('a steadfast garrison opens the probe; a devoted one opens both versions', () => {
+    const steadfast = sortiesOf(probe.requires.minResolve)
+    expect(steadfast.map((o) => o.source)).toEqual(['garrison_sortie'])
+    expect(steadfast).toHaveLength(1)
+    // The grand assault stays shut until devoted trust.
+    expect(sortiesOf(grand.requires.minResolve - 1)).toHaveLength(1)
+    expect(sortiesOf(grand.requires.minResolve)).toHaveLength(2)
+  })
+
+  test('a sortie opportunity carries the event flavour, a real target slice, and its thins-enemy flag', () => {
+    const [o] = sortiesOf(probe.requires.minResolve)
+    expect(o.title).toBe(probe.title)
+    expect(o.description).toBe(probe.description)
+    expect(o.thinsEnemy).toBe(true) // the probe's whole point is spoiling the besiegers
+    expect(Object.keys(o.targetForce).length).toBeGreaterThan(0)
+    expect(o.capacity).toBeGreaterThan(0)
+    // The resolve reward is hidden bookkeeping: it never becomes a buyable range.
+    expect(o.rewardRange).toBeNull()
+  })
+
+  test('the grand assault pays a real reward instead of thinning, and shows its loot range', () => {
+    const grandOpp = sortiesOf(grand.requires.minResolve).find((o) => o.title === grand.title)
+    expect(grandOpp.thinsEnemy).toBe(false)
+    expect(grandOpp.rewardRange.materials).toBeTruthy() // materials loot is a revealable range
+  })
+
+  // applyRaidReward runs only on a WON raid; the launch route books casualties
+  // (for thins-enemy sorties) separately. Here: the reward path itself.
+  const wonCampaign = () => ({
+    garrison: { resolve: GARRISON_RESOLVE_START },
+    resources: { food: 1000, materials: 100 },
+    roster: new Map(),
+    enemy: { army: new Map() },
+  })
+
+  test('winning the probe raises resolve — hidden, no number leaked to the log', () => {
+    const c = wonCampaign()
+    const opp = { type: 'garrison_sortie', reward: { resolve: probe.sortie.resolve } }
+    const entries = applyRaidReward(c, opp)
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + probe.sortie.resolve)
+    expect(entries.join(' ')).not.toMatch(/resolve|\+\d/i) // the number never shows
+    expect(entries.join(' ')).toMatch(/sortie|sally|garrison|karrowgate/i)
+  })
+
+  test('winning the grand assault raises resolve AND lands its loot', () => {
+    const c = wonCampaign()
+    const opp = { type: 'garrison_sortie', reward: { resolve: grand.sortie.resolve, materials: 250 } }
+    applyRaidReward(c, opp)
+    expect(c.garrison.resolve).toBe(GARRISON_RESOLVE_START + grand.sortie.resolve)
+    expect(c.resources.materials).toBe(100 + 250)
+  })
+
+  test('resolve gained by a sortie clamps at the track ceiling', () => {
+    const c = { ...wonCampaign(), garrison: { resolve: 95 } }
+    applyRaidReward(c, { type: 'garrison_sortie', reward: { resolve: 20 } })
+    expect(c.garrison.resolve).toBe(100)
+  })
+})
+
+describe('eventEligible — resolve gate (minResolve/maxResolve)', () => {
+  const ev = (requires) => ({ id: 'x', title: 'X', severity: 2, effect: { type: 'none' }, requires })
+
+  test('minResolve gates on the garrison standing', () => {
+    expect(eventEligible(ev({ minResolve: 60 }), { garrison: { resolve: 60 } })).toBe(true)
+    expect(eventEligible(ev({ minResolve: 60 }), { garrison: { resolve: 59 } })).toBe(false)
+  })
+
+  test('maxResolve gates the other way', () => {
+    expect(eventEligible(ev({ maxResolve: 20 }), { garrison: { resolve: 20 } })).toBe(true)
+    expect(eventEligible(ev({ maxResolve: 20 }), { garrison: { resolve: 21 } })).toBe(false)
+  })
+
+  test('absent garrison context reads as the starting resolve', () => {
+    expect(eventEligible(ev({ minResolve: GARRISON_RESOLVE_START }), {})).toBe(true)
+    expect(eventEligible(ev({ minResolve: GARRISON_RESOLVE_START + 1 }), {})).toBe(false)
+    expect(eventEligible(ev({ maxResolve: GARRISON_RESOLVE_START }), {})).toBe(true)
+    expect(eventEligible(ev({ maxResolve: GARRISON_RESOLVE_START - 1 }), {})).toBe(false)
+  })
+})
+
+describe('the garrison cooperation events', () => {
+  const call = EVENT_POOL.find((e) => e.id === 'garrison_call')
+  const lookout = EVENT_POOL.find((e) => e.id === 'garrison_lookout')
+  const spurned = EVENT_POOL.find((e) => e.id === 'garrison_spurned')
+
+  test('the garrison call is a choice; answering it spends stores to raise resolve', () => {
+    expect(call.effect).toEqual({ type: 'choice' })
+    expect(['good', 'bad', 'neutral']).toContain(call.valence)
+    const answer = call.choices.find((c) => c.id === 'answer_the_call')
+    const parts = answer.effect.type === 'multi' ? answer.effect.effects : [answer.effect]
+    expect(parts.some((p) => p.type === 'garrison' && p.delta > 0)).toBe(true)
+    // The other branch spends nothing and moves the track not at all.
+    const decline = call.choices.find((c) => c.id === 'tend_your_own')
+    expect(decline.effect).toEqual({ type: 'none' })
+  })
+
+  test('a high-resolve boon is gated on minResolve and lays the enemy bare', () => {
+    expect(lookout.requires.minResolve).toBeGreaterThan(GARRISON_RESOLVE_START)
+    expect(lookout.effect).toEqual({ type: 'enemy_reveal' })
+    const low = eligiblePool({ garrison: { resolve: GARRISON_RESOLVE_START }, roster: new Map() })
+    expect(low.some((e) => e.id === 'garrison_lookout')).toBe(false)
+    const high = eligiblePool({ garrison: { resolve: 100 }, roster: new Map() })
+    expect(high.some((e) => e.id === 'garrison_lookout')).toBe(true)
+  })
+
+  test('a soured-relationship fate is gated on maxResolve', () => {
+    expect(spurned.requires.maxResolve).toBeLessThan(GARRISON_RESOLVE_START)
+    expect(eventValenceFor(spurned)).toBe('bad')
+    const bitter = eligiblePool({ garrison: { resolve: 10 }, roster: new Map() })
+    expect(bitter.some((e) => e.id === 'garrison_spurned')).toBe(true)
+    const warm = eligiblePool({ garrison: { resolve: GARRISON_RESOLVE_START }, roster: new Map() })
+    expect(warm.some((e) => e.id === 'garrison_spurned')).toBe(false)
+  })
+})
+
+// ── Garrison-support S9: resolve-gated pool fates ────────────────────────────
+// More garrison fates through the requires minResolve/maxResolve doors, gates
+// aligned to the S5 level thresholds (low 1..33 / normal 34..66 / determined
+// 67..100). A determined garrison opens trust-gifts (garrison_stores supplies,
+// garrison_night_sally an autonomous blow); a low-resolve garrison opens the
+// soured band (garrison_recovery a mend-or-fray choice, alongside the realigned
+// garrison_spurned). Additive — every gate carries `requires`, so the
+// unconditional base pool the legibility tripwire guards is untouched.
+describe('garrison resolve-gated pool fates (S9)', () => {
+  const at = (resolve) => eligiblePool({ garrison: { resolve }, roster: new Map() })
+  const has = (resolve, id) => at(resolve).some((e) => e.id === id)
+  const stores = EVENT_POOL.find((e) => e.id === 'garrison_stores')
+  const nightSally = EVENT_POOL.find((e) => e.id === 'garrison_night_sally')
+  const recovery = EVENT_POOL.find((e) => e.id === 'garrison_recovery')
+  const spurned = EVENT_POOL.find((e) => e.id === 'garrison_spurned')
+
+  test('the high-trust gifts are gated at the determined floor (67)', () => {
+    expect(garrisonLevel(stores.requires.minResolve)).toBe('determined')
+    expect(garrisonLevel(nightSally.requires.minResolve)).toBe('determined')
+    // Not offered while merely normal; offered once determined.
+    expect(has(66, 'garrison_stores')).toBe(false)
+    expect(has(67, 'garrison_stores')).toBe(true)
+    expect(has(66, 'garrison_night_sally')).toBe(false)
+    expect(has(67, 'garrison_night_sally')).toBe(true)
+  })
+
+  test('the supplies gift brings you the garrison\'s own stores (a food boon)', () => {
+    expect(stores.effect.type).toBe('food')
+    expect(stores.effect.delta).toBeGreaterThan(0)
+    expect(eventValenceFor(stores)).toBe('good')
+  })
+
+  test('the night sally is an autonomous enemy blow (distinct from the committed sortie raid)', () => {
+    expect(nightSally.effect.type).toBe('enemy_losses')
+    expect(nightSally.effect.factor).toBeLessThan(1)
+    expect(eventValenceFor(nightSally)).toBe('good')
+  })
+
+  test('the recovery choice is gated to the low band and forks mend vs turn-away', () => {
+    expect(garrisonLevel(recovery.requires.maxResolve)).toBe('low')
+    expect(recovery.effect).toEqual({ type: 'choice' })
+    const mend = recovery.choices.find((c) => c.id === 'mend_the_bond')
+    const parts = mend.effect.type === 'multi' ? mend.effect.effects : [mend.effect]
+    expect(parts.some((p) => p.type === 'food' && p.delta < 0)).toBe(true)
+    expect(parts.some((p) => p.type === 'garrison' && p.delta > 0)).toBe(true)
+    const away = recovery.choices.find((c) => c.id === 'turn_away')
+    expect(away.effect.type).toBe('garrison')
+    expect(away.effect.delta).toBeLessThan(0)
+    // Only offered in the low band, not once the bond has recovered.
+    expect(has(33, 'garrison_recovery')).toBe(true)
+    expect(has(34, 'garrison_recovery')).toBe(false)
+  })
+
+  test('garrison_spurned is realigned to the low-band ceiling so the soured fates pair', () => {
+    expect(garrisonLevel(spurned.requires.maxResolve)).toBe('low')
+    // Both soured fates share the whole low band.
+    expect(has(33, 'garrison_spurned')).toBe(true)
+    expect(has(33, 'garrison_recovery')).toBe(true)
   })
 })

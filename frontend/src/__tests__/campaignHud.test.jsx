@@ -48,6 +48,12 @@ describe('CampaignHUD boss-fight meter + recon readout', () => {
     expect(screen.getByTestId('hud-recon')).toHaveTextContent('Recon: Superior')
   })
 
+  it("shows the garrison's standing as a gauge with a coarse level word", () => {
+    hudWith({ garrison: { level: 'determined' } })
+    expect(screen.getByTestId('hud-garrison')).toHaveTextContent('Garrison:')
+    expect(screen.getByTestId('hud-garrison')).toHaveTextContent('determined')
+  })
+
   it('mirrors the raid scout-points pool, floored', () => {
     hudWith({ raid: { ...campaignFixture.raid, scoutingPoints: 23.7 } })
     expect(screen.getByTestId('hud-scouting')).toHaveTextContent('Scout pts: 23')

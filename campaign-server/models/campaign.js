@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import config from '../utils/config.js'
+import { GARRISON_RESOLVE_START } from '../utils/campaignConfig.js'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
 // plain fields — enemy.army, enemy.plannedPlacement, augury.trueEvent/
@@ -35,7 +36,7 @@ const raidOpportunitySchema = new mongoose.Schema(
     id: { type: String, required: true },
     type: {
       type: String,
-      enum: ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event'],
+      enum: ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event', 'garrison_sortie'],
       required: true,
     },
     title: { type: String, required: true },
@@ -54,9 +55,14 @@ const raidOpportunitySchema = new mongoose.Schema(
     enemyReveal: { type: Number, default: 0 }, // 0 range, 1 exact
     source: {
       type: String,
-      enum: ['base', 'scouted', 'counter_event'],
+      enum: ['base', 'scouted', 'counter_event', 'garrison_sortie'],
       default: 'base',
     },
+    // Garrison sortie (slice 4): a WON sortie of this kind inflicts its real
+    // battle casualties on the hidden host, win or lose — like destroy_detachment
+    // but per-opportunity (a sortie version may thin the besiegers OR pay other
+    // loot instead). A control flag, never exposed by campaignView.
+    thinsEnemy: { type: Boolean, default: false },
     resolved: { type: Boolean, default: false },
     outcome: { type: mongoose.Schema.Types.Mixed, default: null }, // {winner, battleId} once resolved
   },
@@ -80,7 +86,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 20 // v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 23 // v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -104,6 +110,18 @@ const campaignSchema = new mongoose.Schema({
     value: { type: Number, default: 0 },
   },
   bossFightDue: { type: Boolean, default: false },
+
+  // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison-support epic"): the
+  // standing between your relief army and Karrowgate's besieged garrison, 0..100.
+  // Cooperation events AWARD it (applyEffect `garrison`) and fates GATE on it
+  // (events.js `requires` minResolve/maxResolve). It slows the wall meter
+  // (wallSlowFactor), drives the pitched-battle sally support, and — S5 — a
+  // resolve of 0 SURRENDERS the garrison (a second loss condition). campaignView
+  // exposes it as one of three level words (garrisonLevel) for the HUD gauge;
+  // the raw number stays server-side.
+  garrison: {
+    resolve: { type: Number, default: GARRISON_RESOLVE_START },
+  },
 
   // Recon (docs/CAMPAIGN_PLAN.md "Recon rework"): leftover scouting points that
   // weren't spent on the raid board accumulate here at end-of-turn (no decay).
