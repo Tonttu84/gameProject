@@ -715,14 +715,34 @@ time).** No engine work.
   - **NEXT: S9** (resolve-gated pool fates — the last garrison-support content slice). Then the
     bigger opens: Stage E (hiring troops, design-only) and combat-score-per-hexside.
 
-**S9 — resolve-gated pool fates (server; the user's task 1).** More garrison fates via the
-  `requires` minResolve/maxResolve doors, so the pool feels like a relationship opening/closing
-  doors. Additive (augury legibility tripwire holds on the unconditional base pool). Draft set
-  (finalize at build): a high-trust **supplies** gift (minResolve, +food — a runner brings you the
-  garrison's own stores), a high-trust autonomous **night sally** gift (minResolve, `enemy_losses` —
-  distinct from the player-committed sortie raid), a low-resolve **recovery choice** (maxResolve,
-  spend food → +resolve to mend the bond, or turn away → −resolve) pairing with the existing
-  `garrison_spurned`. Gates align to the new level thresholds.
+**S9 — resolve-gated pool fates (server; the user's task 1). ✅ SHIPPED 2026-07-25 (branch
+  `feat/garrison-resolve`).** More garrison fates via the `requires` minResolve/maxResolve doors,
+  so the pool feels like a relationship opening/closing doors. Additive (augury legibility tripwire
+  holds on the unconditional base pool — every new fate carries `requires`). Gates aligned to the
+  S5 level thresholds (`garrisonLevel`: low 1–33 / normal 34–66 / determined 67–100). Landed in
+  `services/events.js` (`EVENT_POOL`), pure content — NO schema bump (adding gated pool fates +
+  tweaking one gate value is no stored-shape change; an existing v23 doc draws them from the shared
+  pool once its resolve qualifies):
+  - **Determined (≥67) opens two trust-gifts:** `garrison_stores` (sev 1, `+2 t food` — a runner
+    lowers the garrison's own stores over the wall) and `garrison_night_sally` (sev 3,
+    `enemy_losses ×0.92` — the defenders sally on their own to maul the siege lines, distinct from
+    the player-committed `garrison_sortie` raid).
+  - **Low (≤33) opens the soured band:** `garrison_recovery` (sev 2 choice, valence neutral —
+    `mend_the_bond` spends `−2 t food` for `+15 resolve`, or `turn_away` frays it `−10 resolve`),
+    and the existing `garrison_spurned` gate was **realigned `maxResolve` 20→33** (the low-band
+    ceiling) so the two soured fates share the whole low level. (`garrison_lookout` stays at its
+    slice-1 `minResolve: 60` and the sortie gates stay raw 50/75 — deliberately not swept into the
+    realign; only the S9 fates + their direct pair moved.)
+  - Tests: augury.test.js `garrison resolve-gated pool fates (S9)` describe (+5 pure: determined
+    gifts gated at the determined floor with eligibility flips at 66/67; the supplies food-boon +
+    the autonomous enemy blow; the recovery choice's mend/turn-away branches gated to the low band
+    with flips at 33/34; the realigned spurned pairing). **augury 118/118 green; full cs-test
+    running (expected green — S9 is additive pool content, route tests keep resolve at the normal
+    start where none of the new fates are eligible).** NOT yet click-tested in a live browser.
+  - **The garrison-support epic (S5–S9) is now fully built.** Remaining garrison work is pure
+    content authoring (more resolve-gated fates as desired) + the deferred themed/scripted
+    siege-event flavor pass. **NEXT (bigger opens): Stage E (hiring troops, design-only — needs the
+    `gold` resource + numbers decided) and combat-score-per-hexside.**
 - **✅ DONE 2026-07-21 — remove `enemy.stance`/`battleOffer` entirely** (schema **v18→v19**,
   branch `cleanup/remove-enemy-stance`). The whole stance concept is gone: the `stance` field on
   `enemy` (model + creation route), `enemyView`'s `stance`/`battleOffer` keys (Blind now returns

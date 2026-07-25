@@ -1303,3 +1303,64 @@ describe('the garrison cooperation events', () => {
     expect(warm.some((e) => e.id === 'garrison_spurned')).toBe(false)
   })
 })
+
+// ── Garrison-support S9: resolve-gated pool fates ────────────────────────────
+// More garrison fates through the requires minResolve/maxResolve doors, gates
+// aligned to the S5 level thresholds (low 1..33 / normal 34..66 / determined
+// 67..100). A determined garrison opens trust-gifts (garrison_stores supplies,
+// garrison_night_sally an autonomous blow); a low-resolve garrison opens the
+// soured band (garrison_recovery a mend-or-fray choice, alongside the realigned
+// garrison_spurned). Additive — every gate carries `requires`, so the
+// unconditional base pool the legibility tripwire guards is untouched.
+describe('garrison resolve-gated pool fates (S9)', () => {
+  const at = (resolve) => eligiblePool({ garrison: { resolve }, roster: new Map() })
+  const has = (resolve, id) => at(resolve).some((e) => e.id === id)
+  const stores = EVENT_POOL.find((e) => e.id === 'garrison_stores')
+  const nightSally = EVENT_POOL.find((e) => e.id === 'garrison_night_sally')
+  const recovery = EVENT_POOL.find((e) => e.id === 'garrison_recovery')
+  const spurned = EVENT_POOL.find((e) => e.id === 'garrison_spurned')
+
+  test('the high-trust gifts are gated at the determined floor (67)', () => {
+    expect(garrisonLevel(stores.requires.minResolve)).toBe('determined')
+    expect(garrisonLevel(nightSally.requires.minResolve)).toBe('determined')
+    // Not offered while merely normal; offered once determined.
+    expect(has(66, 'garrison_stores')).toBe(false)
+    expect(has(67, 'garrison_stores')).toBe(true)
+    expect(has(66, 'garrison_night_sally')).toBe(false)
+    expect(has(67, 'garrison_night_sally')).toBe(true)
+  })
+
+  test('the supplies gift brings you the garrison\'s own stores (a food boon)', () => {
+    expect(stores.effect.type).toBe('food')
+    expect(stores.effect.delta).toBeGreaterThan(0)
+    expect(eventValenceFor(stores)).toBe('good')
+  })
+
+  test('the night sally is an autonomous enemy blow (distinct from the committed sortie raid)', () => {
+    expect(nightSally.effect.type).toBe('enemy_losses')
+    expect(nightSally.effect.factor).toBeLessThan(1)
+    expect(eventValenceFor(nightSally)).toBe('good')
+  })
+
+  test('the recovery choice is gated to the low band and forks mend vs turn-away', () => {
+    expect(garrisonLevel(recovery.requires.maxResolve)).toBe('low')
+    expect(recovery.effect).toEqual({ type: 'choice' })
+    const mend = recovery.choices.find((c) => c.id === 'mend_the_bond')
+    const parts = mend.effect.type === 'multi' ? mend.effect.effects : [mend.effect]
+    expect(parts.some((p) => p.type === 'food' && p.delta < 0)).toBe(true)
+    expect(parts.some((p) => p.type === 'garrison' && p.delta > 0)).toBe(true)
+    const away = recovery.choices.find((c) => c.id === 'turn_away')
+    expect(away.effect.type).toBe('garrison')
+    expect(away.effect.delta).toBeLessThan(0)
+    // Only offered in the low band, not once the bond has recovered.
+    expect(has(33, 'garrison_recovery')).toBe(true)
+    expect(has(34, 'garrison_recovery')).toBe(false)
+  })
+
+  test('garrison_spurned is realigned to the low-band ceiling so the soured fates pair', () => {
+    expect(garrisonLevel(spurned.requires.maxResolve)).toBe('low')
+    // Both soured fates share the whole low band.
+    expect(has(33, 'garrison_spurned')).toBe(true)
+    expect(has(33, 'garrison_recovery')).toBe(true)
+  })
+})

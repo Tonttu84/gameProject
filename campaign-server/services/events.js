@@ -165,7 +165,28 @@ export const EVENT_POOL = [
     ],
   },
   { id: 'garrison_lookout', title: 'Word from the Ramparts', description: 'Trusting the banner that has stood with them, Karrowgate\'s watch signal down what they can see from the high walls — the enemy\'s dispositions, laid plain.', severity: 2, effect: { type: 'enemy_reveal' }, requires: { minResolve: 60 } },
-  { id: 'garrison_spurned', title: 'The Garrison Turns Its Back', description: 'Bitter at a relief army that lets their wall be ground down, the defenders jeer your scouts from the parapet; the slight runs through your own camp and a few men slink off.', severity: 2, effect: { type: 'roster', unit: 'Soldier', factor: 0.97 }, requires: { maxResolve: 20 } },
+  { id: 'garrison_spurned', title: 'The Garrison Turns Its Back', description: 'Bitter at a relief army that lets their wall be ground down, the defenders jeer your scouts from the parapet; the slight runs through your own camp and a few men slink off.', severity: 2, effect: { type: 'roster', unit: 'Soldier', factor: 0.97 }, requires: { maxResolve: 33 } },
+  // ── Garrison-support S9: resolve-gated pool fates ── More garrison fates
+  // through the `requires` minResolve/maxResolve doors, gates aligned to the S5
+  // level thresholds (low 1..33 / normal 34..66 / determined 67..100). A
+  // DETERMINED garrison (≥67) opens two trust-gifts: `garrison_stores` (a runner
+  // brings you the garrison's own stores) and `garrison_night_sally` (the
+  // defenders sally on their own to maul the besiegers — distinct from the
+  // player-committed sortie raid). A LOW garrison (≤33) opens the soured band:
+  // `garrison_recovery` (mend the bond with stores, or turn away and fray it
+  // further), pairing with the realigned `garrison_spurned`. All additive — each
+  // carries `requires`, so the unconditional base pool the legibility tripwire
+  // guards is untouched.
+  { id: 'garrison_stores', title: 'Stores from the Wall', description: 'Under cover of dark a file of the garrison lowers sacks and casks from a sally-port and passes them out to your foragers — their own stores, shared with the army that has stood by them. +2 t of food.', severity: 1, effect: { type: 'food', delta: +2000 }, requires: { minResolve: 67 } },
+  { id: 'garrison_night_sally', title: 'A Sally in the Night', description: 'Needing no prompting from you, the garrison throws open a postern in the small hours and falls on the sleeping siege lines; by dawn the enemy\'s forward works are a shambles of cut ropes and dead men.', severity: 3, effect: { type: 'enemy_losses', factor: 0.92 }, requires: { minResolve: 67 } },
+  {
+    id: 'garrison_recovery', title: 'A Chance to Mend the Bond', description: 'The garrison\'s trust has worn thin, but a grey-haired captain sends word over the wall: stand with them now, and the old faith might be rekindled.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral', requires: { maxResolve: 33 },
+    choices: [
+      { id: 'mend_the_bond', label: 'Send stores and stand the watch with them', description: 'Spend from your larder to prove your word. The garrison marks it, and something of the old trust comes back.', effect: { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'turn_away',      label: 'Turn away — you have your own to feed',      description: 'Keep your stores whole. The captain\'s face closes, and word of it hardens every heart on the wall against you.', effect: { type: 'garrison', delta: -10 } },
+    ],
+  },
   // ── fates with choices (resolve-then-choose) ── The fired rung's `choices`
   // hand the player a decision instead of an effect: end-day pends it
   // (dayResolution) and a follow-up POST applies the picked branch. Branches
