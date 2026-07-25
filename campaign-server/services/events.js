@@ -115,6 +115,39 @@ export const EVENT_POOL = [
     ],
   },
   { id: 'relief_column_arrives', title: 'The Relief Column Arrives', description: 'Guided past the enemy\'s watch-lines by your scouts, a column of the Warden\'s spearmen tramps into camp, banners heavy with road-dust. +30 Soldiers.', severity: 2, effect: { type: 'roster', unit: 'Soldier', delta: +30 }, chained: true },
+  // ── the scripted siege spine (S8, docs/CAMPAIGN_PLAN.md) ── Three GUARANTEED
+  // beats seeded onto campaign.scheduledEvents at creation (SIEGE_SPINE below,
+  // turns 2/5/8), all `chained: true` so they never enter a random draw — the
+  // schedule queue forces each into a slot on its day. All early (before a
+  // walls breach can plausibly land), so no clash with the meter. The spine is
+  // the garrison relationship's on-ramp: the Turn-2 beat is the guaranteed early
+  // resolve lever (fixes "resolve can stall at the start if garrison_call never
+  // draws"). Each is a choice; numbers are tunable, balance stays rough.
+  {
+    id: 'siege_lines_close', title: 'The Siege Lines Close', description: 'The enemy pushes their saps and gabions ever closer to Karrowgate\'s wall, and a runner slips out to beg a working party before the next stretch is battered open.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral', chained: true,
+    choices: [
+      { id: 'send_working_party', label: 'Send a working party to shore up the wall', description: 'Spend from your own stores to strengthen the threatened stretch. The garrison marks who came when the siege lines tightened.', effect: { type: 'multi', effects: [{ type: 'food', delta: -1500 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'hold_stores',        label: 'Hold your stores and your men',            description: 'The wall is theirs to hold. You keep every sack and every hand for your own column.', effect: { type: 'none' } },
+    ],
+  },
+  {
+    id: 'breach_threatens', title: 'A Breach Threatens', description: 'The enemy\'s engines have gnawed a stretch of Karrowgate\'s wall to rubble; by nightfall it may be practicable. The garrison sends up a desperate plea for spears to hold the gap.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral', chained: true,
+    choices: [
+      { id: 'into_the_breach', label: 'Throw men into the breach beside them', description: 'Send your own into the rubble to fight shoulder to shoulder with the garrison — costly in stores and blood, but a bond forged under fire holds.', effect: { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'roster', unit: 'Soldier', factor: 0.98 }, { type: 'garrison', delta: +15 }] } },
+      { id: 'cannot_spare',    label: 'You cannot spare them',                 description: 'You need every spear for the pitched battle to come. The garrison holds the breach alone — and does not forget who stayed in camp.', effect: { type: 'garrison', delta: -10 } },
+    ],
+  },
+  {
+    id: 'wardens_van', title: 'The Warden\'s Van', description: 'Word comes that the Warden\'s vanguard is nearing the Marn — but the enemy has thrown out a screen to hold them off. Pin the besiegers in place, and the van breaks through; let them fend for themselves, and hoard your own strength.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good', chained: true,
+    choices: [
+      { id: 'pin_the_van',      label: 'Pin the besiegers so the van breaks through', description: 'Harry the screen hard enough to fix it in place. It costs you the fortnight\'s rest, but a column of the Warden\'s own men is coming — a fortnight or so behind.', effect: { type: 'schedule', event: 'relief_van_arrives', delay: 2 } },
+      { id: 'husband_strength', label: 'Husband your strength for the walls',           description: 'Let the van shift for itself. Your men rest and forage the valley, and the larder is the fuller for it.', effect: { type: 'food', delta: +2000 } },
+    ],
+  },
+  { id: 'relief_van_arrives', title: 'The Warden\'s Van Arrives', description: 'Held in place by your harrying, the enemy screen could not stop them: the Warden\'s vanguard tramps into your lines, weary but eager for the fight. +25 Soldiers.', severity: 2, effect: { type: 'roster', unit: 'Soldier', delta: +25 }, chained: true },
   // ── Garrison Resolve cooperation (docs/CAMPAIGN_PLAN.md "Garrison Resolve",
   // slice 1) ── Fates that move the standing track (the `garrison` effect) and,
   // via the `requires` minResolve/maxResolve gate, appear only at the right
@@ -245,6 +278,16 @@ export const GARRISON_SORTIE_EVENTS = [
     requires: { minResolve: 75 },
     sortie: { resolve: 14, materials: 250 },
   },
+]
+
+// The scripted siege spine (S8): the schedule seeded onto campaign.scheduledEvents
+// at creation (routes/campaigns.js). Each entry forces its `chained` beat (above)
+// into an augury slot when the campaign reaches `day` (drawAugury → drainScheduled).
+// All early turns, before a walls breach can plausibly land.
+export const SIEGE_SPINE = [
+  { eventId: 'siege_lines_close', day: 2 },
+  { eventId: 'breach_threatens', day: 5 },
+  { eventId: 'wardens_van', day: 8 },
 ]
 
 export const rosterTotal = (roster) =>

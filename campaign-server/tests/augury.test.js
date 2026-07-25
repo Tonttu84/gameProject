@@ -20,6 +20,7 @@ import {
   eventEligible,
   eligiblePool,
   GARRISON_SORTIE_EVENTS,
+  SIEGE_SPINE,
 } from '../services/events.js'
 import { generateRaidOpportunities, applyRaidReward } from '../services/raid.js'
 import {
@@ -894,6 +895,97 @@ describe('siege events: the relief-host chain', () => {
     const ids = new Set(eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) }).map((e) => e.id))
     expect(ids.has('relief_column_arrives')).toBe(false)
     expect(ids.has('relief_rider')).toBe(true)
+  })
+})
+
+// ── Siege content: the scripted siege spine (S8) ─────────────────────────────
+// Three GUARANTEED beats seeded onto campaign.scheduledEvents at creation, each
+// authored `chained: true` so it never enters a random augury draw — the
+// schedule queue forces it into a slot on its day (early turns, before a walls
+// breach can land). The spine is the garrison relationship's on-ramp: the
+// Turn-2 beat is the guaranteed early resolve lever (fixes "resolve can stall at
+// the start if garrison_call never draws").
+describe('siege spine (S8): three scripted guaranteed beats', () => {
+  const bump = (id) => EVENT_POOL.find((e) => e.id === id)
+
+  test('the SIEGE_SPINE schedule seeds three beats on early turns', () => {
+    expect(SIEGE_SPINE).toEqual([
+      { eventId: 'siege_lines_close', day: 2 },
+      { eventId: 'breach_threatens', day: 5 },
+      { eventId: 'wardens_van', day: 8 },
+    ])
+  })
+
+  test('every spine beat is a chained choice with a same-tier eligible decoy, out of the random pool', () => {
+    const pool = eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) })
+    for (const { eventId } of SIEGE_SPINE) {
+      const beat = bump(eventId)
+      expect(beat, eventId).toBeTruthy()
+      expect(beat.chained, eventId).toBe(true)
+      expect(beat.effect, eventId).toEqual({ type: 'choice' })
+      expect(beat.choices.length, eventId).toBe(2)
+      // Never a random draw or decoy...
+      expect(pool.some((e) => e.id === eventId), eventId).toBe(false)
+      // ...but the schedule drain needs a same-tier eligible peer for the decoy.
+      expect(pool.some((e) => e.severity === beat.severity && e.id !== eventId), eventId).toBe(true)
+    }
+  })
+
+  test('Turn 2 — the working party is the guaranteed resolve lever (spend stores → +resolve; or hold)', () => {
+    const beat = bump('siege_lines_close')
+    const send = beat.choices.find((c) => c.id === 'send_working_party')
+    const parts = send.effect.effects
+    expect(parts.find((p) => p.type === 'food').delta).toBeLessThan(0)
+    expect(parts.find((p) => p.type === 'garrison').delta).toBeGreaterThan(0)
+    const hold = beat.choices.find((c) => c.id === 'hold_stores')
+    expect(hold.effect).toEqual({ type: 'none' })
+  })
+
+  test('Turn 5 — the breach forks: throw men in (cost + resolve) vs refuse (the bond frays, −resolve)', () => {
+    const beat = bump('breach_threatens')
+    const into = beat.choices.find((c) => c.id === 'into_the_breach')
+    const parts = into.effect.effects
+    expect(parts.find((p) => p.type === 'food').delta).toBeLessThan(0)
+    expect(parts.find((p) => p.type === 'roster' && p.unit === 'Soldier').factor).toBeLessThan(1)
+    expect(parts.find((p) => p.type === 'garrison').delta).toBeGreaterThan(0)
+    const spare = beat.choices.find((c) => c.id === 'cannot_spare')
+    expect(spare.effect.type).toBe('garrison')
+    expect(spare.effect.delta).toBeLessThan(0)
+  })
+
+  test("Turn 8 — the Warden's van forks: pin them → a scheduled relief, or husband strength", () => {
+    const beat = bump('wardens_van')
+    const pin = beat.choices.find((c) => c.id === 'pin_the_van')
+    expect(pin.effect).toEqual({ type: 'schedule', event: 'relief_van_arrives', delay: 2 })
+    const husband = beat.choices.find((c) => c.id === 'husband_strength')
+    expect(husband.effect.type).toBe('food')
+    expect(husband.effect.delta).toBeGreaterThan(0)
+  })
+
+  test("the Warden's van follow-up is a chained, same-tier reinforcement out of the random pool", () => {
+    const van = bump('relief_van_arrives')
+    const trigger = bump('wardens_van')
+    expect(van.chained).toBe(true)
+    expect(van.severity).toBe(trigger.severity)
+    expect(eventValenceFor(van)).toBe('good')
+    expect(van.effect).toEqual({ type: 'roster', unit: 'Soldier', delta: 25 })
+    const ids = new Set(eligiblePool({ day: 10, roster: new Map([['Soldier', 100]]) }).map((e) => e.id))
+    expect(ids.has('relief_van_arrives')).toBe(false)
+  })
+
+  test('a due spine beat drains into a forced slot on its day', () => {
+    const ctx = {
+      day: 2,
+      roster: new Map([['Soldier', 100]]),
+      scheduledEvents: [...SIEGE_SPINE.map((s) => ({ ...s }))],
+    }
+    const augury = drawAugury(ctx)
+    expect(augury.slots.some((s) => s.trueEvent.id === 'siege_lines_close')).toBe(true)
+    // Only the due beat drains; the later two stay queued for their turns.
+    expect(ctx.scheduledEvents).toEqual([
+      { eventId: 'breach_threatens', day: 5 },
+      { eventId: 'wardens_van', day: 8 },
+    ])
   })
 })
 

@@ -680,19 +680,40 @@ time).** No engine work.
     the garrison gauge (S5) but nothing surfaces the sally pre-battle — a "the garrison will sally"
     hint on the Deploy screen is possible polish, not required.
 
-**S8 — scripted siege spine (server; the user's task 2).** Three GUARANTEED beats, seeded onto
-  `campaign.scheduledEvents` at creation (`routes/campaigns.js`), each authored `chained: true` so
-  it never enters a random augury draw — `drainScheduled` forces it into a slot on its day. All
-  EARLY turns (before a meter-driven breach can plausibly land) so no clash with the walls gauge.
-  The spine is the **garrison relationship's on-ramp** (fixes the flagged "resolve can stall at the
-  wary start if `garrison_call` never draws"). Approved beats (numbers tunable):
-  - **Turn 2 — "The Siege Lines Close"** (choice): send a working party (−1.5 t food, **+resolve**,
-    the guaranteed early lever) vs. hold your stores (nothing).
-  - **Turn 5 — "A Breach Threatens"** (choice, two-way): throw men into the breach (−2 t food,
-    Soldiers ×0.98, **+resolve**) vs. cannot spare them (**−resolve** — the bond frays; user
-    confirmed the penalty-on-refusal is wanted).
-  - **Turn 8 — "The Warden's Van"** (choice): pin the besiegers → `schedule` a guaranteed
-    `relief_van_arrives` (+25 Soldiers) two turns out vs. husband your strength (+2 t food, no chain).
+**S8 — scripted siege spine (server; the user's task 2). ✅ SHIPPED 2026-07-25 (branch
+  `feat/garrison-resolve`).** Three GUARANTEED beats, seeded onto `campaign.scheduledEvents` at
+  creation (`routes/campaigns.js`), each authored `chained: true` so it never enters a random
+  augury draw — `drainScheduled` forces it into a slot on its day. All EARLY turns (before a
+  meter-driven breach can plausibly land) so no clash with the walls gauge. The spine is the
+  **garrison relationship's on-ramp** (fixes the flagged "resolve can stall at the wary start if
+  `garrison_call` never draws"). Landed:
+  - **The beats (all `chained: true` choice fates in `EVENT_POOL`, severity 2 so the schedule
+    drain always finds a same-tier decoy; numbers inline + tunable, balance rough):**
+    - **Turn 2 `siege_lines_close`** — `send_working_party` (`−1.5 t food` + `+15 resolve`, the
+      guaranteed early lever) vs. `hold_stores` (`none`).
+    - **Turn 5 `breach_threatens`** — `into_the_breach` (`−2 t food`, `Soldiers ×0.98`,
+      `+15 resolve`) vs. `cannot_spare` (`−10 resolve` — the bond frays).
+    - **Turn 8 `wardens_van`** — `pin_the_van` (`schedule relief_van_arrives`, delay 2) vs.
+      `husband_strength` (`+2 t food`).
+    - **`relief_van_arrives`** — `chained` follow-up, `+25 Soldiers` (mirrors `relief_column_arrives`).
+  - **The schedule** is the exported `SIEGE_SPINE` const (`services/events.js`), seeded at creation
+    as `scheduledEvents: SIEGE_SPINE.map(...)`. Rides the exact `chained`/`scheduledEvents`
+    machinery an event chain uses — but guaranteed from turn 1 rather than a player choice. The
+    creation-time day-1 draw never sees the queue (ctx has no `scheduledEvents`), so the beats
+    surface only on their days.
+  - **Schema `CAMPAIGN_SCHEMA_VERSION` 22→23** — no stored-shape change (`scheduledEvents` already
+    exists), but bumped so fresh campaigns actually carry the spine (old docs are wiped, per the
+    no-back-compat norm). NO frontend change — `scheduledEvents` is hidden state (not in
+    `campaignView`), and the spine's choice beats render through the existing tent/choice UI like
+    any other choice fate.
+  - Tests: augury.test.js `siege spine (S8)` describe (+8 pure: schedule shape, each beat
+    chained/choice/out-of-pool with a same-tier decoy, branch effects, follow-up, drain-on-day-2);
+    campaigns.test.js `siege spine (S8)` route describe (seeded at creation; ending T1 drains the
+    T2 beat, later two stay queued). Fixed the two pre-existing event-chains-part-2 tests to clear
+    the now-seeded spine in their `setup` (test isolation). **Full cs-test 384/384 green locally
+    (mongo cooperated this session); C++ unchanged.** NOT yet click-tested in a live browser.
+  - **NEXT: S9** (resolve-gated pool fates — the last garrison-support content slice). Then the
+    bigger opens: Stage E (hiring troops, design-only) and combat-score-per-hexside.
 
 **S9 — resolve-gated pool fates (server; the user's task 1).** More garrison fates via the
   `requires` minResolve/maxResolve doors, so the pool feels like a relationship opening/closing

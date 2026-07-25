@@ -2030,6 +2030,7 @@ describe('event chains (part 2)', () => {
     }))
     doc.augury.consulted = true
     doc.raid.opportunities = [] // no stray counter_event to defer a slot
+    doc.scheduledEvents = [] // isolate the courier chain from the seeded siege spine (S8)
     await doc.save()
   }
 
@@ -2075,5 +2076,48 @@ describe('event chains (part 2)', () => {
     const next = await Campaign.findById(c.id)
     expect(next.scheduledEvents).toEqual([])
     expect(next.augury.slots.some((s) => s.trueEvent.id === 'sprung_ambush')).toBe(false)
+  })
+})
+
+// Siege spine (S8): three GUARANTEED scripted beats seeded onto scheduledEvents
+// at campaign creation (turns 2/5/8), each `chained` so it never enters a random
+// draw — the schedule queue forces it into an augury slot on its day.
+describe('siege spine (S8): scripted guaranteed beats', () => {
+  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  // Neutralise the day-1 random augury so ending turn 1 pends nothing and
+  // resolves clean — the spine drain is the only thing under test.
+  const quietDay1 = async (id) => {
+    const doc = await Campaign.findById(id)
+    doc.augury.slots = doc.augury.slots.map(() => ({
+      trueEvent: QUIET, falseEvent: QUIET, odds: null, shownTrue: null,
+    }))
+    await doc.save()
+  }
+
+  test('a fresh campaign is seeded with the three siege beats', async () => {
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    expect(doc.scheduledEvents.map((s) => ({ eventId: s.eventId, day: s.day })))
+      .toEqual([
+        { eventId: 'siege_lines_close', day: 2 },
+        { eventId: 'breach_threatens', day: 5 },
+        { eventId: 'wardens_van', day: 8 },
+      ])
+  })
+
+  test('ending turn 1 drains the Turn-2 beat into a forced slot; the later two stay queued', async () => {
+    const { body: c } = await createCampaign()
+    await quietDay1(c.id)
+
+    const end = await endDayReq(c.id)
+    expect(end.status).toBe(200)
+
+    const next = await Campaign.findById(c.id)
+    expect(next.augury.slots.some((s) => s.trueEvent.id === 'siege_lines_close')).toBe(true)
+    expect(next.scheduledEvents.map((s) => ({ eventId: s.eventId, day: s.day })))
+      .toEqual([
+        { eventId: 'breach_threatens', day: 5 },
+        { eventId: 'wardens_van', day: 8 },
+      ])
   })
 })

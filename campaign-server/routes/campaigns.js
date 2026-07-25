@@ -5,7 +5,7 @@ import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay, acceptFates, checkAnnihilation } from '../services/dayResolution.js'
-import { applyEffect, choiceRung } from '../services/events.js'
+import { applyEffect, choiceRung, SIEGE_SPINE } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
@@ -106,6 +106,11 @@ router.post('/', async (req, res) => {
       enemyPlan: enemyForagePlanKg(ENEMY_ARMY, catalog),
     },
     augury,
+    // The scripted siege spine (S8): three GUARANTEED beats forced into their
+    // day's augury by drawAugury's schedule drain (turns 2/5/8). Seeded here so
+    // they ride the same `chained`/scheduledEvents machinery as an event chain,
+    // but guaranteed from the campaign's first turn rather than a player choice.
+    scheduledEvents: SIEGE_SPINE.map((s) => ({ ...s })),
     // Day-1 raid board: one base target (+ any counters), plus the turn's
     // scouting-points pool derived from the starting roster's recon capability.
     // end-day redeals both each new turn.
