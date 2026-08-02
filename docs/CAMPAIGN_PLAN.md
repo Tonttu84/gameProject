@@ -1142,10 +1142,11 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
 > the "Stage E — hiring troops" stub above). Grilled end-to-end with the user (2026-08-02) before
 > writing anything down, per the `grilling` skill rule in `CLAUDE.md`. This SUPERSEDES the old
 > placeholder bullet ("converts idle workers into roster troops… no numbers, caps, or UI decided")
-> with a full mechanic. **S1 (pool + core mechanics, pure service layer) SHIPPED 2026-08-02** — see
-> the handoff below. **Route/day-resolution wiring, frontend, raid-gold-reward, and the old-militia
-> removal are NOT done yet** — staged like every other multi-part feature in this doc (build one
-> piece at a time, one commit-sized step per session). NOT blocked on the worker-eating-food/
+> with a full mechanic. **S1 (pool + core mechanics, pure service layer) SHIPPED 2026-08-02**, **S2
+> (route + day-offer generation + campaignView exposure, server-only) SHIPPED 2026-08-02** — see
+> the handoffs below. **Frontend, raid-gold-reward, and the old-militia removal are NOT done yet**
+> — staged like every other multi-part feature in this doc (build one piece at a time, one
+> commit-sized step per session). NOT blocked on the worker-eating-food/
 > replenishment pairing (see that backlog entry) —
 > Recruit's worker draw is the same permanent-drain shape the already-shipped Militia purchase
 > already has, just generalized to more unit types. It DOES drain `workers` faster, which raises
@@ -1260,6 +1261,62 @@ convention as every other stage in this doc):
   `campaignConfig.js` are UNTOUCHED and still live — Militia purchase still works exactly as before
   until the fold-in lands); the raid gold-reward wiring; the garrison gold event; horses' earn
   source.
+
+**S2 — route + day-offer generation + `campaignView` exposure (server-only, no frontend yet). ✅
+SHIPPED 2026-08-02.** Mirrors the augury/raid-opportunities wiring pattern exactly (drawn at
+creation, redrawn at end-day step 7, looked up fresh from the pool at view/hire time — never a
+stored resolved cost/count, which can drift as resources/workers change between draw and hire).
+- **Schema (`CAMPAIGN_SCHEMA_VERSION` 24→25):** `campaign.recruit.dailyOptions` (`[String]`, up to 2
+  `RECRUIT_POOL` ids), `.boosted` (today's ONE Fervor roll, applies to whichever option is hired),
+  `.hiredToday` (the one-hire-per-day cadence spent — by a hire, an explicit skip, or the automatic
+  free-Militia fallback).
+- **`services/recruit.js` additions:** `drawRecruitOffer(ctx)` — pure wrapper around
+  `pickDailyOptions` that shapes the three `campaign.recruit` fields (ids only, never resolved
+  cost/count) and reports `freeMilitia` for the caller to apply (kept a separate step, like
+  `applyEffect` is separate from picking what fired — `drawRecruitOffer` itself never touches the
+  roster). `recruitCtx(campaign)` — derives the ctx (`workersFree` from `workers.total - used`,
+  `fervor` defaulted) from a live campaign doc, shared by both call sites below.
+- **Wiring (routes/campaigns.js + services/dayResolution.js):** day-1 draw happens before the doc
+  exists (same before-the-doc-exists treatment `drawAugury` already gets) — the free-Militia
+  fallback, if it fired, is folded straight into the starting roster object literal, since
+  `grantFreeMilitia`'s `campaign.roster.set` needs a real Mongoose Map that doesn't exist yet.
+  End-day step 7 redraws it from the live doc (`recruitCtx(campaign)`) alongside the augury/raid
+  redraws, applying `grantFreeMilitia` for real when the pool comes back empty.
+- **`POST /:id/recruit/hire`** (new route, sits next to `/spend`): `{entryId}` hires that option,
+  re-validated against `dailyOptions` AND re-checked for affordability against LIVE
+  resources/workers (a race guard — the offer may have gone stale since it was drawn, e.g. a
+  fortify spend in between); `{skip: true}` declines without hiring. Either way sets `hiredToday`
+  and clears `dailyOptions` (unambiguous "nothing left to pick today," rather than leaving a stale
+  entry whose `campaignView` preview would recompute against post-hire resources). Coexists with
+  the old `/spend {action:'militia'}` route for now — removing it is still a later slice.
+- **`campaignView` exposure:** a `recruit: {fervor, boosted, hiredToday, options}` block; each
+  option is looked up fresh from `RECRUIT_POOL` by id (the sealed-pool-lookup convention
+  `pendingChoices` already uses — an id that left the pool mid-campaign is dropped) and resolved
+  through `resolveHire` against LIVE resources/workers, so the client sees the EXACT count/cost/
+  secondUnit hiring would produce right now, boost included — never the stale numbers from draw
+  time.
+- **Gotcha found by the full suite, not by design:** `bugReports.test.js` pre-seeded 4 dice-queue
+  values before calling `POST /api/campaigns`, on the (previously true) assumption that campaign
+  creation doesn't actually consume the shared `utils/dice.js` FIFO queue (`drawAugury` draws its
+  event pairs via `Math.random`, not the queue — only `consultAugury` touches it). S2's day-1
+  `drawRecruitOffer` call is the FIRST thing creation does that legitimately consumes the queue
+  (`rollBoost` → `chanceRoll` → `getRandom`), so those 4 leftover values — meant for nothing — got
+  consumed instead of Fervor's roll and the option-index pick, corrupting the pick (`getRandom`
+  ignores its bounds when the queue is non-empty, so a leftover value like `6` against a 1-entry
+  pool spliced out-of-bounds → `undefined` → a 500). Fixed by deleting the dead pushes in
+  `bugReports.test.js` (the comment claiming consumption was already stale before this change).
+  Worth remembering: any FUTURE addition to the creation or end-day pipeline that starts consuming
+  the dice queue should audit for the same kind of stale "just in case" `pushRoll` padding
+  elsewhere in the suite.
+- **Tests:** `tests/recruit.test.js` gained `drawRecruitOffer`/`recruitCtx` cases (10 more, 38
+  total); `tests/campaigns.test.js` gained a `describe('Recruit phase ...')` block (day-1 offer
+  shape, hire debits + roster growth + cadence, invalid/stale-option rejection, skip, end-day
+  redraw) plus `recruit/hire` added to the "every mutating action 409s while a decision is
+  pending" table. Full `cs-test` 420/423 green — the 3 failures are the same pre-existing
+  `engine.integration.test.js` ENOENT as every other session in this environment.
+- **NOT done yet (next slices):** the frontend Recruit phase screen + its slot in
+  `Prepare→Omens→Raids→Recruit→Deploy`; removing the old militia-purchase route/`CampPanel` slider;
+  the raid gold-reward wiring; the garrison gold event; horses' earn source.
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 

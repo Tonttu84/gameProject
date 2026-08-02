@@ -21,6 +21,7 @@ import { displayBracket } from './recon.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValenceFor, choiceRung } from './events.js'
+import { RECRUIT_POOL, resolveHire } from './recruit.js'
 
 // THE single serializer between campaign documents and the client. Hidden
 // information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
@@ -287,6 +288,28 @@ export async function campaignView(campaign) {
       // client can render the mini-game and clamp its buttons.
       scoutingPoints: campaign.raid.scoutingPoints,
       scoutCost: { addTarget: RAID_SCOUT_COST_ADD, reveal: RAID_SCOUT_COST_REVEAL },
+    },
+    // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops",
+    // S2): today's up-to-2-option offer, drawn at creation/end-day. Options are
+    // looked up fresh from RECRUIT_POOL by id (the sealed-pool-lookup
+    // convention pendingChoices below already uses — an id that's left the
+    // pool mid-campaign is dropped, degrade-safely) and resolved through
+    // resolveHire against the LIVE resources/workers so count/cost reflect
+    // exactly what hiring would do right now, including the day's boosted
+    // roll — never the stale numbers from when the offer was drawn.
+    recruit: {
+      fervor: campaign.recruit.fervor,
+      boosted: campaign.recruit.boosted,
+      hiredToday: campaign.recruit.hiredToday,
+      options: (campaign.recruit.dailyOptions ?? []).flatMap((id) => {
+        const entry = RECRUIT_POOL.find((e) => e.id === id)
+        if (!entry) return []
+        const resolved = resolveHire(entry, campaign.recruit.boosted, {
+          resources: campaign.resources,
+          workersFree: campaign.workers.total - campaign.workers.used,
+        })
+        return [{ id: entry.id, unit: entry.unit, lane: entry.lane, ...resolved }]
+      }),
     },
     // Decisions owed (events with choices): display fields + option CARDS
     // only — branch effects, the pool id, and the fired rung stay server-side

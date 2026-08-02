@@ -21,6 +21,7 @@ import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.j
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging } from './forage.js'
+import { drawRecruitOffer, recruitCtx, grantFreeMilitia } from './recruit.js'
 
 // End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
 // later stages splice into it:
@@ -341,6 +342,17 @@ export async function endDay(campaign) {
     }
     setBracket(campaign.recon.brackets.enemyCount, armyTotal(campaign.enemy.army))
     setBracket(campaign.recon.brackets.meter, campaign.meter.value)
+
+    // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops",
+    // S2): tomorrow's hire offer, from the roster/resources/workers/fervor as
+    // this turn leaves them. Nothing affordable grants the free-Militia
+    // fallback immediately (no route call needed — the day's cadence is
+    // already spent).
+    const recruitOffer = drawRecruitOffer(recruitCtx(campaign))
+    campaign.recruit.dailyOptions = recruitOffer.dailyOptions
+    campaign.recruit.boosted = recruitOffer.boosted
+    campaign.recruit.hiredToday = recruitOffer.hiredToday
+    if (recruitOffer.freeMilitia) entries.push(...grantFreeMilitia(campaign))
   }
 
   campaign.log.push({ day: report.day, entries })

@@ -147,3 +147,33 @@ export const pickDailyOptions = (ctx) => {
   }
   return { options, boosted, freeMilitia: null }
 }
+
+// S2 wiring (docs/CAMPAIGN_PLAN.md): the fields campaign.recruit needs for a
+// day, from pickDailyOptions — ids only (never the resolved cost/count,
+// which can drift between draw and hire as resources/workers change; hire
+// time re-resolves against RECRUIT_POOL, the sealed-pool-lookup convention
+// pendingChoices already uses). Pure — does NOT grant the free-Militia
+// fallback itself (that's a real roster mutation); the caller applies
+// grantFreeMilitia when `freeMilitia` comes back non-null, exactly like
+// events.js's applyEffect is a separate step from picking what fired.
+export const drawRecruitOffer = (ctx) => {
+  const offer = pickDailyOptions(ctx)
+  if (offer.options.length === 0)
+    return { dailyOptions: [], boosted: false, hiredToday: true, freeMilitia: offer.freeMilitia }
+  return {
+    dailyOptions: offer.options.map((e) => e.id),
+    boosted: offer.boosted,
+    hiredToday: false,
+    freeMilitia: null,
+  }
+}
+
+// The ctx drawRecruitOffer/affordablePool need, from a live campaign
+// document: `workers` is a running total/used split (like fortify's cost
+// check), not a resources.* field.
+export const recruitCtx = (campaign) => ({
+  roster: campaign.roster,
+  resources: campaign.resources,
+  workersFree: (campaign.workers?.total ?? 0) - (campaign.workers?.used ?? 0),
+  fervor: campaign.recruit?.fervor ?? RECRUITING_FERVOR_START,
+})

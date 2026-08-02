@@ -7,6 +7,7 @@ import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay, acceptFates, checkAnnihilation } from '../services/dayResolution.js'
 import { applyEffect, choiceRung, SIEGE_SPINE } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
+import { RECRUIT_POOL, canAfford, applyHire, drawRecruitOffer } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget } from '../services/raid.js'
@@ -26,6 +27,7 @@ import {
   STARTING_WORKERS,
   STARTING_GOLD,
   STARTING_HORSES,
+  RECRUITING_FERVOR_START,
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
   FORAGE_RINGS,
@@ -96,11 +98,30 @@ router.post('/', async (req, res) => {
   // prerequisite-gated fates (events.js `requires`) are judged against the
   // opening army. No eventFlags yet — the first turn can't be a chain payoff.
   const augury = drawAugury({ day: 1, roster: STARTING_ROSTER })
+  // Day-1 Recruit offer, same before-the-doc-exists treatment as augury above.
+  // The free-Militia fallback (nothing affordable) is folded straight into the
+  // starting roster literal here — grantFreeMilitia's `campaign.roster.set`
+  // needs a real Mongoose Map, which doesn't exist yet.
+  const recruitOffer = drawRecruitOffer({
+    roster: STARTING_ROSTER,
+    resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
+    workersFree: STARTING_WORKERS,
+    fervor: RECRUITING_FERVOR_START,
+  })
+  const roster = recruitOffer.freeMilitia
+    ? { ...STARTING_ROSTER, Militia: (STARTING_ROSTER.Militia ?? 0) + recruitOffer.freeMilitia }
+    : STARTING_ROSTER
   const campaign = await Campaign.create({
     user: req.user._id,
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
     workers: { total: STARTING_WORKERS, used: 0 },
-    roster: STARTING_ROSTER,
+    roster,
+    recruit: {
+      fervor: RECRUITING_FERVOR_START,
+      dailyOptions: recruitOffer.dailyOptions,
+      boosted: recruitOffer.boosted,
+      hiredToday: recruitOffer.hiredToday,
+    },
     squads: STARTING_SQUADS,
     forage: {
       rings: FORAGE_RINGS.map((richness, ring) => ({ ring, richness, initialRichness: richness })),
@@ -722,6 +743,52 @@ router.post('/:id/spend', async (req, res) => {
   }
 
   return res.status(400).json({ error: 'unknown spend action' })
+})
+
+// Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops", S2):
+// one hire per day, from today's dailyOptions (a 2-option offer drawn at
+// creation/end-day, or empty when the free-Militia fallback already fired
+// automatically). {entryId} hires that option (boosted per today's ONE roll);
+// {skip: true} declines without hiring — either way spends the day's cadence.
+// This coexists with the old POST /:id/spend {action:'militia'} mechanic for
+// now (removing it is a later slice, see docs/CAMPAIGN_PLAN.md).
+router.post('/:id/recruit/hire', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+  if (campaign.recruit.hiredToday)
+    return res.status(400).json({ error: "today's recruiting is already resolved" })
+
+  if (req.body?.skip === true) {
+    campaign.recruit.hiredToday = true
+    campaign.recruit.dailyOptions = []
+    campaign.log.push({ day: campaign.day, entries: ['No hire made today.'] })
+    await campaign.save()
+    return res.json(await campaignView(campaign))
+  }
+
+  const entryId = req.body?.entryId
+  if (!campaign.recruit.dailyOptions.includes(entryId))
+    return res.status(400).json({ error: "not one of today's recruit options" })
+
+  const entry = RECRUIT_POOL.find((e) => e.id === entryId)
+  const workersFree = campaign.workers.total - campaign.workers.used
+  // Re-checked here (not just at draw time): resources/workers may have moved
+  // since today's offer was drawn (fortify, forage, another route) — a stale
+  // dailyOptions entry must not overdraw.
+  if (!canAfford(entry.cost, campaign.resources, workersFree))
+    return res.status(400).json({ error: 'not enough stores to hire that' })
+
+  const entries = applyHire(campaign, entryId, campaign.recruit.boosted)
+  campaign.recruit.hiredToday = true
+  // Cleared, not left stale: hiredToday alone would still leave a resolveHire
+  // preview computed against POST-hire resources in the view below — clearing
+  // makes "nothing left to pick today" unambiguous.
+  campaign.recruit.dailyOptions = []
+  campaign.log.push({ day: campaign.day, entries })
+  await campaign.save()
+  res.json(await campaignView(campaign))
 })
 
 router.post('/:id/end-day', async (req, res) => {

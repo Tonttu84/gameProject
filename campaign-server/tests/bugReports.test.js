@@ -3,7 +3,7 @@ import supertest from 'supertest'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { createUserAndToken } from './helpers/auth.js'
 import { catalogFixture } from './fixtures/catalog.js'
-import { pushRoll, clearRolls } from '../utils/dice.js'
+import { clearRolls } from '../utils/dice.js'
 
 // Bug reports don't touch the engine, but campaign creation (used by the
 // enrichment test) does, via buildEnemyPlacement's zone geometry.
@@ -136,12 +136,6 @@ describe('POST /api/bug-reports', () => {
   })
 
   test('stamps the trusted active-campaign context server-side', async () => {
-    // Campaign creation consumes augury dice; pin a reading so create() is
-    // deterministic (same pattern as campaigns.test.js).
-    pushRoll(4)
-    pushRoll(6)
-    pushRoll(3)
-    pushRoll(2)
     const campaignRes = await auth(api.post('/api/campaigns')).send({})
     expect(campaignRes.status).toBe(201)
     const campaignId = campaignRes.body.id
@@ -157,10 +151,6 @@ describe('POST /api/bug-reports', () => {
   test('never attaches another user\'s campaign', async () => {
     // A second user's active campaign must not leak into this user's report.
     const other = await createUserAndToken(api, 'otheruser', 'sekret2')
-    pushRoll(4)
-    pushRoll(6)
-    pushRoll(3)
-    pushRoll(2)
     await api
       .post('/api/campaigns')
       .set('Authorization', `Bearer ${other.token}`)

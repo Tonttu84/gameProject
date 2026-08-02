@@ -18,9 +18,11 @@ import {
   applyHire,
   grantFreeMilitia,
   pickDailyOptions,
+  drawRecruitOffer,
+  recruitCtx,
 } from '../services/recruit.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
-import { FREE_MILITIA_AMOUNT, RECRUIT_BOOST_DISCOUNT } from '../utils/campaignConfig.js'
+import { FREE_MILITIA_AMOUNT, RECRUIT_BOOST_DISCOUNT, RECRUITING_FERVOR_START } from '../utils/campaignConfig.js'
 
 afterEach(clearRolls)
 
@@ -288,5 +290,56 @@ describe('pickDailyOptions', () => {
     expect(offer.boosted).toBe(false)
     expect(offer.freeMilitia).toBeNull()
     expect(new Set(offer.options.map((o) => o.id)).size).toBe(2)
+  })
+})
+
+describe('drawRecruitOffer (S2: campaign.recruit field shape)', () => {
+  test('an empty affordable pool returns empty dailyOptions, hiredToday true, and the free-Militia amount', () => {
+    const ctx = { roster: new Map(), resources: { food: 0, materials: 0, gold: 0, horses: 0 }, workersFree: 0, fervor: 0 }
+    const offer = drawRecruitOffer(ctx)
+    expect(offer.dailyOptions).toEqual([])
+    expect(offer.boosted).toBe(false)
+    expect(offer.hiredToday).toBe(true)
+    expect(offer.freeMilitia).toBe(FREE_MILITIA_AMOUNT)
+  })
+
+  test('an affordable pool returns option IDS only (not resolved cost/count), hiredToday false, no free militia', () => {
+    const ctx = { roster: new Map(), resources: { food: 1000, materials: 1000, gold: 1000, horses: 0 }, workersFree: 1000, fervor: 0 }
+    pushRoll(1000) // day's boost roll
+    pushRoll(0)
+    pushRoll(0)
+    const offer = drawRecruitOffer(ctx)
+    expect(offer.dailyOptions).toHaveLength(2)
+    for (const id of offer.dailyOptions) expect(typeof id).toBe('string')
+    expect(offer.boosted).toBe(false)
+    expect(offer.hiredToday).toBe(false)
+    expect(offer.freeMilitia).toBeNull()
+  })
+})
+
+describe('recruitCtx', () => {
+  test('derives workersFree from workers.total - workers.used and defaults fervor', () => {
+    const campaign = {
+      roster: new Map([['Militia', 1]]),
+      resources: { food: 10, materials: 10, gold: 10, horses: 10 },
+      workers: { total: 100, used: 40 },
+      recruit: { fervor: 25 },
+    }
+    expect(recruitCtx(campaign)).toEqual({
+      roster: campaign.roster,
+      resources: campaign.resources,
+      workersFree: 60,
+      fervor: 25,
+    })
+  })
+
+  test('missing workers/recruit sub-docs default to 0 free workers and starting fervor', () => {
+    const campaign = { roster: new Map(), resources: {} }
+    expect(recruitCtx(campaign)).toEqual({
+      roster: campaign.roster,
+      resources: campaign.resources,
+      workersFree: 0,
+      fervor: RECRUITING_FERVOR_START,
+    })
   })
 })
