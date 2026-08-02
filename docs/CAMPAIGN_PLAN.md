@@ -327,8 +327,10 @@ notes below over the git history if they ever disagree — the commits win.
 > (gate the battle + decisive win/loss), Stage C (meter reveal, later superseded by the recon
 > rework), Stage D (`destroy_detachment` casualty rework), and the whole recon rework (R1–R3) all
 > shipped, plus the `enemy.stance`/`battleOffer` removal (2026-07-21, see the DONE note below).
-> What remains: **Stage E — hiring troops** (still design-only, needs the `gold` resource +
-> numbers decided). The **narrative siege reframe** (Karrowgate walls gauge + intro + the Vael)
+> What remains: **Stage E — hiring troops**, now DESIGN LOCKED (2026-08-02, not yet implemented) —
+> see "Recruit phase — hiring troops" below, a new turn phase folding in the old Militia-purchase
+> mechanic, with a `gold`/`horses` economy and a Recruiting Fervor stat. The **narrative siege
+> reframe** (Karrowgate walls gauge + intro + the Vael)
 > ✅ shipped 2026-07-21 — see its handoff below; only the deferred **themed/scripted siege events**
 > flavor-rework remains of it. The per-stage SHIPPED handoff blocks below are the source of truth;
 > this section was designed up front, so read the ✅/DEFERRED tags per bullet, not just the heading.
@@ -863,9 +865,10 @@ recommendation, not fixed):
   `raid.scoutingPoints` pool/expiry.
 - **Stage D — `destroy_detachment` raid rework.** Casualty-proportional on loss, pursuit + a
   prestige stub on win.
-- **Stage E — hiring troops.** The deferred piece above; pick up once A–D are playtested and the
-  `gold` resource/workers-eating-food questions (see the paired "worker replenishment" backlog
-  entry below) have real answers.
+- **Stage E — hiring troops.** DESIGN LOCKED 2026-08-02 — see "Recruit phase — hiring troops"
+  below (a new turn phase, not a spend action; supersedes the "deferred piece above" description).
+  Not yet implemented. No longer waiting on workers-eating-food (resolved as non-blocking during
+  grilling — see that section's status note).
 
 #### TDD implementation breakdown (2026-07-20) — Stages A–D, one commit-sized step at a time
 
@@ -1132,6 +1135,131 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
   (`currentTrue + {floor,ceil}Offset`) must shift the PERCEIVED size DOWN by exactly the casualties
   — same width, floor clamped ≥ 0, no accuracy gained or leaked. Explicit test required in the
   recon work: raid kills N → perceived `[low,high]` both drop by N (not narrower, not wider).
+
+### Recruit phase — hiring troops (redesign, grilled + locked 2026-08-02) — Stage E
+
+> Stage E was left as a design-only placeholder when Stages A–D + the garrison epic shipped (see
+> the "Stage E — hiring troops" stub above). Grilled end-to-end with the user (2026-08-02) before
+> writing anything down, per the `grilling` skill rule in `CLAUDE.md`. This SUPERSEDES the old
+> placeholder bullet ("converts idle workers into roster troops… no numbers, caps, or UI decided")
+> with a full mechanic. **S1 (pool + core mechanics, pure service layer) SHIPPED 2026-08-02** — see
+> the handoff below. **Route/day-resolution wiring, frontend, raid-gold-reward, and the old-militia
+> removal are NOT done yet** — staged like every other multi-part feature in this doc (build one
+> piece at a time, one commit-sized step per session). NOT blocked on the worker-eating-food/
+> replenishment pairing (see that backlog entry) —
+> Recruit's worker draw is the same permanent-drain shape the already-shipped Militia purchase
+> already has, just generalized to more unit types. It DOES drain `workers` faster, which raises
+> (doesn't gate) the priority of eventually deciding replenishment.
+
+**Framing:** a new turn phase, **Recruit**, inserted into the existing screen sequence:
+`Prepare → Omens → Raids → Recruit → Deploy` (was `Prepare → Omens → Raids → Deploy`). Placed
+*after* Raids deliberately — raids resolve synchronously when launched (`applyRaidReward` runs
+inside `POST /:id/raids/launch`, not at end-of-day), so gold earned from a raid is spendable the
+same turn, giving "raid for gold, then hire" a real same-turn payoff.
+
+**Replaces, not adds:** the existing ad-hoc Militia-purchase mechanic (`CampPanel`'s quantity
+slider, `MILITIA_FOOD_COST`/`MILITIA_MATERIAL_COST`/`MILITIA_WORKER_COST`/`MILITIA_DAILY_CAP`,
+the militia branch of `POST /:id/spend`) is removed and folded in as the base tier of this system,
+rather than living alongside it as a second "buy troops" mechanic.
+
+**Cadence — one hire per day.** The phase offers up to 2 options drawn from the pool of entries
+that are currently both *eligible* (prerequisites met) and *affordable*; the player picks one, or
+none, and the phase resolves. **If nothing is affordable, no choice is shown** — a small amount of
+free Militia is granted automatically instead (amount TBD). Exactly how 2 options get selected out
+of a potentially larger eligible+affordable set (random? weighted? avoid repeating yesterday's
+options?) is an implementation detail, not decided.
+
+**Two lanes in one pool:**
+- **Troop lane** — batch/count hires, paid out of the `workers` pool (like Militia purchase today)
+  plus food/materials, gated by a prerequisite chain reusing the existing presence-only `hasUnit`
+  gate shape (`requires: { hasUnit: 'X' }`, already used by `horse_sickness` in `EVENT_POOL` —
+  "own ≥1 of type X," not a minimum count):
+  - **Militia** — base tier, no gate.
+  - **Soldier**, **Archer** — gated on `hasUnit: 'Militia'`.
+  - **Cavalry**, **LightCavalry** — gated on `hasUnit: 'Soldier'`, and additionally COST the new
+    `horses` resource (a real spend, not just a gate — see below).
+- **Caster lane** — individual (count-1) hires, no tier-presence gate, paid mainly in the new
+  `gold` resource: **Mage**, **Priest**.
+- Mage/Priest/all 7 `STARTING_ROSTER` types are in scope for v1 — the "smaller subset" that came
+  out of grilling ended up being "the full troop tier chain, plus casters as their own simpler
+  gold-gated lane," not deferring casters to a later pass.
+
+**New resource — `gold`.** Earned via:
+- **Raid rewards (v1)** — a new reward on `destroy_detachment`/`loot_supplies` wins, alongside
+  their existing materials/prestige rewards, scaled by raid difficulty. Slots into the existing
+  `applyRaidReward` pipeline; no new subsystem.
+- **Garrison, as later additive content (not v1-blocking)** — thematically, the besieged garrison
+  sits on coin it can't spend inside the walls. A new `requires: { minResolve: 67 }` fate
+  (determined band), same shape as the existing `garrison_stores`/`garrison_night_sally` S9 fates.
+- Event-granted gold in general (random windfalls, like materials/food events today) can be added
+  later the same way; not designed now.
+
+**New resource — `horses`.** Consumed (spent, not just gated on) by Cavalry/LightCavalry hires.
+Earn source **not yet decided** — raids are the likely default (mirrors gold), possibly also the
+existing "A Captured Herd" event reworked to grant a `horses` stockpile instead of/alongside its
+current `convert` effect. Open question, not blocking.
+
+**Recruiting Fervor** — new plain-integer campaign stat (name locked; code identifier TBD, e.g.
+`campaign.recruitingFervor`). Starts at **0**. **Uncapped in both directions** — can go negative
+(events souring recruitment) and can exceed 100 (guaranteed boosts), unlike the banded
+Garrison Resolve model this deliberately does NOT reuse. **1:1 with the percent chance** that a
+day's Recruit offer is "boosted": the raw value IS the percent (clamped to 0–100 for the actual
+roll only — the stored value itself isn't clamped). **≤0 means never boosted.** Chosen over a
+banded (low/normal/high) model specifically because the user wants every point of change to be
+visibly meaningful, not clumped behind invisible thresholds — Fervor moves rarely and by
+meaningful amounts, so 1:1 legibility matters more than compressing it into tiers.
+- **Troop-lane boost:** if affordable, double the count at double the cost; if not affordable,
+  same count at a discount (discount % TBD).
+- **Caster-lane boost:** if affordable, a bonus SECOND individual hire of a different caster type
+  in the same draw (e.g. a Mage-hire draw boosts into "hire a Mage AND a Priest"); if not
+  affordable, same discount-fallback pattern as the troop lane.
+- **Events that move Fervor** are additive content, added incrementally (same pattern as the S9
+  resolve-gated fates) — not an exhaustive list yet, just the mechanism.
+
+**Deferred to implementation (numbers, not structure):** exact food/materials/gold/horses costs
+per tier and unit type; the double-vs-discount ratio; the free-Militia fallback amount; the
+2-option selection algorithm; horses' earn source; the initial roster of Fervor-moving events.
+
+**S1 — pool + core mechanics (pure service layer, no routes/frontend). ✅ SHIPPED 2026-08-02.**
+The "deferred to implementation" numbers above are now picked (all tunable, balance rough, same
+convention as every other stage in this doc):
+- **Schema (`CAMPAIGN_SCHEMA_VERSION` 23→24):** `resources.gold`/`resources.horses` (both
+  `required`, start 0 via new `STARTING_GOLD`/`STARTING_HORSES` in `campaignConfig.js`, wired into
+  the creation route and `campaignView`'s `resources` block); `campaign.recruit.fervor` (default
+  `RECRUITING_FERVOR_START = 0`). Two existing `campaigns.test.js` cases that replaced a live doc's
+  whole `resources` object needed `gold`/`horses` added or `required: true` would fail their
+  `.save()` — fixed as part of this slice, not a separate one.
+- **`services/recruit.js`** (new, mirrors `events.js`'s `EVENT_POOL`/`eventEligible` shape):
+  - `RECRUIT_POOL` — the 7 v1 entries (Militia/Soldier/Archer/Cavalry/LightCavalry/Mage/Priest)
+    exactly as designed: troop lane tiered via `requires: {hasUnit}` (reusing `eventEligible`
+    directly, imported from `events.js`, rather than duplicating the gate logic), caster lane
+    gold-only with no tier gate. Numbers picked: Militia 20/hire (40 food, 20 materials, 20
+    workers — a fixed-size version of today's up-to-50/day slider); Soldier/Archer 15/hire;
+    Cavalry/LightCavalry 5/hire (+5 horses each); Mage 100 gold; Priest 80 gold.
+  - `canAfford`/`eligiblePool`/`affordablePool` — the filtering pipeline a day's offer is drawn
+    from.
+  - `rollBoost(fervor)` — the 1:1 percent-chance roll, via the existing queueable `chanceRoll`
+    (`utils/dice.js`), clamped 0–100 for the roll only.
+  - `resolveHire(entry, boosted, ctx)` — pure; computes the actual count/cost/secondUnit for a
+    hire without mutating anything. `RECRUIT_BOOST_DISCOUNT = 0.3` (30% off) is the fallback ratio
+    for both lanes when the boosted branch isn't affordable.
+  - `applyHire(campaign, entryId, boosted)` — the one mutator (mirrors `applyEffect`'s "mutates in
+    place, caller saves, returns log lines" contract); `grantFreeMilitia(campaign)` — the
+    `FREE_MILITIA_AMOUNT = 5` fallback, no choice shown.
+  - `pickDailyOptions(ctx)` — up to 2 distinct options from the affordable pool, ONE boost roll for
+    the day (not per-option), via the existing queueable `getRandom` for deterministic tests.
+- **Tests:** `tests/recruit.test.js`, 24 pure-function cases (pool shape/gating, afford edge cases
+  per resource key, Fervor roll boundaries, troop-lane double-vs-discount, caster-lane
+  bonus-hire-vs-discount, `applyHire` deduction+roster growth incl. a Cavalry/horses case, the free
+  fallback, `pickDailyOptions`' empty-pool and 2-option paths). Full `cs-test` 410/413 green — the
+  3 failures are the pre-existing `engine.integration.test.js` ENOENT (no compiled `./game`
+  binary in this environment), unrelated to this change.
+- **NOT done yet (next slices):** the Recruit route + day-offer generation + `campaignView`
+  exposure; the frontend Recruit phase screen and its slot in `Prepare→Omens→Raids→Recruit→Deploy`;
+  removing the old militia-purchase route/`CampPanel` slider (`MILITIA_*` constants in
+  `campaignConfig.js` are UNTOUCHED and still live — Militia purchase still works exactly as before
+  until the fold-in lands); the raid gold-reward wiring; the garrison gold event; horses' earn
+  source.
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 
@@ -2942,6 +3070,20 @@ This is the step that makes `fortDurability` live and where per-level fortificat
 scaling really bites. Sits directly after Stage 3 fortifications; see the Stage 3 "Forward path"
 note. (Mirrored as an auto-memory todo, but this repo entry is the SSOT — it travels between
 machines; the memory pointer may not.)
+- **Extension idea (user, 2026-08-02, NOT planned yet — BLOCKED on the morale-system design):**
+  `combatScore` should also (a) drive morale checks on the losing side of a hex side, and (b)
+  force the losing side to fall back a hex under sustained pressure — not just erode
+  `fortDurability`. Blocked because the engine already has two half-wired morale layers that
+  this would have to reconcile rather than duplicate: per-unit `AUnit::testMorale()` (fires on
+  every hit, sets `broken`, already wired into `AUnit.cpp`'s damage path) and squad-collective
+  `MoraleState` (`Squad.hpp`/`Squad.cpp` — `Confident/Normal/Scared/Broken`,
+  `updateMoraleState()`/`moraleModifier()` fully implemented but **no production caller yet**,
+  per the file's own `[PLANNED — unwired]` note). Before this can be scoped: decide whether
+  hex-side combat score triggers a NEW check layer, feeds the existing squad `MoraleState`
+  machine (finally wiring it in), or just modulates the existing per-unit `testMorale()` odds —
+  and what "fall back a hex" means for units mid-engagement (individual flee already exists;
+  this would be a forced, side-wide retreat distinct from that). Needs its own grilling session
+  before implementation.
 
 **✅ SHIPPED 2026-07-14 — movement-speed rework (points bank + per-hex terrain cost).**
 `movementSpeed` is now **movement points banked per tick** (capped at that base); every unit —

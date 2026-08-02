@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import config from '../utils/config.js'
-import { GARRISON_RESOLVE_START } from '../utils/campaignConfig.js'
+import { GARRISON_RESOLVE_START, RECRUITING_FERVOR_START } from '../utils/campaignConfig.js'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
 // plain fields — enemy.army, enemy.plannedPlacement, augury.trueEvent/
@@ -86,7 +86,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 23 // v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 24 // v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -123,6 +123,15 @@ const campaignSchema = new mongoose.Schema({
     resolve: { type: Number, default: GARRISON_RESOLVE_START },
   },
 
+  // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+  // Recruiting Fervor, a plain integer 1:1 with the percent chance (clamped
+  // 0-100 at roll time only) that a day's hire offer is boosted. Uncapped in
+  // both directions — deliberately NOT a banded meter like garrison.resolve,
+  // so every event that moves it is individually visible to the player.
+  recruit: {
+    fervor: { type: Number, default: RECRUITING_FERVOR_START },
+  },
+
   // Recon (docs/CAMPAIGN_PLAN.md "Recon rework"): leftover scouting points that
   // weren't spent on the raid board accumulate here at end-of-turn (no decay).
   // `points` alone determines the scouting LEVEL (reconLevel/reconBand in
@@ -153,6 +162,12 @@ const campaignSchema = new mongoose.Schema({
   resources: {
     food: { type: Number, required: true },
     materials: { type: Number, required: true },
+    // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+    // gold funds the caster lane (Mage/Priest) and horses funds Cavalry/
+    // LightCavalry hires. Both start at 0 — a fresh campaign has no gold or
+    // remounts on hand, only the raw materials/food/workers economy.
+    gold: { type: Number, required: true },
+    horses: { type: Number, required: true },
   },
   // Unit-type name -> count. Names validated against the unittypes collection
   // at the routes that mutate it.

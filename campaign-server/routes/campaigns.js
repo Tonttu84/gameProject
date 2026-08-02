@@ -24,6 +24,8 @@ import {
   STARTING_FOOD,
   STARTING_MATERIALS,
   STARTING_WORKERS,
+  STARTING_GOLD,
+  STARTING_HORSES,
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
   FORAGE_RINGS,
@@ -96,7 +98,7 @@ router.post('/', async (req, res) => {
   const augury = drawAugury({ day: 1, roster: STARTING_ROSTER })
   const campaign = await Campaign.create({
     user: req.user._id,
-    resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS },
+    resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
     workers: { total: STARTING_WORKERS, used: 0 },
     roster: STARTING_ROSTER,
     squads: STARTING_SQUADS,

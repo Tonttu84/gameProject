@@ -39,6 +39,12 @@ export const STARTING_FOOD = 50000
 // (L0→1 = 50, L1→2 = 100 = 150 to max) plus a little for militia, so forts are
 // visible/testable on the campaign map without a debug grant. See docs/CAMPAIGN_PLAN.md.
 export const STARTING_MATERIALS = 200
+// Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"): both
+// start at 0 — a fresh campaign has no gold or remounts, only the raw
+// materials/food/workers economy. Earned via raids (gold + horses) and,
+// later, additive events (garrison gold).
+export const STARTING_GOLD = 0
+export const STARTING_HORSES = 0
 
 // ── Augury ──────────────────────────────────────────────────────────────────
 // Each turn holds AUGURY_SLOTS independent fates, each a hidden true/false
@@ -314,6 +320,22 @@ export const MILITIA_UNIT = 'Militia'
 // intentionally NOT wired yet — at this pool size it would dwarf army upkeep;
 // it waits on the replenishment design.
 export const STARTING_WORKERS = 2000
+
+// ── Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") ────
+// One hire per day: the phase offers up to 2 eligible+affordable options from
+// services/recruit.js's RECRUIT_POOL, the player picks one (or gets the free
+// Militia fallback below if nothing is affordable). Supersedes the old
+// MILITIA_* purchase constants above once the phase is wired in (Stage 2) —
+// Militia becomes the base tier of RECRUIT_POOL instead of its own mechanic.
+export const RECRUITING_FERVOR_START = 0
+// A boosted troop-lane hire that CAN afford double pays double for double the
+// count; one that can't gets this fraction knocked off the normal cost for
+// the normal count instead. Same ratio drives the caster-lane fallback (a
+// discount on the single hire when the bonus second hire isn't affordable).
+export const RECRUIT_BOOST_DISCOUNT = 0.3
+// Granted automatically, no choice shown, on a day where nothing in the pool
+// is affordable — keeps a stalled economy from being unable to recruit at all.
+export const FREE_MILITIA_AMOUNT = 5
 
 // Near-annihilation win: once the enemy host drops below this fraction of its
 // starting strength it melts away and you take the country (checked directly in

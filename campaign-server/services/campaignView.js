@@ -186,6 +186,10 @@ export async function campaignView(campaign) {
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,
+      // Recruit phase (docs/CAMPAIGN_PLAN.md): gold funds caster hires,
+      // horses fund Cavalry/LightCavalry hires. Own info, not hidden.
+      gold: campaign.resources.gold,
+      horses: campaign.resources.horses,
       // What the current roster will eat at the coming end-of-turn.
       foodNeedPerTurn: armyFoodPerTurn(campaign.roster, catalog),
     },
