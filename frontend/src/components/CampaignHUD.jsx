@@ -68,6 +68,10 @@ const CampaignHUD = () => {
         Food: {tons(resources.food)} (−{tons(resources.foodNeedPerTurn)}/turn)
       </span>
       <span className="hud-materials">Materials: {resources.materials}</span>
+      {/* Recruit phase resources (docs/CAMPAIGN_PLAN.md "Recruit phase —
+          hiring troops"): gold pays casters, horses pay Cavalry/LightCavalry. */}
+      <span className="hud-gold" data-testid="hud-gold">Gold: {resources.gold ?? 0}</span>
+      <span className="hud-horses" data-testid="hud-horses">Horses: {resources.horses ?? 0}</span>
       <span className="hud-forts" data-testid="hud-forts">Forts: Lv {fortification?.level ?? 0}</span>
       <span className="hud-land" data-testid="hud-land">Land: {landPct}% left</span>
       {/* Karrowgate's walls under the enemy's assault. The bar drains as the

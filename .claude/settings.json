@@ -14,7 +14,8 @@
       "Bash(wsl -e bash -lc 'bash /mnt/c/gameProject/scripts/dev.sh *')",
       "Bash(./run_tests*)",
       "Bash(source ~/.nvm/nvm.sh*)",
-      "Bash(make frontend-test)"
+      "Bash(make frontend-test)",
+      "Bash(make docker-up)"
     ]
   }
 }

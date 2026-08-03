@@ -15,7 +15,7 @@ export const campaignFixture = {
   // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): own info shown
   // as a coarse band word only — the raw resolve number never crosses the wire.
   garrison: { level: 'normal' },
-  resources: { food: 50000, materials: 0, foodNeedPerTurn: 12432 },
+  resources: { food: 50000, materials: 0, gold: 0, horses: 0, foodNeedPerTurn: 12432 },
   roster: { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10, LightCavalry: 12 },
   // Persistent player-facing squads (playtest item 1) — a subset of roster
   // organized into named formations; the remainder stays loose.
@@ -43,6 +43,11 @@ export const campaignFixture = {
   // target slice is stripped to its strength band; outcome appears once
   // resolved. Empty by default so tests opt in per case.
   raid: { opportunities: [], assignment: {}, squadAssignment: [], scoutingPoints: 0, scoutCost: { addTarget: 8, reveal: 3 } },
+  // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+  // hiredToday defaults true (nothing to pick, cadence already spent) so
+  // marchToDeployment reaches the deploy exit without an extra hire/skip
+  // click — recruitPanel.test.jsx overrides this to exercise the offer itself.
+  recruit: { fervor: 0, boosted: false, hiredToday: true, options: [] },
   augury: { consulted: false, rerollsRemaining: 1, visions: null },
   // Only the banded label crosses the boundary — never coverage numbers.
   scouting: { band: 'Contested' },

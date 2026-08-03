@@ -83,6 +83,7 @@ describe('the pitched-battle gate', () => {
     await marchToRaids()
     expect(screen.getByTestId('pitched-battle-raids')).toBeInTheDocument()
 
+    fireEvent.click(await screen.findByTestId('to-recruit'))
     fireEvent.click(await screen.findByTestId('to-deploy'))
     expect(screen.getByRole('button', { name: /fight!/i })).toBeInTheDocument()
     expect(screen.getByTestId('pitched-battle-deploy')).toBeInTheDocument()

@@ -103,7 +103,7 @@ describe('accepting the fates at the tent', () => {
     fireEvent.click(screen.getByTestId('report-continue'))
     // Fates sealed: the reveal leads on to the raids (events before raiders).
     await screen.findByText('Targets of Opportunity')
-    expect(screen.getByTestId('to-deploy')).toBeInTheDocument()
+    expect(screen.getByTestId('to-recruit')).toBeInTheDocument()
   })
 
   it('a reloaded consulted-but-unaccepted campaign offers acceptance at the tent', async () => {

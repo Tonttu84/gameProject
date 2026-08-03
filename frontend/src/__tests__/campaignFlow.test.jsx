@@ -106,6 +106,7 @@ describe('campaign flow', () => {
     // Accepting (the fixture is already accepted) leaves the tent for the
     // raids; from there Deploy for Battle reaches the placement grid.
     fireEvent.click(screen.getByTestId('augury-continue'))
+    fireEvent.click(await screen.findByTestId('to-recruit'))
     fireEvent.click(await screen.findByTestId('to-deploy'))
     await screen.findByTestId('end-day') // reached deployment (non-boss day: no Fight! button)
   })
@@ -154,6 +155,7 @@ describe('campaign flow', () => {
     // Already consulted + accepted: no consult button — straight on to the raids.
     expect(screen.queryByTestId('consult-augur')).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('augury-continue'))
+    fireEvent.click(await screen.findByTestId('to-recruit'))
     fireEvent.click(await screen.findByTestId('to-deploy'))
     await screen.findByTestId('end-day') // reached deployment (non-boss day: no Fight! button)
   })

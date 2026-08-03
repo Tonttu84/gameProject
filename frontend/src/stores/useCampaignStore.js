@@ -12,6 +12,7 @@ import {
   endCampaignDay,
   postCampaignChoice,
   postAcceptFates,
+  hireRecruit,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -57,6 +58,11 @@ const useCampaignStore = create((set, get) => ({
 
   buyMilitia: async (count) => {
     set({ campaign: await spendCampaign(get().campaign.id, { action: 'militia', count }) })
+  },
+
+  // body is either {entryId} (hire that option) or {skip: true} (decline).
+  hireRecruit: async (body) => {
+    set({ campaign: await hireRecruit(get().campaign.id, body) })
   },
 
   fight: async (playerPlacement) => {

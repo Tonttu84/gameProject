@@ -1143,10 +1143,11 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
 > writing anything down, per the `grilling` skill rule in `CLAUDE.md`. This SUPERSEDES the old
 > placeholder bullet ("converts idle workers into roster troops… no numbers, caps, or UI decided")
 > with a full mechanic. **S1 (pool + core mechanics, pure service layer) SHIPPED 2026-08-02**, **S2
-> (route + day-offer generation + campaignView exposure, server-only) SHIPPED 2026-08-02** — see
-> the handoffs below. **Frontend, raid-gold-reward, and the old-militia removal are NOT done yet**
-> — staged like every other multi-part feature in this doc (build one piece at a time, one
-> commit-sized step per session). NOT blocked on the worker-eating-food/
+> (route + day-offer generation + campaignView exposure, server-only) SHIPPED 2026-08-02**, **S3
+> (frontend Recruit phase screen) SHIPPED 2026-08-03** — see the handoffs below. **Raid-gold-reward
+> and the old-militia removal are NOT done yet** — staged like every other multi-part feature in
+> this doc (build one piece at a time, one commit-sized step per session). NOT blocked on the
+> worker-eating-food/
 > replenishment pairing (see that backlog entry) —
 > Recruit's worker draw is the same permanent-drain shape the already-shipped Militia purchase
 > already has, just generalized to more unit types. It DOES drain `workers` faster, which raises
@@ -1317,6 +1318,45 @@ stored resolved cost/count, which can drift as resources/workers change between 
 - **NOT done yet (next slices):** the frontend Recruit phase screen + its slot in
   `Prepare→Omens→Raids→Recruit→Deploy`; removing the old militia-purchase route/`CampPanel` slider;
   the raid gold-reward wiring; the garrison gold event; horses' earn source.
+
+**S3 — frontend Recruit phase screen. ✅ SHIPPED 2026-08-03.** New `Prepare→Omens→Raids→Recruit→
+Deploy` slot (was `…→Raids→Deploy`); Recruit sits after Raids so raid gold (once wired) is
+spendable the same turn. Militia purchase/`CampPanel` are UNTOUCHED — old-militia removal is
+still a separate later slice, not folded into this one.
+- **`RecruitPanel.jsx`** (new, mirrors `RaidPanel.jsx`'s option-card shape, not `CampPanel`'s
+  slider — the server picks the day's offer, the client doesn't build one): reads
+  `campaign.recruit` straight from the store; renders up to 2 option cards (server-resolved
+  count/cost/secondUnit, never recomputed client-side) with a Hire button per card plus one Skip
+  button; `hiredToday` shows a "done for today" line instead, empty `options` (nothing
+  affordable) shows a distinct empty state. Client-side affordability is preview-only (disables
+  the button + a title reason, same convention as `CampPanel`'s fort/militia buttons) — the
+  server re-validates for real, same race-guard reasoning as the `/recruit/hire` route itself.
+- **Wiring:** `services/api.js` `hireRecruit(id, body)` (POST `/:id/recruit/hire`, returns the
+  view directly like `spendCampaign`, not wrapped in `{campaign}` like `postCampaignRaids`);
+  `useCampaignStore.js` `hireRecruit` action. `App.jsx`: raids screen's exit button renamed
+  `to-deploy`→`to-recruit`; new `phase === 'recruit'` block owns the actual `to-deploy` button
+  (calls `musterForBattle`, unchanged) plus a `back-to-raids` nav button — the phase-owns-its-nav
+  split RaidPanel already uses.
+- **HUD:** `CampaignHUD.jsx` gained `hud-gold`/`hud-horses` spans (schema v24 `resources.gold`/
+  `.horses` existed since S1 but were never displayed) — needed so a player can see whether a
+  caster/cavalry hire is affordable before reaching the Recruit screen.
+- **Every place that walked Raids straight to Deploy needed a `to-recruit` click inserted**
+  (frontend/src/__tests__/helpers/nav.js `marchToDeployment`, campaignFlow.test.jsx ×2,
+  bossFightGate.test.jsx, auguryAccept.test.jsx, e2e/tests/campaign-loop.spec.js) — the fixture's
+  default `campaign.recruit` is `{hiredToday: true, options: []}` specifically so
+  `marchToDeployment` reaches the deploy exit with one extra click and no hire/skip needed;
+  recruitPanel.test.jsx overrides it to exercise the offer itself.
+- **Tests:** new `recruitPanel.test.jsx` (9 cases: own-screen placement, Fervor/boosted/cost
+  display, caster-boost secondUnit display, hire posts `{entryId}` and refreshes, skip posts
+  `{skip: true}`, unaffordable-disabled-with-reason, hiredToday empty state, no-options empty
+  state); `phaseNavigation.test.jsx` gained `Recruit → Back to the Raids` and a Recruit
+  screen-scope case. Full `fe-test` 247/247 green; `fe-lint` clean. Manually verified against a
+  real `make docker-up` stack via the project's own `e2e` Playwright suite (not a throwaway
+  script) — both `campaign-loop.spec.js` and `demo-battle.spec.js` pass end-to-end, walking
+  Raids→Recruit→skip→Deploy for real.
+- **NOT done yet (next slices):** removing the old militia-purchase route/`CampPanel` slider
+  (`MILITIA_*` constants + the militia box are UNTOUCHED); the raid gold-reward wiring; the
+  garrison gold event; horses' earn source.
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 

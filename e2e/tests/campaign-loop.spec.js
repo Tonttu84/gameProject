@@ -57,7 +57,12 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
   // owed on the pendingChoices overlay — this is a harmless no-op safety net.
   await clearPendingDecisions(page)
 
-  // ── Raids → deploy ─────────────────────────────────────────────────────
+  // ── Raids → Recruit → deploy ────────────────────────────────────────────
+  // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+  // skip today's offer so the turn's outcome stays deterministic regardless
+  // of what the pool drew or whether it's affordable.
+  await page.getByTestId('to-recruit').click()
+  await page.getByTestId('recruit-skip').click()
   // Turn 1 is a quiet day: the pitched battle isn't due, so the deploy screen
   // offers no Fight! (it's gated on bossFightDue) and instead surfaces the
   // "End Turn (no battle)" escape. `end-day` is the reached-deployment landmark

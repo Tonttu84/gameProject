@@ -1,9 +1,10 @@
 /**
- * Back-navigation across the phased turn (Prepare → Omens → Raids → Deploy).
- * The forward march is pinned elsewhere (campaignFlow, the nav helper); this
- * pins that the flow can also be walked BACKWARDS — Omens → Prepare and
- * Raids → Omens — as pure phase-state changes that undo no committed server
- * action (docs/CAMPAIGN_PLAN.md, phased-turn slices 2–3).
+ * Back-navigation across the phased turn (Prepare → Omens → Raids → Recruit →
+ * Deploy). The forward march is pinned elsewhere (campaignFlow, the nav
+ * helper); this pins that the flow can also be walked BACKWARDS — Omens →
+ * Prepare, Raids → Omens, Recruit → Raids — as pure phase-state changes that
+ * undo no committed server action (docs/CAMPAIGN_PLAN.md, phased-turn slices
+ * 2–3; Recruit phase design).
  */
 
 import React from 'react'
@@ -73,12 +74,27 @@ describe('phased-turn back navigation', () => {
     await screen.findByText(/War Council/)
     await marchToRaids()
 
-    // On the raids screen: the deploy exit is here.
-    expect(await screen.findByTestId('to-deploy')).toBeInTheDocument()
+    // On the raids screen: the recruit exit is here.
+    expect(await screen.findByTestId('to-recruit')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('back-to-omens'))
     // Back at the tent: the read-only context returns, the raids exit is gone.
     expect(await screen.findByTestId('omens-context')).toBeInTheDocument()
+    expect(screen.queryByTestId('to-recruit')).not.toBeInTheDocument()
+  })
+
+  it('Recruit → Back to the Raids returns to the raids screen', async () => {
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+    fireEvent.click(screen.getByTestId('to-recruit'))
+
+    // On the recruit screen: the deploy exit is here.
+    expect(await screen.findByTestId('to-deploy')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('back-to-raids'))
+    // Back on the raids screen: its own exit returns, the deploy exit is gone.
+    expect(await screen.findByTestId('to-recruit')).toBeInTheDocument()
     expect(screen.queryByTestId('to-deploy')).not.toBeInTheDocument()
   })
 })
@@ -108,6 +124,20 @@ describe('phased-turn screen scope', () => {
     // Its own context…
     expect(screen.getByTestId('omens-context')).toBeInTheDocument()
     // …and none of the council's or raids' actions.
+    expect(screen.queryByTestId('forage-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('camp-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('raid-panel')).not.toBeInTheDocument()
+  })
+
+  it('the Recruit screen has only recruiting — no forage, camp, or raid controls', async () => {
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+    fireEvent.click(screen.getByTestId('to-recruit'))
+
+    // Its own exit is here…
+    expect(await screen.findByTestId('to-deploy')).toBeInTheDocument()
+    // …and none of the earlier screens' controls bled in.
     expect(screen.queryByTestId('forage-panel')).not.toBeInTheDocument()
     expect(screen.queryByTestId('camp-panel')).not.toBeInTheDocument()
     expect(screen.queryByTestId('raid-panel')).not.toBeInTheDocument()

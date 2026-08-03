@@ -77,6 +77,11 @@ export const postCampaignRaids = (id, parties) =>
 // field from a range to its exact value). Returns the refreshed view.
 export const scoutRaidTarget = (id, body) =>
   axios.post(`/api/campaigns/${id}/raids/scout`, body, authed()).then(r => r.data)
+// Recruit phase: {entryId} hires that option, {skip: true} declines — either
+// way spends the day's one-hire cadence. Returns the refreshed view directly
+// (not wrapped in {campaign: ...}, unlike postCampaignRaids/endCampaignDay).
+export const hireRecruit = (id, body) =>
+  axios.post(`/api/campaigns/${id}/recruit/hire`, body, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

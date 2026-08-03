@@ -181,6 +181,23 @@ body {
   font-size: 0.85rem;
 }
 
+/* Recruit phase (2026-08-03): same card treatment as raid opportunities —
+   up to 2 offer cards a day, one hire (or skip) spends the cadence. */
+.recruit-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.recruit-panel h3 { color: var(--gold); font-size: 0.95rem; margin-bottom: 0; }
+.recruit-fervor { font-size: 0.8rem; color: #8888aa; margin: 0; }
+.recruit-boosted { color: var(--gold); }
+.recruit-empty { font-size: 0.85rem; color: #8888aa; margin: 0; }
+
 .camp-workers-readout {
   display: flex;
   flex-direction: column;
@@ -226,7 +243,8 @@ body {
    single-purpose screens — Prepare (.phase-setup) → Omens → Raids → Deploy.
    Each is full-screen and scrolls itself, like .phase-setup/.augury-phase. */
 .phase-omens,
-.phase-raids {
+.phase-raids,
+.phase-recruit {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -236,7 +254,8 @@ body {
   min-height: 0;
   overflow-y: auto;
 }
-.phase-raids h2 { color: var(--gold); font-size: 1.4rem; }
+.phase-raids h2,
+.phase-recruit h2 { color: var(--gold); font-size: 1.4rem; }
 /* Read-only army/stores context at the tent — no actions, just what the
    player is deciding against. */
 .omens-context { color: #8888aa; font-size: 0.9rem; }

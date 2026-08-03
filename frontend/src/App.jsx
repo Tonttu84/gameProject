@@ -18,6 +18,7 @@ import AuguryPanel from './components/AuguryPanel'
 import EventRevealScreen from './components/EventRevealScreen'
 import ForagePanel from './components/ForagePanel'
 import RaidPanel from './components/RaidPanel'
+import RecruitPanel from './components/RecruitPanel'
 import CampPanel from './components/CampPanel'
 import CampaignHUD from './components/CampaignHUD'
 import CampaignIntro from './components/CampaignIntro'
@@ -50,7 +51,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, launchRaids, scoutRaid, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, launchRaids, scoutRaid, hireRecruit, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -101,12 +102,15 @@ const App = () => {
   }, [])
 
   // The turn runs as a sequence of single-purpose screens the player advances
-  // through: Prepare (forage + camp) → Omens (the augur) → Raids → Deploy.
-  // Splitting them keeps the pipeline clear and, crucially, puts the fates
-  // BEFORE raider assignment so a counter-raid is an informed choice, not a
-  // blind one (docs/CAMPAIGN_PLAN.md, 2026-07-18).
+  // through: Prepare (forage + camp) → Omens (the augur) → Raids → Recruit →
+  // Deploy. Splitting them keeps the pipeline clear and, crucially, puts the
+  // fates BEFORE raider assignment so a counter-raid is an informed choice,
+  // not a blind one (docs/CAMPAIGN_PLAN.md, 2026-07-18). Recruit sits after
+  // Raids so gold earned from a raid (resolved synchronously on launch) is
+  // spendable the same turn (docs/CAMPAIGN_PLAN.md, Recruit phase design).
   const readOmens = () => setPhase('omens')
   const toRaids = () => setPhase('raids')
+  const toRecruit = () => setPhase('recruit')
   // Back-steps through the phased turn. Pure phase-state changes — no server
   // action is undone (forage/augury/raids the player already committed stay
   // committed); going back just re-renders an earlier screen, whose own guards
@@ -114,6 +118,7 @@ const App = () => {
   // than a one-way march (docs/CAMPAIGN_PLAN.md slices 2–3).
   const backToPrepare = () => setPhase('prepare')
   const backToOmens = () => setPhase('omens')
+  const backToRaids = () => setPhase('raids')
   // Resolve a pending choice-fate (events with choices). Guarded like every
   // campaign action; the reveal screen reads the undefined-on-failure return
   // to keep the options up for another try.
@@ -456,6 +461,23 @@ const App = () => {
           <div className="raids-bar">
             <button className="login-toggle" data-testid="back-to-omens" onClick={backToOmens}>
               Back to the Omens
+            </button>
+            <button className="btn-primary" data-testid="to-recruit" onClick={toRecruit}>
+              Continue to Recruiting
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 4 — RECRUIT: with raid gold in hand, spend the day's one hire
+          (or skip it), then deploy for battle. */}
+      {phase === 'recruit' && (
+        <div className="phase-recruit">
+          <h2>Recruiting</h2>
+          <RecruitPanel key={`recruit-${campaign.day}`} onHire={guarded(hireRecruit)} />
+          <div className="raids-bar">
+            <button className="login-toggle" data-testid="back-to-raids" onClick={backToRaids}>
+              Back to the Raids
             </button>
             <button className="btn-primary" data-testid="to-deploy" onClick={musterForBattle}>
               Deploy for Battle
