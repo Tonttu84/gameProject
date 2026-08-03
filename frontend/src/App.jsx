@@ -51,7 +51,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, buyMilitia, launchRaids, scoutRaid, hireRecruit, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, launchRaids, scoutRaid, hireRecruit, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -394,10 +394,7 @@ const App = () => {
             </button>
           </div>
           {campaign.fortification && (
-            <CampPanel
-              onFortify={guarded(fortify)}
-              onBuyMilitia={guarded(buyMilitia)}
-            />
+            <CampPanel onFortify={guarded(fortify)} />
           )}
         </div>
       )}

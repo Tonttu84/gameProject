@@ -31,11 +31,6 @@ import {
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
   FORAGE_RINGS,
-  MILITIA_FOOD_COST,
-  MILITIA_MATERIAL_COST,
-  MILITIA_WORKER_COST,
-  MILITIA_DAILY_CAP,
-  MILITIA_UNIT,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
   GARRISON_RESOLVE_START,
@@ -678,8 +673,9 @@ router.post('/:id/raids/scout', async (req, res) => {
 })
 
 // Spend stores at the camp. {action:'fortify'} raises the fortification level
-// (materials); {action:'militia', count} buys bodies (food + materials, per-turn
-// capped). Own-resource spend — no hidden info touched.
+// (materials + labour) — the only spend action left: buying bodies moved to the
+// Recruit phase (POST /:id/recruit/hire), where Militia is just the base tier of
+// RECRUIT_POOL. Own-resource spend — no hidden info touched.
 router.post('/:id/spend', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
@@ -710,38 +706,6 @@ router.post('/:id/spend', async (req, res) => {
     return res.json(await campaignView(campaign))
   }
 
-  if (action === 'militia') {
-    const count = req.body?.count
-    if (!Number.isInteger(count) || count <= 0)
-      return res.status(400).json({ error: 'count required' })
-    if (campaign.militiaBoughtToday + count > MILITIA_DAILY_CAP)
-      return res.status(400).json({
-        error: `militia limited to ${MILITIA_DAILY_CAP} per turn (${campaign.militiaBoughtToday} already raised)`,
-      })
-    const foodCost = count * MILITIA_FOOD_COST
-    const materialCost = count * MILITIA_MATERIAL_COST
-    if (campaign.resources.food < foodCost || campaign.resources.materials < materialCost)
-      return res.status(400).json({ error: 'not enough stores' })
-    const workerCost = count * MILITIA_WORKER_COST
-    const workersAvailable = campaign.workers.total - campaign.workers.used
-    if (workersAvailable < workerCost)
-      return res.status(400).json({ error: 'not enough workers to muster militia' })
-    campaign.resources.food -= foodCost
-    campaign.resources.materials -= materialCost
-    // Unlike fort labour, these workers don't stay in the workforce busy —
-    // they leave it entirely to become roster soldiers, so they come off
-    // `total`, not `used` (see the campaignConfig.js STARTING_WORKERS comment).
-    campaign.workers.total -= workerCost
-    campaign.roster.set(MILITIA_UNIT, (campaign.roster.get(MILITIA_UNIT) ?? 0) + count)
-    campaign.militiaBoughtToday += count
-    campaign.log.push({
-      day: campaign.day,
-      entries: [`${count} militia join the ranks (−${foodCost} food, −${materialCost} materials, −${workerCost} workers).`],
-    })
-    await campaign.save()
-    return res.json(await campaignView(campaign))
-  }
-
   return res.status(400).json({ error: 'unknown spend action' })
 })
 
@@ -750,8 +714,9 @@ router.post('/:id/spend', async (req, res) => {
 // creation/end-day, or empty when the free-Militia fallback already fired
 // automatically). {entryId} hires that option (boosted per today's ONE roll);
 // {skip: true} declines without hiring — either way spends the day's cadence.
-// This coexists with the old POST /:id/spend {action:'militia'} mechanic for
-// now (removing it is a later slice, see docs/CAMPAIGN_PLAN.md).
+// This is now the ONLY way to buy troops: the old POST /:id/spend
+// {action:'militia'} mechanic was removed in S4, folded in as this pool's base
+// tier (see docs/CAMPAIGN_PLAN.md).
 router.post('/:id/recruit/hire', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })

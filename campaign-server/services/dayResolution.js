@@ -308,7 +308,6 @@ export async function endDay(campaign) {
   if (campaign.status === 'active') {
     campaign.day += 1
     campaign.battleFoughtToday = false
-    campaign.militiaBoughtToday = 0
     campaign.forage.assignment = new Map()
     campaign.raid.assignment = new Map()
     campaign.raid.squadAssignment = []

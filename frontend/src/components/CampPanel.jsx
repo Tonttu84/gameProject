@@ -1,31 +1,26 @@
-import React, { useState } from 'react'
+import React from 'react'
 import TutorialIntro from './TutorialIntro'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
 
 // Camp spending — the materials + labour sink, laid out as a right-side stack
-// of self-contained boxes (fortifications on top, militia below). Raising the
-// abstract fortification level walls a wider (and sturdier) span of your front
-// deployment edge; the engine makes the enemy pay a combat penalty to assault
-// across it, so you deploy behind the wall. Militia buys raw bodies. BOTH draw
-// on the civilian workforce (workers.available): a fort needs stores + hands,
-// each militiaman IS one worker taken off the pool. The fort cost/cap come from
-// the campaign view (the server owns the rules); the militia cost preview
-// mirrors the server config, and the server still validates and caps every buy.
-const MILITIA_FOOD_COST = 2
-const MILITIA_MATERIAL_COST = 1
-const MILITIA_WORKER_COST = 1
+// of self-contained boxes. Raising the abstract fortification level walls a
+// wider (and sturdier) span of your front deployment edge; the engine makes the
+// enemy pay a combat penalty to assault across it, so you deploy behind the
+// wall. It draws on the civilian workforce (workers.available) as well as
+// stores: a fort needs both hands and materials. The cost/cap come from the
+// campaign view (the server owns the rules) and the server still validates
+// every spend. Buying troops does NOT live here — that's the Recruit phase
+// (RecruitPanel), which is the other claim on the same workforce.
 
 // fortification/resources/workers come straight from the campaign store;
-// onFortify/onBuyMilitia are still props (guarded actions).
-const CampPanel = ({ onFortify, onBuyMilitia }) => {
+// onFortify is still a prop (a guarded action).
+const CampPanel = ({ onFortify }) => {
   const { fortification, resources, workers } = useCampaignStore((s) => s.campaign)
   const tutorial = useUiStore((s) => s.tutorial)
-  const [militia, setMilitia] = useState(1)
 
   const { level, atCap, nextCost, nextWorkerCost } = fortification
   const materials = resources.materials ?? 0
-  const food = resources.food ?? 0
   const workersFree = workers?.available ?? 0
   const workersTotal = workers?.total ?? 0
   const workersUsed = workers?.used ?? 0
@@ -46,45 +41,6 @@ const CampPanel = ({ onFortify, onBuyMilitia }) => {
         ? 'Not enough workers'
         : undefined
 
-  // The most militia the camp can pay for right now — whichever resource runs
-  // out first. Clamps the input so the previewed cost never outruns the stores
-  // (it used to accept 99999999); the server still caps the buy for real.
-  const maxMilitia = Math.min(
-    Math.floor(food / MILITIA_FOOD_COST),
-    Math.floor(materials / MILITIA_MATERIAL_COST),
-    Math.floor(workersFree / MILITIA_WORKER_COST),
-  )
-  const clampMilitia = (n) =>
-    Math.min(Math.max(1, Math.floor(n) || 1), Math.max(1, maxMilitia))
-
-  const militiaFood = militia * MILITIA_FOOD_COST
-  const militiaMaterials = militia * MILITIA_MATERIAL_COST
-  const militiaWorkers = militia * MILITIA_WORKER_COST
-  const canBuyMilitia =
-    militia > 0 &&
-    food >= militiaFood &&
-    materials >= militiaMaterials &&
-    workersFree >= militiaWorkers
-  // Why a buy is blocked (mirrors the fortify button's title), checked in the
-  // same order costs are spent.
-  const militiaReason =
-    food < militiaFood
-      ? 'Not enough food'
-      : materials < militiaMaterials
-        ? 'Not enough materials'
-        : workersFree < militiaWorkers
-          ? 'Not enough workers'
-          : undefined
-
-  // After a buy, workers/resources shrink but the input stays wherever the
-  // player left it — stale enough to look like nothing happened (the button
-  // still reads "Raise N militia" even though N workers are already spent
-  // and gone). Reset to 1 so the next affordability preview is honest.
-  const handleBuyMilitia = async () => {
-    await onBuyMilitia(militia)
-    setMilitia(1)
-  }
-
   return (
     <aside className="camp-side" data-testid="camp-panel">
       <TutorialIntro
@@ -95,7 +51,7 @@ const CampPanel = ({ onFortify, onBuyMilitia }) => {
           'Dug in within sight of the enemy siege lines, your camp is what lets you hold and harry instead of give battle.',
           'Spend salvaged materials on defensive works: each level walls a wider stretch of your front line.',
           'Deploy behind the wall — the enemy pays for every assault across it.',
-          'Muster militia to fill out the ranks — both works and militia cost workers from your camp followers.',
+          'The works cost workers from your camp followers — the same pool the recruiters draw on.',
         ]}
       />
       <div className="camp-workers-readout" data-testid="camp-workers">
@@ -103,9 +59,9 @@ const CampPanel = ({ onFortify, onBuyMilitia }) => {
           <span className="camp-workers-label">Workforce</span>
           <span className="camp-workers-count">{workersFree} free / {workersTotal} raised</span>
         </div>
-        {/* Militia workers leave the workforce entirely (they become roster
-            soldiers), so raising militia shrinks workersTotal itself — "raised"
-            moves. Fort labour is different: the worker is still around, just
+        {/* Recruited workers leave the workforce entirely (they become roster
+            soldiers), so hiring shrinks workersTotal itself — "raised" moves.
+            Fort labour is different: the worker is still around, just
             permanently busy, so that commitment lives in workersUsed and never
             returns to the pool. Spell that out here instead of leaving "X / Y"
             to read as "X of Y currently checked out, comes back later". */}
@@ -129,29 +85,6 @@ const CampPanel = ({ onFortify, onBuyMilitia }) => {
           {atCap
             ? 'Fortifications maxed'
             : `Raise to level ${level + 1} (${nextCost} materials, ${nextWorkerCost} workers)`}
-        </button>
-      </div>
-
-      <div className="camp-box camp-militia-box" data-testid="camp-militia-box">
-        <h3>Militia</h3>
-        <label className="camp-row">
-          Count
-          <input
-            type="number"
-            min="1"
-            value={militia}
-            data-testid="militia-input"
-            onChange={(e) => setMilitia(clampMilitia(Number(e.target.value)))}
-          />
-        </label>
-        <button
-          className="btn-primary"
-          data-testid="militia-button"
-          onClick={handleBuyMilitia}
-          disabled={!canBuyMilitia}
-          title={militiaReason}
-        >
-          Raise {militia} militia ({militiaFood} food, {militiaMaterials} materials, {militiaWorkers} workers)
         </button>
       </div>
     </aside>

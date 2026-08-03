@@ -1,8 +1,9 @@
 /**
  * Camp works (Stage 3 materials sink): the CampPanel on the war council raises
- * the abstract fortification level and musters militia, gated on the cost/cap
- * the campaign view reports; the HUD shows the level; and the placement grid
- * draws the walled sides the view exposes so the player deploys behind them.
+ * the abstract fortification level, gated on the cost/cap the campaign view
+ * reports; the HUD shows the level; and the placement grid draws the walled
+ * sides the view exposes so the player deploys behind them. Buying troops is
+ * NOT here — that's the Recruit phase (recruitPanel.test.jsx).
  */
 
 import React from 'react'
@@ -149,80 +150,19 @@ describe('camp panel — fortifications', () => {
   })
 })
 
-describe('camp panel — militia', () => {
-  it('posts the militia purchase with the chosen count', async () => {
+// The militia slider is GONE (docs/CAMPAIGN_PLAN.md "Recruit phase" S4):
+// Militia is the base tier of the Recruit phase's offer now, hired from
+// RecruitPanel like every other unit type. The camp is fortifications only.
+describe('camp panel — no militia purchase', () => {
+  it('renders no militia box, input, or button', async () => {
     getCampaigns.mockResolvedValue([withMaterials()])
-    spendCampaign.mockResolvedValue(withMaterials())
     render(<App />)
     await screen.findByText(/War Council/)
 
-    fireEvent.change(screen.getByTestId('militia-input'), { target: { value: '5' } })
-    const btn = screen.getByTestId('militia-button')
-    expect(btn).toHaveTextContent('Raise 5 militia (10 food, 5 materials, 5 workers)')
-    fireEvent.click(btn)
-    await waitFor(() =>
-      expect(spendCampaign).toHaveBeenCalledWith('c1', { action: 'militia', count: 5 }),
-    )
-  })
-
-  it('disables the militia buy when the workforce is exhausted', async () => {
-    getCampaigns.mockResolvedValue([
-      withMaterials({}, { total: 2000, used: 2000, available: 0 }),
-    ])
-    render(<App />)
-    await screen.findByText(/War Council/)
-    expect(screen.getByTestId('militia-button')).toBeDisabled()
-  })
-
-  // The input used to accept 99999999; now it clamps to what the camp can
-  // actually pay for, so the previewed cost never exceeds the stores. Here
-  // food is the binding constraint (10 food ÷ 2 = 5 militia).
-  it('clamps the militia count to the max the camp can afford', async () => {
-    getCampaigns.mockResolvedValue([
-      {
-        ...withMaterials(),
-        resources: { ...campaignFixture.resources, food: 10, materials: 200 },
-      },
-    ])
-    render(<App />)
-    await screen.findByText(/War Council/)
-
-    fireEvent.change(screen.getByTestId('militia-input'), { target: { value: '99999999' } })
-    expect(screen.getByTestId('militia-input')).toHaveValue(5)
-    const btn = screen.getByTestId('militia-button')
-    expect(btn).toHaveTextContent('Raise 5 militia (10 food, 5 materials, 5 workers)')
-    expect(btn).not.toBeDisabled()
-  })
-
-  // Mirror the fortify button's title: a disabled buy explains the reason so
-  // the player knows which resource is short.
-  it('titles the disabled militia button with why it is blocked', async () => {
-    getCampaigns.mockResolvedValue([
-      withMaterials({}, { total: 2000, used: 2000, available: 0 }),
-    ])
-    render(<App />)
-    await screen.findByText(/War Council/)
-    expect(screen.getByTestId('militia-button')).toHaveAttribute('title', 'Not enough workers')
-  })
-
-  // Playtest report: the count input stayed at whatever was last typed after
-  // a successful buy, so the button kept reading "Raise 5 militia (...)"
-  // even though those 5 workers were already permanently spent — looking
-  // like nothing happened. Reset to 1 so the next preview is never stale.
-  it('resets the count input after a successful buy', async () => {
-    getCampaigns.mockResolvedValue([withMaterials()])
-    spendCampaign.mockResolvedValue(withMaterials({}, { total: 2000, used: 5, available: 1995 }))
-    render(<App />)
-    await screen.findByText(/War Council/)
-
-    fireEvent.change(screen.getByTestId('militia-input'), { target: { value: '5' } })
-    fireEvent.click(screen.getByTestId('militia-button'))
-    await waitFor(() => expect(spendCampaign).toHaveBeenCalled())
-
-    expect(await screen.findByTestId('militia-input')).toHaveValue(1)
-    expect(screen.getByTestId('militia-button')).toHaveTextContent(
-      'Raise 1 militia (2 food, 1 materials, 1 workers)',
-    )
+    expect(screen.getByTestId('camp-fort-box')).toBeInTheDocument()
+    expect(screen.queryByTestId('camp-militia-box')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('militia-input')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('militia-button')).not.toBeInTheDocument()
   })
 })
 
@@ -236,37 +176,27 @@ describe('camp panel — workers & side layout', () => {
     expect(screen.getByTestId('camp-workers')).toHaveTextContent('1500 free / 2000 raised')
   })
 
-  // Militia workers leave the workforce entirely (they become roster
-  // soldiers), so "raised" itself drops — unlike fort labour, which keeps the
-  // worker around but permanently busy (reflected in `used`, not `total`).
-  it('reflects militia musters as a drop in "raised", not a temporary dip', async () => {
-    getCampaigns.mockResolvedValue([withMaterials()])
-    // Mustering 50 militia: the server's refreshed view shrinks `total`
-    // (workers became soldiers), leaving `used` untouched.
-    spendCampaign.mockResolvedValue({
-      ...withMaterials({}, { total: 1950, used: 0, available: 1950 }),
-      roster: { ...campaignFixture.roster, Militia: 50 },
-    })
+  // A Recruit hire takes workers out of the workforce entirely (they become
+  // roster soldiers), so "raised" itself drops — unlike fort labour, which
+  // keeps the worker around but permanently busy (`used`, not `total`).
+  it('reflects a hire as a drop in "raised", not a temporary dip', async () => {
+    getCampaigns.mockResolvedValue([
+      {
+        ...withMaterials({}, { total: 1950, used: 0, available: 1950 }),
+        roster: { ...campaignFixture.roster, Militia: 50 },
+      },
+    ])
     render(<App />)
     await screen.findByText(/War Council/)
-    expect(screen.getByTestId('camp-workers')).toHaveTextContent('2000 free / 2000 raised')
-
-    fireEvent.change(screen.getByTestId('militia-input'), { target: { value: '50' } })
-    fireEvent.click(screen.getByTestId('militia-button'))
-    await waitFor(() =>
-      expect(spendCampaign).toHaveBeenCalledWith('c1', { action: 'militia', count: 50 }),
-    )
-    // The readout moves to the new totals: 50 fewer raised, none "checked out".
-    await waitFor(() =>
-      expect(screen.getByTestId('camp-workers')).toHaveTextContent('1950 free / 1950 raised'),
-    )
+    expect(screen.getByTestId('camp-workers')).toHaveTextContent('1950 free / 1950 raised')
+    expect(screen.queryByTestId('camp-workers-committed')).not.toBeInTheDocument()
   })
 
   // Playtest report: "2000 workers before, 2000 after, but only 1950
-  // available" read as if the pool itself shrank temporarily. Now `used`
-  // reflects ONLY fort labour (a PERMANENT commitment, worker never returns);
-  // militia no longer touches `used` at all — it shrinks `total` instead
-  // (see the test above). Spell out what's actually gone for good.
+  // available" read as if the pool itself shrank temporarily. `used` reflects
+  // ONLY fort labour (a PERMANENT commitment, worker never returns); hires
+  // never touch `used` — they shrink `total` instead (see the test above).
+  // Spell out what's actually gone for good.
   it('explains committed workers are permanent, not temporarily checked out', async () => {
     getCampaigns.mockResolvedValue([
       withMaterials({}, { total: 2000, used: 50, available: 1950 }),

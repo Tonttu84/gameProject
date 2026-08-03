@@ -56,10 +56,6 @@ const useCampaignStore = create((set, get) => ({
     set({ campaign: await spendCampaign(get().campaign.id, { action: 'fortify' }) })
   },
 
-  buyMilitia: async (count) => {
-    set({ campaign: await spendCampaign(get().campaign.id, { action: 'militia', count }) })
-  },
-
   // body is either {entryId} (hire that option) or {skip: true} (decline).
   hireRecruit: async (body) => {
     set({ campaign: await hireRecruit(get().campaign.id, body) })

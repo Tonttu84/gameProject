@@ -101,7 +101,7 @@ body {
 }
 
 /* Right column: the camp spend menu — a stack of self-contained boxes
-   (workforce readout, fortifications, militia). */
+   (workforce readout, fortifications). */
 .camp-side {
   flex: 0 0 260px;
   width: 260px;

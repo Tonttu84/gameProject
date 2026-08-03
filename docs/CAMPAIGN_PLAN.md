@@ -1144,8 +1144,9 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
 > placeholder bullet ("converts idle workers into roster troops… no numbers, caps, or UI decided")
 > with a full mechanic. **S1 (pool + core mechanics, pure service layer) SHIPPED 2026-08-02**, **S2
 > (route + day-offer generation + campaignView exposure, server-only) SHIPPED 2026-08-02**, **S3
-> (frontend Recruit phase screen) SHIPPED 2026-08-03** — see the handoffs below. **Raid-gold-reward
-> and the old-militia removal are NOT done yet** — staged like every other multi-part feature in
+> (frontend Recruit phase screen) SHIPPED 2026-08-03**, **S4 (old militia-purchase mechanic
+> removed) SHIPPED 2026-08-03** — see the handoffs below. **Raid-gold-reward wiring, the garrison
+> gold event, and horses' earn source are NOT done yet** — staged like every other feature in
 > this doc (build one piece at a time, one commit-sized step per session). NOT blocked on the
 > worker-eating-food/
 > replenishment pairing (see that backlog entry) —
@@ -1357,6 +1358,34 @@ still a separate later slice, not folded into this one.
 - **NOT done yet (next slices):** removing the old militia-purchase route/`CampPanel` slider
   (`MILITIA_*` constants + the militia box are UNTOUCHED); the raid gold-reward wiring; the
   garrison gold event; horses' earn source.
+
+**S4 — remove the old militia purchase. ✅ SHIPPED 2026-08-03.** The "replaces, not adds" half of
+the design above: buying troops now happens in exactly ONE place (the Recruit phase), with Militia
+as `RECRUIT_POOL`'s base tier instead of its own parallel mechanic. Pure removal — no new
+behaviour, no balance change beyond losing the old 2-food/1-material/1-worker-per-head trickle.
+- **Server:** the `action === 'militia'` branch of `POST /:id/spend` is gone (fortify is the only
+  spend action left; a militia body now 400s `unknown spend action`), along with its
+  `MILITIA_FOOD_COST`/`MILITIA_MATERIAL_COST`/`MILITIA_WORKER_COST`/`MILITIA_DAILY_CAP`/
+  `MILITIA_UNIT` constants in `campaignConfig.js` and the `militiaBoughtToday` document field +
+  its `dayResolution` step-7 reset. `FREE_MILITIA_AMOUNT` and everything else `recruit.js` owns
+  STAY — those belong to the new phase, not the old mechanic.
+- **Schema (`CAMPAIGN_SCHEMA_VERSION` 25→26):** dropping `militiaBoughtToday` is a stored-shape
+  change, so it gets the bump per this doc's convention (old docs are deleted on listing, no
+  migration).
+- **Frontend:** `CampPanel` is fortifications-only — the militia box/input/button, the mirrored
+  `MILITIA_*` cost-preview constants, the clamp/reset logic, and the `onBuyMilitia` prop all
+  removed; `useCampaignStore.buyMilitia` and its `App.jsx` wiring removed with them. The workforce
+  readout is unchanged (both sinks still show there — fort labour in `used`, hires in `total`).
+- **Tests:** `campaigns.test.js` swapped its 3 militia-purchase cases for one asserting the action
+  is rejected AND nothing is debited, plus a fortify-only version of the "`used` vs `total` are
+  tracked independently" case (the `total`-shrinks half is already covered by the Recruit describe);
+  `campPanel.test.jsx`'s `camp panel — militia` describe became a "renders no militia box/input/
+  button" case, and the muster-shrinks-"raised" case became a render-only readout assertion. Ran
+  red first (militia spend still 200, militia box still in the DOM), then green: `cs-test`
+  419/422 (the 3 failures are the pre-existing `engine.integration.test.js` ENOENT — no compiled
+  `./game` in this environment), `fe-test` 243/243, `fe-lint` clean.
+- **NOT done yet (next slices):** the raid gold-reward wiring; the garrison gold event; horses'
+  earn source.
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 

@@ -36,7 +36,7 @@ export const STARTING_SQUADS = [
 // ~4 turns for the starting army (which needs 12,432 kg per turn).
 export const STARTING_FOOD = 50000
 // Playtest aid: seed enough to build the full fort progression from turn 1
-// (L0→1 = 50, L1→2 = 100 = 150 to max) plus a little for militia, so forts are
+// (L0→1 = 50, L1→2 = 100 = 150 to max) plus a little for recruiting, so forts are
 // visible/testable on the campaign map without a debug grant. See docs/CAMPAIGN_PLAN.md.
 export const STARTING_MATERIALS = 200
 // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"): both
@@ -255,7 +255,7 @@ export const CLASH_WINNER_CASUALTY_PCT = [1, 2]
 // The enemy AI sends this fraction of its host's forage capacity out each turn.
 export const ENEMY_FORAGE_FRACTION = 0.4
 
-// ── Fortifications & militia (materials sink, Stage 3) ───────────────────────
+// ── Fortifications (materials sink, Stage 3) ─────────────────────────────────
 // Fortifications are ABSTRACT LEVELS that wall the battle map at preset
 // locations. Spending materials raises fortificationLevel; each level activates
 // every preset side with tier ≤ level, walling a wider (and sturdier) span of
@@ -299,21 +299,13 @@ export const FORTIFICATION_PRESETS = {
   ],
 }
 
-// Militia purchase: raw bodies bought with stores. Cost per head + a per-turn
-// cap so it's a steady trickle, not an instant army.
-export const MILITIA_FOOD_COST = 2
-export const MILITIA_MATERIAL_COST = 1
-export const MILITIA_WORKER_COST = 1 // each militiaman IS a worker taken off the civilian pool
-export const MILITIA_DAILY_CAP = 50
-export const MILITIA_UNIT = 'Militia'
-
 // ── Workers (civilian labour pool, off the campaign map) ─────────────────────
-// A finite workforce that fortifications and militia both draw on. Tracked as
-// total + used; available = total − used. Fort labour raises `used` — the
-// worker is still around, just permanently busy maintaining the works.
-// Militia is different: those workers LEAVE the civilian pool entirely to
-// become roster soldiers, so buying militia decrements `total` instead (see
-// the militia branch of POST /:id/spend in routes/campaigns.js). Neither
+// A finite workforce that fortifications and Recruit hires both draw on.
+// Tracked as total + used; available = total − used. Fort labour raises `used`
+// — the worker is still around, just permanently busy maintaining the works.
+// A hire is different: those workers LEAVE the civilian pool entirely to
+// become roster soldiers, so hiring decrements `total` instead (see applyHire
+// in services/recruit.js). Neither
 // direction replenishes yet (events / growth is a later SSOT run; see
 // docs/CAMPAIGN_PLAN.md item 5). Deliberately large relative to the fighting
 // roster. NOTE: the planned "workers eat food at 1/3 upkeep" step is
@@ -324,9 +316,9 @@ export const STARTING_WORKERS = 2000
 // ── Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") ────
 // One hire per day: the phase offers up to 2 eligible+affordable options from
 // services/recruit.js's RECRUIT_POOL, the player picks one (or gets the free
-// Militia fallback below if nothing is affordable). Supersedes the old
-// MILITIA_* purchase constants above once the phase is wired in (Stage 2) —
-// Militia becomes the base tier of RECRUIT_POOL instead of its own mechanic.
+// Militia fallback below if nothing is affordable). This REPLACED the old
+// MILITIA_* purchase constants (removed in S4) — Militia is the base tier of
+// RECRUIT_POOL now, not its own mechanic.
 export const RECRUITING_FERVOR_START = 0
 // A boosted troop-lane hire that CAN afford double pays double for double the
 // count; one that can't gets this fraction knocked off the normal cost for

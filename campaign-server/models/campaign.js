@@ -86,7 +86,7 @@ const ringSchema = new mongoose.Schema(
 // — including pre-versioning docs that lack the field — is deleted on the
 // next listing instead of being served to campaignView, where missing fields
 // render as nonsense (the "food stuck at 100 kg, Land 0%" playtest bug).
-export const CAMPAIGN_SCHEMA_VERSION = 25 // v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 26 // v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -211,14 +211,11 @@ const campaignSchema = new mongoose.Schema({
   // player's front deployment edge (services/fortification.js →
   // fortifiedSidesFor), injected into the battle input. Own info, not hidden.
   fortificationLevel: { type: Number, default: 0 },
-  // Militia bought this turn — caps the per-turn militia purchase; reset at
-  // newDay.
-  militiaBoughtToday: { type: Number, default: 0 },
 
   // Civilian labour pool (off-map, not on the campaign map). Fortifications
-  // and militia both draw on it, but differently: fort labour permanently
-  // grows `used` (the worker is still around, just always busy); militia
-  // permanently shrinks `total` (the worker left to become a roster soldier).
+  // and Recruit hires both draw on it, but differently: fort labour
+  // permanently grows `used` (the worker is still around, just always busy); a
+  // hire permanently shrinks `total` (the worker left to become a soldier).
   // available = total − used either way. No replenishment yet (later SSOT
   // run). Own info.
   workers: {

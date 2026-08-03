@@ -1364,7 +1364,10 @@ describe('POST /api/campaigns/:id/spend', () => {
     expect(capped.body.error).toMatch(/maximum/)
   })
 
-  test('militia buys real Militia (not Soldiers) for food+materials, capped per turn', async () => {
+  // The ad-hoc militia purchase is GONE (docs/CAMPAIGN_PLAN.md "Recruit phase"
+  // S4): Militia is now the base tier of RECRUIT_POOL, bought through the
+  // Recruit phase like every other unit type, so /spend only fortifies.
+  test('the old militia purchase action is no longer a spend action', async () => {
     const { body: c } = await createCampaign()
     const doc = await Campaign.findById(c.id)
     doc.roster = { Soldier: 10 }
@@ -1372,14 +1375,15 @@ describe('POST /api/campaigns/:id/spend', () => {
     await doc.save()
 
     const res = await spend(c.id, { action: 'militia', count: 10 })
-    expect(res.status).toBe(200)
-    expect(res.body.roster.Soldier).toBe(10) // untouched — militia is its own type now
-    expect(res.body.roster.Militia).toBe(10)
-    expect(res.body.resources.food).toBe(1000 - 10 * 2)
-    expect(res.body.resources.materials).toBe(1000 - 10 * 1)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/unknown spend action/i)
 
-    // Over the per-turn cap (50) is rejected.
-    expect((await spend(c.id, { action: 'militia', count: 41 })).status).toBe(400)
+    // Nothing was bought and nothing was spent.
+    const after = await Campaign.findById(c.id)
+    expect(after.roster.get('Militia')).toBeUndefined()
+    expect(after.resources.food).toBe(1000)
+    expect(after.resources.materials).toBe(1000)
+    expect(after.workers.total).toBe(2000)
   })
 
   test('a new campaign starts with the full workforce, none used', async () => {
@@ -1414,49 +1418,23 @@ describe('POST /api/campaigns/:id/spend', () => {
     expect(reload.body.workers.used).toBe(0)
   })
 
-  test('militia workers leave the pool entirely — total shrinks, used does not', async () => {
-    const { body: c } = await createCampaign()
-    const doc = await Campaign.findById(c.id)
-    doc.roster = { Soldier: 10 }
-    doc.resources = { food: 1000, materials: 1000, gold: 0, horses: 0 }
-    doc.workers = { total: 2000, used: 1995 } // only 5 free
-    await doc.save()
-
-    const ok = await spend(c.id, { action: 'militia', count: 5 })
-    expect(ok.status).toBe(200)
-    // Those 5 workers became roster soldiers — total drops, used is untouched
-    // (fort labour is the only thing that should ever raise `used`).
-    expect(ok.body.workers).toEqual({ total: 1995, used: 1995, available: 0 })
-
-    // No workers left → even an affordable-in-stores purchase is rejected.
-    const rej = await spend(c.id, { action: 'militia', count: 1 })
-    expect(rej.status).toBe(400)
-    expect(rej.body.error).toMatch(/workers|workforce/i)
-  })
-
-  test('militia and fort labour are tracked independently: total shrinks for one, used rises for the other', async () => {
+  // Fort labour is now the ONLY thing that touches `used` — the other worker
+  // sink (a Recruit hire, which shrinks `total` instead) is covered in the
+  // Recruit phase describe below.
+  test('fort labour raises `used` and leaves `total` alone', async () => {
     const { body: c } = await createCampaign()
     await setMaterials(c.id, 1000)
     await setWorkers(c.id, 2000)
-    const doc = await Campaign.findById(c.id)
-    doc.resources.food = 1000
-    await doc.save()
-
-    const militia = await spend(c.id, { action: 'militia', count: 10 }) // 10 workers cost
-    expect(militia.status).toBe(200)
-    expect(militia.body.workers).toEqual({ total: 1990, used: 0, available: 1990 })
 
     const fort = await spend(c.id, { action: 'fortify' }) // 500 workers cost (L0→1)
     expect(fort.status).toBe(200)
-    expect(fort.body.workers).toEqual({ total: 1990, used: 500, available: 1490 })
+    expect(fort.body.workers).toEqual({ total: 2000, used: 500, available: 1500 })
   })
 
-  test('bad actions and counts are rejected', async () => {
+  test('bad actions are rejected', async () => {
     const { body: c } = await createCampaign()
     expect((await spend(c.id, {})).status).toBe(400)
     expect((await spend(c.id, { action: 'bribe' })).status).toBe(400)
-    expect((await spend(c.id, { action: 'militia', count: 0 })).status).toBe(400)
-    expect((await spend(c.id, { action: 'militia', count: 1.5 })).status).toBe(400)
   })
 })
 

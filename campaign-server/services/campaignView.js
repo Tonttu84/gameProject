@@ -206,7 +206,8 @@ export async function campaignView(campaign) {
       composition: Object.fromEntries(composition),
     })),
     // Civilian labour pool (own info): available = total − used. Forts and
-    // militia both spend it; the client gates their buttons on `available`.
+    // Recruit hires both spend it; the client gates their buttons on
+    // `available`.
     workers: {
       total: campaign.workers.total,
       used: campaign.workers.used,
