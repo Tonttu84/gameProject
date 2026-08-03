@@ -190,6 +190,17 @@ export const RAID_MAX_TURNS = 60
 // bad fate (reward = {slot}, hidden — it would out which vision was true).
 export const RAID_LOOT_FOOD = [2000, 5000] // kg
 export const RAID_LOOT_MATERIALS = [10, 30]
+// Gold off a won raid (docs/CAMPAIGN_PLAN.md "Recruit phase" — the currency the
+// caster lane spends: Mage 100, Priest 80). Coin per unit of the target force,
+// so a bigger detachment carries more; destroy pays better than loot per head
+// (spoils stripped off the dead vs a paychest riding with the wagons).
+export const RAID_GOLD_PER_UNIT = { destroy_detachment: 1.2, loot_supplies: 0.8 }
+// …times a WIDE independent variance roll, so size and payoff are correlated
+// but far from locked together: at the same guard strength one target is a
+// bargain and the next is barely worth the ride. That spread is what makes
+// buying the reward field with scouting points worth the points (user,
+// 2026-08-03) — without it, strengthBand alone would tell you everything.
+export const RAID_GOLD_VARIANCE = [0.5, 2.0]
 export const RAID_RESCUE_UNIT = 'Soldier'
 export const RAID_RESCUE_COUNT = [10, 25]
 // What the scouts SAY a raid target is — detachment-scale phrases, by unit

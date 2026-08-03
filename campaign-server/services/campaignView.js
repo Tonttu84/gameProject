@@ -67,7 +67,7 @@ const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
 // A raid target's reward as the player may see it (mini-game reveal, Stage 4
 // Part 2.5): a range until the reward field is bought (rewardReveal >= 1), then
 // the exact numbers — but ONLY the numeric keys the range already bracketed
-// (food/materials/roster). A counter_event's reward is {slot}, which has no
+// (food/materials/gold/roster). A counter_event's reward is {slot}, which has no
 // range (rewardRange is null) and would out which fate is bad, so it stays
 // null on BOTH channels — the exact side is keyed off rewardRange, never the
 // raw reward, so `slot` can't leak even once revealed.
@@ -78,6 +78,7 @@ const rewardView = (opp) => {
   const exact = {}
   if (range.food) exact.food = opp.reward.food
   if (range.materials) exact.materials = opp.reward.materials
+  if (range.gold) exact.gold = opp.reward.gold
   if (range.roster) {
     exact.roster = {}
     for (const type of Object.keys(range.roster)) exact.roster[type] = opp.reward.roster[type]

@@ -215,15 +215,67 @@ describe('generateRaidOpportunities', () => {
         expect(lo).toBeLessThanOrEqual(n)
         expect(hi).toBeGreaterThanOrEqual(n)
       }
-      // A numeric reward has a bracketing range; counter/destroy have none.
+      // A numeric reward has a bracketing range; only counter_event (whose
+      // reward is the {slot} it unmakes) has nothing to bracket.
       if (o.reward && typeof o.reward.food === 'number') {
         const [lo, hi] = o.rewardRange.food
         expect(lo).toBeLessThanOrEqual(o.reward.food)
         expect(hi).toBeGreaterThanOrEqual(o.reward.food)
-      } else if (o.type === 'counter_event' || o.type === 'destroy_detachment') {
+      } else if (o.type === 'counter_event') {
         expect(o.rewardRange).toBeNull()
       }
+      // Gold (Recruit phase's caster currency) is bracketed like any other
+      // numeric reward — buying the reward field pins it.
+      if (typeof o.reward?.gold === 'number') {
+        const [lo, hi] = o.rewardRange.gold
+        expect(lo).toBeLessThanOrEqual(o.reward.gold)
+        expect(hi).toBeGreaterThanOrEqual(o.reward.gold)
+      }
     }
+  })
+
+  // Raid gold (docs/CAMPAIGN_PLAN.md "Recruit phase" — new resource `gold`):
+  // won destroy/loot raids pay coin, sized off the target but with wide
+  // variance, so scouting can find a fat target under a weak guard.
+  describe('gold reward', () => {
+    // 200 draws of one base target each — enough for the distribution claims
+    // below without leaning on a seeded RNG (generation uses Math.random by
+    // design, so the dice queue stays free for consult/clash rolls).
+    const sample = (over) => {
+      const out = []
+      for (let i = 0; i < 200; i++)
+        out.push(...generateRaidOpportunities(fakeCampaign(over), catalog))
+      return out
+    }
+
+    test('destroy_detachment and loot_supplies pay gold; rescue_troops does not', () => {
+      const byType = {}
+      for (const o of sample()) (byType[o.type] ??= []).push(o)
+      for (const type of ['destroy_detachment', 'loot_supplies'])
+        expect(byType[type].every((o) => typeof o.reward.gold === 'number' && o.reward.gold > 0)).toBe(true)
+      expect(byType.rescue_troops.every((o) => o.reward.gold === undefined)).toBe(true)
+      // Loot still pays its stores alongside the coin.
+      expect(byType.loot_supplies.every((o) => o.reward.food > 0 && o.reward.materials > 0)).toBe(true)
+    })
+
+    test('gold tracks target size — a ten-times bigger host pays far more on average', () => {
+      const mean = (opps) => {
+        const gold = opps.filter((o) => o.reward?.gold).map((o) => o.reward.gold)
+        return gold.reduce((a, b) => a + b, 0) / gold.length
+      }
+      const small = mean(sample({ enemy: { army: { Soldier: 60 } } }))
+      const big = mean(sample({ enemy: { army: { Soldier: 600 } } }))
+      expect(big).toBeGreaterThan(small * 5)
+    })
+
+    test('…but with enough variance that some targets are bargains and some are poor', () => {
+      // Coin PER GUARD unit is what a scout is really judging. Same host, same
+      // guard strength, wildly different payoffs — that spread is the point.
+      const perUnit = sample({ enemy: { army: { Soldier: 600 } } })
+        .filter((o) => o.reward?.gold)
+        .map((o) => o.reward.gold / Object.values(o.targetForce).reduce((a, b) => a + b, 0))
+      expect(Math.max(...perUnit) / Math.min(...perUnit)).toBeGreaterThan(2.5)
+    })
   })
 
   test('opportunities are complete: id, type, hidden target slice, band phrase, capacity', () => {
@@ -507,6 +559,56 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     expect(doc.enemy.army.get('Archer')).toBe(150 - 10)
     const allEntries = doc.log.flatMap((l) => l.entries)
     expect(allEntries.some((e) => /prestig/i.test(e))).toBe(true)
+  })
+
+  // Raid gold (docs/CAMPAIGN_PLAN.md "Recruit phase"): the coin a won raid
+  // brings back is what pays for Mages/Priests in the Recruit phase.
+  test('a won destroy raid banks its gold and says so in the log', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({
+        winner: 'blue',
+        blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } },
+        red_survivors: { Soldier: 5 },
+      }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({
+      type: 'destroy_detachment',
+      targetForce: { Soldier: 30 },
+      reward: { gold: 35 },
+      capacity: 500,
+    })])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.resources.gold).toBe(35)
+    const entries = (await Campaign.findById(c.id)).log.flatMap((l) => l.entries)
+    expect(entries.some((e) => /35 gold/.test(e))).toBe(true)
+  })
+
+  test('a won loot raid banks gold alongside the stores', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ reward: { food: 3000, materials: 20, gold: 18 } })])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.resources.food).toBe(50000 + 3000)
+    expect(res.body.campaign.resources.materials).toBe(200 + 20)
+    expect(res.body.campaign.resources.gold).toBe(18)
+  })
+
+  test('a lost raid banks no gold', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ winner: 'red', blue_squads: { 1: { survivors: {}, wiped: true } } }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ reward: { food: 3000, materials: 20, gold: 18 } })])
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.resources.gold).toBe(0)
   })
 
   test('rescue_troops: a win adds the freed prisoners to the roster', async () => {
@@ -803,6 +905,24 @@ describe('POST /api/campaigns/:id/raids/scout', () => {
     const o = res.body.campaign.raid.opportunities[0]
     expect(o.reward).toEqual({ food: 3000, materials: 20 })
     expect(o.rewardReveal).toBe(1)
+  })
+
+  // A destroy target's reward used to be null (nothing to buy); now it carries
+  // gold, so it has a range on the wire and a reveal that pins it.
+  test('reveal reward: a destroy target\'s gold shows as a range, then exact', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [
+      REVEALABLE({ type: 'destroy_detachment', reward: { gold: 40 }, rewardRange: { gold: [30, 50] } }),
+    ])
+    await setPoints(c.id, RAID_SCOUT_COST_REVEAL)
+
+    const before = (await getView(c.id)).body.raid.opportunities[0]
+    expect(before.reward).toEqual({ gold: [30, 50] })
+
+    const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'reward' })
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.raid.opportunities[0].reward).toEqual({ gold: 40 })
+    expectPublicOpportunities(res.body)
   })
 
   test('reveal: refuses to spend again once a field is exact', async () => {

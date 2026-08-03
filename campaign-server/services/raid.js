@@ -7,6 +7,8 @@ import {
   RAID_CAPACITY_RATIO,
   RAID_LOOT_FOOD,
   RAID_LOOT_MATERIALS,
+  RAID_GOLD_PER_UNIT,
+  RAID_GOLD_VARIANCE,
   RAID_RESCUE_UNIT,
   RAID_RESCUE_COUNT,
   RAID_STRENGTH_BANDS,
@@ -26,6 +28,20 @@ const entriesOf = (army) =>
   army instanceof Map ? [...army.entries()] : Object.entries(army ?? {})
 
 const randInt = ([lo, hi]) => lo + Math.floor(Math.random() * (hi - lo + 1))
+const randFloat = ([lo, hi]) => lo + Math.random() * (hi - lo)
+
+// Coin a won raid brings back: the target's headcount × its type's per-unit
+// rate × a variance roll that is INDEPENDENT of the size jitter. Reward and
+// guard strength therefore only loosely track each other — the fat target
+// under a thin guard is a real find, which is the point of scouting a card's
+// reward before committing to it. Types with no rate (rescue/counter/sortie)
+// pay no gold. Rounded, minimum 1 so a tiny target still carries a coin.
+const goldFor = (type, targetForce) => {
+  const rate = RAID_GOLD_PER_UNIT[type]
+  if (!rate) return 0
+  const units = Object.values(targetForce).reduce((a, b) => a + b, 0)
+  return Math.max(1, Math.round(units * rate * randFloat(RAID_GOLD_VARIANCE)))
+}
 
 // Descending {min, label} table → the first phrase the value qualifies for.
 const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
@@ -94,14 +110,15 @@ const rangeAround = (value, jitter = RAID_RANGE_JITTER) => {
 }
 
 // Ranges over the hidden reward, by reward shape — only the numeric keys the
-// reward actually has (loot pays food+materials, rescue pays roster). A
-// counter_event reward is {slot} and destroy's reward is null: neither has a
-// number to reveal, so rewardRange is null and only enemy intel is buyable.
+// reward actually has (loot pays food+materials+gold, destroy pays gold,
+// rescue pays roster). A counter_event reward is {slot}: no number to reveal,
+// so rewardRange is null and only enemy intel is buyable on those cards.
 const rewardRangeOf = (reward) => {
   if (!reward) return null
   const range = {}
   if (typeof reward.food === 'number') range.food = rangeAround(reward.food)
   if (typeof reward.materials === 'number') range.materials = rangeAround(reward.materials)
+  if (typeof reward.gold === 'number') range.gold = rangeAround(reward.gold)
   if (reward.roster) {
     range.roster = {}
     for (const [type, n] of Object.entries(reward.roster)) range.roster[type] = rangeAround(n)
@@ -131,14 +148,20 @@ const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot, s
   const { thinsEnemy = false, ...sortieReward } = sortieEvent?.sortie ?? {}
   const reward =
     type === 'loot_supplies'
-      ? { food: randInt(RAID_LOOT_FOOD), materials: randInt(RAID_LOOT_MATERIALS) }
+      ? {
+          food: randInt(RAID_LOOT_FOOD),
+          materials: randInt(RAID_LOOT_MATERIALS),
+          gold: goldFor(type, targetForce),
+        }
       : type === 'rescue_troops'
         ? { roster: { [RAID_RESCUE_UNIT]: randInt(RAID_RESCUE_COUNT) } }
         : type === 'counter_event'
           ? { slot: counterSlot }
           : type === 'garrison_sortie'
             ? sortieReward
-            : null
+            : // destroy_detachment: the destruction is still the point, but the
+              // field is stripped afterwards — that coin is the caster lane's.
+              { gold: goldFor(type, targetForce) }
   const flavor =
     type === 'garrison_sortie'
       ? { title: sortieEvent.title, description: sortieEvent.description }
@@ -260,11 +283,18 @@ export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
     entries.push('The detachment is wiped out — the enemy host is the thinner for it.')
     // Prestige stub (Stage E, docs/CAMPAIGN_PLAN.md): no mechanic yet.
     entries.push('A prestigious victory — word of it spreads (prestige not yet tracked).')
+    const { gold = 0 } = opportunity.reward ?? {}
+    if (gold) {
+      campaign.resources.gold += gold
+      entries.push(`The field is stripped afterwards: +${gold} gold.`)
+    }
   } else if (opportunity.type === 'loot_supplies') {
-    const { food = 0, materials = 0 } = opportunity.reward ?? {}
+    const { food = 0, materials = 0, gold = 0 } = opportunity.reward ?? {}
     campaign.resources.food += food
     campaign.resources.materials += materials
+    campaign.resources.gold += gold
     entries.push(`Plunder taken: +${+(food / 1000).toFixed(1)} t of food, +${materials} materials.`)
+    if (gold) entries.push(`A paychest rode with the wagons: +${gold} gold.`)
   } else if (opportunity.type === 'rescue_troops') {
     for (const [type, n] of Object.entries(opportunity.reward?.roster ?? {})) {
       campaign.roster.set(type, (campaign.roster.get(type) ?? 0) + n)

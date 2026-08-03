@@ -86,8 +86,9 @@ const OPPORTUNITY_2 = {
   source: 'base',
   enemy: { Soldier: [40, 70] },
   enemyReveal: 0,
-  // destroy_detachment has no numeric reward (rewardRange is null server-side).
-  reward: null,
+  // destroy_detachment pays gold (docs/CAMPAIGN_PLAN.md "Recruit phase") — a
+  // range like any other numeric reward until scouting points pin it.
+  reward: { gold: [30, 50] },
   rewardReveal: 0,
   resolved: false,
   outcome: null,
@@ -298,8 +299,9 @@ describe('raid panel — scouting mini-game', () => {
     expect(screen.getByTestId('raid-points')).toHaveTextContent('Scouting points: 20')
     expect(screen.getByTestId('raid-reward-d1-0')).toHaveTextContent('Reward: 1500–2500 food, 50–100 materials')
     expect(screen.getByTestId('raid-enemy-d1-0')).toHaveTextContent('Enemy: 8–14 Soldier')
-    // destroy_detachment has no numeric reward — nothing to list or reveal.
-    expect(screen.queryByTestId('raid-reward-d1-1')).not.toBeInTheDocument()
+    // destroy_detachment pays coin: a gold range, revealable like any other.
+    expect(screen.getByTestId('raid-reward-d1-1')).toHaveTextContent('Reward: 30–50 gold')
+    expect(screen.getByTestId('raid-reveal-reward-d1-1')).toBeInTheDocument()
     expect(screen.getByTestId('raid-enemy-d1-1')).toHaveTextContent('Enemy: 40–70 Soldier')
   })
 

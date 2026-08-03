@@ -1145,8 +1145,9 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
 > with a full mechanic. **S1 (pool + core mechanics, pure service layer) SHIPPED 2026-08-02**, **S2
 > (route + day-offer generation + campaignView exposure, server-only) SHIPPED 2026-08-02**, **S3
 > (frontend Recruit phase screen) SHIPPED 2026-08-03**, **S4 (old militia-purchase mechanic
-> removed) SHIPPED 2026-08-03** — see the handoffs below. **Raid-gold-reward wiring, the garrison
-> gold event, and horses' earn source are NOT done yet** — staged like every other feature in
+> removed) SHIPPED 2026-08-03**, **S5 (raid gold rewards) SHIPPED 2026-08-03** — see the handoffs
+> below. **The garrison gold event and horses' earn source are NOT done yet** — staged like every
+> other feature in
 > this doc (build one piece at a time, one commit-sized step per session). NOT blocked on the
 > worker-eating-food/
 > replenishment pairing (see that backlog entry) —
@@ -1386,6 +1387,39 @@ behaviour, no balance change beyond losing the old 2-food/1-material/1-worker-pe
   `./game` in this environment), `fe-test` 243/243, `fe-lint` clean.
 - **NOT done yet (next slices):** the raid gold-reward wiring; the garrison gold event; horses'
   earn source.
+
+**S5 — raid gold rewards. ✅ SHIPPED 2026-08-03.** The v1 earn source for `gold`: a won
+`destroy_detachment` or `loot_supplies` raid banks coin, on top of what those types already pay.
+- **Sizing, grilled 2026-08-03:** gold = target headcount × a per-type rate × a WIDE independent
+  variance roll. `RAID_GOLD_PER_UNIT = {destroy_detachment: 1.2, loot_supplies: 0.8}` (destroy
+  pays better per head — spoils off the dead vs a paychest with the wagons),
+  `RAID_GOLD_VARIANCE = [0.5, 2.0]`. The user's steer: reward and guard strength must be
+  *correlated but loosely* — "part of why scouting should be good is that you should be able to
+  find better targets where the reward is large but the guard relatively weak". The variance roll
+  is deliberately separate from `sliceTargetForce`'s own size jitter, so at equal guard strength
+  one card is a bargain and the next is barely worth the ride. Scale check against the caster
+  lane's sinks (Mage 100, Priest 80): a full company (~30 units) pays ~18–72 gold on a destroy.
+- **Gold is scoutable intel** (user's pick): it goes through `rewardRangeOf` like food/materials,
+  so it shows as a ±25% range that a scouting point pins to exact. Side effect worth knowing —
+  `destroy_detachment`'s reward used to be `null`, so those cards had NO buyable reward intel;
+  they do now, and `RaidPanel` renders a gold line + Reveal button on them.
+- **Code:** `goldFor(type, targetForce)` + `randFloat` in `services/raid.js`; the `reward` build
+  gives destroy `{gold}` (was `null`) and loot `{food, materials, gold}`; `rewardRangeOf` and
+  `campaignView`'s `rewardView` gained a `gold` key; `applyRaidReward` credits
+  `campaign.resources.gold` on both types with its own log line. `rescue_troops`/`counter_event`/
+  `garrison_sortie` pay no gold (no rate) — the garrison's coin is its own later slice.
+- **No `CAMPAIGN_SCHEMA_VERSION` bump:** `reward` is already `Mixed`, and an in-flight campaign
+  whose destroy cards were dealt before this just pays no gold today (`reward?.gold ?? 0`) and
+  gets gold on tomorrow's redeal. Nothing stored becomes unreadable.
+- **Tests:** `raid.test.js` +6 (which types pay gold; a 10× bigger host pays >5× on average;
+  per-guard-unit payoff spreads >2.5× across 200 draws — the bargain-target property itself; a
+  won destroy banks + logs its gold; a won loot banks gold alongside stores; a lost raid banks
+  none; a destroy card's gold reveals range→exact), and its "destroy has no reward range" case is
+  inverted. `raidPanel.test.jsx`'s destroy fixture carries `{gold: [30,50]}` and asserts the card
+  shows it with a Reveal button. Red first, then green: `cs-test` 426/429 (3 pre-existing engine
+  ENOENT), `fe-test` 243/243, `fe-lint` clean.
+- **NOT done yet (next slices):** the garrison gold event (`requires: {minResolve: 67}` fate);
+  horses' earn source (still undecided — raids mirror gold, or rework "A Captured Herd").
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 

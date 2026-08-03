@@ -37,14 +37,15 @@ const unitCost = (unit) =>
 // caller doesn't need to know which it got.
 const formatAmount = (value) => (Array.isArray(value) ? `${value[0]}–${value[1]}` : value)
 
-// The reward view's shape varies by raid type (loot pays food+materials,
-// rescue pays roster, destroy/counter_event have no numeric reward — reward
-// is null and there's nothing to list or reveal).
+// The reward view's shape varies by raid type (loot pays food+materials+gold,
+// destroy pays gold, rescue pays roster; a counter_event has no numeric reward
+// — reward is null and there's nothing to list or reveal).
 const rewardParts = (reward) => {
   if (!reward) return []
   const parts = []
   if (reward.food !== undefined) parts.push(`${formatAmount(reward.food)} food`)
   if (reward.materials !== undefined) parts.push(`${formatAmount(reward.materials)} materials`)
+  if (reward.gold !== undefined) parts.push(`${formatAmount(reward.gold)} gold`)
   if (reward.roster) {
     for (const [type, value] of Object.entries(reward.roster)) parts.push(`${formatAmount(value)} ${type}`)
   }
