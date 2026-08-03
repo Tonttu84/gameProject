@@ -35,12 +35,9 @@ schema version **26**.
   down is the SSOT for the design and every slice's handoff). Shipped so far, one commit each:
   S1 pool + pure mechanics (`9d887b5`), S2 route + day-offer + `campaignView` (`79adbff`),
   S3 frontend screen (`a522827`), S4 old militia-purchase mechanic removed (`a99c767`),
-  S5 raid gold rewards (`23edf6b`).
-- **Next slices, either order (both small, both additive):**
-  1. **Garrison gold event** — a `requires: {minResolve: 67}` fate granting gold, same shape as
-     the existing `garrison_stores`/`garrison_night_sally` S9 fates. Fully specified; no
-     decisions left.
-  2. **Horses' earn source** — the one OPEN DESIGN QUESTION in Stage E. Cavalry/LightCavalry
+  S5 raid gold rewards (`23edf6b`), S6 garrison gold event.
+- **Next slice — the last one Stage E has left:**
+  1. **Horses' earn source** — the one OPEN DESIGN QUESTION in Stage E. Cavalry/LightCavalry
      hires spend `horses`, but nothing grants any yet, so those two pool entries are currently
      unreachable. Candidates: raids (mirrors gold, cheapest to build) or reworking the existing
      "A Captured Herd" event to grant a stockpile. **Grill the user before building this one.**
@@ -1170,8 +1167,9 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
 > with a full mechanic. **S1 (pool + core mechanics, pure service layer) SHIPPED 2026-08-02**, **S2
 > (route + day-offer generation + campaignView exposure, server-only) SHIPPED 2026-08-02**, **S3
 > (frontend Recruit phase screen) SHIPPED 2026-08-03**, **S4 (old militia-purchase mechanic
-> removed) SHIPPED 2026-08-03**, **S5 (raid gold rewards) SHIPPED 2026-08-03** — see the handoffs
-> below. **The garrison gold event and horses' earn source are NOT done yet** — staged like every
+> removed) SHIPPED 2026-08-03**, **S5 (raid gold rewards) SHIPPED 2026-08-03**, **S6 (garrison gold
+> event) SHIPPED 2026-08-03** — see the handoffs
+> below. **Horses' earn source is NOT done yet** — staged like every
 > other feature in
 > this doc (build one piece at a time, one commit-sized step per session). NOT blocked on the
 > worker-eating-food/
@@ -1445,6 +1443,31 @@ behaviour, no balance change beyond losing the old 2-food/1-material/1-worker-pe
   ENOENT), `fe-test` 243/243, `fe-lint` clean.
 - **NOT done yet (next slices):** the garrison gold event (`requires: {minResolve: 67}` fate);
   horses' earn source (still undecided — raids mirror gold, or rework "A Captured Herd").
+
+**S6 — the garrison gold event. ✅ SHIPPED 2026-08-03.** The second earn source for `gold`, and
+the piece the design already specified in full ("the besieged garrison sits on coin it can't spend
+inside the walls"). Purely additive server content — no schema bump, no route change, no frontend
+change (the HUD's gold readout landed in S3, and the client renders no effect types itself; a fate's
+gold shows up as its day-report log line like food/materials).
+- **New `gold` effect type** in `services/events.js`, handled exactly like `materials`:
+  `applyEffect` credits `resources.gold` floored at 0 with a visible `Gold +75.` log line (coin is
+  the caster lane's currency — the player must weigh the figure against a Mage at 100 / Priest at
+  80, so unlike `garrison`/`flag` it is deliberately NOT hidden), and `eventValence` classifies it
+  with food/materials so a gold fate reads `good`/`bad` to the augur's header and the pool leak
+  guards.
+- **`garrison_paychest`** ("The Garrison's Paychest", severity 1, `{type: 'gold', delta: +75}`,
+  `requires: {minResolve: 67}`) — the third determined-band trust-gift, sitting with
+  `garrison_stores`/`garrison_night_sally`. Sizing: 75 is just under a Priest (80), so the gift is
+  most of a caster but never a free one; severity 1 pairs it with `garrison_stores` as the
+  "something handed over the wall" tier. Gated like its siblings, so the unconditional base pool the
+  legibility tripwire guards is untouched.
+- **Tests:** `augury.test.js` +6 (`eventValence` gold both directions; an `applyEffect — gold`
+  describe: credit + visible figure, debit floored at zero, riding inside a `multi`; and in the S9
+  describe, the paychest's determined-band gate/effect/valence + not-at-66/yes-at-67, and a firing
+  case that banks the coin). Red first (6 new failures), then green: `cs-test` 431/434 — the 3
+  failures are the pre-existing `engine.integration.test.js` ENOENT (no compiled `./game` in this
+  environment).
+- **NOT done yet — the last Stage E slice:** horses' earn source (still undecided; grill first).
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 

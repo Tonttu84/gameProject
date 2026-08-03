@@ -272,6 +272,8 @@ describe('eventValence', () => {
     expect(eventValence({ type: 'food', delta: -1000 })).toBe('bad')
     expect(eventValence({ type: 'materials', delta: 25 })).toBe('good')
     expect(eventValence({ type: 'materials', delta: -15 })).toBe('bad')
+    expect(eventValence({ type: 'gold', delta: 75 })).toBe('good')
+    expect(eventValence({ type: 'gold', delta: -40 })).toBe('bad')
     expect(eventValence({ type: 'roster', unit: 'Soldier', delta: 20 })).toBe('good')
     expect(eventValence({ type: 'roster', unit: 'Soldier', factor: 0.9 })).toBe('bad')
     expect(eventValence({ type: 'all_roster', factor: 0.95 })).toBe('bad')
@@ -989,6 +991,36 @@ describe('siege spine (S8): three scripted guaranteed beats', () => {
   })
 })
 
+// ── The `gold` effect (Recruit phase, Stage E) ───────────────────────────────
+// Coin is the caster lane's currency (Mage 100 / Priest 80) and is earned from
+// raids; an event can now grant or take it too, exactly like food/materials —
+// a plain visible resource line, no hidden bookkeeping.
+describe('applyEffect — gold', () => {
+  const target = (gold = 0) => ({
+    day: 1, resources: { food: 5000, materials: 0, gold, horses: 0 }, roster: new Map(),
+  })
+
+  test('credits the coffers and reports the figure', () => {
+    const c = target(10)
+    const log = applyEffect(c, { type: 'gold', delta: 75 })
+    expect(c.resources.gold).toBe(85)
+    expect(log.join(' ')).toMatch(/\+75/)
+  })
+
+  test('a debit never drives the coffers below zero', () => {
+    const c = target(20)
+    applyEffect(c, { type: 'gold', delta: -50 })
+    expect(c.resources.gold).toBe(0)
+  })
+
+  test('rides inside a multi alongside another resource', () => {
+    const c = target(0)
+    applyEffect(c, { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'gold', delta: 40 }] })
+    expect(c.resources.food).toBe(3000)
+    expect(c.resources.gold).toBe(40)
+  })
+})
+
 // ── Garrison Resolve (slice 1): the standing track + its event gate ──────────
 // A hidden 0..100 relationship track (campaign.garrison.resolve) fed by the
 // `garrison` effect and read as an event prerequisite (requires
@@ -1317,6 +1349,7 @@ describe('garrison resolve-gated pool fates (S9)', () => {
   const has = (resolve, id) => at(resolve).some((e) => e.id === id)
   const stores = EVENT_POOL.find((e) => e.id === 'garrison_stores')
   const nightSally = EVENT_POOL.find((e) => e.id === 'garrison_night_sally')
+  const paychest = EVENT_POOL.find((e) => e.id === 'garrison_paychest')
   const recovery = EVENT_POOL.find((e) => e.id === 'garrison_recovery')
   const spurned = EVENT_POOL.find((e) => e.id === 'garrison_spurned')
 
@@ -1340,6 +1373,24 @@ describe('garrison resolve-gated pool fates (S9)', () => {
     expect(nightSally.effect.type).toBe('enemy_losses')
     expect(nightSally.effect.factor).toBeLessThan(1)
     expect(eventValenceFor(nightSally)).toBe('good')
+  })
+
+  // The garrison's coin (Stage E): the third determined-band trust-gift, and
+  // the second earn source for `gold` after raids — thematically the besieged
+  // sit on a paychest they cannot spend inside their own walls.
+  test('the paychest is a determined-band gift of gold', () => {
+    expect(garrisonLevel(paychest.requires.minResolve)).toBe('determined')
+    expect(paychest.effect.type).toBe('gold')
+    expect(paychest.effect.delta).toBeGreaterThan(0)
+    expect(eventValenceFor(paychest)).toBe('good')
+    expect(has(66, 'garrison_paychest')).toBe(false)
+    expect(has(67, 'garrison_paychest')).toBe(true)
+  })
+
+  test('firing the paychest banks real coin for the Recruit phase', () => {
+    const c = { day: 1, resources: { food: 0, materials: 0, gold: 5, horses: 0 }, roster: new Map() }
+    applyEffect(c, paychest.effect)
+    expect(c.resources.gold).toBe(5 + paychest.effect.delta)
   })
 
   test('the recovery choice is gated to the low band and forks mend vs turn-away', () => {

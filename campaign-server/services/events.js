@@ -169,8 +169,9 @@ export const EVENT_POOL = [
   // ── Garrison-support S9: resolve-gated pool fates ── More garrison fates
   // through the `requires` minResolve/maxResolve doors, gates aligned to the S5
   // level thresholds (low 1..33 / normal 34..66 / determined 67..100). A
-  // DETERMINED garrison (≥67) opens two trust-gifts: `garrison_stores` (a runner
-  // brings you the garrison's own stores) and `garrison_night_sally` (the
+  // DETERMINED garrison (≥67) opens the trust-gifts: `garrison_stores` (a runner
+  // brings you the garrison's own stores), `garrison_paychest` (coin they cannot
+  // spend behind their own walls) and `garrison_night_sally` (the
   // defenders sally on their own to maul the besiegers — distinct from the
   // player-committed sortie raid). A LOW garrison (≤33) opens the soured band:
   // `garrison_recovery` (mend the bond with stores, or turn away and fray it
@@ -178,6 +179,11 @@ export const EVENT_POOL = [
   // carries `requires`, so the unconditional base pool the legibility tripwire
   // guards is untouched.
   { id: 'garrison_stores', title: 'Stores from the Wall', description: 'Under cover of dark a file of the garrison lowers sacks and casks from a sally-port and passes them out to your foragers — their own stores, shared with the army that has stood by them. +2 t of food.', severity: 1, effect: { type: 'food', delta: +2000 }, requires: { minResolve: 67 } },
+  // The third determined-band gift, and the second earn source for `gold`
+  // after raids (docs/CAMPAIGN_PLAN.md, Recruit phase — Stage E): coin is no
+  // use to men who cannot get out to spend it, so a garrison that trusts you
+  // sends its paychest over the wall to the army that can put it to work.
+  { id: 'garrison_paychest', title: 'The Garrison\'s Paychest', description: 'Karrowgate\'s paymaster has a chest of coin and nowhere inside the walls to spend it. Trusting you to buy what the siege denies them, the garrison lowers it to your quartermasters. +75 gold.', severity: 1, effect: { type: 'gold', delta: +75 }, requires: { minResolve: 67 } },
   { id: 'garrison_night_sally', title: 'A Sally in the Night', description: 'Needing no prompting from you, the garrison throws open a postern in the small hours and falls on the sleeping siege lines; by dawn the enemy\'s forward works are a shambles of cut ropes and dead men.', severity: 3, effect: { type: 'enemy_losses', factor: 0.92 }, requires: { minResolve: 67 } },
   {
     id: 'garrison_recovery', title: 'A Chance to Mend the Bond', description: 'The garrison\'s trust has worn thin, but a grey-haired captain sends word over the wall: stand with them now, and the old faith might be rekindled.', severity: 2,
@@ -365,6 +371,7 @@ export const eventValence = (effect) => {
   switch (effect.type) {
     case 'food':
     case 'materials':
+    case 'gold':
       return effect.delta > 0 ? 'good' : effect.delta < 0 ? 'bad' : 'neutral'
     case 'roster':
       if (effect.delta !== undefined)
@@ -428,6 +435,12 @@ export function applyEffect(campaign, effect) {
   } else if (effect.type === 'materials') {
     campaign.resources.materials = Math.max(0, campaign.resources.materials + effect.delta)
     log.push(`Materials ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
+  } else if (effect.type === 'gold') {
+    // Coin (Recruit phase, Stage E): a plain visible resource like food and
+    // materials — the caster lane's currency, so the figure is exactly what
+    // the player weighs a Mage or Priest hire against.
+    campaign.resources.gold = Math.max(0, (campaign.resources.gold ?? 0) + effect.delta)
+    log.push(`Gold ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
   } else if (effect.type === 'roster') {
     const cur = campaign.roster.get(effect.unit) ?? 0
     const next =
