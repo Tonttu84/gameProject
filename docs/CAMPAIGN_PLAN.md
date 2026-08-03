@@ -52,8 +52,8 @@ schema version **26**.
 - **Also still open, unrelated to Stage E:** worker replenishment + workers-eat-food (paired,
   deferred, blocked on picking a mechanism — Recruit's worker drain raises its priority but
   doesn't gate it); fortification-durability erosion (blocked on morale design).
-- **Test baseline on a machine with no compiled `./game`:** `cs-test` is 426/429 — the 3
-  failures are `engine.integration.test.js` ENOENT and are EXPECTED there. `fe-test` 243/243,
+- **Test baseline on a machine with no compiled `./game`:** `cs-test` is 447/450 — the 3
+  failures are `engine.integration.test.js` ENOENT and are EXPECTED there. `fe-test` 244/244,
   `fe-lint` clean. Run everything through `scripts/dev.sh` (see `CLAUDE.md`).
 
 ### Project state (as of 2026-07-05)
