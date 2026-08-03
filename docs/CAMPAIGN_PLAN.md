@@ -35,8 +35,8 @@ schema version **27**.
   down is the SSOT for the design and every slice's handoff). Shipped so far, one commit each:
   S1 pool + pure mechanics (`9d887b5`), S2 route + day-offer + `campaignView` (`79adbff`),
   S3 frontend screen (`a522827`), S4 old militia-purchase mechanic removed (`a99c767`),
-  S5 raid gold rewards (`23edf6b`), S6 garrison gold event (`ea64d2a`), S7 horses' earn source,
-  **S8 lazy draw + phase lock + the Travellers card** (see its handoff below).
+  S5 raid gold rewards (`23edf6b`), S6 garrison gold event (`ea64d2a`), S7 horses' earn source
+  (`1a880ea`), S8 lazy draw + phase lock + the Travellers card (`339f4aa`).
   **Stage E is COMPLETE** — every entry in `RECRUIT_POOL` is reachable, both new resources
   have earn sources, and no open design question is left in it.
 - **Next up: nothing is queued.** Pick from the backlog below, or start something new (grill
