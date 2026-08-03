@@ -78,7 +78,9 @@ const PUBLIC_OPPORTUNITY_KEYS = [
   'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome',
   'resolved', 'reward', 'rewardReveal', 'source', 'strengthBand', 'title', 'type',
 ]
-const RAID_TYPES = ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event']
+const RAID_TYPES = [
+  'destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event', 'seize_horses',
+]
 
 const expectPublicOpportunities = (body) => {
   const raw = JSON.stringify(body)
@@ -275,6 +277,77 @@ describe('generateRaidOpportunities', () => {
         .filter((o) => o.reward?.gold)
         .map((o) => o.reward.gold / Object.values(o.targetForce).reduce((a, b) => a + b, 0))
       expect(Math.max(...perUnit) / Math.min(...perUnit)).toBeGreaterThan(2.5)
+    })
+  })
+
+  // Horses (docs/CAMPAIGN_PLAN.md "Recruit phase" — the resource Cavalry and
+  // LightCavalry hires SPEND, grilled 2026-08-03): a dedicated 4th card type,
+  // "The Horse Drove" — a dealer's string of remounts under hired guard,
+  // deliberately NOT the enemy's own cavalry, so it draws whatever the host is
+  // made of. Same payout shape as gold (guards × rate × a wide independent
+  // variance roll), so a fat herd under a thin guard is a real find.
+  describe('horses reward (seize_horses)', () => {
+    const sample = (over) => {
+      const out = []
+      for (let i = 0; i < 200; i++)
+        out.push(...generateRaidOpportunities(fakeCampaign(over), catalog))
+      return out
+    }
+
+    test('the drove is dealt from the ordinary pool like any other base target', () => {
+      const types = new Set(sample().map((o) => o.type))
+      expect(types.has('seize_horses')).toBe(true)
+      // Ungated: it is not keyed to the enemy having mounted units, so a host
+      // of pure infantry still offers it (the herd is a dealer's, not theirs).
+      const footOnly = new Set(sample({ enemy: { army: { Soldier: 600 } } }).map((o) => o.type))
+      expect(footOnly.has('seize_horses')).toBe(true)
+    })
+
+    test('only the drove pays horses, and it pays nothing else', () => {
+      const byType = {}
+      for (const o of sample()) (byType[o.type] ??= []).push(o)
+      expect(byType.seize_horses.every((o) => typeof o.reward.horses === 'number' && o.reward.horses > 0)).toBe(true)
+      // Horses ONLY — the card has one clean identity; loot is still the
+      // food/materials card and destroy/loot are still the coin cards.
+      expect(byType.seize_horses.every((o) => o.reward.food === undefined && o.reward.materials === undefined && o.reward.gold === undefined)).toBe(true)
+      for (const type of ['destroy_detachment', 'loot_supplies', 'rescue_troops'])
+        expect(byType[type].every((o) => o.reward.horses === undefined)).toBe(true)
+    })
+
+    test('the herd tracks the guard size — a ten-times bigger host pays far more', () => {
+      const mean = (opps) => {
+        const horses = opps.filter((o) => o.reward?.horses).map((o) => o.reward.horses)
+        return horses.reduce((a, b) => a + b, 0) / horses.length
+      }
+      expect(mean(sample({ enemy: { army: { Soldier: 600 } } }))).toBeGreaterThan(
+        mean(sample({ enemy: { army: { Soldier: 60 } } })) * 5,
+      )
+    })
+
+    test('…but loosely, so scouting can find a bargain herd under a thin guard', () => {
+      const perUnit = sample({ enemy: { army: { Soldier: 600 } } })
+        .filter((o) => o.reward?.horses)
+        .map((o) => o.reward.horses / Object.values(o.targetForce).reduce((a, b) => a + b, 0))
+      expect(Math.max(...perUnit) / Math.min(...perUnit)).toBeGreaterThan(2.5)
+    })
+
+    test('the horse count is buyable intel: a range that brackets the truth', () => {
+      const droves = sample().filter((o) => o.type === 'seize_horses')
+      expect(droves.length).toBeGreaterThan(0)
+      for (const o of droves) {
+        const [lo, hi] = o.rewardRange.horses
+        expect(lo).toBeLessThanOrEqual(o.reward.horses)
+        expect(hi).toBeGreaterThanOrEqual(o.reward.horses)
+      }
+    })
+
+    test('a hire is five horses, so a typical drove is worth a few of them', () => {
+      const horses = sample().filter((o) => o.reward?.horses).map((o) => o.reward.horses)
+      const mean = horses.reduce((a, b) => a + b, 0) / horses.length
+      // Sized against the 5-horses-per-hire cost: several hires' worth on
+      // average, never a single-card army.
+      expect(mean).toBeGreaterThan(5)
+      expect(mean).toBeLessThan(40)
     })
   })
 
@@ -600,6 +673,54 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     expect(res.body.campaign.resources.gold).toBe(18)
   })
 
+  // The horse drove (Stage E): the raid tap for the resource Cavalry and
+  // LightCavalry hires spend.
+  test('a won horse drove banks its horses and says so in the log', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ type: 'seize_horses', reward: { horses: 18 } })])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.resources.horses).toBe(18)
+    const entries = (await Campaign.findById(c.id)).log.flatMap((l) => l.entries)
+    expect(entries.some((e) => /18 horses/.test(e))).toBe(true)
+  })
+
+  test('a lost horse drove banks none', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ winner: 'red', blue_squads: { 1: { survivors: {}, wiped: true } } }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ type: 'seize_horses', reward: { horses: 18 } })])
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.resources.horses).toBe(0)
+  })
+
+  // The drove is loot-shaped, not destroy-shaped: its guard is a narrative
+  // slice (hired swords watching a dealer's herd), so beating it never thins
+  // the hidden enemy host.
+  test('a won horse drove leaves the enemy host untouched', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({
+        winner: 'blue',
+        blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } },
+        red_survivors: { Soldier: 2 },
+      }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({
+      type: 'seize_horses',
+      targetForce: { Soldier: 30 },
+      reward: { horses: 12 },
+    })])
+    await launch(c.id, 'd1-0', [1])
+    expect((await Campaign.findById(c.id)).enemy.army.get('Soldier')).toBe(540)
+  })
+
   test('a lost raid banks no gold', async () => {
     engine.runBattle.mockResolvedValue(
       battleResult({ winner: 'red', blue_squads: { 1: { survivors: {}, wiped: true } } }),
@@ -922,6 +1043,23 @@ describe('POST /api/campaigns/:id/raids/scout', () => {
     const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'reward' })
     expect(res.status).toBe(201)
     expect(res.body.campaign.raid.opportunities[0].reward).toEqual({ gold: 40 })
+    expectPublicOpportunities(res.body)
+  })
+
+  // Horses are the drove's ONLY numeric reward, so without a range the card
+  // would carry no buyable reward intel at all — the gap S5 closed on destroy.
+  test('reveal reward: a horse drove\'s horses show as a range, then exact', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [
+      REVEALABLE({ type: 'seize_horses', reward: { horses: 16 }, rewardRange: { horses: [12, 20] } }),
+    ])
+    await setPoints(c.id, RAID_SCOUT_COST_REVEAL)
+
+    expect((await getView(c.id)).body.raid.opportunities[0].reward).toEqual({ horses: [12, 20] })
+
+    const res = await scout(c.id, { action: 'reveal', raidId: 'd1-0', field: 'reward' })
+    expect(res.status).toBe(201)
+    expect(res.body.campaign.raid.opportunities[0].reward).toEqual({ horses: 16 })
     expectPublicOpportunities(res.body)
   })
 

@@ -305,6 +305,25 @@ describe('raid panel — scouting mini-game', () => {
     expect(screen.getByTestId('raid-enemy-d1-1')).toHaveTextContent('Enemy: 40–70 Soldier')
   })
 
+  // The horse drove (Stage E): horses are its ONLY numeric reward, so the card
+  // must list them and offer the reveal — otherwise it carries no buyable
+  // reward intel at all.
+  it('a horse drove lists its horses range with a reveal button', async () => {
+    getCampaigns.mockResolvedValue([withRaid([{
+      ...OPPORTUNITY_2,
+      id: 'd1-2',
+      type: 'seize_horses',
+      title: 'The Horse Drove',
+      reward: { horses: [12, 20] },
+    }])])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.getByTestId('raid-reward-d1-2')).toHaveTextContent('Reward: 12–20 horses')
+    expect(screen.getByTestId('raid-reveal-reward-d1-2')).toBeInTheDocument()
+  })
+
   it('revealing the reward spends points and swaps the range for the exact value', async () => {
     getCampaigns.mockResolvedValue([withRaid([OPPORTUNITY])])
     scoutRaidTarget.mockResolvedValue({

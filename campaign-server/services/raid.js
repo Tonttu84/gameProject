@@ -9,6 +9,8 @@ import {
   RAID_LOOT_MATERIALS,
   RAID_GOLD_PER_UNIT,
   RAID_GOLD_VARIANCE,
+  RAID_HORSES_PER_UNIT,
+  RAID_HORSES_VARIANCE,
   RAID_RESCUE_UNIT,
   RAID_RESCUE_COUNT,
   RAID_STRENGTH_BANDS,
@@ -43,6 +45,16 @@ const goldFor = (type, targetForce) => {
   return Math.max(1, Math.round(units * rate * randFloat(RAID_GOLD_VARIANCE)))
 }
 
+// Remounts off a won horse drove — the same guards × rate × wide-variance
+// shape as gold, for the same reason: the herd's worth and the strength of the
+// men watching it track each other only loosely, so a scout's reveal is what
+// separates a bargain from a poor ride. Only `seize_horses` has a rate.
+const horsesFor = (type, targetForce) => {
+  if (type !== 'seize_horses') return 0
+  const units = Object.values(targetForce).reduce((a, b) => a + b, 0)
+  return Math.max(1, Math.round(units * RAID_HORSES_PER_UNIT * randFloat(RAID_HORSES_VARIANCE)))
+}
+
 // Descending {min, label} table → the first phrase the value qualifies for.
 const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
 
@@ -68,6 +80,11 @@ const FLAVOR = {
     title: 'Riders Massing',
     description:
       'The scouts have found where a coming blow is being readied. Strike the muster first and it never falls.',
+  },
+  seize_horses: {
+    title: 'The Horse Drove',
+    description:
+      'A dealer\'s string of remounts moves under hired guard toward the enemy camp — sound animals, sold to whoever pays. Take them before they do.',
   },
 }
 
@@ -110,8 +127,9 @@ const rangeAround = (value, jitter = RAID_RANGE_JITTER) => {
 }
 
 // Ranges over the hidden reward, by reward shape — only the numeric keys the
-// reward actually has (loot pays food+materials+gold, destroy pays gold,
-// rescue pays roster). A counter_event reward is {slot}: no number to reveal,
+// reward actually has (loot pays food+materials+gold, destroy pays gold, the
+// horse drove pays horses and nothing else, rescue pays roster). A
+// counter_event reward is {slot}: no number to reveal,
 // so rewardRange is null and only enemy intel is buyable on those cards.
 const rewardRangeOf = (reward) => {
   if (!reward) return null
@@ -119,6 +137,7 @@ const rewardRangeOf = (reward) => {
   if (typeof reward.food === 'number') range.food = rangeAround(reward.food)
   if (typeof reward.materials === 'number') range.materials = rangeAround(reward.materials)
   if (typeof reward.gold === 'number') range.gold = rangeAround(reward.gold)
+  if (typeof reward.horses === 'number') range.horses = rangeAround(reward.horses)
   if (reward.roster) {
     range.roster = {}
     for (const [type, n] of Object.entries(reward.roster)) range.roster[type] = rangeAround(n)
@@ -159,9 +178,13 @@ const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot, s
           ? { slot: counterSlot }
           : type === 'garrison_sortie'
             ? sortieReward
-            : // destroy_detachment: the destruction is still the point, but the
-              // field is stripped afterwards — that coin is the caster lane's.
-              { gold: goldFor(type, targetForce) }
+            : type === 'seize_horses'
+              ? // The drove pays remounts and nothing else — one clean identity,
+                // so the reveal answers exactly one question.
+                { horses: horsesFor(type, targetForce) }
+              : // destroy_detachment: the destruction is still the point, but the
+                // field is stripped afterwards — that coin is the caster lane's.
+                { gold: goldFor(type, targetForce) }
   const flavor =
     type === 'garrison_sortie'
       ? { title: sortieEvent.title, description: sortieEvent.description }
@@ -188,8 +211,11 @@ const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot, s
   }
 }
 
-// The pool of ordinary raid types a base/scouted target draws from.
-const RAID_POOL = ['destroy_detachment', 'loot_supplies', 'rescue_troops']
+// The pool of ordinary raid types a base/scouted target draws from. The horse
+// drove is an ordinary member (uniform draw, ~1 in 4): cavalry is an OPTIONAL
+// lane, so its supply is never guaranteed — no turn is promised a drove, and
+// none is promised anything else either.
+const RAID_POOL = ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'seize_horses']
 const randomRaidType = () => RAID_POOL[Math.floor(Math.random() * RAID_POOL.length)]
 
 // Deal the turn's opening board: RAID_BASE_TARGETS base target(s) plus ONE
@@ -295,6 +321,13 @@ export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
     campaign.resources.gold += gold
     entries.push(`Plunder taken: +${+(food / 1000).toFixed(1)} t of food, +${materials} materials.`)
     if (gold) entries.push(`A paychest rode with the wagons: +${gold} gold.`)
+  } else if (opportunity.type === 'seize_horses') {
+    // Loot-shaped: the guard is a narrative slice (hired swords watching a
+    // dealer's herd, not the enemy's own riders), so nothing is subtracted
+    // from the hidden host — winning takes the animals, not their strength.
+    const { horses = 0 } = opportunity.reward ?? {}
+    campaign.resources.horses += horses
+    entries.push(`The drove is run off to your own lines: +${horses} horses.`)
   } else if (opportunity.type === 'rescue_troops') {
     for (const [type, n] of Object.entries(opportunity.reward?.roster ?? {})) {
       campaign.roster.set(type, (campaign.roster.get(type) ?? 0) + n)

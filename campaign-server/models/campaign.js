@@ -36,7 +36,13 @@ const raidOpportunitySchema = new mongoose.Schema(
     id: { type: String, required: true },
     type: {
       type: String,
-      enum: ['destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event', 'garrison_sortie'],
+      // Additive only — a new value leaves every stored opportunity readable,
+      // so this needs no CAMPAIGN_SCHEMA_VERSION bump (in-flight campaigns
+      // simply never dealt the newest card).
+      enum: [
+        'destroy_detachment', 'loot_supplies', 'rescue_troops', 'counter_event',
+        'garrison_sortie', 'seize_horses',
+      ],
       required: true,
     },
     title: { type: String, required: true },

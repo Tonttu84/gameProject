@@ -274,6 +274,8 @@ describe('eventValence', () => {
     expect(eventValence({ type: 'materials', delta: -15 })).toBe('bad')
     expect(eventValence({ type: 'gold', delta: 75 })).toBe('good')
     expect(eventValence({ type: 'gold', delta: -40 })).toBe('bad')
+    expect(eventValence({ type: 'horses', delta: 25 })).toBe('good')
+    expect(eventValence({ type: 'horses', delta: -10 })).toBe('bad')
     expect(eventValence({ type: 'roster', unit: 'Soldier', delta: 20 })).toBe('good')
     expect(eventValence({ type: 'roster', unit: 'Soldier', factor: 0.9 })).toBe('bad')
     expect(eventValence({ type: 'all_roster', factor: 0.95 })).toBe('bad')
@@ -1018,6 +1020,69 @@ describe('applyEffect — gold', () => {
     applyEffect(c, { type: 'multi', effects: [{ type: 'food', delta: -2000 }, { type: 'gold', delta: 40 }] })
     expect(c.resources.food).toBe(3000)
     expect(c.resources.gold).toBe(40)
+  })
+})
+
+// ── The `horses` effect (Recruit phase, Stage E) ─────────────────────────────
+// The second tap for horses beside the raid board's drove card: an event can
+// hand you a stockpile. Same visible-resource treatment as gold — a hire is 5
+// horses, so the player must be able to count what a grant is worth.
+describe('applyEffect — horses', () => {
+  const target = (horses = 0) => ({
+    day: 1, resources: { food: 5000, materials: 0, gold: 0, horses }, roster: new Map(),
+  })
+
+  test('adds remounts to the stockpile and reports the figure', () => {
+    const c = target(5)
+    const log = applyEffect(c, { type: 'horses', delta: 25 })
+    expect(c.resources.horses).toBe(30)
+    expect(log.join(' ')).toMatch(/\+25/)
+  })
+
+  test('a loss never drives the stockpile below zero', () => {
+    const c = target(10)
+    applyEffect(c, { type: 'horses', delta: -30 })
+    expect(c.resources.horses).toBe(0)
+  })
+
+  test('rides inside a multi alongside another resource', () => {
+    const c = target(0)
+    applyEffect(c, { type: 'multi', effects: [{ type: 'materials', delta: -20 }, { type: 'horses', delta: 25 }] })
+    expect(c.resources.materials).toBe(0)
+    expect(c.resources.horses).toBe(25)
+  })
+})
+
+// A Captured Herd is the event tap for horses (grilled 2026-08-03): its fork
+// gained a THIRD branch — keep the herd as remounts — beside the two it always
+// had. The three answer different needs: mount the men you have NOW, bank a
+// flexible stockpile for the Recruit phase, or cash the herd in.
+describe('A Captured Herd — the three-way fork', () => {
+  const herd = EVENT_POOL.find((e) => e.id === 'horses')
+  const branch = (id) => herd.choices.find((c) => c.id === id)
+
+  test('all three branches are offered', () => {
+    expect(herd.choices.map((c) => c.id).sort()).toEqual(['keep_the_herd', 'mount_veterans', 'sell_herd'])
+  })
+
+  test('the new branch banks a stockpile and spends nothing', () => {
+    const keep = branch('keep_the_herd')
+    expect(keep.effect.type).toBe('horses')
+    expect(keep.effect.delta).toBeGreaterThan(0)
+    // Headcount parity with mounting the veterans: the same herd, kept rather
+    // than used, and a hire spends 5 — so it divides into whole hires.
+    expect(keep.effect.delta % 5).toBe(0)
+    const c = { day: 1, resources: { food: 0, materials: 0, gold: 0, horses: 0 }, roster: new Map() }
+    applyEffect(c, keep.effect)
+    expect(c.resources.horses).toBe(keep.effect.delta)
+  })
+
+  test('the two original branches are untouched', () => {
+    const mount = branch('mount_veterans').effect.effects
+    expect(mount.some((p) => p.type === 'convert' && p.from === 'Soldier' && p.to === 'Cavalry')).toBe(true)
+    const sell = branch('sell_herd').effect.effects
+    expect(sell.some((p) => p.type === 'materials' && p.delta > 0)).toBe(true)
+    expect(sell.some((p) => p.type === 'food' && p.delta > 0)).toBe(true)
   })
 })
 

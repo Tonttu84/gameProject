@@ -226,15 +226,23 @@ export const EVENT_POOL = [
       { id: 'march_on',   label: 'March on and trust to providence',       description: 'Keep the stores and the pace — and let the fever take whom it takes.', effect: { type: 'all_roster', factor: 0.98 } },
     ],
   },
-  // A major boon with a real fork: turn footmen into a mounted arm, or cash
-  // the herd in for supply. The mount branch is the `convert` mechanic's first
-  // use — Soldiers become Cavalry (a placeable/spawnable engine unit), at a
-  // cost in materials for tack and shoeing.
+  // A major boon with a real three-way fork: turn footmen into a mounted arm
+  // NOW, bank the animals as remounts for the Recruit phase, or cash the herd
+  // in for supply. The mount branch is the `convert` mechanic's first use —
+  // Soldiers become Cavalry (a placeable/spawnable engine unit), at a cost in
+  // materials for tack and shoeing. The keep branch (Stage E, grilled
+  // 2026-08-03) is the EVENT tap for `horses`, beside the raid board's horse
+  // drove: headcount parity with mounting the veterans, so the fork is a
+  // choice of KIND, not of size — upgrade the men you already have at once,
+  // versus a stockpile that grows the army instead but spends food, materials
+  // and irreplaceable workers a hire at a time, across days of the one-hire
+  // cadence.
   {
     id: 'horses', title: 'A Captured Herd', description: 'Your outriders drive in a herd of enemy remounts — sound warhorses by the dozen, yours to use as you will.', severity: 3,
     effect: { type: 'choice' }, valence: 'good',
     choices: [
       { id: 'mount_veterans', label: 'Mount your veterans as cavalry', description: 'Put your steadiest footmen in the saddle. Saddlery and shoeing eat into your materials, but you raise a mounted arm from your own ranks.', effect: { type: 'multi', effects: [{ type: 'convert', from: 'Soldier', to: 'Cavalry', count: 25 }, { type: 'materials', delta: -20 }] } },
+      { id: 'keep_the_herd',  label: 'Keep the herd at the horse lines', description: 'Spend none of them today. The animals stand ready at the picket, and your recruiting officers put a rider on each in their own time.', effect: { type: 'horses', delta: +25 } },
       { id: 'sell_herd',      label: 'Sell the herd to the baggage train', description: 'Trade the horses to the quartermasters for supply. The stores swell and the wagons roll a little heavier.', effect: { type: 'multi', effects: [{ type: 'materials', delta: +30 }, { type: 'food', delta: +4000 }] } },
     ],
   },
@@ -372,6 +380,7 @@ export const eventValence = (effect) => {
     case 'food':
     case 'materials':
     case 'gold':
+    case 'horses':
       return effect.delta > 0 ? 'good' : effect.delta < 0 ? 'bad' : 'neutral'
     case 'roster':
       if (effect.delta !== undefined)
@@ -441,6 +450,13 @@ export function applyEffect(campaign, effect) {
     // the player weighs a Mage or Priest hire against.
     campaign.resources.gold = Math.max(0, (campaign.resources.gold ?? 0) + effect.delta)
     log.push(`Gold ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
+  } else if (effect.type === 'horses') {
+    // Remounts (Recruit phase, Stage E): the event tap for the resource
+    // Cavalry/LightCavalry hires spend, beside the raid board's horse drove.
+    // Visible like gold — a hire costs five, so the figure is what the player
+    // counts hires in.
+    campaign.resources.horses = Math.max(0, (campaign.resources.horses ?? 0) + effect.delta)
+    log.push(`Horses ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
   } else if (effect.type === 'roster') {
     const cur = campaign.roster.get(effect.unit) ?? 0
     const next =

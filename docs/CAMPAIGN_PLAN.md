@@ -35,12 +35,20 @@ schema version **26**.
   down is the SSOT for the design and every slice's handoff). Shipped so far, one commit each:
   S1 pool + pure mechanics (`9d887b5`), S2 route + day-offer + `campaignView` (`79adbff`),
   S3 frontend screen (`a522827`), S4 old militia-purchase mechanic removed (`a99c767`),
-  S5 raid gold rewards (`23edf6b`), S6 garrison gold event.
-- **Next slice — the last one Stage E has left:**
-  1. **Horses' earn source** — the one OPEN DESIGN QUESTION in Stage E. Cavalry/LightCavalry
-     hires spend `horses`, but nothing grants any yet, so those two pool entries are currently
-     unreachable. Candidates: raids (mirrors gold, cheapest to build) or reworking the existing
-     "A Captured Herd" event to grant a stockpile. **Grill the user before building this one.**
+  S5 raid gold rewards (`23edf6b`), S6 garrison gold event (`ea64d2a`), S7 horses' earn source.
+  **Stage E is COMPLETE** — every entry in `RECRUIT_POOL` is now reachable, both new resources
+  have earn sources, and no open design question is left in it.
+- **Next up: nothing is queued.** Pick from the backlog below, or start something new (grill
+  first). The nearest candidates:
+  1. **Worker replenishment + workers-eat-food** — paired, deferred, blocked on picking a
+     mechanism. Recruit's worker drain (every troop-lane hire permanently shrinks
+     `workers.total`) raises its priority; now that Cavalry/LightCavalry are actually reachable
+     there is one more sink pulling on it.
+  2. **Fervor-moving events** — `recruit.fervor` starts at 0 and NOTHING moves it yet, so the
+     boost path is dead content today. Same additive shape as the S9 resolve-gated fates.
+  3. **Nomad allies** (new, from the S7 grill) — an ally that supplies horses, as an event or a
+     raid card. Deliberately left for later; no design done.
+  4. Fortification-durability erosion (blocked on morale design).
 - **Also still open, unrelated to Stage E:** worker replenishment + workers-eat-food (paired,
   deferred, blocked on picking a mechanism — Recruit's worker drain raises its priority but
   doesn't gate it); fortification-durability erosion (blocked on morale design).
@@ -1168,8 +1176,9 @@ Both steps exactly as above; `tests/raid.test.js` green (user-run).
 > (route + day-offer generation + campaignView exposure, server-only) SHIPPED 2026-08-02**, **S3
 > (frontend Recruit phase screen) SHIPPED 2026-08-03**, **S4 (old militia-purchase mechanic
 > removed) SHIPPED 2026-08-03**, **S5 (raid gold rewards) SHIPPED 2026-08-03**, **S6 (garrison gold
-> event) SHIPPED 2026-08-03** — see the handoffs
-> below. **Horses' earn source is NOT done yet** — staged like every
+> event) SHIPPED 2026-08-03**, **S7 (horses' earn source) SHIPPED 2026-08-03 — STAGE E IS
+> COMPLETE** — see the handoffs
+> below. Staged like every
 > other feature in
 > this doc (build one piece at a time, one commit-sized step per session). NOT blocked on the
 > worker-eating-food/
@@ -1222,9 +1231,9 @@ options?) is an implementation detail, not decided.
   later the same way; not designed now.
 
 **New resource — `horses`.** Consumed (spent, not just gated on) by Cavalry/LightCavalry hires.
-Earn source **not yet decided** — raids are the likely default (mirrors gold), possibly also the
-existing "A Captured Herd" event reworked to grant a `horses` stockpile instead of/alongside its
-current `convert` effect. Open question, not blocking.
+Earn source **decided + shipped in S7** (grilled 2026-08-03): the `seize_horses` raid card ("The
+Horse Drove") plus a `horses` effect type whose first use is a new third branch on "A Captured
+Herd". Neither is guaranteed — the cavalry lane is optional by design. See the S7 handoff below.
 
 **Recruiting Fervor** — new plain-integer campaign stat (name locked; code identifier TBD, e.g.
 `campaign.recruitingFervor`). Starts at **0**. **Uncapped in both directions** — can go negative
@@ -1468,6 +1477,54 @@ gold shows up as its day-report log line like food/materials).
   failures are the pre-existing `engine.integration.test.js` ENOENT (no compiled `./game` in this
   environment).
 - **NOT done yet — the last Stage E slice:** horses' earn source (still undecided; grill first).
+
+**S7 — horses' earn source. ✅ SHIPPED 2026-08-03. Stage E is COMPLETE with this.** The last open
+design question in Stage E, grilled end-to-end before writing (per `CLAUDE.md`). Cavalry and
+LightCavalry were unreachable pool entries until now — they spend `horses` and nothing granted any.
+**Two taps, neither guaranteed: the cavalry lane is optional by design.**
+- **Tap 1 — a new raid card, `seize_horses` ("The Horse Drove").** A 4th member of `RAID_POOL`
+  beside destroy/loot/rescue, **ungated**. The user's steer: the herd is deliberately NOT the
+  enemy's own remounts — it's a dealer's string moving under hired guard, sold to whoever pays — so
+  the card draws regardless of what the host is made of, and a guard slice of any composition makes
+  sense. Payout is the S5 gold shape exactly: guards × `RAID_HORSES_PER_UNIT` (0.4) ×
+  `RAID_HORSES_VARIANCE` ([0.5, 2.0], independent of the size jitter), min 1 — so the
+  bargain-target property holds here too. Against the starting host that's ~4–40 horses, typically
+  ~18 (≈3–4 hires at 5 horses each), shrinking as the enemy is worn down. **Horses only**, no
+  gold/food rider — one clean identity, so the reveal answers exactly one question. **Scoutable**
+  like every other numeric reward (`rewardRangeOf` → `rewardView` → RaidPanel's Reveal button);
+  since horses are the card's ONLY number, skipping this would have left it with no buyable reward
+  intel at all — the gap S5 had just closed on `destroy_detachment`. **Loot-shaped**, so a won drove
+  never thins the hidden host (the guard is narrative, not the enemy's strength).
+- **Tap 2 — a `horses` effect type + "A Captured Herd" gains a third branch.** The effect mirrors
+  S6's `gold` (credits `resources.horses` floored at zero, VISIBLE `Horses +25.` log line — a hire
+  costs five, so the figure is what the player counts hires in; classified with food/materials/gold
+  in `eventValence`). The Herd is now a three-way fork with **both original branches untouched**:
+  mount your veterans now (25 Soldier → Cavalry, −20 materials) / **keep the herd at the horse lines
+  (+25 horses)** / sell it (+30 materials, +4 t food). 25 is headcount parity with `mount_veterans`,
+  which makes the fork a choice of KIND rather than size: upgrade men you already have, at once,
+  versus a stockpile that GROWS the army but spends food, materials and irreplaceable workers a hire
+  at a time across ≥5 days of the one-hire cadence. Branch text stays digit-free per the
+  `augury.test.js` tripwire; the number lives in the post-resolution log line.
+- **Draw-odds consequence, accepted deliberately:** a 4th pool type drops destroy/loot/rescue from
+  ~33% to ~25% of the single free base card each turn. Kept as a plain uniform array rather than
+  introducing a weighting mechanism — a horse card roughly every fourth turn (more if targets are
+  bought) matches "cavalry is optional but real".
+- **No `CAMPAIGN_SCHEMA_VERSION` bump:** the raid-type enum gained a value, which leaves every
+  stored opportunity readable; in-flight campaigns simply never dealt the card. Same reasoning as
+  S5's no-bump.
+- **Tests:** `raid.test.js` +10 (a `horses reward` describe: dealt from the ordinary pool AND from a
+  pure-infantry host — the ungated property; only the drove pays horses and it pays nothing else;
+  payout tracks guard size; per-guard payoff spreads >2.5× across 200 draws — the bargain property;
+  the range brackets the truth; mean sized in hires — plus route cases for banking + logging a won
+  drove, a lost one banking none, a won drove leaving the host untouched, and the range→exact
+  reveal). `augury.test.js` +6 (valence both directions, an `applyEffect — horses` describe, and a
+  three-way-fork describe covering the new branch's grant, its whole-hire divisibility, and that
+  both original branches survive). `raidPanel.test.jsx` +1 (a drove card lists its horses range with
+  a Reveal button). Red first (16 new failures), then green: `cs-test` 447/450 (3 pre-existing
+  engine ENOENT), `fe-test` 244/244, `fe-lint` clean.
+- **Deferred by the grill, recorded not built:** nomad allies granting horses (as an event OR a raid
+  card); horses as a food/upkeep drain; horses returning to the pool when cavalry die.
+  Cavalry/LightCavalry hire costs stay at 5 horses.
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 

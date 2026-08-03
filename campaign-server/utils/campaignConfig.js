@@ -41,8 +41,9 @@ export const STARTING_FOOD = 50000
 export const STARTING_MATERIALS = 200
 // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"): both
 // start at 0 — a fresh campaign has no gold or remounts, only the raw
-// materials/food/workers economy. Earned via raids (gold + horses) and,
-// later, additive events (garrison gold).
+// materials/food/workers economy. Both are earned the same two ways: off the
+// raid board (destroy/loot pay gold, the horse drove pays horses) and from
+// events (the garrison's paychest; A Captured Herd's keep-the-herd branch).
 export const STARTING_GOLD = 0
 export const STARTING_HORSES = 0
 
@@ -201,6 +202,16 @@ export const RAID_GOLD_PER_UNIT = { destroy_detachment: 1.2, loot_supplies: 0.8 
 // buying the reward field with scouting points worth the points (user,
 // 2026-08-03) — without it, strengthBand alone would tell you everything.
 export const RAID_GOLD_VARIANCE = [0.5, 2.0]
+// Horses off a won `seize_horses` raid — "The Horse Drove", a dealer's string
+// of remounts under hired guard (grilled 2026-08-03). Deliberately NOT the
+// enemy's own cavalry: the card is ungated, so it draws whatever the host is
+// made of, and beating the guard never thins the host. Same shape as gold —
+// guard headcount × rate × a WIDE independent variance roll — so the
+// bargain-target property holds here too and buying the reveal is worth the
+// points. At 5 horses per Cavalry/LightCavalry hire, 0.4 makes a typical drove
+// a few hires' worth, never a mounted army off one card.
+export const RAID_HORSES_PER_UNIT = 0.4
+export const RAID_HORSES_VARIANCE = [0.5, 2.0]
 export const RAID_RESCUE_UNIT = 'Soldier'
 export const RAID_RESCUE_COUNT = [10, 25]
 // What the scouts SAY a raid target is — detachment-scale phrases, by unit
