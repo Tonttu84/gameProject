@@ -1,11 +1,13 @@
 /**
- * Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops", S3):
- * a screen between Raids and Deploy showing up to 2 server-drawn hire options
- * a day. Cost/count are already resolved by campaignView against LIVE
- * resources (never stale) — this panel only submits the pick through
- * POST /:id/recruit/hire, either {entryId} (hire) or {skip: true} (decline).
- * Either way spends the day's one-hire cadence (hiredToday flips true,
- * options clear).
+ * Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+ * a screen between Raids and Deploy showing the day's 2 server-drawn hire
+ * options. Entering the phase DRAWS the offer (POST /:id/recruit/open) — it
+ * doesn't exist until then, so this turn's raid gold is in the stores when the
+ * pool is judged. Opening also closes the camp for the day server-side, which
+ * is why this screen has no way back, and why the hire is the only way on:
+ * there is no skip, and Deploy stays locked until hiredToday. Cost/count are
+ * already resolved by campaignView against LIVE resources (never stale) — the
+ * panel only submits the pick.
  */
 
 import React from 'react'
@@ -27,9 +29,10 @@ vi.mock('../services/api', () => ({
   postCampaignBattle: vi.fn(),
   endCampaignDay: vi.fn(),
   hireRecruit: vi.fn(),
+  openRecruit: vi.fn(),
 }))
 
-import { getInfo, getMap, getCampaigns, hireRecruit } from '../services/api'
+import { getInfo, getMap, getCampaigns, hireRecruit, openRecruit } from '../services/api'
 import App from '../App'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
 import { marchToRaids } from './helpers/nav'
@@ -50,6 +53,11 @@ const MAGE_OPTION = {
   id: 'mage', unit: 'Mage', lane: 'caster', count: 1,
   cost: { gold: 100 }, secondUnit: null,
 }
+// The pad that makes the mandatory hire always possible — costs nothing.
+const TRAVELLERS_OPTION = {
+  id: 'travellers', unit: 'Militia', lane: 'troop', count: 5,
+  cost: {}, secondUnit: null,
+}
 
 // Raids screen needs an already-accepted augury to be reachable via marchToRaids.
 const withRecruit = (recruit, { resources, workers } = {}) => ({
@@ -60,7 +68,13 @@ const withRecruit = (recruit, { resources, workers } = {}) => ({
   recruit,
 })
 
-const toRecruitScreen = async () => {
+// The state before the phase is opened: no offer exists yet.
+const UNOPENED = { fervor: 0, boosted: false, hiredToday: false, drawn: false, options: [] }
+
+// Walk to the Recruit screen. Entering it is what draws the offer, so the
+// openRecruit response — not the initial campaign — carries the options.
+const toRecruitScreen = async (drawnRecruit, opts) => {
+  openRecruit.mockResolvedValue(withRecruit({ ...drawnRecruit, drawn: true }, opts))
   await marchToRaids()
   fireEvent.click(await screen.findByTestId('to-recruit'))
 }
@@ -78,9 +92,7 @@ beforeEach(() => {
 
 describe('recruit panel — offer', () => {
   it('recruiting lives on its own screen after the raids, not before', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit({ fervor: 0, boosted: false, hiredToday: false, options: [MILITIA_OPTION] }),
-    ])
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
     render(<App />)
     await screen.findByText(/War Council/)
 
@@ -88,19 +100,31 @@ describe('recruit panel — offer', () => {
     await marchToRaids()
     expect(screen.queryByTestId('recruit-panel')).not.toBeInTheDocument()
 
+    openRecruit.mockResolvedValue(
+      withRecruit({ ...UNOPENED, drawn: true, options: [MILITIA_OPTION] }),
+    )
     fireEvent.click(await screen.findByTestId('to-recruit'))
     expect(await screen.findByTestId('recruit-panel')).toBeInTheDocument()
   })
 
-  it('shows Fervor, the boosted flag, and each option\'s resolved count/cost', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit({ fervor: 12, boosted: true, hiredToday: false, options: [MILITIA_OPTION, MAGE_OPTION] }),
-    ])
+  it('entering the phase is what draws the day\'s offer', async () => {
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
     render(<App />)
     await screen.findByText(/War Council/)
-    await toRecruitScreen()
 
-    expect(screen.getByTestId('recruit-fervor')).toHaveTextContent('Recruiting Fervor: 12')
+    await toRecruitScreen({ ...UNOPENED, options: [MILITIA_OPTION] })
+
+    await waitFor(() => expect(openRecruit).toHaveBeenCalledWith('c1'))
+    expect(await screen.findByTestId('recruit-card-militia')).toBeInTheDocument()
+  })
+
+  it('shows Fervor, the boosted flag, and each option\'s resolved count/cost', async () => {
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await toRecruitScreen({ fervor: 12, boosted: true, hiredToday: false, options: [MILITIA_OPTION, MAGE_OPTION] })
+
+    expect(await screen.findByTestId('recruit-fervor')).toHaveTextContent('Recruiting Fervor: 12')
     expect(screen.getByTestId('recruit-fervor')).toHaveTextContent('boosted')
     expect(screen.getByTestId('recruit-card-militia')).toHaveTextContent('20 Militia')
     expect(screen.getByTestId('recruit-cost-militia')).toHaveTextContent('40 food, 20 materials, 20 workers')
@@ -109,91 +133,115 @@ describe('recruit panel — offer', () => {
   })
 
   it('shows the caster boost\'s bonus second hire on the card', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit({
-        fervor: 80, boosted: true, hiredToday: false,
-        options: [{ ...MAGE_OPTION, cost: { gold: 100 }, secondUnit: 'Priest' }],
-      }),
-    ])
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
     render(<App />)
     await screen.findByText(/War Council/)
-    await toRecruitScreen()
+    await toRecruitScreen({
+      fervor: 80, boosted: true, hiredToday: false,
+      options: [{ ...MAGE_OPTION, cost: { gold: 100 }, secondUnit: 'Priest' }],
+    })
 
-    expect(screen.getByTestId('recruit-card-mage')).toHaveTextContent('1 Mage + 1 Priest')
+    expect(await screen.findByTestId('recruit-card-mage')).toHaveTextContent('1 Mage + 1 Priest')
+  })
+
+  it('the free Travellers card is always hireable, whatever the stores hold', async () => {
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await toRecruitScreen(
+      { ...UNOPENED, options: [TRAVELLERS_OPTION] },
+      { resources: { food: 0, materials: 0, gold: 0, horses: 0 } },
+    )
+
+    expect(await screen.findByTestId('recruit-hire-travellers')).toBeEnabled()
+    expect(screen.getByTestId('recruit-cost-travellers')).toHaveTextContent(/free/i)
   })
 
   it('hiring an option posts {entryId} and refreshes the view', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit(
-        { fervor: 0, boosted: false, hiredToday: false, options: [MILITIA_OPTION] },
-        { resources: { materials: 100 } }, // fixture default materials is 0; Militia needs 20
-      ),
-    ])
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
     hireRecruit.mockResolvedValue(
-      withRecruit({ fervor: 0, boosted: false, hiredToday: true, options: [] }),
+      withRecruit({ fervor: 0, boosted: false, hiredToday: true, drawn: true, options: [] }),
     )
     render(<App />)
     await screen.findByText(/War Council/)
-    await toRecruitScreen()
+    await toRecruitScreen(
+      { ...UNOPENED, options: [MILITIA_OPTION] },
+      { resources: { materials: 100 } }, // fixture default materials is 0; Militia needs 20
+    )
 
-    fireEvent.click(screen.getByTestId('recruit-hire-militia'))
+    fireEvent.click(await screen.findByTestId('recruit-hire-militia'))
     await waitFor(() => expect(hireRecruit).toHaveBeenCalledWith('c1', { entryId: 'militia' }))
     expect(await screen.findByTestId('recruit-done')).toBeInTheDocument()
     expect(screen.queryByTestId('recruit-card-militia')).not.toBeInTheDocument()
   })
 
-  it('skipping posts {skip: true} and refreshes the view', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit({ fervor: 0, boosted: false, hiredToday: false, options: [MILITIA_OPTION] }, { resources: { materials: 100 } }),
-    ])
-    hireRecruit.mockResolvedValue(
-      withRecruit({ fervor: 0, boosted: false, hiredToday: true, options: [] }),
-    )
-    render(<App />)
-    await screen.findByText(/War Council/)
-    await toRecruitScreen()
-
-    fireEvent.click(screen.getByTestId('recruit-skip'))
-    await waitFor(() => expect(hireRecruit).toHaveBeenCalledWith('c1', { skip: true }))
-    expect(await screen.findByTestId('recruit-done')).toBeInTheDocument()
-  })
-
   it('an unaffordable option is disabled with a reason', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit(
-        { fervor: 0, boosted: false, hiredToday: false, options: [MAGE_OPTION] },
-        { resources: { gold: 50 } }, // needs 100
-      ),
-    ])
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
     render(<App />)
     await screen.findByText(/War Council/)
-    await toRecruitScreen()
+    await toRecruitScreen(
+      { ...UNOPENED, options: [MAGE_OPTION] },
+      { resources: { gold: 50 } }, // needs 100
+    )
 
-    const hireButton = screen.getByTestId('recruit-hire-mage')
+    const hireButton = await screen.findByTestId('recruit-hire-mage')
     expect(hireButton).toBeDisabled()
     expect(hireButton).toHaveAttribute('title', 'Not enough stores to hire this')
   })
+})
 
-  it('hiredToday true shows nothing left to pick and no option cards', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit({ fervor: 0, boosted: false, hiredToday: true, options: [] }),
-    ])
+// The hire is the only exit: opening the phase closed the camp server-side, so
+// there is nothing to go back to, no way to decline, and no marching off
+// without having recruited.
+describe('recruit panel — the hire is the only way forward', () => {
+  it('offers no way to skip the day\'s hire', async () => {
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
     render(<App />)
     await screen.findByText(/War Council/)
-    await toRecruitScreen()
+    await toRecruitScreen({ ...UNOPENED, options: [MILITIA_OPTION, TRAVELLERS_OPTION] })
 
-    expect(screen.getByTestId('recruit-done')).toBeInTheDocument()
+    await screen.findByTestId('recruit-card-militia')
     expect(screen.queryByTestId('recruit-skip')).not.toBeInTheDocument()
   })
 
-  it('nothing affordable today shows the empty state, not a blank panel', async () => {
-    getCampaigns.mockResolvedValue([
-      withRecruit({ fervor: 0, boosted: false, hiredToday: false, options: [] }),
-    ])
+  it('offers no way back to the raids — the camp is closed for the day', async () => {
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
     render(<App />)
     await screen.findByText(/War Council/)
-    await toRecruitScreen()
+    await toRecruitScreen({ ...UNOPENED, options: [MILITIA_OPTION, TRAVELLERS_OPTION] })
 
-    expect(screen.getByTestId('recruit-empty')).toBeInTheDocument()
+    await screen.findByTestId('recruit-card-militia')
+    expect(screen.queryByTestId('back-to-raids')).not.toBeInTheDocument()
+  })
+
+  it('locks Deploy until the hire is resolved, then releases it', async () => {
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
+    hireRecruit.mockResolvedValue(
+      withRecruit({ fervor: 0, boosted: false, hiredToday: true, drawn: true, options: [] }),
+    )
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await toRecruitScreen(
+      { ...UNOPENED, options: [MILITIA_OPTION] },
+      { resources: { materials: 100 } },
+    )
+
+    expect(await screen.findByTestId('to-deploy')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('recruit-hire-militia'))
+    await waitFor(() => expect(screen.getByTestId('to-deploy')).toBeEnabled())
+  })
+
+  // A mid-turn reload loses the client's screen state. Every camp action would
+  // 400 (the server closed them when the offer was drawn), so land the player
+  // back on the phase they actually owe rather than on a dead War Council.
+  it('a reload with the offer already drawn lands straight on the Recruit screen', async () => {
+    getCampaigns.mockResolvedValue([
+      withRecruit({ fervor: 0, boosted: false, hiredToday: false, drawn: true, options: [MILITIA_OPTION] }),
+    ])
+    render(<App />)
+
+    expect(await screen.findByTestId('recruit-panel')).toBeInTheDocument()
+    expect(screen.queryByText(/War Council/)).not.toBeInTheDocument()
+    expect(openRecruit).not.toHaveBeenCalled() // already drawn — re-opening would be a pointless round-trip
   })
 })

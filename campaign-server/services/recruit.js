@@ -28,6 +28,29 @@ export const RECRUIT_POOL = [
   { id: 'priest', unit: 'Priest', lane: 'caster', count: 1, cost: { gold: 80 } },
 ]
 
+// The Travellers card (grilled 2026-08-03): deliberately NOT a RECRUIT_POOL
+// row. It never competes for a draw slot against a real option — it only tops
+// the day's offer up to two when the affordable pool can't. Because it costs
+// NOTHING it is affordable in every state the campaign can reach, which is
+// what lets the hire be the ONLY exit from the Recruit phase (there is no
+// skip): whatever else has gone wrong, there is always a legal play. Worth
+// less than a real Militia purchase by design — it's the consolation prize,
+// and it should never be the correct pick when a real option is on the table.
+export const FALLBACK_HIRE = {
+  id: 'travellers',
+  unit: 'Militia',
+  lane: 'troop',
+  count: FREE_MILITIA_AMOUNT,
+  cost: {},
+}
+
+// The one guarded lookup for both sources. Everything that resolves an id
+// sealed in `recruit.dailyOptions` goes through this — an id that has left the
+// pool (a mid-campaign edit) comes back undefined and degrades to a 400,
+// rather than throwing on `.cost` and 500ing.
+export const findRecruitEntry = (id) =>
+  id === FALLBACK_HIRE.id ? FALLBACK_HIRE : RECRUIT_POOL.find((e) => e.id === id)
+
 const RESOURCE_COST_KEYS = ['food', 'materials', 'gold', 'horses']
 
 // Does the campaign have enough of everything an entry's cost names? `workers`
@@ -99,7 +122,7 @@ export const resolveHire = (entry, boosted, ctx) => {
 // Mutates the campaign in place; caller saves. Returns log lines, same
 // contract as events.js's applyEffect.
 export function applyHire(campaign, entryId, boosted = false) {
-  const entry = RECRUIT_POOL.find((e) => e.id === entryId)
+  const entry = findRecruitEntry(entryId)
   const workersFree = (campaign.workers?.total ?? 0) - (campaign.workers?.used ?? 0)
   const { count, cost, secondUnit } = resolveHire(entry, boosted, {
     resources: campaign.resources,
@@ -123,48 +146,38 @@ export function applyHire(campaign, entryId, boosted = false) {
   return log
 }
 
-// The automatic fallback when nothing in the pool is affordable — no choice
-// shown, a small flat grant so a stalled economy can still recruit.
-export function grantFreeMilitia(campaign) {
-  campaign.roster.set('Militia', (campaign.roster.get('Militia') ?? 0) + FREE_MILITIA_AMOUNT)
-  return [`No hire was affordable — ${FREE_MILITIA_AMOUNT} Militia join anyway.`]
-}
-
 // The day's offer: up to 2 distinct options drawn from the affordable pool,
-// with ONE boost roll for the day (applies to whichever option is chosen) —
-// or the free-Militia fallback if nothing is affordable at all.
+// with ONE boost roll for the day (applies to whichever option is chosen).
+// Short draws are padded with the Travellers card, appended last — so the
+// offer is never empty and never a single take-it-or-leave-it card, and the
+// mandatory hire always has something it can legally resolve against. The
+// boost roll happens FIRST, unconditionally, so it doesn't depend on how many
+// options the pool happened to yield.
 export const pickDailyOptions = (ctx) => {
-  const pool = affordablePool(ctx)
-  if (pool.length === 0) return { options: [], boosted: false, freeMilitia: FREE_MILITIA_AMOUNT }
-
   const boosted = rollBoost(ctx.fervor)
-  const remaining = [...pool]
+  const remaining = affordablePool(ctx)
   const options = []
   const n = Math.min(2, remaining.length)
   for (let i = 0; i < n; i++) {
     const idx = getRandom(0, remaining.length - 1)
     options.push(remaining.splice(idx, 1)[0])
   }
-  return { options, boosted, freeMilitia: null }
+  if (options.length < 2) options.push(FALLBACK_HIRE)
+  return { options, boosted }
 }
 
-// S2 wiring (docs/CAMPAIGN_PLAN.md): the fields campaign.recruit needs for a
-// day, from pickDailyOptions — ids only (never the resolved cost/count,
-// which can drift between draw and hire as resources/workers change; hire
-// time re-resolves against RECRUIT_POOL, the sealed-pool-lookup convention
-// pendingChoices already uses). Pure — does NOT grant the free-Militia
-// fallback itself (that's a real roster mutation); the caller applies
-// grantFreeMilitia when `freeMilitia` comes back non-null, exactly like
-// events.js's applyEffect is a separate step from picking what fired.
+// The fields campaign.recruit needs for a day, from pickDailyOptions — ids
+// only (never the resolved cost/count; hire time re-resolves through
+// findRecruitEntry, the sealed-pool-lookup convention pendingChoices already
+// uses). Pure. `hiredToday` is always false: with Travellers padding the
+// offer there is no longer a state where the day resolves itself, so the
+// player always owes a hire.
 export const drawRecruitOffer = (ctx) => {
   const offer = pickDailyOptions(ctx)
-  if (offer.options.length === 0)
-    return { dailyOptions: [], boosted: false, hiredToday: true, freeMilitia: offer.freeMilitia }
   return {
     dailyOptions: offer.options.map((e) => e.id),
     boosted: offer.boosted,
     hiredToday: false,
-    freeMilitia: null,
   }
 }
 

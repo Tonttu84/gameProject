@@ -13,6 +13,7 @@ import {
   postCampaignChoice,
   postAcceptFates,
   hireRecruit,
+  openRecruit,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -56,7 +57,13 @@ const useCampaignStore = create((set, get) => ({
     set({ campaign: await spendCampaign(get().campaign.id, { action: 'fortify' }) })
   },
 
-  // body is either {entryId} (hire that option) or {skip: true} (decline).
+  // Entering the Recruit phase draws the day's offer (and closes the camp) —
+  // there is nothing to show until this runs. Idempotent server-side.
+  openRecruit: async () => {
+    set({ campaign: await openRecruit(get().campaign.id) })
+  },
+
+  // body is {entryId} — the day's one hire. There is no skip.
   hireRecruit: async (body) => {
     set({ campaign: await hireRecruit(get().campaign.id, body) })
   },

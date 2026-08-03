@@ -7,7 +7,14 @@ import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay, acceptFates, checkAnnihilation } from '../services/dayResolution.js'
 import { applyEffect, choiceRung, SIEGE_SPINE } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
-import { RECRUIT_POOL, canAfford, applyHire, drawRecruitOffer } from '../services/recruit.js'
+import {
+  canAfford,
+  applyHire,
+  drawRecruitOffer,
+  recruitCtx,
+  findRecruitEntry,
+  resolveHire,
+} from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget } from '../services/raid.js'
@@ -74,6 +81,24 @@ const rejectIfChoicePending = (campaign, res) => {
   return false
 }
 
+// Opening the Recruit phase closes the camp for the day: forage, omens, raids
+// and building are all done, and the hire is the only action left (there is no
+// skip — the always-affordable Travellers card guarantees a legal play). This
+// is what makes the sealed offer honest: the affordable pool is computed at
+// open, AFTER raids, and nothing may move resources between that draw and the
+// hire. Without it a raid launched afterwards would leave options that should
+// exist un-offered — the staleness this whole design exists to remove.
+// Enforced server-side because the phase is client state; deploy/battle/
+// end-day come after Recruit in the turn order and stay open. Same
+// returns-true-when-it-wrote-the-400 shape as the guards above.
+const rejectIfRecruiting = (campaign, res) => {
+  if (campaign.recruit?.drawnDay === campaign.day) {
+    res.status(400).json({ error: 'recruiting has begun — the hire is the only thing left today' })
+    return true
+  }
+  return false
+}
+
 // The boss fight is mandatory once the meter marks it due: the fortnight can't
 // end until it's actually been fought. Fighting it wins or loses the campaign
 // (see the battle route below), so `status !== 'active'` then blocks end-day
@@ -93,30 +118,17 @@ router.post('/', async (req, res) => {
   // prerequisite-gated fates (events.js `requires`) are judged against the
   // opening army. No eventFlags yet — the first turn can't be a chain payoff.
   const augury = drawAugury({ day: 1, roster: STARTING_ROSTER })
-  // Day-1 Recruit offer, same before-the-doc-exists treatment as augury above.
-  // The free-Militia fallback (nothing affordable) is folded straight into the
-  // starting roster literal here — grantFreeMilitia's `campaign.roster.set`
-  // needs a real Mongoose Map, which doesn't exist yet.
-  const recruitOffer = drawRecruitOffer({
-    roster: STARTING_ROSTER,
-    resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
-    workersFree: STARTING_WORKERS,
-    fervor: RECRUITING_FERVOR_START,
-  })
-  const roster = recruitOffer.freeMilitia
-    ? { ...STARTING_ROSTER, Militia: (STARTING_ROSTER.Militia ?? 0) + recruitOffer.freeMilitia }
-    : STARTING_ROSTER
   const campaign = await Campaign.create({
     user: req.user._id,
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
     workers: { total: STARTING_WORKERS, used: 0 },
-    roster,
-    recruit: {
-      fervor: RECRUITING_FERVOR_START,
-      dailyOptions: recruitOffer.dailyOptions,
-      boosted: recruitOffer.boosted,
-      hiredToday: recruitOffer.hiredToday,
-    },
+    roster: STARTING_ROSTER,
+    // No day-1 offer is drawn here, unlike the augury above: the Recruit phase
+    // draws its own lazily when the player opens it, so the pool is judged
+    // against the stores as they stand at that moment rather than before the
+    // turn has been played. `drawnDay` defaults to 0, which never equals a
+    // live day, so day 1 draws on first open like every other day.
+    recruit: { fervor: RECRUITING_FERVOR_START },
     squads: STARTING_SQUADS,
     forage: {
       rings: FORAGE_RINGS.map((richness, ring) => ({ ring, richness, initialRichness: richness })),
@@ -178,6 +190,7 @@ router.post('/:id/forage', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfRecruiting(campaign, res)) return
 
   const assignment = req.body?.assignment
   if (assignment === null || typeof assignment !== 'object' || Array.isArray(assignment))
@@ -205,6 +218,7 @@ router.post('/:id/augury/consult', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfRecruiting(campaign, res)) return
   if (campaign.augury.consulted)
     return res.status(400).json({ error: 'the augur has already spoken today' })
 
@@ -225,6 +239,7 @@ router.post('/:id/augury/reroll', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfRecruiting(campaign, res)) return
   if (!campaign.augury.consulted)
     return res.status(400).json({ error: 'consult the augur before rerolling' })
   if (campaign.augury.accepted)
@@ -254,6 +269,7 @@ router.post('/:id/augury/accept', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfRecruiting(campaign, res)) return
   if (!campaign.augury.consulted)
     return res.status(400).json({ error: 'consult the augur before accepting the fates' })
   if (campaign.augury.accepted)
@@ -467,6 +483,7 @@ router.post('/:id/raids/launch', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfRecruiting(campaign, res)) return
 
   const parties = req.body?.parties
   if (parties === null || typeof parties !== 'object' || Array.isArray(parties))
@@ -633,6 +650,7 @@ router.post('/:id/raids/scout', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfRecruiting(campaign, res)) return
 
   const action = req.body?.action
 
@@ -682,6 +700,7 @@ router.post('/:id/spend', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfRecruiting(campaign, res)) return
 
   const action = req.body?.action
 
@@ -709,40 +728,67 @@ router.post('/:id/spend', async (req, res) => {
   return res.status(400).json({ error: 'unknown spend action' })
 })
 
-// Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops", S2):
-// one hire per day, from today's dailyOptions (a 2-option offer drawn at
-// creation/end-day, or empty when the free-Militia fallback already fired
-// automatically). {entryId} hires that option (boosted per today's ONE roll);
-// {skip: true} declines without hiring — either way spends the day's cadence.
-// This is now the ONLY way to buy troops: the old POST /:id/spend
-// {action:'militia'} mechanic was removed in S4, folded in as this pool's base
-// tier (see docs/CAMPAIGN_PLAN.md).
+// Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"): open
+// the phase and get the day's offer. The draw happens HERE, lazily, rather
+// than at creation/end-day — the affordable pool is computed from the stores
+// as they stand right now, so gold won from this turn's raids can put a caster
+// on the board this turn (Raids precedes Recruit in the turn order precisely
+// for that payoff). Idempotent: `drawnDay` seals the offer for the day, so
+// re-entering the phase returns what was already drawn instead of rerolling
+// it (and with it the day's ONE Fervor roll). Stamping it also closes the camp
+// — see rejectIfRecruiting.
+router.post('/:id/recruit/open', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  if (campaign.recruit.drawnDay !== campaign.day) {
+    const offer = drawRecruitOffer(recruitCtx(campaign))
+    campaign.recruit.dailyOptions = offer.dailyOptions
+    campaign.recruit.boosted = offer.boosted
+    campaign.recruit.hiredToday = offer.hiredToday
+    campaign.recruit.drawnDay = campaign.day
+    await campaign.save()
+  }
+  res.json(await campaignView(campaign))
+})
+
+// The day's one hire, from today's sealed dailyOptions. {entryId} hires that
+// option (boosted per today's ONE roll). There is no skip and no "nothing
+// affordable" path: the Travellers card pads every offer, so a hire is always
+// possible — and it is the ONLY way out of the phase, which is why the lock
+// above can safely refuse everything else. This is also the only way to buy
+// troops at all (the old POST /:id/spend {action:'militia'} was folded in as
+// this pool's base tier in S4).
 router.post('/:id/recruit/hire', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
+  if (campaign.recruit.drawnDay !== campaign.day)
+    return res.status(400).json({ error: 'recruiting has not been opened today' })
   if (campaign.recruit.hiredToday)
     return res.status(400).json({ error: "today's recruiting is already resolved" })
-
-  if (req.body?.skip === true) {
-    campaign.recruit.hiredToday = true
-    campaign.recruit.dailyOptions = []
-    campaign.log.push({ day: campaign.day, entries: ['No hire made today.'] })
-    await campaign.save()
-    return res.json(await campaignView(campaign))
-  }
 
   const entryId = req.body?.entryId
   if (!campaign.recruit.dailyOptions.includes(entryId))
     return res.status(400).json({ error: "not one of today's recruit options" })
 
-  const entry = RECRUIT_POOL.find((e) => e.id === entryId)
+  // Guarded lookup, like pendingChoices': an id whose entry has left the pool
+  // mid-campaign degrades to a 400 instead of throwing on `.cost`.
+  const entry = findRecruitEntry(entryId)
+  if (!entry) return res.status(400).json({ error: 'that hire is no longer on offer' })
+
   const workersFree = campaign.workers.total - campaign.workers.used
-  // Re-checked here (not just at draw time): resources/workers may have moved
-  // since today's offer was drawn (fortify, forage, another route) — a stale
-  // dailyOptions entry must not overdraw.
-  if (!canAfford(entry.cost, campaign.resources, workersFree))
+  // Checked against the BOOST-RESOLVED cost — the same number campaignView
+  // showed and applyHire is about to charge. Checking the raw entry.cost here
+  // would reject a boosted-but-discounted hire the UI had legitimately
+  // enabled. The phase lock means resources can't actually move between draw
+  // and hire, so this is defence in depth: it is what makes "no hiring on
+  // credit" true regardless of how the offer got there.
+  const { cost } = resolveHire(entry, campaign.recruit.boosted, { resources: campaign.resources, workersFree })
+  if (!canAfford(cost, campaign.resources, workersFree))
     return res.status(400).json({ error: 'not enough stores to hire that' })
 
   const entries = applyHire(campaign, entryId, campaign.recruit.boosted)

@@ -21,7 +21,6 @@ import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.j
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging } from './forage.js'
-import { drawRecruitOffer, recruitCtx, grantFreeMilitia } from './recruit.js'
 
 // End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
 // later stages splice into it:
@@ -342,16 +341,15 @@ export async function endDay(campaign) {
     setBracket(campaign.recon.brackets.enemyCount, armyTotal(campaign.enemy.army))
     setBracket(campaign.recon.brackets.meter, campaign.meter.value)
 
-    // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops",
-    // S2): tomorrow's hire offer, from the roster/resources/workers/fervor as
-    // this turn leaves them. Nothing affordable grants the free-Militia
-    // fallback immediately (no route call needed — the day's cadence is
-    // already spent).
-    const recruitOffer = drawRecruitOffer(recruitCtx(campaign))
-    campaign.recruit.dailyOptions = recruitOffer.dailyOptions
-    campaign.recruit.boosted = recruitOffer.boosted
-    campaign.recruit.hiredToday = recruitOffer.hiredToday
-    if (recruitOffer.freeMilitia) entries.push(...grantFreeMilitia(campaign))
+    // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+    // tomorrow's offer is deliberately NOT drawn here. Drawing it now would
+    // judge affordability against tonight's stores, so gold won by tomorrow's
+    // raids could never reach tomorrow's pool — the whole reason the draw
+    // moved into POST /:id/recruit/open. Just clear the day-state; `drawnDay`
+    // self-resets as the day increments, so the next open draws afresh.
+    campaign.recruit.dailyOptions = []
+    campaign.recruit.boosted = false
+    campaign.recruit.hiredToday = false
   }
 
   campaign.log.push({ day: report.day, entries })

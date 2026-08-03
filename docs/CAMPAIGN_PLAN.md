@@ -29,14 +29,15 @@ notes below over the git history if they ever disagree — the commits win.
 ### Where the work stands (2026-08-03) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **26**.
+schema version **27**.
 
 - **Active feature: Stage E — the Recruit phase** (`### Recruit phase — hiring troops` further
   down is the SSOT for the design and every slice's handoff). Shipped so far, one commit each:
   S1 pool + pure mechanics (`9d887b5`), S2 route + day-offer + `campaignView` (`79adbff`),
   S3 frontend screen (`a522827`), S4 old militia-purchase mechanic removed (`a99c767`),
-  S5 raid gold rewards (`23edf6b`), S6 garrison gold event (`ea64d2a`), S7 horses' earn source.
-  **Stage E is COMPLETE** — every entry in `RECRUIT_POOL` is now reachable, both new resources
+  S5 raid gold rewards (`23edf6b`), S6 garrison gold event (`ea64d2a`), S7 horses' earn source,
+  **S8 lazy draw + phase lock + the Travellers card** (see its handoff below).
+  **Stage E is COMPLETE** — every entry in `RECRUIT_POOL` is reachable, both new resources
   have earn sources, and no open design question is left in it.
 - **Next up: nothing is queued.** Pick from the backlog below, or start something new (grill
   first). The nearest candidates:
@@ -52,9 +53,12 @@ schema version **26**.
 - **Also still open, unrelated to Stage E:** worker replenishment + workers-eat-food (paired,
   deferred, blocked on picking a mechanism — Recruit's worker drain raises its priority but
   doesn't gate it); fortification-durability erosion (blocked on morale design).
-- **Test baseline on a machine with no compiled `./game`:** `cs-test` is 447/450 — the 3
-  failures are `engine.integration.test.js` ENOENT and are EXPECTED there. `fe-test` 244/244,
+- **Test baseline on a machine with no compiled `./game`:** `cs-test` is 462/465 — the 3
+  failures are `engine.integration.test.js` ENOENT and are EXPECTED there. `fe-test` 247/247,
   `fe-lint` clean. Run everything through `scripts/dev.sh` (see `CLAUDE.md`).
+- **Not yet playtested:** S8 changed the shape of a turn (Recruit is now a one-way door that
+  closes the camp, and a hire is mandatory). The server/frontend suites cover the mechanics,
+  but nobody has actually played through it — do that before building on top of it.
 
 ### Project state (as of 2026-07-05)
 
@@ -1198,12 +1202,17 @@ slider, `MILITIA_FOOD_COST`/`MILITIA_MATERIAL_COST`/`MILITIA_WORKER_COST`/`MILIT
 the militia branch of `POST /:id/spend`) is removed and folded in as the base tier of this system,
 rather than living alongside it as a second "buy troops" mechanic.
 
-**Cadence — one hire per day.** The phase offers up to 2 options drawn from the pool of entries
-that are currently both *eligible* (prerequisites met) and *affordable*; the player picks one, or
-none, and the phase resolves. **If nothing is affordable, no choice is shown** — a small amount of
-free Militia is granted automatically instead (amount TBD). Exactly how 2 options get selected out
-of a potentially larger eligible+affordable set (random? weighted? avoid repeating yesterday's
-options?) is an implementation detail, not decided.
+**Cadence — one hire per day, and it is mandatory.** The phase offers 2 options drawn from the
+pool of entries that are currently both *eligible* (prerequisites met) and *affordable*, picked
+at random; the player hires one, and that hire is the only thing that resolves the phase. Short
+draws are padded with the free **Travellers** card (see below), so the offer is never empty and
+never a single take-it-or-leave-it card — which is what lets the hire be mandatory.
+
+> **Revised in S8 (grilled 2026-08-03).** The original design here said the offer was drawn
+> ahead of time and that "if nothing is affordable, no choice is shown" — a small free-Militia
+> grant fired automatically instead, and the player could skip. All three are gone. The draw
+> happens when the phase is *opened*; the free grant became a card you hire; skipping is
+> removed. See the S8 slice for why.
 
 **Two lanes in one pool:**
 - **Troop lane** — batch/count hires, paid out of the `workers` pool (like Militia purchase today)
@@ -1525,6 +1534,57 @@ LightCavalry were unreachable pool entries until now — they spend `horses` and
 - **Deferred by the grill, recorded not built:** nomad allies granting horses (as an event OR a raid
   card); horses as a food/upkeep drain; horses returning to the pool when cavalry die.
   Cavalry/LightCavalry hire costs stay at 5 horses.
+
+**S8 — the draw moves into the phase; the phase becomes a one-way door. ✅ SHIPPED 2026-08-03,
+grilled first.** Started as a code-review finding and turned into a structural fix. **The bug:**
+`pickDailyOptions` filtered by affordability against the state at the *previous* turn's end-day,
+so gold won by this turn's raids could never put a caster on this turn's board — exactly the
+payoff the `Raids → Recruit` ordering exists to deliver (see the Framing paragraph above). The
+first caster was always a turn late.
+- **The fix is when, not whether.** The affordability filter stays — an offer you can't pay for
+  isn't a legal play, and there is no credit — but it now runs at **`POST /:id/recruit/open`**,
+  called when the player enters the phase, after raids have resolved. The draw at campaign
+  creation and the one in `dayResolution` step 7 are both **deleted** (with them the
+  fold-the-free-Militia-into-the-starting-roster-literal hack). End-day just clears the
+  day-state.
+- **`recruit.drawnDay` (schema 26→27) is both seal and gate.** Stamped at open, so re-entering
+  the phase returns the same offer instead of rerolling it (and rerolling the day's ONE Fervor
+  roll with it). It self-resets as the day increments.
+- **Opening the phase closes the camp.** `rejectIfRecruiting` — same shape as
+  `rejectIfChoicePending` — makes `forage`, all three `augury/*`, `raids/launch`, `raids/scout`
+  and `spend` 400 once `drawnDay === day`. Deploy/battle/end-day stay open (they come after
+  Recruit in the turn order). **This is what makes the sealed offer honest:** with no way to
+  gain resources after the draw, the draw cannot go stale, so no resealing rule or reroll
+  surface is needed. Enforced server-side because the phase is client state. The frontend drops
+  the "Back to the Raids" button accordingly — deliberately with **no confirmation dialog**
+  (the user's call: "player will learn that they cant go back soon enough").
+- **The free-Militia auto-grant is gone; `FALLBACK_HIRE` (Travellers) replaces it.** A
+  zero-cost, ungated `{id:'travellers', unit:'Militia', count: FREE_MILITIA_AMOUNT}` entry kept
+  **out** of `RECRUIT_POOL` so it never competes for a slot: it only pads a short draw up to two
+  (2+ affordable → no Travellers; 1 → that plus Travellers; 0 → Travellers alone). Because it
+  costs nothing it is affordable in every reachable state, which is what lets the **hire be
+  mandatory** — `{skip:true}` and the Skip button are removed, and "Deploy for Battle" is
+  disabled until `hiredToday`. It boosts like any other troop-lane entry (double of nothing is
+  nothing → 10 free Militia on a Fervor day); left uniform on the user's call, since a high
+  Fervor earning that is fine. This also deletes `grantFreeMilitia`, the `freeMilitia` field,
+  and the auto-`hiredToday` branch.
+- **Two other review findings, fixed in passing:** the hire route's affordability guard checked
+  the raw `entry.cost` while `campaignView` and `applyHire` used the *boost-resolved* cost (a
+  discounted boosted hire the UI had enabled would 400) — it now resolves through `resolveHire`
+  first; and the unguarded `RECRUIT_POOL.find` that would 500 on an id that had left the pool is
+  now the single guarded `findRecruitEntry`, shared with `campaignView`.
+- **`campaignView` gained `recruit.drawn`** so a client that lost its screen state to a mid-turn
+  reload lands back on the Recruit screen instead of on a War Council whose every button 400s.
+- **Tests:** red first (24 server, 10 frontend). `recruit.test.js` reworked (Travellers shape +
+  its absence from the pool + free-affordability, `findRecruitEntry`, the three top-up cases,
+  boosted Travellers, `applyHire` on a free entry); `campaigns.test.js` +10 (no offer before
+  open, the day-1 draw, open idempotency, hire-before-open, skip refused, unknown id → 400 not
+  500, the boost-resolved guard, end-day not pre-drawing, the fresh next-day draw, and a
+  `Recruit phase locks the rest of the turn` describe); `recruitPanel.test.jsx` reworked +
+  `phaseNavigation.test.jsx`'s back-step case inverted. Green: `cs-test` 462/465 (3 pre-existing
+  engine ENOENT), `fe-test` 247/247, `fe-lint` clean.
+- **Balance left as single constants to tune after a playtest:** Travellers' count (5, vs
+  Militia's 20) and the pad-to-2 rule itself.
 
 ### Recon rework — one scouting LEVEL from accumulated leftover points (DESIGNED 2026-07-20, grilled)
 

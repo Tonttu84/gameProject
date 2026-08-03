@@ -51,7 +51,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, launchRaids, scoutRaid, hireRecruit, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -101,6 +101,16 @@ const App = () => {
     useAuthStore.getState().rehydrate()
   }, [])
 
+  // Phase is client-only state, so a mid-turn reload drops the player back on
+  // the War Council — where, if today's recruit offer is already drawn and
+  // unresolved, every button would 400: opening the Recruit phase closes the
+  // camp server-side. Put them back on the screen they actually owe.
+  const recruitDrawn = campaign?.recruit?.drawn
+  const recruitHired = campaign?.recruit?.hiredToday
+  useEffect(() => {
+    if (recruitDrawn && !recruitHired) setPhase('recruit')
+  }, [recruitDrawn, recruitHired, setPhase])
+
   // The turn runs as a sequence of single-purpose screens the player advances
   // through: Prepare (forage + camp) → Omens (the augur) → Raids → Recruit →
   // Deploy. Splitting them keeps the pipeline clear and, crucially, puts the
@@ -110,15 +120,24 @@ const App = () => {
   // spendable the same turn (docs/CAMPAIGN_PLAN.md, Recruit phase design).
   const readOmens = () => setPhase('omens')
   const toRaids = () => setPhase('raids')
-  const toRecruit = () => setPhase('recruit')
-  // Back-steps through the phased turn. Pure phase-state changes — no server
-  // action is undone (forage/augury/raids the player already committed stay
-  // committed); going back just re-renders an earlier screen, whose own guards
-  // handle any already-done action. Lets the flow be walked both ways rather
-  // than a one-way march (docs/CAMPAIGN_PLAN.md slices 2–3).
+  // Recruit is the ONE transition that isn't a pure phase-state change, and
+  // the one that can't be walked back: entering it draws the day's offer and
+  // closes the camp server-side (see rejectIfRecruiting). Only advance if the
+  // draw actually landed — guarded returns undefined on failure, and marching
+  // onto an offerless screen would strand the player with no way forward.
+  const toRecruit = async () => {
+    if (campaign.recruit?.drawn) return setPhase('recruit')
+    if (await guarded(openRecruit)() !== undefined) setPhase('recruit')
+  }
+  // Back-steps through the phased turn, up to Recruit. Pure phase-state
+  // changes — no server action is undone (forage/augury/raids the player
+  // already committed stay committed); going back just re-renders an earlier
+  // screen, whose own guards handle any already-done action. Lets the flow be
+  // walked both ways rather than a one-way march (docs/CAMPAIGN_PLAN.md slices
+  // 2–3) — except past the Recruit door, which has no back button because the
+  // server would refuse everything behind it.
   const backToPrepare = () => setPhase('prepare')
   const backToOmens = () => setPhase('omens')
-  const backToRaids = () => setPhase('raids')
   // Resolve a pending choice-fate (events with choices). Guarded like every
   // campaign action; the reveal screen reads the undefined-on-failure return
   // to keep the options up for another try.
@@ -466,17 +485,24 @@ const App = () => {
         </div>
       )}
 
-      {/* Phase 4 — RECRUIT: with raid gold in hand, spend the day's one hire
-          (or skip it), then deploy for battle. */}
+      {/* Phase 4 — RECRUIT: with raid gold in hand, spend the day's one hire,
+          then deploy for battle. No back button: opening this screen closed
+          the camp for the day, so there is nothing behind it that would still
+          accept an action. Deploy stays locked until the hire is resolved —
+          the hire is the only way forward, which the free Travellers card
+          guarantees is always possible. */}
       {phase === 'recruit' && (
         <div className="phase-recruit">
           <h2>Recruiting</h2>
           <RecruitPanel key={`recruit-${campaign.day}`} onHire={guarded(hireRecruit)} />
           <div className="raids-bar">
-            <button className="login-toggle" data-testid="back-to-raids" onClick={backToRaids}>
-              Back to the Raids
-            </button>
-            <button className="btn-primary" data-testid="to-deploy" onClick={musterForBattle}>
+            <button
+              className="btn-primary"
+              data-testid="to-deploy"
+              onClick={musterForBattle}
+              disabled={!campaign.recruit?.hiredToday}
+              title={campaign.recruit?.hiredToday ? undefined : 'Take the day\'s hire before you march'}
+            >
               Deploy for Battle
             </button>
           </div>

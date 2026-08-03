@@ -77,9 +77,17 @@ export const postCampaignRaids = (id, parties) =>
 // field from a range to its exact value). Returns the refreshed view.
 export const scoutRaidTarget = (id, body) =>
   axios.post(`/api/campaigns/${id}/raids/scout`, body, authed()).then(r => r.data)
-// Recruit phase: {entryId} hires that option, {skip: true} declines — either
-// way spends the day's one-hire cadence. Returns the refreshed view directly
-// (not wrapped in {campaign: ...}, unlike postCampaignRaids/endCampaignDay).
+// Open the Recruit phase: draws the day's offer server-side (idempotent — a
+// second call returns the same sealed offer, not a reroll) and closes the camp
+// for the day, so every other turn action starts refusing. Call it when the
+// player enters the phase, never speculatively.
+export const openRecruit = (id) =>
+  axios.post(`/api/campaigns/${id}/recruit/open`, {}, authed()).then(r => r.data)
+// Recruit phase: {entryId} hires that option, spending the day's one-hire
+// cadence. There is no skip — the free Travellers card always makes a hire
+// possible, and the hire is the only way out of the phase. Returns the
+// refreshed view directly (not wrapped in {campaign: ...}, unlike
+// postCampaignRaids/endCampaignDay).
 export const hireRecruit = (id, body) =>
   axios.post(`/api/campaigns/${id}/recruit/hire`, body, authed()).then(r => r.data)
 // Returns { report, campaign }.

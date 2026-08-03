@@ -83,19 +83,22 @@ describe('phased-turn back navigation', () => {
     expect(screen.queryByTestId('to-recruit')).not.toBeInTheDocument()
   })
 
-  it('Recruit → Back to the Raids returns to the raids screen', async () => {
+  // Recruit is the one door that only opens forwards: entering it draws the
+  // day's offer and closes the camp server-side (rejectIfRecruiting), so every
+  // action on the screens behind it would 400. Rather than offer a back button
+  // that leads somewhere dead, there isn't one — the hire is the only exit.
+  // recruitPanel.test.jsx pins the rest of that contract.
+  it('Recruit has no way back — the camp is closed once recruiting begins', async () => {
     render(<App />)
     await screen.findByText(/War Council/)
     await marchToRaids()
     fireEvent.click(screen.getByTestId('to-recruit'))
 
-    // On the recruit screen: the deploy exit is here.
+    // On the recruit screen: the deploy exit is here, and nothing else is.
     expect(await screen.findByTestId('to-deploy')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByTestId('back-to-raids'))
-    // Back on the raids screen: its own exit returns, the deploy exit is gone.
-    expect(await screen.findByTestId('to-recruit')).toBeInTheDocument()
-    expect(screen.queryByTestId('to-deploy')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('back-to-raids')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('back-to-omens')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('back-to-prepare')).not.toBeInTheDocument()
   })
 })
 

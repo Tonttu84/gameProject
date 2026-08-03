@@ -10,6 +10,7 @@ import { fortifiedSidesFor } from '../services/fortification.js'
 import { EVENT_POOL } from '../services/events.js'
 import { RECRUIT_POOL } from '../services/recruit.js'
 import {
+  FREE_MILITIA_AMOUNT,
   RECON_LEVEL_THRESHOLDS,
   GARRISON_SALLY_TROOPS,
   GARRISON_SALLY_TICK,
@@ -1438,30 +1439,56 @@ describe('POST /api/campaigns/:id/spend', () => {
   })
 })
 
-// Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops", S2):
-// the day's offer (drawn at creation/end-day, campaignView-exposed) + the
-// POST /:id/recruit/hire route. STARTING_ROSTER already owns Soldier (no
-// Militia), so day 1's eligible+affordable pool is Militia alone — no gold,
-// no horses yet, and Soldier/Archer are gated on owning Militia.
+// Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+// the day's offer is drawn LAZILY, when the phase is opened — never at
+// creation or end-day, so gold won from this turn's raids is already in the
+// stores when the affordable pool is computed. Opening the phase closes the
+// camp for the day (the only action left is the hire), which is what makes the
+// sealed offer safe: nothing can move resources between draw and hire.
+// STARTING_ROSTER owns Soldier but no Militia, so day 1's affordable pool is
+// Militia alone (no gold, no horses; Soldier/Archer gated on owning Militia)
+// — one real option, topped up to two with Travellers.
 describe('Recruit phase (docs/CAMPAIGN_PLAN.md)', () => {
+  const openRecruit = (id) => auth(api.post(`/api/campaigns/${id}/recruit/open`)).send({})
   const hire = (id, body) => auth(api.post(`/api/campaigns/${id}/recruit/hire`)).send(body)
   const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
   const militia = RECRUIT_POOL.find((e) => e.id === 'militia')
 
-  test('a fresh campaign exposes a day-1 offer of Militia alone, unresolved, unboosted', async () => {
+  test('a fresh campaign has NO offer until the phase is opened', async () => {
     const { body: c } = await createCampaign()
     expectNoHiddenInfo(c)
     expect(c.recruit.fervor).toBe(0)
     expect(c.recruit.boosted).toBe(false)
     expect(c.recruit.hiredToday).toBe(false)
-    expect(c.recruit.options).toEqual([
+    expect(c.recruit.drawn).toBe(false)
+    expect(c.recruit.options).toEqual([])
+  })
+
+  test('opening the phase draws the day-1 offer: Militia, padded with Travellers', async () => {
+    const { body: c } = await createCampaign()
+    const res = await openRecruit(c.id)
+    expect(res.status).toBe(200)
+    expectNoHiddenInfo(res.body)
+    expect(res.body.recruit.drawn).toBe(true)
+    expect(res.body.recruit.hiredToday).toBe(false)
+    expect(res.body.recruit.options).toEqual([
       { id: 'militia', unit: 'Militia', lane: 'troop', count: militia.count, cost: militia.cost, secondUnit: null },
+      { id: 'travellers', unit: 'Militia', lane: 'troop', count: FREE_MILITIA_AMOUNT, cost: {}, secondUnit: null },
     ])
+  })
+
+  test('opening again is idempotent — re-entering the phase is not a reroll', async () => {
+    const { body: c } = await createCampaign()
+    const first = await openRecruit(c.id)
+    const second = await openRecruit(c.id)
+    expect(second.status).toBe(200)
+    expect(second.body.recruit.options).toEqual(first.body.recruit.options)
   })
 
   test('hiring the offered option debits its cost and grows the roster; the day is then spent', async () => {
     const { body: c } = await createCampaign()
     const before = await getView(c.id)
+    await openRecruit(c.id)
 
     const res = await hire(c.id, { entryId: 'militia' })
     expect(res.status).toBe(200)
@@ -1479,46 +1506,147 @@ describe('Recruit phase (docs/CAMPAIGN_PLAN.md)', () => {
     expect(again.body.error).toMatch(/already resolved/)
   })
 
+  test('hiring Travellers costs nothing and is always available as the day\'s legal play', async () => {
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    doc.resources.food = 0
+    doc.resources.materials = 0
+    await doc.save()
+
+    const opened = await openRecruit(c.id)
+    expect(opened.body.recruit.options.map((o) => o.id)).toEqual(['travellers'])
+
+    const before = await getView(c.id)
+    const res = await hire(c.id, { entryId: 'travellers' })
+    expect(res.status).toBe(200)
+    expect(res.body.roster.Militia).toBe(FREE_MILITIA_AMOUNT)
+    // Every stored resource is untouched. (`resources` in the view also
+    // carries the derived foodNeedPerTurn, which SHOULD move — 5 more mouths.)
+    for (const key of ['food', 'materials', 'gold', 'horses'])
+      expect(res.body.resources[key], key).toBe(before.resources[key])
+    expect(res.body.workers.total).toBe(before.workers.total)
+    expect(res.body.recruit.hiredToday).toBe(true)
+  })
+
   test('an entryId not on today\'s offer is rejected', async () => {
     const { body: c } = await createCampaign()
+    await openRecruit(c.id)
     const res = await hire(c.id, { entryId: 'mage' }) // not affordable/offered on day 1
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/not one of today/)
     expect((await getView(c.id)).recruit.hiredToday).toBe(false)
   })
 
-  test('skip declines without touching resources or roster, and spends the day', async () => {
+  test('hiring before the phase is opened is rejected — there is no offer yet', async () => {
     const { body: c } = await createCampaign()
-    const before = await getView(c.id)
-
-    const res = await hire(c.id, { skip: true })
-    expect(res.status).toBe(200)
-    expect(res.body.roster).toEqual(before.roster)
-    expect(res.body.resources).toEqual(before.resources)
-    expect(res.body.recruit.hiredToday).toBe(true)
-
-    expect((await hire(c.id, { entryId: 'militia' })).status).toBe(400)
-  })
-
-  test('a re-checked affordability guard rejects a stale option if resources moved since the draw', async () => {
-    const { body: c } = await createCampaign()
-    const doc = await Campaign.findById(c.id)
-    doc.resources.food = 0 // can no longer afford the offered Militia hire
-    await doc.save()
-
     const res = await hire(c.id, { entryId: 'militia' })
     expect(res.status).toBe(400)
     expect((await getView(c.id)).recruit.hiredToday).toBe(false)
   })
 
-  test('end-day redraws the offer for the new day', async () => {
+  test('skipping is gone — the hire is the only way the phase resolves', async () => {
     const { body: c } = await createCampaign()
-    await hire(c.id, { skip: true })
+    await openRecruit(c.id)
+    const res = await hire(c.id, { skip: true })
+    expect(res.status).toBe(400)
+    expect((await getView(c.id)).recruit.hiredToday).toBe(false)
+  })
+
+  test('an id sealed in the offer that has left the pool 400s rather than throwing a 500', async () => {
+    const { body: c } = await createCampaign()
+    await openRecruit(c.id)
+    const doc = await Campaign.findById(c.id)
+    doc.recruit.dailyOptions = ['ghost'] // a mid-campaign pool edit
+    await doc.save()
+
+    const res = await hire(c.id, { entryId: 'ghost' })
+    expect(res.status).toBe(400)
+  })
+
+  test('the affordability guard checks the BOOST-RESOLVED cost, not the undiscounted base', async () => {
+    const { body: c } = await createCampaign()
+    await openRecruit(c.id)
+    // A boosted day whose doubled cost is unaffordable resolves to a 30%
+    // discount — which the view offers and the ledger charges, so the guard
+    // must accept it too.
+    const doc = await Campaign.findById(c.id)
+    doc.recruit.boosted = true
+    doc.resources.food = militia.cost.food - 4 // under base, over the discount
+    doc.resources.materials = militia.cost.materials - 2
+    await doc.save()
+
+    const view = await getView(c.id)
+    const offered = view.recruit.options.find((o) => o.id === 'militia')
+    expect(offered.cost.food).toBeLessThanOrEqual(view.resources.food)
+
+    const res = await hire(c.id, { entryId: 'militia' })
+    expect(res.status).toBe(200)
+    expect(res.body.resources.food).toBe(view.resources.food - offered.cost.food)
+  })
+
+  test('end-day clears the day-state without drawing tomorrow\'s offer in advance', async () => {
+    const { body: c } = await createCampaign()
+    await openRecruit(c.id)
+    await hire(c.id, { entryId: 'militia' })
     const dayReport = await endDayReq(c.id)
     expect(dayReport.status).toBe(200)
     const view = dayReport.body.campaign
     expect(view.recruit.hiredToday).toBe(false)
-    expect(view.recruit.options.length).toBeGreaterThan(0)
+    expect(view.recruit.drawn).toBe(false)
+    expect(view.recruit.options).toEqual([])
+  })
+
+  test('the new day draws a fresh offer when the phase is opened again', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id) // a choice-fate would gate the next open behind a 409
+    await openRecruit(c.id)
+    await hire(c.id, { entryId: 'militia' })
+    await endDayReq(c.id)
+    const res = await openRecruit(c.id)
+    expect(res.status).toBe(200)
+    expect(res.body.recruit.drawn).toBe(true)
+    expect(res.body.recruit.options.length).toBeGreaterThan(0)
+  })
+})
+
+// Opening the Recruit phase closes the camp for the day: the hire is the only
+// action left. This is what makes the sealed offer honest — a raid launched
+// after the draw would have made options appear that the offer can't contain
+// (the original bug), and a fortify spend could strand a drawn option.
+describe('Recruit phase locks the rest of the turn', () => {
+  const openRecruit = (id) => auth(api.post(`/api/campaigns/${id}/recruit/open`)).send({})
+
+  const lockedActions = [
+    ['forage', { assignment: { 0: 1 } }],
+    ['augury/consult', {}],
+    ['augury/reroll', { slot: 0 }],
+    ['augury/accept', {}],
+    ['raids/launch', { parties: {} }],
+    ['raids/scout', { action: 'addTarget' }],
+    ['spend', { action: 'fortify' }],
+  ]
+
+  test('camp actions succeed before the phase is opened', async () => {
+    const { body: c } = await createCampaign()
+    const res = await auth(api.post(`/api/campaigns/${c.id}/spend`)).send({ action: 'fortify' })
+    expect(res.status).toBe(200)
+  })
+
+  test('every camp action 400s once the offer has been drawn', async () => {
+    const { body: c } = await createCampaign()
+    await openRecruit(c.id)
+    for (const [path, payload] of lockedActions) {
+      const res = await auth(api.post(`/api/campaigns/${c.id}/${path}`)).send(payload)
+      expect(res.status, path).toBe(400)
+      expect(res.body.error, path).toMatch(/recruit/i)
+    }
+  })
+
+  test('the hire itself, and ending the day, stay open', async () => {
+    const { body: c } = await createCampaign()
+    await openRecruit(c.id)
+    expect((await auth(api.post(`/api/campaigns/${c.id}/recruit/hire`)).send({ entryId: 'travellers' })).status).toBe(200)
+    expect((await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status).toBe(200)
   })
 })
 
@@ -1986,7 +2114,8 @@ describe('events with choices', () => {
       ['spend', { action: 'fortify' }],
       ['battles', { placement: [] }],
       ['raids/launch', { parties: {} }],
-      ['recruit/hire', { skip: true }],
+      ['recruit/open', {}],
+      ['recruit/hire', { entryId: 'militia' }],
     ]
     for (const [path, payload] of blocked) {
       const res = await auth(api.post(`/api/campaigns/${c.id}/${path}`)).send(payload)

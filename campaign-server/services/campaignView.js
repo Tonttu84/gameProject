@@ -21,7 +21,7 @@ import { displayBracket } from './recon.js'
 import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValenceFor, choiceRung } from './events.js'
-import { RECRUIT_POOL, resolveHire } from './recruit.js'
+import { findRecruitEntry, resolveHire } from './recruit.js'
 
 // THE single serializer between campaign documents and the client. Hidden
 // information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
@@ -292,20 +292,27 @@ export async function campaignView(campaign) {
       scoutingPoints: campaign.raid.scoutingPoints,
       scoutCost: { addTarget: RAID_SCOUT_COST_ADD, reveal: RAID_SCOUT_COST_REVEAL },
     },
-    // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops",
-    // S2): today's up-to-2-option offer, drawn at creation/end-day. Options are
-    // looked up fresh from RECRUIT_POOL by id (the sealed-pool-lookup
-    // convention pendingChoices below already uses — an id that's left the
-    // pool mid-campaign is dropped, degrade-safely) and resolved through
+    // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
+    // today's 2-option offer, drawn when the player opens the phase. Options
+    // are looked up fresh by id through findRecruitEntry (the sealed-pool
+    // -lookup convention pendingChoices below also uses — an id that's left
+    // the pool mid-campaign is dropped, degrade-safely) and resolved through
     // resolveHire against the LIVE resources/workers so count/cost reflect
     // exactly what hiring would do right now, including the day's boosted
     // roll — never the stale numbers from when the offer was drawn.
+    //
+    // `drawn` tells the client the phase has been opened for the day: the
+    // offer is live AND the camp is closed (see rejectIfRecruiting), so a
+    // client that lost its screen state — a reload mid-turn — can put the
+    // player back on the Recruit screen instead of on a camp screen whose
+    // every button would 400.
     recruit: {
       fervor: campaign.recruit.fervor,
       boosted: campaign.recruit.boosted,
       hiredToday: campaign.recruit.hiredToday,
+      drawn: campaign.recruit.drawnDay === campaign.day,
       options: (campaign.recruit.dailyOptions ?? []).flatMap((id) => {
-        const entry = RECRUIT_POOL.find((e) => e.id === id)
+        const entry = findRecruitEntry(id)
         if (!entry) return []
         const resolved = resolveHire(entry, campaign.recruit.boosted, {
           resources: campaign.resources,

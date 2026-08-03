@@ -10,13 +10,14 @@
 import { describe, test, expect, afterEach } from 'vitest'
 import {
   RECRUIT_POOL,
+  FALLBACK_HIRE,
+  findRecruitEntry,
   eligiblePool,
   affordablePool,
   canAfford,
   rollBoost,
   resolveHire,
   applyHire,
-  grantFreeMilitia,
   pickDailyOptions,
   drawRecruitOffer,
   recruitCtx,
@@ -248,34 +249,67 @@ describe('applyHire', () => {
   })
 })
 
-describe('grantFreeMilitia', () => {
-  test('adds the flat fallback amount and never touches resources or workers', () => {
+// The Travellers card (grilled 2026-08-03): the always-legal play that makes
+// hiring mandatory. It costs NOTHING, so it is affordable in every state the
+// campaign can reach — which is what lets the hire be the only exit from the
+// Recruit phase. It is deliberately NOT a RECRUIT_POOL row: it never competes
+// for a slot against a real option, it only tops the day's offer up to two.
+describe('FALLBACK_HIRE (Travellers)', () => {
+  test('is a free, ungated troop-lane hire worth less than a real Militia purchase', () => {
+    expect(FALLBACK_HIRE.id).toBe('travellers')
+    expect(FALLBACK_HIRE.unit).toBe('Militia')
+    expect(FALLBACK_HIRE.lane).toBe('troop')
+    expect(FALLBACK_HIRE.count).toBe(FREE_MILITIA_AMOUNT)
+    expect(FALLBACK_HIRE.cost).toEqual({})
+    expect(FALLBACK_HIRE.requires).toBeUndefined()
+    expect(FALLBACK_HIRE.count).toBeLessThan(poolEntry('militia').count)
+  })
+
+  test('is not in RECRUIT_POOL, so it never competes for a draw slot', () => {
+    expect(RECRUIT_POOL.map((e) => e.id)).not.toContain('travellers')
+  })
+
+  test('is affordable with nothing at all in the stores', () => {
+    expect(canAfford(FALLBACK_HIRE.cost, { food: 0, materials: 0, gold: 0, horses: 0 }, 0)).toBe(true)
+  })
+})
+
+// One guarded lookup for both sources — the hire route and campaignView share
+// it, so an id that has left the pool degrades to a 400 rather than throwing.
+describe('findRecruitEntry', () => {
+  test('finds pool entries and the fallback, and returns undefined for an unknown id', () => {
+    expect(findRecruitEntry('militia')).toBe(poolEntry('militia'))
+    expect(findRecruitEntry('travellers')).toBe(FALLBACK_HIRE)
+    expect(findRecruitEntry('ghost')).toBeUndefined()
+  })
+})
+
+describe('applyHire — Travellers', () => {
+  test('grants the small Militia batch and touches no resources or workers', () => {
     const campaign = {
       roster: new Map(),
       resources: { food: 5, materials: 5, gold: 0, horses: 0 },
       workers: { total: 5, used: 0 },
+      recruit: { fervor: 0 },
     }
-    grantFreeMilitia(campaign)
+    applyHire(campaign, 'travellers', false)
     expect(campaign.roster.get('Militia')).toBe(FREE_MILITIA_AMOUNT)
     expect(campaign.resources).toEqual({ food: 5, materials: 5, gold: 0, horses: 0 })
     expect(campaign.workers).toEqual({ total: 5, used: 0 })
   })
+
+  test('boosts like any other troop-lane entry — double of nothing is still nothing', () => {
+    const ctx = { resources: { food: 0, materials: 0, gold: 0, horses: 0 }, workersFree: 0 }
+    expect(resolveHire(FALLBACK_HIRE, true, ctx)).toEqual({
+      count: FREE_MILITIA_AMOUNT * 2,
+      cost: {},
+      secondUnit: null,
+    })
+  })
 })
 
-describe('pickDailyOptions', () => {
-  test('an empty affordable pool returns the free-Militia fallback and no options', () => {
-    const ctx = {
-      roster: new Map(),
-      resources: { food: 0, materials: 0, gold: 0, horses: 0 },
-      workersFree: 0,
-      fervor: 0,
-    }
-    const offer = pickDailyOptions(ctx)
-    expect(offer.options).toEqual([])
-    expect(offer.freeMilitia).toBe(FREE_MILITIA_AMOUNT)
-  })
-
-  test('offers up to 2 distinct options from the affordable pool, with one boost roll for the day', () => {
+describe('pickDailyOptions — Travellers tops the offer up to two', () => {
+  test('two or more affordable options crowd Travellers out entirely', () => {
     const ctx = {
       roster: new Map(),
       resources: { food: 1000, materials: 1000, gold: 1000, horses: 0 },
@@ -288,22 +322,48 @@ describe('pickDailyOptions', () => {
     const offer = pickDailyOptions(ctx)
     expect(offer.options).toHaveLength(2)
     expect(offer.boosted).toBe(false)
-    expect(offer.freeMilitia).toBeNull()
     expect(new Set(offer.options.map((o) => o.id)).size).toBe(2)
+    expect(offer.options.map((o) => o.id)).not.toContain('travellers')
+  })
+
+  test('exactly one affordable option is padded with Travellers, appended last', () => {
+    // Empty roster + food/materials/workers for Militia alone, no gold.
+    const ctx = {
+      roster: new Map(),
+      resources: { food: 40, materials: 20, gold: 0, horses: 0 },
+      workersFree: 20,
+      fervor: 0,
+    }
+    pushRoll(1000) // boost roll
+    pushRoll(0) // the single affordable entry
+    const offer = pickDailyOptions(ctx)
+    expect(offer.options.map((o) => o.id)).toEqual(['militia', 'travellers'])
+  })
+
+  test('an empty affordable pool offers Travellers alone — never an empty offer', () => {
+    const ctx = {
+      roster: new Map(),
+      resources: { food: 0, materials: 0, gold: 0, horses: 0 },
+      workersFree: 0,
+      fervor: 0,
+    }
+    pushRoll(1000) // boost roll
+    const offer = pickDailyOptions(ctx)
+    expect(offer.options.map((o) => o.id)).toEqual(['travellers'])
   })
 })
 
-describe('drawRecruitOffer (S2: campaign.recruit field shape)', () => {
-  test('an empty affordable pool returns empty dailyOptions, hiredToday true, and the free-Militia amount', () => {
+describe('drawRecruitOffer (campaign.recruit field shape)', () => {
+  test('an empty affordable pool still yields a hireable day: Travellers, unresolved', () => {
     const ctx = { roster: new Map(), resources: { food: 0, materials: 0, gold: 0, horses: 0 }, workersFree: 0, fervor: 0 }
+    pushRoll(1000) // boost roll
     const offer = drawRecruitOffer(ctx)
-    expect(offer.dailyOptions).toEqual([])
+    expect(offer.dailyOptions).toEqual(['travellers'])
     expect(offer.boosted).toBe(false)
-    expect(offer.hiredToday).toBe(true)
-    expect(offer.freeMilitia).toBe(FREE_MILITIA_AMOUNT)
+    expect(offer.hiredToday).toBe(false)
   })
 
-  test('an affordable pool returns option IDS only (not resolved cost/count), hiredToday false, no free militia', () => {
+  test('an affordable pool returns option IDS only (not resolved cost/count)', () => {
     const ctx = { roster: new Map(), resources: { food: 1000, materials: 1000, gold: 1000, horses: 0 }, workersFree: 1000, fervor: 0 }
     pushRoll(1000) // day's boost roll
     pushRoll(0)
@@ -313,7 +373,6 @@ describe('drawRecruitOffer (S2: campaign.recruit field shape)', () => {
     for (const id of offer.dailyOptions) expect(typeof id).toBe('string')
     expect(offer.boosted).toBe(false)
     expect(offer.hiredToday).toBe(false)
-    expect(offer.freeMilitia).toBeNull()
   })
 })
 

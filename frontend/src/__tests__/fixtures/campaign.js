@@ -47,7 +47,7 @@ export const campaignFixture = {
   // hiredToday defaults true (nothing to pick, cadence already spent) so
   // marchToDeployment reaches the deploy exit without an extra hire/skip
   // click — recruitPanel.test.jsx overrides this to exercise the offer itself.
-  recruit: { fervor: 0, boosted: false, hiredToday: true, options: [] },
+  recruit: { fervor: 0, boosted: false, hiredToday: true, drawn: true, options: [] },
   augury: { consulted: false, rerollsRemaining: 1, visions: null },
   // Only the banded label crosses the boundary — never coverage numbers.
   scouting: { band: 'Contested' },
