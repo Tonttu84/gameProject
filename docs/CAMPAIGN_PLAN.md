@@ -26,6 +26,31 @@ source of truth.
 `git log --oneline -15` to see which stages have actually landed. Don't trust the "done"
 notes below over the git history if they ever disagree — the commits win.
 
+### Where the work stands (2026-08-03) — START HERE
+
+Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
+schema version **26**.
+
+- **Active feature: Stage E — the Recruit phase** (`### Recruit phase — hiring troops` further
+  down is the SSOT for the design and every slice's handoff). Shipped so far, one commit each:
+  S1 pool + pure mechanics (`9d887b5`), S2 route + day-offer + `campaignView` (`79adbff`),
+  S3 frontend screen (`a522827`), S4 old militia-purchase mechanic removed (`a99c767`),
+  S5 raid gold rewards (`23edf6b`).
+- **Next slices, either order (both small, both additive):**
+  1. **Garrison gold event** — a `requires: {minResolve: 67}` fate granting gold, same shape as
+     the existing `garrison_stores`/`garrison_night_sally` S9 fates. Fully specified; no
+     decisions left.
+  2. **Horses' earn source** — the one OPEN DESIGN QUESTION in Stage E. Cavalry/LightCavalry
+     hires spend `horses`, but nothing grants any yet, so those two pool entries are currently
+     unreachable. Candidates: raids (mirrors gold, cheapest to build) or reworking the existing
+     "A Captured Herd" event to grant a stockpile. **Grill the user before building this one.**
+- **Also still open, unrelated to Stage E:** worker replenishment + workers-eat-food (paired,
+  deferred, blocked on picking a mechanism — Recruit's worker drain raises its priority but
+  doesn't gate it); fortification-durability erosion (blocked on morale design).
+- **Test baseline on a machine with no compiled `./game`:** `cs-test` is 426/429 — the 3
+  failures are `engine.integration.test.js` ENOENT and are EXPECTED there. `fe-test` 243/243,
+  `fe-lint` clean. Run everything through `scripts/dev.sh` (see `CLAUDE.md`).
+
 ### Project state (as of 2026-07-05)
 
 - **Branch:** `feature/campaign-mode`. Turn length = **two weeks** (`DAYS_PER_TURN = 14`,
