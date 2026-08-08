@@ -47,12 +47,15 @@ export const acceptFates = guarded(async () => {
 // nothing to deploy FOR and the turn simply ends here. Walking the player
 // through an empty deployment screen instead read as the game offering a battle
 // that was never on offer (user, 2026-08-08).
-export const breakCamp = () => {
+export const breakCamp = async () => {
   // Safety net: no ending the turn past unsealed fates (e.g. a reload landed on
   // a consulted-but-unaccepted council) — acceptance comes first.
   const campaign = useCampaignStore.getState().campaign
   if (campaign?.augury?.consulted && !campaign.augury.accepted) return acceptFates()
   if (!campaign?.bossFightDue) return nextDay()
+  // Marching out is a real phase step (the server's last one), so it goes
+  // through the server like every other: recruiting closes behind you.
+  if (await guarded(useCampaignStore.getState().advancePhase)('deploy') === undefined) return
   usePlacementStore.getState().clear()
   useUiStore.getState().setPhase('placement')
 }

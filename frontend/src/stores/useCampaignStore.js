@@ -5,6 +5,7 @@ import {
   consultCampaignAugury,
   rerollCampaignAugury,
   setCampaignForage,
+  advanceCampaignPhase,
   spendCampaign,
   postCampaignBattle,
   postCampaignRaids,
@@ -53,14 +54,30 @@ const useCampaignStore = create((set, get) => ({
     set({ campaign: await setCampaignForage(get().campaign.id, assignment) })
   },
 
+  // Move the turn on one phase. The server is the authority on which phase the
+  // turn is in (App routes its screens off campaign.phase), so this must go
+  // through it rather than flipping local UI state.
+  // Returns the refreshed view, so a caller can tell success from the
+  // undefined that `guarded` returns on failure (flows.breakCamp gates the
+  // deployment screen on exactly that).
+  advancePhase: async (phase) => {
+    const campaign = await advanceCampaignPhase(get().campaign.id, phase)
+    set({ campaign })
+    return campaign
+  },
+
   fortify: async () => {
     set({ campaign: await spendCampaign(get().campaign.id, { action: 'fortify' }) })
   },
 
   // Entering the Recruit phase draws the day's offer (and closes the camp) —
   // there is nothing to show until this runs. Idempotent server-side.
+  // Returns the refreshed view (like advancePhase) so App can tell a drawn
+  // offer from a failed call before it moves the screen.
   openRecruit: async () => {
-    set({ campaign: await openRecruit(get().campaign.id) })
+    const campaign = await openRecruit(get().campaign.id)
+    set({ campaign })
+    return campaign
   },
 
   // body is {entryId} — the day's one hire. There is no skip.

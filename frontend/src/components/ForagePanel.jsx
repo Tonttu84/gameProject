@@ -10,13 +10,15 @@ import { useRoster, EMPTY_OBJECT } from '../stores/selectors'
 // ring gauges showing how much the land has left. All math the client shows
 // comes from the campaign view — the server owns the formulas. forage/roster
 // come straight from the campaign store; only onAssign (the guarded action)
-// is still a prop.
+// is still a prop. `locked` means the turn marched past Prepare: the committed
+// assignment stays on screen as a record, but can no longer be changed (the
+// server refuses it too — routes' rejectIfPhasePassed).
 //
 // Mount with key={campaign.day} so a new turn resets the local draft.
 
 const RING_NAMES = ['Near', 'Middle', 'Far']
 
-const ForagePanel = ({ onAssign }) => {
+const ForagePanel = ({ onAssign, locked }) => {
   const forage = useCampaignStore((s) => s.campaign?.forage ?? EMPTY_OBJECT)
   const roster = useRoster()
   const tutorial = useUiStore((s) => s.tutorial)
@@ -77,6 +79,7 @@ const ForagePanel = ({ onAssign }) => {
                 max={n}
                 value={assignment[type] ?? 0}
                 data-testid={`forage-input-${type}`}
+                disabled={locked}
                 onChange={(e) => setCount(type, e.target.value)}
               />
             </label>
@@ -90,9 +93,9 @@ const ForagePanel = ({ onAssign }) => {
           className="btn-primary"
           data-testid="forage-submit"
           onClick={submit}
-          disabled={saved}
+          disabled={locked || saved}
         >
-          {!saved ? 'Send foragers' : assignedTotal > 0 ? 'Foragers assigned' : 'No foragers'}
+          {locked ? 'Foragers are out' : !saved ? 'Send foragers' : assignedTotal > 0 ? 'Foragers assigned' : 'No foragers'}
         </button>
       </div>
     </div>

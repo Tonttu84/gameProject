@@ -62,6 +62,15 @@ beforeEach(async () => {
 afterEach(clearRolls)
 
 const auth = (req) => req.set('Authorization', `Bearer ${token}`)
+
+// Ending the fortnight is the LAST phase's act: the route refuses a turn that
+// hasn't been seen through (routes' rejectIfPhaseBefore), which is what makes a
+// double submit impossible. A test that resolves a turn without walking the
+// screens stamps the phase first — the same state Recruiting leaves behind.
+const endTurn = async (id) => {
+  await Campaign.findByIdAndUpdate(id, { phase: 'recruit' })
+  return endTurn(id)
+}
 const createCampaign = () => auth(api.post('/api/campaigns')).send({})
 // Batch launch: {parties: {raidId: {type: count}}}. A single-raid convenience
 // wrapper covers the common one-opportunity case used by most tests below.
@@ -788,7 +797,7 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     expect(doc.augury.slots[0].countered).toBe(true)
     expect(doc.augury.slots[1].countered).toBe(false)
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     // Slot 0 is unmade; slots 1–2 land in full. Roster after the raid is
     // back to 10 (2 fielded, 2 survivors), eating 10 × 28 = 280 kg.
@@ -822,7 +831,7 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
   test('end-day deals a fresh set of opportunities for the new turn', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id, QUIET)
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     const opportunities = res.body.campaign.raid.opportunities
     expect(opportunities.length).toBeGreaterThan(0)
@@ -850,7 +859,7 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     const { body: light } = await createCampaign()
     await pinAugury(light.id, QUIET)
     await pinArmies(light.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 150 } })
-    await auth(api.post(`/api/campaigns/${light.id}/end-day`)).send({})
+    await endTurn(light.id)
     const docLight = await Campaign.findById(light.id)
     expect(baseBoard(docLight.raid.opportunities)).toBe(RAID_BASE_TARGETS)
     expect(docLight.raid.scoutingPoints).toBeGreaterThan(0)
@@ -859,7 +868,7 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     const { body: heavy } = await createCampaign()
     await pinAugury(heavy.id, QUIET)
     await pinArmies(heavy.id, { roster: { LightCavalry: 100 }, enemyArmy: { Zombie: 450, LightCavalry: 10 } })
-    await auth(api.post(`/api/campaigns/${heavy.id}/end-day`)).send({})
+    await endTurn(heavy.id)
     const docHeavy = await Campaign.findById(heavy.id)
     expect(baseBoard(docHeavy.raid.opportunities)).toBe(RAID_BASE_TARGETS)
     expect(docHeavy.raid.scoutingPoints).toBeGreaterThan(docLight.raid.scoutingPoints)
@@ -1213,7 +1222,7 @@ describe('raid double-assignment is rejected (server-side, not just the UI)', ()
     expect(day1.status).toBe(201)
     expect(day1.body.campaign.raid.squadAssignment).toEqual([1])
 
-    const endDay = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const endDay = await endTurn(c.id)
     expect(endDay.body.campaign.raid.squadAssignment).toEqual([])
 
     // The 1st Cohort (regrouped to its survivors) can raid again today — if the

@@ -14,8 +14,10 @@ import useUiStore from '../stores/useUiStore'
 // (RecruitPanel), which is the other claim on the same workforce.
 
 // fortification/resources/workers come straight from the campaign store;
-// onFortify is still a prop (a guarded action).
-const CampPanel = ({ onFortify }) => {
+// onFortify is still a prop (a guarded action). `locked` means the turn has
+// marched past Prepare: the panel is a record of what stands, not a control
+// (the server refuses the spend anyway — routes' rejectIfPhasePassed).
+const CampPanel = ({ onFortify, locked }) => {
   const { fortification, resources, workers } = useCampaignStore((s) => s.campaign)
   const tutorial = useUiStore((s) => s.tutorial)
 
@@ -79,8 +81,8 @@ const CampPanel = ({ onFortify }) => {
           className={`btn-primary ${fortState}`}
           data-testid="fortify-button"
           onClick={onFortify}
-          disabled={!canFortify}
-          title={fortReason}
+          disabled={locked || !canFortify}
+          title={locked ? 'The camp is behind you this turn' : fortReason}
         >
           {atCap
             ? 'Fortifications maxed'

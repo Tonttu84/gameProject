@@ -19,6 +19,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
+  // The turn's phase is server state now: advancing returns the refreshed
+  // view, exactly as the real route does (the campaign with the new phase).
+  // Imported lazily inside the call so the hoisted vi.mock factory stays
+  // self-contained.
+  advanceCampaignPhase: vi.fn(async (_id, phase) => {
+    const { default: store } = await import('../stores/useCampaignStore')
+    return { ...store.getState().campaign, phase }
+  }),
   getInfo: vi.fn(),
   getMap: vi.fn(),
   getTicks: vi.fn(),

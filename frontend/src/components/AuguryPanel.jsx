@@ -27,9 +27,12 @@ const omenLabel = ({ valence, severity }) =>
 
 // augury comes straight from the campaign store; onConsult/onReroll/
 // onAccept/onContinue are still props (guarded actions / flow functions).
-const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
+// `locked` means the turn has marched past Omens: the reading stays visible as
+// the record it is, but nothing here can be consulted, troubled or re-sealed
+// (the server refuses all three — routes' rejectIfPhasePassed).
+const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue, locked }) => {
   const augury = useCampaignStore((s) => s.campaign?.augury ?? EMPTY_OBJECT)
-  const canReroll = augury.rerollsRemaining > 0
+  const canReroll = augury.rerollsRemaining > 0 && !locked
 
   return (
     <div className="augury-phase">
@@ -43,7 +46,7 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
             surface to raise a different thread. The bones are cast and the smoke
             rises; the augur is ready to read the coming fortnight.
           </p>
-          <button className="btn-primary" data-testid="consult-augur" onClick={onConsult}>
+          <button className="btn-primary" data-testid="consult-augur" onClick={onConsult} disabled={locked}>
             Consult the Augur
           </button>
         </>
@@ -92,7 +95,7 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue }) => {
               here (reveal + any decisions), before deployment — accepting
               with the reroll unspent is the "skip reroll" option. */}
           {!augury.accepted ? (
-            <button className="btn-primary" data-testid="accept-fates" onClick={onAccept}>
+            <button className="btn-primary" data-testid="accept-fates" onClick={onAccept} disabled={locked}>
               Accept the Fates
             </button>
           ) : (

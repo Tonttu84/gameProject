@@ -260,9 +260,21 @@ body {
    player is deciding against. */
 .omens-context { color: #8888aa; font-size: 0.9rem; }
 .raids-bar { margin-top: 0.5rem; display: flex; gap: 0.75rem; align-items: center; }
-/* Back-step control on the phased screens — walk the turn both ways, not just
-   forward. Sits below the screen's own content, visually secondary. */
+/* Back-step control on the phased screens — an earlier screen can still be
+   LOOKED at, though its decisions are made. Sits below the screen's own
+   content, visually secondary. */
 .phase-nav { margin-top: 0.5rem; }
+
+/* What a back-stepped screen shows in place of its advance button: the turn
+   has marched past it, so its controls are dead and the only way out is
+   forward again (docs/CAMPAIGN_PLAN.md "Effort slider", decision 12). */
+.phase-committed {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid #6b6250;
+  background: rgba(0, 0, 0, 0.18);
+}
+.phase-committed p { margin: 0 0 0.6rem; font-style: italic; opacity: 0.85; }
 
 .augury-phase {
   display: flex;

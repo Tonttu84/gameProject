@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import Campaign, { CAMPAIGN_SCHEMA_VERSION } from '../models/campaign.js'
+import Campaign, { CAMPAIGN_SCHEMA_VERSION, TURN_PHASES } from '../models/campaign.js'
 import UnitType from '../models/unitType.js'
 import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
@@ -81,19 +81,45 @@ const rejectIfChoicePending = (campaign, res) => {
   return false
 }
 
-// Opening the Recruit phase closes the camp for the day: forage, omens, raids
-// and building are all done, and the hire is the only action left (there is no
-// skip — the always-affordable Travellers card guarantees a legal play). This
-// is what makes the sealed offer honest: the affordable pool is computed at
-// open, AFTER raids, and nothing may move resources between that draw and the
-// hire. Without it a raid launched afterwards would leave options that should
-// exist un-offered — the staleness this whole design exists to remove.
-// Enforced server-side because the phase is client state; deploy/battle/
-// end-day come after Recruit in the turn order and stay open. Same
-// returns-true-when-it-wrote-the-400 shape as the guards above.
-const rejectIfRecruiting = (campaign, res) => {
-  if (campaign.recruit?.drawnDay === campaign.day) {
-    res.status(400).json({ error: 'recruiting has begun — the hire is the only thing left today' })
+// The turn is a one-way march (docs/CAMPAIGN_PLAN.md "Effort slider",
+// decision 12): a phase's decisions FREEZE the moment the turn moves past it.
+// This guard is what makes that true server-side — it generalises the old
+// recruit lock (`rejectIfRecruiting`), which enforced exactly this rule for
+// exactly one door.
+//
+// It rejects only when the campaign is PAST the route's phase, never when it
+// is before. Acting early is left alone deliberately: the client marches the
+// screens in order so it cannot happen there, and nothing later has happened
+// yet, so an early write can't be informed by information the player wasn't
+// meant to have. The abuse this exists to stop is the opposite one — going
+// BACK to re-decide once the fates are read, the raids are resolved or the
+// offer is drawn. `phase` is the last phase for routes that close the turn
+// (battles, end-day), so those are never refused on these grounds.
+// Same returns-true-when-it-wrote-the-409 shape as the guard above.
+const PHASE_INDEX = Object.fromEntries(TURN_PHASES.map((p, i) => [p, i]))
+const rejectIfPhasePassed = (campaign, res, phase) => {
+  if (PHASE_INDEX[campaign.phase ?? 'prepare'] > PHASE_INDEX[phase]) {
+    res.status(409).json({
+      error: `the ${phase} phase is behind you — that decision is made for this turn`,
+    })
+    return true
+  }
+  return false
+}
+
+// The mirror image, and the ONE place the turn refuses to run AHEAD of itself:
+// the fortnight can't end before its decisions have been made. Every other
+// mutating route already refuses a second resolution by its own state
+// (augury.consulted/accepted, recruit.hiredToday, battleFoughtToday, the
+// pendingChoices lookup) — end-day had no such flag, so a double submit
+// resolved two fortnights. Since end-day resets the phase to 'prepare', this
+// makes the second one a 409 (user, 2026-08-08: the backend, not the client,
+// is what must make double-resolution impossible).
+const rejectIfPhaseBefore = (campaign, res, phase) => {
+  if (PHASE_INDEX[campaign.phase ?? 'prepare'] < PHASE_INDEX[phase]) {
+    res.status(409).json({
+      error: `the turn is still in ${campaign.phase} — see it through before the fortnight ends`,
+    })
     return true
   }
   return false
@@ -183,6 +209,41 @@ router.get('/:id', async (req, res) => {
   res.json(await campaignView(campaign))
 })
 
+// Advance the turn to the next phase ({phase}). The march is one-way and one
+// step at a time: the target must be exactly the phase after the current one,
+// so there is no going back and no skipping past a screen that owes a
+// decision. Everything the player committed in the phase they are leaving is
+// frozen from here on (rejectIfPhasePassed above).
+//
+// Two steps are NOT taken here:
+//  - 'recruit' is entered through POST /:id/recruit/open, because entering it
+//    DRAWS the day's offer — a phase change with a side effect, kept in the one
+//    place that owns it rather than duplicated here.
+//  - 'deploy' is reachable only on the pitched-battle day: since 2026-08-08 a
+//    quiet turn has no deployment at all and ends from Recruiting, so offering
+//    the step would put the player on an empty grid that reads as an offer of
+//    battle.
+router.post('/:id/phase', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const target = req.body?.phase
+  if (!TURN_PHASES.includes(target))
+    return res.status(400).json({ error: 'unknown phase' })
+  if (target === 'recruit')
+    return res.status(400).json({ error: 'open the recruit phase to draw the day’s offer' })
+  if (PHASE_INDEX[target] !== PHASE_INDEX[campaign.phase] + 1)
+    return res.status(409).json({ error: `the turn is in ${campaign.phase} — it moves one phase forward at a time` })
+  if (target === 'deploy' && !campaign.bossFightDue)
+    return res.status(400).json({ error: 'there is no battle to deploy for today' })
+
+  campaign.phase = target
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
 // Set (replace) today's forager assignment: {assignment: {type: count}}.
 // Assigned units sweep the rings at end-of-turn and are unavailable for the
 // turn's battle. Can be re-issued any time before end-day.
@@ -190,7 +251,7 @@ router.post('/:id/forage', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
-  if (rejectIfRecruiting(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'prepare')) return
 
   const assignment = req.body?.assignment
   if (assignment === null || typeof assignment !== 'object' || Array.isArray(assignment))
@@ -218,7 +279,7 @@ router.post('/:id/augury/consult', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
-  if (rejectIfRecruiting(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'omens')) return
   if (campaign.augury.consulted)
     return res.status(400).json({ error: 'the augur has already spoken today' })
 
@@ -239,7 +300,7 @@ router.post('/:id/augury/reroll', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
-  if (rejectIfRecruiting(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'omens')) return
   if (!campaign.augury.consulted)
     return res.status(400).json({ error: 'consult the augur before rerolling' })
   if (campaign.augury.accepted)
@@ -269,7 +330,7 @@ router.post('/:id/augury/accept', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
-  if (rejectIfRecruiting(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'omens')) return
   if (!campaign.augury.consulted)
     return res.status(400).json({ error: 'consult the augur before accepting the fates' })
   if (campaign.augury.accepted)
@@ -483,7 +544,7 @@ router.post('/:id/raids/launch', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
   if (rejectIfChoicePending(campaign, res)) return
-  if (rejectIfRecruiting(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'raids')) return
 
   const parties = req.body?.parties
   if (parties === null || typeof parties !== 'object' || Array.isArray(parties))
@@ -656,7 +717,7 @@ router.post('/:id/raids/scout', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
   if (rejectIfChoicePending(campaign, res)) return
-  if (rejectIfRecruiting(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'raids')) return
 
   const action = req.body?.action
 
@@ -706,7 +767,7 @@ router.post('/:id/spend', async (req, res) => {
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
 
   if (rejectIfChoicePending(campaign, res)) return
-  if (rejectIfRecruiting(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'prepare')) return
 
   const action = req.body?.action
 
@@ -741,22 +802,31 @@ router.post('/:id/spend', async (req, res) => {
 // on the board this turn (Raids precedes Recruit in the turn order precisely
 // for that payoff). Idempotent: `drawnDay` seals the offer for the day, so
 // re-entering the phase returns what was already drawn instead of rerolling
-// it (and with it the day's ONE Fervor roll). Stamping it also closes the camp
-// — see rejectIfRecruiting.
+// it (and with it the day's ONE Fervor roll).
+//
+// This is also the DOOR into the recruit phase — the one phase step that isn't
+// a pure state change, which is why POST /:id/phase refuses to make it. Both
+// happen together: the offer is drawn and the turn moves on, closing forage,
+// omens and raids behind it (rejectIfPhasePassed).
 router.post('/:id/recruit/open', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'recruit')) return
 
+  // Saved unconditionally, unlike the draw: re-opening an already-drawn phase
+  // is idempotent for the OFFER but must still stamp the phase (a reload that
+  // lands here mid-turn is exactly how the client re-syncs).
+  campaign.phase = 'recruit'
   if (campaign.recruit.drawnDay !== campaign.day) {
     const offer = drawRecruitOffer(recruitCtx(campaign))
     campaign.recruit.dailyOptions = offer.dailyOptions
     campaign.recruit.boosted = offer.boosted
     campaign.recruit.hiredToday = offer.hiredToday
     campaign.recruit.drawnDay = campaign.day
-    await campaign.save()
   }
+  await campaign.save()
   res.json(await campaignView(campaign))
 })
 
@@ -813,6 +883,7 @@ router.post('/:id/end-day', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfPhaseBefore(campaign, res, 'recruit')) return
   if (rejectIfBossFightUnfought(campaign, res)) return
 
   const report = await endDay(campaign)

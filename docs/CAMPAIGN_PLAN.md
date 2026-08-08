@@ -56,10 +56,14 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
   **Stage E is COMPLETE** — every entry in `RECRUIT_POOL` is reachable, both new resources
   have earn sources, and no open design question is left in it.
 - **Next up / ACTIVE: the effort slider** (`### Effort slider — one points pool, split between
-  foraging and scouting`, immediately below, is the SSOT). Designed and grilled 2026-08-08,
-  **nothing built yet**; three stages, do them in order — S1 the server-owned one-way phase
-  machine, S2 the slider + points unification (deletes forager clashes and enemy foraging),
-  S3 forage modifiers + persistent raid opportunities. Schema goes to **28** in S1.
+  foraging and scouting`, immediately below, is the SSOT). Designed and grilled 2026-08-08;
+  three stages, in order. **S1 (the server-owned one-way phase machine) is DONE** — schema is
+  now **28**. **START HERE: S2** — the slider + points unification, which deletes forager
+  clashes and enemy foraging outright. S3 (forage modifiers + persistent raid opportunities)
+  follows.
+  - **Verify first on a fresh session:** S1 was committed with `fe-test` green (247/247) and
+    oxlint clean, but the `cs-test` run had not finished — check CI (or run `cs-test`) before
+    building S2 on top of it.
 - **Backlog** (was "next up" before the slider was designed). The nearest candidates:
   1. **Worker replenishment + workers-eat-food** — paired, deferred, blocked on picking a
      mechanism. Recruit's worker drain (every troop-lane hire permanently shrinks
@@ -145,10 +149,32 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
 
 **Stages** (each committable and testable on its own; tests travel with the stage):
 
-- **S1 — the phase machine.** `campaign.phase` + `POST /:id/phase` (forward-only), a phase guard
-  on every mutating route, read-only rendering of passed phases in `App.jsx` + panels, client
-  phase state read from the server. New server-side phase-lock tests; frontend read-only-phase
-  coverage.
+- **S1 — the phase machine. ✅ LANDED 2026-08-08** (schema **v28**). `campaign.phase` +
+  `POST /:id/phase` (forward-only, ONE step at a time), a phase guard on every mutating route,
+  read-only rendering of passed phases, client phase state read from the server.
+  - **Guard shape (decided while building):** `rejectIfPhasePassed` refuses a write only when the
+    turn has moved PAST that route's phase — acting EARLY is deliberately left alone. The client's
+    screens are sequential so it can't happen there, and nothing later has happened yet, so an
+    early write can't be informed by information the player wasn't meant to have. The abuse being
+    stopped is the opposite one: going back to re-decide after the fates are read or the raids
+    resolved.
+  - **Double-resolution (user, 2026-08-08: the backend must make it impossible):** every mutating
+    route already refused a second resolution by its own state (`augury.consulted`/`accepted`,
+    `recruit.hiredToday`, `battleFoughtToday`, the pendingChoices lookup) — end-day was the one
+    gap, so it gained the mirror guard `rejectIfPhaseBefore(…, 'recruit')`. Since end-day resets
+    the phase to 'prepare', a double submit now 409s instead of resolving two fortnights.
+  - `rejectIfRecruiting` is DELETED — the general guard subsumes it (`recruit/open` just stamps
+    the phase); those refusals are 409s now, not 400s.
+  - Frontend: `App.jsx` routes screens off `campaign.phase` and syncs FORWARD only from another
+    turn screen (a UI-only screen — report/placement/result/replay — is never yanked out from
+    under the player); a `locked` prop makes Forage/Camp/Augury/Raid panels read-only behind the
+    turn, with a `phase-committed` banner whose only button leads forward again. The old
+    `recruitDrawn`/`setPhase` reload hack is gone — the reload wart is fixed by the server field.
+    `breakCamp` marches to `deploy` through the server.
+  - Tests: new `the one-way turn phase machine` suite (ladder, refusals, double-end-day, newDay
+    reset); ~47 end-day call sites routed through a new `endTurn(id)` helper that stamps the phase
+    first; frontend suite **247/247 green**, oxlint clean. **cs-test was still running when this
+    was committed — CI is the check.**
 - **S2 — the slider.** `fieldPointValue` (+ `forageValue` deleted), pool snapshot, `forage.share`,
   ring distance penalty, abstract `enemyDrainKg`, the meter change, all the deletions in
   decisions 2–4, `POST /:id/forage` → `POST /:id/effort {share}`, `ForagePanel` rewritten as the

@@ -169,6 +169,11 @@ export async function campaignView(campaign) {
     day: campaign.day,
     status: campaign.status,
     battleFoughtToday: campaign.battleFoughtToday,
+    // Which phase of the one-way turn the player is in (own info — it IS their
+    // own progress). The client routes its screens off this rather than local
+    // state, so a mid-turn reload lands where the turn actually stands, and
+    // every screen behind it renders read-only.
+    phase: campaign.phase,
     // The boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
     // hidden by default. At recon level 0 only the banded phrase crosses the
     // wire; recon R2 adds a numeric `estimate` [low, high] above that (null at

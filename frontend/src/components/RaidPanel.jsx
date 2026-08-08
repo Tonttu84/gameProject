@@ -57,7 +57,7 @@ const rewardParts = (reward) => {
 // raid/scouting/squads come straight from the campaign store; units stays a
 // prop (it's the static /api/info catalog, not campaign data).
 // onLaunchAll/onScout/onWatch are still props (guarded actions).
-const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
+const RaidPanel = ({ units, onLaunchAll, onScout, onWatch, locked }) => {
   const raid = useCampaignStore((s) => s.campaign?.raid)
   const scouting = useCampaignStore((s) => s.campaign?.scouting)
   const squads = useSquads()
@@ -141,7 +141,10 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
     const ids = draftedParties[o.id]
     return ids && partyCost(o.id) > o.capacity
   })
-  const canLaunch = !busy && Object.keys(draftedParties).length > 0 && !anyOverBudget
+  // `locked` = the turn marched past Raids: the board stays readable (what was
+  // launched and what it cost), but nothing can be scouted, drafted or sent
+  // again — the server refuses all three (routes' rejectIfPhasePassed).
+  const canLaunch = !busy && !locked && Object.keys(draftedParties).length > 0 && !anyOverBudget
 
   const launchAll = async () => {
     setBusy(true)
@@ -178,7 +181,7 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
           className="login-toggle"
           data-testid="raid-scout-add"
           onClick={addTarget}
-          disabled={scoutBusy || scoutingPoints < scoutCost.addTarget}
+          disabled={locked || scoutBusy || scoutingPoints < scoutCost.addTarget}
           title={`Scout a new target (−${scoutCost.addTarget})`}
         >
           Scout new target (−{scoutCost.addTarget})
@@ -201,7 +204,7 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
                       className="login-toggle"
                       data-testid={`raid-reveal-reward-${o.id}`}
                       onClick={() => revealField(o.id, 'reward')}
-                      disabled={scoutBusy || scoutingPoints < scoutCost.reveal}
+                      disabled={locked || scoutBusy || scoutingPoints < scoutCost.reveal}
                     >
                       Reveal (−{scoutCost.reveal})
                     </button>
@@ -217,7 +220,7 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
                     className="login-toggle"
                     data-testid={`raid-reveal-enemy-${o.id}`}
                     onClick={() => revealField(o.id, 'enemy')}
-                    disabled={scoutBusy || scoutingPoints < scoutCost.reveal}
+                    disabled={locked || scoutBusy || scoutingPoints < scoutCost.reveal}
                   >
                     Reveal (−{scoutCost.reveal})
                   </button>
@@ -264,7 +267,7 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch }) => {
                         <input
                           type="checkbox"
                           checked={selected}
-                          disabled={taken}
+                          disabled={locked || taken}
                           data-testid={`raid-squad-${o.id}-${sq.id}`}
                           onChange={() => toggleSquad(o.id, sq.id)}
                         />

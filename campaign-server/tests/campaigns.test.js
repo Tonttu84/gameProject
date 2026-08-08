@@ -60,6 +60,15 @@ beforeEach(async () => {
 })
 
 const auth = (req) => req.set('Authorization', `Bearer ${token}`)
+
+// Ending the fortnight is the LAST phase's act: the route refuses a turn that
+// hasn't been seen through (routes' rejectIfPhaseBefore), which is what makes a
+// double submit impossible. A test that resolves a turn without walking the
+// screens stamps the phase first — the same state Recruiting leaves behind.
+const endTurn = async (id) => {
+  await Campaign.findByIdAndUpdate(id, { phase: 'recruit' })
+  return endTurn(id)
+}
 const createCampaign = () => auth(api.post('/api/campaigns')).send({})
 
 afterEach(clearRolls)
@@ -442,7 +451,7 @@ describe('recon numeric brackets (R2)', () => {
     const doc = await Campaign.findById(body.id)
     doc.recon.points = RECON_LEVEL_THRESHOLDS[1] - 1 // just under Contested
     await doc.save()
-    await auth(api.post(`/api/campaigns/${body.id}/end-day`))
+    await endTurn(body.id)
 
     const after = await Campaign.findById(body.id)
     // Level climbed to at least Contested (2): brackets stamped at that level,
@@ -470,7 +479,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     const { body: c } = await createCampaign()
     await pinBand(c.id, 'Contested')
     await pinAugury(c.id, NIGHT_RAID, QUIET)
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
 
@@ -492,7 +501,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     // A fresh campaign is Blind (0 recon); the Priest roster just sets upkeep.
     await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
     await pinAugury(c.id, NIGHT_RAID, QUIET)
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expectNoHiddenInfo(res.body)
 
     // Blind rung, 3 slots: 3 × −2,000 kg; upkeep for 100 Priests is 2,800 kg.
@@ -509,7 +518,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
   test('a plain event carries no rung machinery in the report', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id) // QUIET — not recon-sensitive
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     for (const slot of res.body.report.augury) {
       expect(slot.fired).toBeUndefined()
       expect(slot.scoutsIntervened).toBeUndefined()
@@ -521,7 +530,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
     await pinBand(c.id, 'Superior')
     await pinAugury(c.id, FORAGE_RAIDERS, QUIET)
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expectNoHiddenInfo(res.body)
 
     // No fate — blind rung or reversal — may bring on the pitched battle; that
@@ -543,7 +552,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
     await pinBand(c.id, 'Superior')
     await pinAugury(c.id, NIGHT_RAID, QUIET)
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expectNoHiddenInfo(res.body)
 
     // Superior alone licenses composition at most — the reveal opens the
@@ -562,7 +571,7 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     // and lift the band to Overwhelming).
     await pinBand(c.id, 'Superior')
     await pinAugury(c.id) // quiet fates so nothing re-reveals
-    const next = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const next = await endTurn(c.id)
     expectNoHiddenInfo(next.body)
     expect(next.body.campaign.enemy.revealed).toBeUndefined()
     expect(next.body.campaign.enemy.units).toBeUndefined()
@@ -671,7 +680,7 @@ describe('campaign schema versioning', () => {
 
     expect((await auth(api.get(`/api/campaigns/${c.id}`))).status).toBe(404)
     expect(
-      (await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status,
+      (await endTurn(c.id)).status,
     ).toBe(404)
     expect(
       (
@@ -854,7 +863,7 @@ describe('POST /api/campaigns/:id/forage', () => {
     doc.forage.enemyPlan = 0 // uncontested rings → no clash roll → deterministic
     await doc.save()
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     expect(res.body.report.forage.posture).toBe('Blind')
     expect(res.body.report.forage.capacity).toBe(2100) // floor(100 × 30 × 0.7)
@@ -1073,7 +1082,7 @@ describe('POST /api/campaigns/:id/battles', () => {
     expect(res.status).toBe(201)
     expect(res.body.campaign.status).toBe('lost')
     // A finished campaign refuses further actions.
-    expect((await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status).toBe(400)
+    expect((await endTurn(c.id)).status).toBe(400)
   })
 
   test('destroying the enemy host in battle wins the campaign immediately', async () => {
@@ -1451,7 +1460,7 @@ describe('POST /api/campaigns/:id/spend', () => {
 describe('Recruit phase (docs/CAMPAIGN_PLAN.md)', () => {
   const openRecruit = (id) => auth(api.post(`/api/campaigns/${id}/recruit/open`)).send({})
   const hire = (id, body) => auth(api.post(`/api/campaigns/${id}/recruit/hire`)).send(body)
-  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const endDayReq = (id) => endTurn(id)
   const militia = RECRUIT_POOL.find((e) => e.id === 'militia')
 
   test('a fresh campaign has NO offer until the phase is opened', async () => {
@@ -1632,13 +1641,16 @@ describe('Recruit phase locks the rest of the turn', () => {
     expect(res.status).toBe(200)
   })
 
-  test('every camp action 400s once the offer has been drawn', async () => {
+  // The ad-hoc recruit lock is gone: opening the phase just marches the turn
+  // to 'recruit', and the general one-way guard (rejectIfPhasePassed) is what
+  // closes every earlier screen — now a 409, like every other passed phase.
+  test('every camp action 409s once recruiting has begun', async () => {
     const { body: c } = await createCampaign()
     await openRecruit(c.id)
     for (const [path, payload] of lockedActions) {
       const res = await auth(api.post(`/api/campaigns/${c.id}/${path}`)).send(payload)
-      expect(res.status, path).toBe(400)
-      expect(res.body.error, path).toMatch(/recruit/i)
+      expect(res.status, path).toBe(409)
+      expect(res.body.error, path).toMatch(/behind you/i)
     }
   })
 
@@ -1646,7 +1658,112 @@ describe('Recruit phase locks the rest of the turn', () => {
     const { body: c } = await createCampaign()
     await openRecruit(c.id)
     expect((await auth(api.post(`/api/campaigns/${c.id}/recruit/hire`)).send({ entryId: 'travellers' })).status).toBe(200)
-    expect((await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status).toBe(200)
+    expect((await endTurn(c.id)).status).toBe(200)
+  })
+})
+
+// ── The one-way turn (docs/CAMPAIGN_PLAN.md "Effort slider", decision 12) ──
+//
+// The turn marches prepare → omens → raids → recruit → deploy and never back.
+// `campaign.phase` is the authority (the client only asks it to move), which is
+// what makes a decision final once its screen is behind you — and what makes a
+// double-submitted end-day impossible.
+describe('the one-way turn phase machine', () => {
+  const setPhase = (id, phase) => auth(api.post(`/api/campaigns/${id}/phase`)).send({ phase })
+
+  test('a fresh campaign starts in prepare, and the view says so', async () => {
+    const { body: c } = await createCampaign()
+    expect(c.phase).toBe('prepare')
+  })
+
+  test('advances one step at a time, and never backwards', async () => {
+    const { body: c } = await createCampaign()
+
+    expect((await setPhase(c.id, 'omens')).body.phase).toBe('omens')
+    expect((await setPhase(c.id, 'raids')).body.phase).toBe('raids')
+
+    // Back is refused outright — that is the whole point of the march.
+    const back = await setPhase(c.id, 'prepare')
+    expect(back.status).toBe(409)
+    expect((await Campaign.findById(c.id)).phase).toBe('raids')
+  })
+
+  test('skipping a phase is refused', async () => {
+    const { body: c } = await createCampaign()
+    const res = await setPhase(c.id, 'raids') // prepare → raids, skipping omens
+    expect(res.status).toBe(409)
+    expect(res.body.error).toMatch(/one phase forward/i)
+  })
+
+  test('an unknown phase is refused', async () => {
+    const { body: c } = await createCampaign()
+    expect((await setPhase(c.id, 'feasting')).status).toBe(400)
+  })
+
+  test('recruit is entered by opening it (that draw is the phase step)', async () => {
+    const { body: c } = await createCampaign()
+    await setPhase(c.id, 'omens')
+    await setPhase(c.id, 'raids')
+
+    // The pure phase route refuses it: entering recruit DRAWS the day's offer,
+    // so it belongs to the one route that owns that.
+    expect((await setPhase(c.id, 'recruit')).status).toBe(400)
+
+    const opened = await auth(api.post(`/api/campaigns/${c.id}/recruit/open`)).send({})
+    expect(opened.status).toBe(200)
+    expect(opened.body.phase).toBe('recruit')
+  })
+
+  test('deploy opens only on the pitched-battle day', async () => {
+    const { body: c } = await createCampaign()
+    await auth(api.post(`/api/campaigns/${c.id}/recruit/open`)).send({})
+
+    const quiet = await setPhase(c.id, 'deploy')
+    expect(quiet.status).toBe(400)
+    expect(quiet.body.error).toMatch(/no battle/i)
+
+    const doc = await Campaign.findById(c.id)
+    doc.bossFightDue = true
+    await doc.save()
+    expect((await setPhase(c.id, 'deploy')).body.phase).toBe('deploy')
+  })
+
+  test('a decision behind the turn is refused — but acting early is not', async () => {
+    const { body: c } = await createCampaign()
+
+    // Early: the client can't do this (its screens are sequential) and nothing
+    // later has happened yet, so it is deliberately left alone.
+    expect((await auth(api.post(`/api/campaigns/${c.id}/raids/scout`)).send({ action: 'add_target' })).status)
+      .not.toBe(409)
+
+    await setPhase(c.id, 'omens')
+    const late = await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({ assignment: {} })
+    expect(late.status).toBe(409)
+    expect(late.body.error).toMatch(/prepare phase is behind you/i)
+  })
+
+  test('the fortnight cannot end before it has been seen through', async () => {
+    const { body: c } = await createCampaign()
+    const early = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(early.status).toBe(409)
+    expect(early.body.error).toMatch(/still in prepare/i)
+    expect((await Campaign.findById(c.id)).day).toBe(1) // nothing resolved
+  })
+
+  test('a double-submitted end-day resolves ONE fortnight, not two', async () => {
+    const { body: c } = await createCampaign()
+    expect((await endTurn(c.id)).status).toBe(200)
+
+    // The second submit lands on a turn that has just reset to 'prepare'.
+    const again = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    expect(again.status).toBe(409)
+    expect((await Campaign.findById(c.id)).day).toBe(2)
+  })
+
+  test('a new turn re-opens the march at prepare', async () => {
+    const { body: c } = await createCampaign()
+    await endTurn(c.id) // stamps 'recruit', then resolves
+    expect((await Campaign.findById(c.id)).phase).toBe('prepare')
   })
 })
 
@@ -1654,7 +1771,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
   test('advances the turn: upkeep, enemy foraging, fresh augury, report', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id) // ±0-food truth keeps the resource math exact
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
 
@@ -1698,7 +1815,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(leftover).toBeGreaterThan(0)
     expect(before.recon.points).toBe(0)
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     const after = await Campaign.findById(c.id)
     // Accrued from 0 by exactly the leftover, BEFORE the pool refilled.
     expect(after.recon.points).toBeCloseTo(leftover, 5)
@@ -1711,7 +1828,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
   test('cannot end the day while the boss fight is due and not yet fought', async () => {
     const { body: c } = await createCampaign()
     await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } })
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/take the field/)
   })
@@ -1731,7 +1848,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(consultRes.status).toBe(200)
 
     // But End Turn is still barred until the fight happens.
-    const endRes = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const endRes = await endTurn(c.id)
     expect(endRes.status).toBe(400)
     expect(endRes.body.error).toMatch(/take the field/)
   })
@@ -1752,7 +1869,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     doc.workers.used = 1999 // almost the entire 2000-worker pool spent
     await doc.save()
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     // Same 12,432 kg as the plain starting-roster case (see the test
     // above) — workers.used had no effect on upkeep.
@@ -1769,7 +1886,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     })
     pushRoll(1000) // near ring is contested with the enemy — force no clash
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
 
@@ -1788,7 +1905,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     pushRoll(4); pushRoll(1); pushRoll(1) // slot 2: truth
     await auth(api.post(`/api/campaigns/${c.id}/augury/consult`)).send({})
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expectNoHiddenInfo(res.body)
     expect(res.body.report.augury.map((r) => r.predicted.id)).toEqual([
       'quiet',
@@ -1810,7 +1927,7 @@ describe('POST /api/campaigns/:id/end-day', () => {
     doc.resources.food = 5 // upkeep will floor it to 0 → 10% desert
     await doc.save()
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.body.report.upkeep.deserters).toBeGreaterThan(0)
     expect(res.body.campaign.roster.Soldier).toBe(270)
   })
@@ -1821,11 +1938,11 @@ describe('POST /api/campaigns/:id/end-day', () => {
     doc.enemy.army = {}
     await doc.save()
 
-    const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
+    const res = await endTurn(c.id)
     expect(res.body.campaign.status).toBe('won')
 
     // A finished campaign refuses further actions.
-    expect((await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})).status).toBe(400)
+    expect((await endTurn(c.id)).status).toBe(400)
   })
 })
 
@@ -1842,7 +1959,7 @@ describe('augury acceptance (fates at the tent)', () => {
   const PLAGUE = EVENT_POOL.find((e) => e.id === 'plague')
 
   const accept = (id) => auth(api.post(`/api/campaigns/${id}/augury/accept`)).send({})
-  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const endDayReq = (id) => endTurn(id)
   const choose = (id, slot, choice) =>
     auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send({ choice })
 
@@ -2074,7 +2191,7 @@ describe('events with choices', () => {
   const REFUGEES = EVENT_POOL.find((e) => e.id === 'refugees')
   const BAGGAGE_PLAGUE = EVENT_POOL.find((e) => e.id === 'baggage_plague')
 
-  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const endDayReq = (id) => endTurn(id)
   const choose = (id, slot, choice) =>
     auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send({ choice })
 
@@ -2213,7 +2330,7 @@ describe('event chains (part 2)', () => {
   const CAPTURED = EVENT_POOL.find((e) => e.id === 'captured_courier')
 
   const accept = (id) => auth(api.post(`/api/campaigns/${id}/augury/accept`)).send({})
-  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const endDayReq = (id) => endTurn(id)
   const choose = (id, slot, choice) =>
     auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send({ choice })
   const setup = async (id) => {
@@ -2276,7 +2393,7 @@ describe('event chains (part 2)', () => {
 // at campaign creation (turns 2/5/8), each `chained` so it never enters a random
 // draw — the schedule queue forces it into an augury slot on its day.
 describe('siege spine (S8): scripted guaranteed beats', () => {
-  const endDayReq = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+  const endDayReq = (id) => endTurn(id)
   // Neutralise the day-1 random augury so ending turn 1 pends nothing and
   // resolves clean — the spine drain is the only thing under test.
   const quietDay1 = async (id) => {

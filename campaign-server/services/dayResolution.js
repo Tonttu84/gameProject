@@ -307,6 +307,9 @@ export async function endDay(campaign) {
   if (campaign.status === 'active') {
     campaign.day += 1
     campaign.battleFoughtToday = false
+    // Back to the top of the one-way march (routes' rejectIfPhasePassed): the
+    // new turn re-opens every phase that this one closed.
+    campaign.phase = 'prepare'
     campaign.forage.assignment = new Map()
     campaign.raid.assignment = new Map()
     campaign.raid.squadAssignment = []

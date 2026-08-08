@@ -1,10 +1,11 @@
 /**
  * Back-navigation across the phased turn (Prepare → Omens → Raids → Recruit →
  * Deploy). The forward march is pinned elsewhere (campaignFlow, the nav
- * helper); this pins that the flow can also be walked BACKWARDS — Omens →
- * Prepare, Raids → Omens, Recruit → Raids — as pure phase-state changes that
- * undo no committed server action (docs/CAMPAIGN_PLAN.md, phased-turn slices
- * 2–3; Recruit phase design).
+ * helper); this pins what going BACK means since the turn became a one-way
+ * march (docs/CAMPAIGN_PLAN.md "Effort slider", decision 12): an earlier screen
+ * can still be LOOKED at, but it is a record — its controls are dead, its
+ * advance button is replaced by the way back to where the turn stands, and the
+ * server refuses its writes regardless.
  */
 
 import React from 'react'
@@ -12,6 +13,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
+  // The turn's phase is server state now: advancing returns the refreshed
+  // view, exactly as the real route does (the campaign with the new phase).
+  // Imported lazily inside the call so the hoisted vi.mock factory stays
+  // self-contained.
+  advanceCampaignPhase: vi.fn(async (_id, phase) => {
+    const { default: store } = await import('../stores/useCampaignStore')
+    return { ...store.getState().campaign, phase }
+  }),
   getInfo: vi.fn(),
   getMap: vi.fn(),
   getTicks: vi.fn(),
@@ -59,14 +68,24 @@ describe('phased-turn back navigation', () => {
 
     fireEvent.click(screen.getByTestId('to-omens'))
     // On the tent: the read-only context is shown, the council is gone.
-    expect(screen.getByTestId('omens-context')).toBeInTheDocument()
+    // Awaited — advancing a phase is a server round trip now.
+    expect(await screen.findByTestId('omens-context')).toBeInTheDocument()
     expect(screen.queryByTestId('to-omens')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('back-to-prepare'))
-    // Back on the council: the "Read the Omens" exit is here again.
+    // Back on the council — but the turn has moved past it, so it is a record:
+    // no second "Read the Omens", the forage controls are dead, and the only
+    // button is the one that returns to where the turn actually stands.
     await screen.findByText(/War Council/)
-    expect(screen.getByTestId('to-omens')).toBeInTheDocument()
     expect(screen.queryByTestId('omens-context')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('to-omens')).not.toBeInTheDocument()
+    expect(screen.getByTestId('phase-committed')).toBeInTheDocument()
+    expect(screen.getByTestId('forage-submit')).toBeDisabled()
+    expect(screen.getByTestId('fortify-button')).toBeDisabled()
+
+    // …and it leads forward again, never sideways.
+    fireEvent.click(screen.getByTestId('back-to-current-phase'))
+    expect(await screen.findByTestId('omens-context')).toBeInTheDocument()
   })
 
   it('Raids → Back to the Omens returns to the augur’s tent', async () => {
@@ -125,7 +144,7 @@ describe('phased-turn screen scope', () => {
     fireEvent.click(screen.getByTestId('to-omens'))
 
     // Its own context…
-    expect(screen.getByTestId('omens-context')).toBeInTheDocument()
+    expect(await screen.findByTestId('omens-context')).toBeInTheDocument()
     // …and none of the council's or raids' actions.
     expect(screen.queryByTestId('forage-panel')).not.toBeInTheDocument()
     expect(screen.queryByTestId('camp-panel')).not.toBeInTheDocument()

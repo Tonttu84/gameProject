@@ -14,6 +14,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
+  // The turn's phase is server state now: advancing returns the refreshed
+  // view, exactly as the real route does (the campaign with the new phase).
+  // Imported lazily inside the call so the hoisted vi.mock factory stays
+  // self-contained.
+  advanceCampaignPhase: vi.fn(async (_id, phase) => {
+    const { default: store } = await import('../stores/useCampaignStore')
+    return { ...store.getState().campaign, phase }
+  }),
   getInfo: vi.fn(),
   getMap: vi.fn(),
   getTicks: vi.fn(),
@@ -96,8 +104,9 @@ describe('the pitched-battle gate', () => {
 
     fireEvent.click(await screen.findByTestId('to-recruit'))
     fireEvent.click(await screen.findByTestId('to-deploy'))
+    // Marching out is a server phase step, so the grid lands a tick later.
+    expect(await screen.findByTestId('pitched-battle-deploy')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /fight!/i })).toBeInTheDocument()
-    expect(screen.getByTestId('pitched-battle-deploy')).toBeInTheDocument()
     // The battle is mandatory: no "end without fighting" escape until it's fought.
     expect(screen.queryByTestId('end-day')).not.toBeInTheDocument()
   })

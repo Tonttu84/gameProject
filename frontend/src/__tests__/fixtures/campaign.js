@@ -7,6 +7,10 @@ export const campaignFixture = {
   day: 1,
   status: 'active',
   battleFoughtToday: false,
+  // The turn's phase (server-owned since the one-way march landed): screens
+  // route off this, and any screen BEHIND it renders read-only. A fixture
+  // starts where a turn starts.
+  phase: 'prepare',
   // Boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
   // banded phrase always; a numeric estimate ([low,high], exact {v,v} at the
   // top recon level) once recon reveals it — null while Blind (recon level 0).

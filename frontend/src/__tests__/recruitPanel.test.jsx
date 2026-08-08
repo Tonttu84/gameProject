@@ -15,6 +15,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
+  // The turn's phase is server state now: advancing returns the refreshed
+  // view, exactly as the real route does (the campaign with the new phase).
+  // Imported lazily inside the call so the hoisted vi.mock factory stays
+  // self-contained.
+  advanceCampaignPhase: vi.fn(async (_id, phase) => {
+    const { default: store } = await import('../stores/useCampaignStore')
+    return { ...store.getState().campaign, phase }
+  }),
   getInfo: vi.fn(),
   getMap: vi.fn(),
   getTicks: vi.fn(),
@@ -231,12 +239,16 @@ describe('recruit panel — the hire is the only way forward', () => {
     await waitFor(() => expect(screen.getByTestId('to-deploy')).toBeEnabled())
   })
 
-  // A mid-turn reload loses the client's screen state. Every camp action would
-  // 400 (the server closed them when the offer was drawn), so land the player
-  // back on the phase they actually owe rather than on a dead War Council.
-  it('a reload with the offer already drawn lands straight on the Recruit screen', async () => {
+  // A mid-turn reload loses the client's screen state, but not the TURN's: the
+  // phase is server state (campaign.phase), so the view itself says which
+  // screen is owed. Every earlier screen would 409 anyway — the server closed
+  // them when the turn marched past.
+  it('a reload mid-turn lands on the phase the server says the turn is in', async () => {
     getCampaigns.mockResolvedValue([
-      withRecruit({ fervor: 0, boosted: false, hiredToday: false, drawn: true, options: [MILITIA_OPTION] }),
+      {
+        ...withRecruit({ fervor: 0, boosted: false, hiredToday: false, drawn: true, options: [MILITIA_OPTION] }),
+        phase: 'recruit',
+      },
     ])
     render(<App />)
 

@@ -69,8 +69,17 @@ beforeEach(async () => {
 afterEach(clearRolls)
 
 const auth = (req) => req.set('Authorization', `Bearer ${token}`)
+
+// Ending the fortnight is the LAST phase's act: the route refuses a turn that
+// hasn't been seen through (routes' rejectIfPhaseBefore), which is what makes a
+// double submit impossible. A test that resolves a turn without walking the
+// screens stamps the phase first — the same state Recruiting leaves behind.
+const endTurn = async (id) => {
+  await Campaign.findByIdAndUpdate(id, { phase: 'recruit' })
+  return endTurn(id)
+}
 const createCampaign = () => auth(api.post('/api/campaigns')).send({})
-const endDay = (id) => auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
+const endDay = (id) => endTurn(id)
 
 // The hidden-information discipline, same boundary campaigns.test.js pins:
 // no response may carry the enemy composition, plan, or augury internals,

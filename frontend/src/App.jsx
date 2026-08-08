@@ -35,6 +35,14 @@ import './App.css'
 // this component is a client of the campaign view and only owns UI state:
 // which screen is showing, in-progress placements, and the auth session.
 
+// The turn's phases, in the server's order (models/campaign.js TURN_PHASES).
+// The client's `phase` is the SCREEN, which is a superset: report/placement/
+// battling/result/replay are UI-only and have no server phase (the battle ones
+// all sit inside the server's 'deploy'). Anything not on this ladder is such a
+// screen, so it compares as -1 and is never treated as a passed phase.
+const TURN_PHASES = ['prepare', 'omens', 'raids', 'recruit', 'deploy']
+const phaseRank = (phase) => TURN_PHASES.indexOf(phase)
+
 const App = () => {
   const [info, setInfo] = useState(null)
   const [map,  setMap]  = useState(null)
@@ -51,7 +59,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, assignForagers, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, assignForagers, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -101,15 +109,28 @@ const App = () => {
     useAuthStore.getState().rehydrate()
   }, [])
 
-  // Phase is client-only state, so a mid-turn reload drops the player back on
-  // the War Council — where, if today's recruit offer is already drawn and
-  // unresolved, every button would 400: opening the Recruit phase closes the
-  // camp server-side. Put them back on the screen they actually owe.
-  const recruitDrawn = campaign?.recruit?.drawn
-  const recruitHired = campaign?.recruit?.hiredToday
+  // The turn's phase is SERVER state now (campaign.phase), so the screen
+  // follows it: a mid-turn reload lands where the turn actually stands rather
+  // than dumping the player back on the War Council with every button 409ing.
+  // Only turn phases are synced — a UI-only screen (report/placement/result/…)
+  // is left alone, since the server phase hasn't moved under it.
+  // Forward-only, and only from another TURN screen: a UI-only screen
+  // (report/placement/result/replay, rank −1) is never yanked out from under
+  // the player — end-day pushes the server back to 'prepare' while the day
+  // report is still on screen, and that must not skip the report.
+  const serverPhase = campaign?.phase
   useEffect(() => {
-    if (recruitDrawn && !recruitHired) setPhase('recruit')
-  }, [recruitDrawn, recruitHired, setPhase])
+    if (!serverPhase) return
+    const current = useUiStore.getState().phase
+    if (phaseRank(current) === -1) return
+    if (phaseRank(current) < phaseRank(serverPhase)) setPhase(serverPhase)
+  }, [serverPhase, setPhase])
+
+  // Anything the player is LOOKING at that the turn has already marched past
+  // is a record, not a control: the panels render read-only and the server
+  // refuses their writes anyway (routes' rejectIfPhasePassed). One value
+  // suffices — only one turn-phase screen is mounted at a time.
+  const committed = phaseRank(phase) > -1 && phaseRank(phase) < phaseRank(serverPhase)
 
   // The turn runs as a sequence of single-purpose screens the player advances
   // through: Prepare (forage + camp) → Omens (the augur) → Raids → Recruit →
@@ -118,30 +139,50 @@ const App = () => {
   // not a blind one (docs/CAMPAIGN_PLAN.md, 2026-07-18). Recruit sits after
   // Raids so gold earned from a raid (resolved synchronously on launch) is
   // spendable the same turn (docs/CAMPAIGN_PLAN.md, Recruit phase design).
-  const readOmens = () => setPhase('omens')
-  const toRaids = () => setPhase('raids')
-  // Recruit is the ONE transition that isn't a pure phase-state change, and
-  // the one that can't be walked back: entering it draws the day's offer and
-  // closes the camp server-side (see rejectIfRecruiting). Only advance if the
-  // draw actually landed — guarded returns undefined on failure, and marching
-  // onto an offerless screen would strand the player with no way forward.
+  //
+  // Advancing is a SERVER call (the phase field is the authority); the sync
+  // effect above then moves the screen. Nothing advances locally, so a failed
+  // call leaves the player where they were rather than on a screen the server
+  // disagrees with.
+  const readOmens = guarded(() => advancePhase('omens'))
+  const toRaids = guarded(() => advancePhase('raids'))
+  // Recruit is the ONE transition that isn't a pure phase change: entering it
+  // draws the day's offer, so it goes through openRecruit (which stamps the
+  // phase too). Only advance if the draw actually landed — guarded returns
+  // undefined on failure, and marching onto an offerless screen would strand
+  // the player with no way forward.
   const toRecruit = async () => {
     if (campaign.recruit?.drawn) return setPhase('recruit')
     if (await guarded(openRecruit)() !== undefined) setPhase('recruit')
   }
-  // Back-steps through the phased turn, up to Recruit. Pure phase-state
-  // changes — no server action is undone (forage/augury/raids the player
-  // already committed stay committed); going back just re-renders an earlier
-  // screen, whose own guards handle any already-done action. Lets the flow be
-  // walked both ways rather than a one-way march (docs/CAMPAIGN_PLAN.md slices
-  // 2–3) — except past the Recruit door, which has no back button because the
-  // server would refuse everything behind it.
+  // Back-steps are pure LOOKING now: the phase they return to is behind the
+  // turn, so its panels render read-only (`committed` above) and the server
+  // refuses any write that got through. Nothing is undone by going back, and
+  // nothing can be re-decided there — that's the whole point of the one-way
+  // march (docs/CAMPAIGN_PLAN.md "Effort slider", decision 12).
   const backToPrepare = () => setPhase('prepare')
   const backToOmens = () => setPhase('omens')
   // Resolve a pending choice-fate (events with choices). Guarded like every
   // campaign action; the reveal screen reads the undefined-on-failure return
   // to keep the options up for another try.
   const chooseFate = guarded(resolveChoice)
+
+  // What a back-stepped screen shows in place of its advance button: this is a
+  // record of a decision already made, and the only way out of it is forward
+  // again to where the turn actually stands.
+  const PHASE_NAMES = { prepare: 'the Council', omens: 'the Omens', raids: 'the Raids', recruit: 'Recruiting', deploy: 'the battle line' }
+  const committedBanner = (
+    <div className="phase-committed" data-testid="phase-committed">
+      <p>Already decided — the turn has moved on to {PHASE_NAMES[serverPhase] ?? serverPhase}.</p>
+      <button
+        className="btn-primary"
+        data-testid="back-to-current-phase"
+        onClick={() => setPhase(serverPhase)}
+      >
+        Return to {PHASE_NAMES[serverPhase] ?? serverPhase}
+      </button>
+    </div>
+  )
 
   if (connectionError) {
     return (
@@ -406,14 +447,17 @@ const App = () => {
               <ForagePanel
                 key={campaign.day}
                 onAssign={guarded(assignForagers)}
+                locked={committed}
               />
             )}
-            <button className="btn-primary" data-testid="to-omens" onClick={readOmens}>
-              Read the Omens
-            </button>
+            {committed ? committedBanner : (
+              <button className="btn-primary" data-testid="to-omens" onClick={readOmens}>
+                Read the Omens
+              </button>
+            )}
           </div>
           {campaign.fortification && (
-            <CampPanel onFortify={guarded(fortify)} />
+            <CampPanel onFortify={guarded(fortify)} locked={committed} />
           )}
         </div>
       )}
@@ -442,7 +486,9 @@ const App = () => {
             onReroll={guarded(rerollAugur)}
             onAccept={acceptFates}
             onContinue={toRaids}
+            locked={committed}
           />
+          {committed && committedBanner}
           <div className="phase-nav">
             <button className="login-toggle" data-testid="back-to-prepare" onClick={backToPrepare}>
               Back to the Council
@@ -472,15 +518,18 @@ const App = () => {
               onLaunchAll={guarded(launchRaids)}
               onScout={guarded(scoutRaid)}
               onWatch={watchRaid}
+              locked={committed}
             />
           )}
           <div className="raids-bar">
             <button className="login-toggle" data-testid="back-to-omens" onClick={backToOmens}>
               Back to the Omens
             </button>
-            <button className="btn-primary" data-testid="to-recruit" onClick={toRecruit}>
-              Continue to Recruiting
-            </button>
+            {committed ? committedBanner : (
+              <button className="btn-primary" data-testid="to-recruit" onClick={toRecruit}>
+                Continue to Recruiting
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -52,6 +52,11 @@ export const consultCampaignAugury = (id) =>
 // never fires) and reads it fresh; the other slots stay sealed.
 export const rerollCampaignAugury = (id, slot) =>
   axios.post(`/api/campaigns/${id}/augury/reroll`, { slot }, authed()).then(r => r.data)
+// Advance the turn one phase ('omens' | 'raids' | 'deploy'); returns the view.
+// The march is one-way and server-owned, so this is the ONLY way a turn phase
+// moves — except entering Recruit, which is openRecruit (it draws the offer).
+export const advanceCampaignPhase = (id, phase) =>
+  axios.post(`/api/campaigns/${id}/phase`, { phase }, authed()).then(r => r.data)
 // Replace the turn's forager assignment ({unitType: count}); returns the view.
 export const setCampaignForage = (id, assignment) =>
   axios.post(`/api/campaigns/${id}/forage`, { assignment }, authed()).then(r => r.data)
