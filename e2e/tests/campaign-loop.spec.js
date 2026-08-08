@@ -3,11 +3,15 @@ import { registerAndLogin, uniqueUsername, advanceReveal, clearPendingDecisions 
 
 // First real end-to-end coverage: a browser driving one full campaign turn
 // against a running stack — now through the PHASED turn (Prepare → Omens →
-// Raids → Deploy): login → council/forage → read the omens → augur
+// Raids → Recruit): login → council/forage → read the omens → augur
 // consult/recast → Accept the Fates (the mid-turn reveal, which now leads on to
-// the raids) → raids → deploy → placement → End Turn → next council. Everything
-// here talks to the actual campaign server + engine; there are no mocks.
-test('full campaign turn: forage → omens → accept fates → raids → deploy → end turn', async ({ page }) => {
+// the raids) → raids → recruit (a mandatory hire) → End the Turn → next council.
+//
+// A quiet turn no longer offers a battle: the pitched battle is the campaign's
+// END, not a per-turn option (2026-08-08), so Recruiting's exit ends the turn
+// outright rather than opening a deployment grid. Everything here talks to the
+// actual campaign server + engine; there are no mocks.
+test('full campaign turn: forage → omens → accept fates → raids → recruit → end turn', async ({ page }) => {
   await page.goto('/')
 
   // ── Login (fresh throwaway commander) ──────────────────────────────────
@@ -31,11 +35,14 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
   await page.getByTestId('to-omens').click()
   await expect(page.getByTestId('omens-context')).toBeVisible()
 
-  // Back-nav sanity: the tent can step back to the council and forward again
-  // (phased-turn slices 2–3). No committed action is lost.
+  // Back-nav sanity for the one-way march (effort slider S1): stepping back to
+  // the council shows it as a read-only RECORD — its advance is replaced by the
+  // "already decided" banner, whose only way out is forward again to where the
+  // turn actually stands. No committed action is lost either way.
   await page.getByTestId('back-to-prepare').click()
   await expect(page.getByRole('heading', { name: /Turn 1 — War Council/ })).toBeVisible()
-  await page.getByTestId('to-omens').click()
+  await expect(page.getByTestId('phase-committed')).toBeVisible()
+  await page.getByTestId('back-to-current-phase').click()
   await expect(page.getByTestId('omens-context')).toBeVisible()
 
   // ── Consult, recast one fate, then Accept the Fates ────────────────────
@@ -57,21 +64,22 @@ test('full campaign turn: forage → omens → accept fates → raids → deploy
   // owed on the pendingChoices overlay — this is a harmless no-op safety net.
   await clearPendingDecisions(page)
 
-  // ── Raids → Recruit → deploy ────────────────────────────────────────────
-  // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"):
-  // skip today's offer so the turn's outcome stays deterministic regardless
-  // of what the pool drew or whether it's affordable.
+  // ── Raids → Recruit → end the turn ──────────────────────────────────────
   await page.getByTestId('to-recruit').click()
-  await page.getByTestId('recruit-skip').click()
-  // Turn 1 is a quiet day: the pitched battle isn't due, so the deploy screen
-  // offers no Fight! (it's gated on bossFightDue) and instead surfaces the
-  // "End Turn (no battle)" escape. `end-day` is the reached-deployment landmark
-  // — the same move the vitest fixtures made off the now-conditional Fight!.
-  await page.getByTestId('to-deploy').click()
-  await expect(page.getByTestId('end-day')).toBeVisible()
+  // Recruit is mandatory (S8): there is no skip. Hire the day's first option —
+  // on turn 1 that is Militia or the always-free Travellers card, both
+  // affordable — which is the only way the turn can end.
+  await page.locator('[data-testid^="recruit-hire-"]').first().click()
+  // Turn 1 is a quiet day: the pitched battle isn't due, so Recruiting's exit
+  // ends the turn outright (breakCamp → end-day) rather than opening a
+  // deployment grid that would read as an offer of battle. The exit stays
+  // locked until the hire lands.
+  const endTurn = page.getByTestId('to-deploy')
+  await expect(endTurn).toBeEnabled()
+  await expect(endTurn).toContainText('End the Turn')
+  await endTurn.click()
 
   // ── End the turn without battle → the fortnight's report ───────────────
-  await page.getByTestId('end-day').click()
   await expect(page.getByRole('heading', { name: /The Fortnight Passes/ })).toBeVisible()
   await advanceReveal(page)
   await clearPendingDecisions(page)

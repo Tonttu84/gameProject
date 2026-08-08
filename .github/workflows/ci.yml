@@ -63,7 +63,7 @@ jobs:
           echo "── mongo logs:"; docker logs mongo 2>&1 | tail -20 || true
           exit 1
 
-      - name: Smoke a campaign turn (login → create → forage → battle → end-day)
+      - name: Smoke a campaign turn (login → create → forage → phases → recruit → end-day)
         run: |
           set -e
           BASE=http://localhost:3001/api
@@ -71,15 +71,35 @@ jobs:
             -d '{"username":"testuser","password":"test"}' | jq -r .token)
           test "$TOKEN" != "null"
           AUTH="Authorization: Bearer $TOKEN"
+          # A real battle proves the headless engine path: the ./game battle
+          # subprocess simulates and returns a result + recorded replay. A quiet
+          # campaign turn no longer fights one — the pitched battle is the
+          # campaign's END, not a per-turn option (2026-08-08) — so the engine
+          # subprocess is exercised through the ownerless sample battle instead,
+          # which rides the exact same runAndPersistBattle pipeline.
+          WINNER=$(curl -fs -X POST $BASE/sample-battle -H "$AUTH" -H 'Content-Type: application/json' -d '{}' | jq -r .winner)
+          echo "sample battle winner: $WINNER"; test -n "$WINNER" && test "$WINNER" != "null"
           ID=$(curl -fs -X POST $BASE/campaigns -H "$AUTH" -H 'Content-Type: application/json' -d '{}' | jq -r .id)
           test "$ID" != "null"
+          # Prepare phase: forage assignment proves the capability math + roster
+          # budget path (the forage/capacityKg the panel previews against).
           curl -fs -X POST $BASE/campaigns/$ID/forage -H "$AUTH" -H 'Content-Type: application/json' \
             -d '{"assignment":{"Soldier":100}}' | jq -e '.forage.capacityKg > 0' > /dev/null
-          # A real battle proves the headless engine path: the ./game battle
-          # subprocess simulates and returns a result + recorded replay.
-          WINNER=$(curl -fs -X POST $BASE/campaigns/$ID/battles -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"player_placement":[{"unit_type":"Soldier","q":4,"r":4}]}' | jq -r .winner)
-          echo "battle winner: $WINNER"; test -n "$WINNER" && test "$WINNER" != "null"
+          # The one-way phase march (effort slider S1): prepare → omens → raids,
+          # one forward step at a time, then Recruit through its own door (which
+          # draws the day's offer as it stamps the phase).
+          curl -fs -X POST $BASE/campaigns/$ID/phase -H "$AUTH" -H 'Content-Type: application/json' -d '{"phase":"omens"}' > /dev/null
+          curl -fs -X POST $BASE/campaigns/$ID/phase -H "$AUTH" -H 'Content-Type: application/json' -d '{"phase":"raids"}' > /dev/null
+          # Recruit is mandatory (S8): a hire is the only exit. Open the phase to
+          # draw the offer, then hire its first option — on turn 1 that is Militia
+          # or the always-free Travellers card, both affordable, so the hire
+          # always resolves.
+          EID=$(curl -fs -X POST $BASE/campaigns/$ID/recruit/open -H "$AUTH" -H 'Content-Type: application/json' -d '{}' | jq -r '.recruit.options[0].id')
+          test "$EID" != "null"
+          curl -fs -X POST $BASE/campaigns/$ID/recruit/hire -H "$AUTH" -H 'Content-Type: application/json' \
+            -d "{\"entryId\":\"$EID\"}" | jq -e '.recruit.hiredToday == true' > /dev/null
+          # End the fortnight: the full end-day resolution runs (foraging reports
+          # its harvest) and the day advances.
           curl -fs -X POST $BASE/campaigns/$ID/end-day -H "$AUTH" -H 'Content-Type: application/json' -d '{}' \
             | jq -e '.report.forage.harvested.food >= 0 and .campaign.day == 2' > /dev/null
           # The image serves the built frontend from the same origin.
