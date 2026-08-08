@@ -55,8 +55,12 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
   (`1a880ea`), S8 lazy draw + phase lock + the Travellers card (`339f4aa`).
   **Stage E is COMPLETE** — every entry in `RECRUIT_POOL` is reachable, both new resources
   have earn sources, and no open design question is left in it.
-- **Next up: nothing is queued.** Pick from the backlog below, or start something new (grill
-  first). The nearest candidates:
+- **Next up / ACTIVE: the effort slider** (`### Effort slider — one points pool, split between
+  foraging and scouting`, immediately below, is the SSOT). Designed and grilled 2026-08-08,
+  **nothing built yet**; three stages, do them in order — S1 the server-owned one-way phase
+  machine, S2 the slider + points unification (deletes forager clashes and enemy foraging),
+  S3 forage modifiers + persistent raid opportunities. Schema goes to **28** in S1.
+- **Backlog** (was "next up" before the slider was designed). The nearest candidates:
   1. **Worker replenishment + workers-eat-food** — paired, deferred, blocked on picking a
      mechanism. Recruit's worker drain (every troop-lane hire permanently shrinks
      `workers.total`) raises its priority; now that Cavalry/LightCavalry are actually reachable
@@ -77,6 +81,90 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
   closes the camp, and a hire is mandatory), and 2026-08-08 changed it again (a quiet turn ends
   at Recruiting). The suites cover the mechanics, but see the "still not playtested" bullet at
   the top of this block — play it before building on top of it.
+
+### Effort slider — one points pool, split between foraging and scouting (DESIGNED 2026-08-08, grilled)
+
+**Status: designed, nothing built yet.** Grilled end-to-end with the user before writing (per
+`CLAUDE.md`); every decision below is a confirmed answer, not an assumption. This section is the
+SSOT for the feature — three stages, S1 first.
+
+**The idea.** Per-type forager assignment is replaced by a single slider. The whole roster
+produces ONE points pool from ONE formula; the slider splits the **results** between food and
+eyes. It splits results, never troops: no unit is ever assigned to a "forage pool" or a
+"scouting pool", and nothing moves units between them. Raiding stays the only thing that
+genuinely sends squads away; which activity a raiding squad "came from" is fluff.
+
+**Confirmed decisions.**
+1. **One formula, one pool.** `fieldPointValue(stats) = (ballisticSkill × ACCURACY_PER_BALLISTIC
+   / BASELINE_ACCURACY) × speedFactor + reconTag` — today's `scoutingPointValue`, renamed and
+   now feeding both tracks. `forageValue` is deleted. Chosen over the forage formula because it
+   already carries `reconTag` (LightCavalry +4, Warhorse −2) as the "ranging ahead is this
+   unit's job" lever, and because it leaves the delicately-tuned recon ladder untouched.
+   Starting roster ⇒ `P ≈ 1092` pts/turn. Snapshot at newDay from the start-of-turn roster.
+2. **Foraging goes passive.** No assignment map. Foragers are no longer absent from the pitched
+   battle — deployment availability subtracts raiders only (`selectors.js`, `routes/campaigns.js`).
+3. **Forager clashes are deleted**, along with forage's only use of `skirmish.js`. If that
+   flavour is wanted back it returns as an EVENT, not as a forage sub-system.
+4. **The enemy no longer forages or scouts for real.** `forage.enemyPlan`, `enemyForagePlanKg`,
+   ring contention (the pro-rata scale-down), `ENEMY_FORAGE_FRACTION`, `CLASH_*` and
+   `FORAGE_CLASH_DAMPER_BY_BAND` all go. The enemy instead drains the rings by an abstract
+   per-turn `enemyDrainKg` and gains nothing from it.
+5. **Three rings survive as a real curve.** Distance yield penalty (~×1.0 / ×0.8 / ×0.6),
+   filled near-first — without contention the rings would otherwise be one pool wearing three
+   gauges. The enemy drain also eats near-first.
+6. **Exchange rate: break-even at ~70% forage** — `FORAGE_KG_PER_POINT ≈ 16` against the
+   starting army's 12.4 t/turn appetite. Feeding the army is the default burden; scouting is
+   bought with hunger. `FORAGE_FOOD_SHARE`/`FORAGE_MATERIALS_SHARE` (0.8/0.2) unchanged.
+7. **The land covers a whole campaign.** `FORAGE_RINGS` scales up (today's ~81 t effective
+   would strip in ~5 turns against a 10–20 turn meter). Optional food SINKS are the intended
+   way to make the food economy interesting — later work, deliberately not in these stages.
+8. **The band → yield loop stays.** `FORAGE_YIELD_BY_BAND` (Blind ×0.7 … Overwhelming ×1.25)
+   still multiplies forage yield, so scouting pays back as food and an all-forage turn decays.
+9. **Recon costs unchanged.** `RECON_LEVEL_THRESHOLDS [200,700,2000,4500]` and the raid scout
+   costs (200/50) stay: at a break-even 70/30 turn (~328 pts) that reads Contested ~turn 3,
+   Superior ~turn 7 — scouting is now an investment rather than free income.
+10. **Raiders get no scouting credit.** They already contributed to the pool; "recon in force"
+    is fluff only.
+11. **The meter reads the slider.** `inCamp = (roster − raiders) × (1 − forageShare)` — sliding
+    toward food speeds the walls' collapse. Foraging is "out of camp", scouting is the army near
+    Karrowgate.
+12. **Turn flow becomes one-way, server-owned.** `campaign.phase`
+    (`prepare → omens → raids → recruit → deploy`), advanced forward-only; every mutating route
+    asserts its phase and 409s otherwise — generalising the `recruit.drawnDay` lock that already
+    exists. Passed phases stay viewable **read-only**. Because the split seals on leaving
+    Prepare, no scouting-spend tracking is needed. Also fixes the mid-turn-reload wart (the
+    `recruitDrawn`/`setPhase` hack in `App.jsx` goes).
+13. **Slider UX:** 10% steps, sticky across turns, live preview of food/materials tonnage,
+    scouting points, and the pitched-battle effect.
+14. **Enemy supplies: minimum hooking.** Keeps draining by upkeep, gets no forage credit. Add an
+    always-present HUD line (contents still recon-gated at Outmatched+, "unknown" below) so the
+    unhooked gauge stays visible as a reminder. `enemyDrainKg` is the seam a later "starve the
+    enemy" system hangs off — that system will be player-driven (raids, events), not enemy AI.
+15. **Migration: none.** Mismatched campaigns are deleted, so this is just
+    `CAMPAIGN_SCHEMA_VERSION` → **28**.
+
+**Stages** (each committable and testable on its own; tests travel with the stage):
+
+- **S1 — the phase machine.** `campaign.phase` + `POST /:id/phase` (forward-only), a phase guard
+  on every mutating route, read-only rendering of passed phases in `App.jsx` + panels, client
+  phase state read from the server. New server-side phase-lock tests; frontend read-only-phase
+  coverage.
+- **S2 — the slider.** `fieldPointValue` (+ `forageValue` deleted), pool snapshot, `forage.share`,
+  ring distance penalty, abstract `enemyDrainKg`, the meter change, all the deletions in
+  decisions 2–4, `POST /:id/forage` → `POST /:id/effort {share}`, `ForagePanel` rewritten as the
+  split control, enemy-supplies HUD line. `forage.test.js` largely rewritten;
+  `campaigns.test.js` / `raid.test.js` / `capabilities.test.js` updated; meter coverage for the
+  new formula; frontend `forageAssignment.test.jsx` → a slider test.
+- **S3 — modifiers + persistent raids.** `campaign.forage.modifiers: [{id, label, target:
+  'enemyDrain'|'playerYield', factor, deltaKg, turnsLeft}]` with `turnsLeft: null` = permanent
+  (the default — the campaign is short enough that a setback or victory should mark the rest of
+  it). Raid opportunities gain a `persistent` flag: the newDay regeneration drops ordinary
+  unresolved ones as today but CARRIES persistent ones over with their already-rolled
+  `targetForce`/`reward`, and only defeating one removes it — which is also what lifts its
+  linked modifier.
+
+**Deferred, noted not built:** optional food sinks; enemy supplies reacting to its own foraging
+(and to a stripped countryside); forager-clash flavour re-expressed as events.
 
 ### Project state (as of 2026-07-05)
 
