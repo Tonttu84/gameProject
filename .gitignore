@@ -7,6 +7,8 @@ run_tests
 !.claude/settings.json
 !.claude/skills/
 !.claude/skills/**
+!.claude/hooks/
+!.claude/hooks/**
 game_clang
 node_modules/
 # Generated scenario replays (./game sample / spread)
