@@ -26,10 +26,26 @@ source of truth.
 `git log --oneline -15` to see which stages have actually landed. Don't trust the "done"
 notes below over the git history if they ever disagree — the commits win.
 
-### Where the work stands (2026-08-03) — START HERE
+### Where the work stands (2026-08-08) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **27**.
+schema version **27** (unchanged by the 2026-08-08 fixes — no document field moved).
+
+- **Last session (2026-08-08) — three playtest bug fixes, no new feature.** Details are in the
+  dated bullets under `### Squad-centric overhaul`; the short version:
+  1. **Raid parties now fight as squads** (`e0d9e8f`). The auto-placer scattered a squad one unit
+     per hex and the engine groups formations by **(hex, squad_id)**, so raids fielded N
+     one-member "squads". New `makeZonePlacer.addBlock` puts one squad on one hex, the
+     server-side twin of what the frontend does for the main battle.
+  2. **The pitched battle is no longer offered every turn** (`f6777b8`). Recruiting's exit is
+     `breakCamp`: deployment only on the pitched-battle day, "End the Turn" otherwise. Same
+     commit **dropped the `ambush` fate and the whole `enemy_advance` effect** — it set
+     `bossFightDue` outright and could end a campaign on turn 2. **The wall meter is now the only
+     thing that sets `bossFightDue`**, pinned by an `augury.test.js` guard over every pool effect.
+  3. **Tooling:** native `bash scripts/dev.sh …` permission rules (`8396bf1`).
+- **Still not playtested:** everything from S8 onward, now including the changed turn shape above
+  (a quiet turn ends at Recruiting and never shows the deployment grid). Play a full campaign
+  before building on it — these three fixes all came out of playing, not out of the suites.
 
 - **Active feature: Stage E — the Recruit phase** (`### Recruit phase — hiring troops` further
   down is the SSOT for the design and every slice's handoff). Shipped so far, one commit each:
@@ -53,12 +69,14 @@ schema version **27**.
 - **Also still open, unrelated to Stage E:** worker replenishment + workers-eat-food (paired,
   deferred, blocked on picking a mechanism — Recruit's worker drain raises its priority but
   doesn't gate it); fortification-durability erosion (blocked on morale design).
-- **Test baseline on a machine with no compiled `./game`:** `cs-test` is 462/465 — the 3
-  failures are `engine.integration.test.js` ENOENT and are EXPECTED there. `fe-test` 247/247,
-  `fe-lint` clean. Run everything through `scripts/dev.sh` (see `CLAUDE.md`).
+- **Test baseline (2026-08-08, Linux box WITH a compiled `./game`):** `cs-test` **472/472**,
+  `fe-test` **247/247**, `fe-lint` clean. On a machine with no compiled `./game` expect 3
+  EXPECTED failures instead — `engine.integration.test.js` ENOENT. Run everything through
+  `scripts/dev.sh` (see `CLAUDE.md`).
 - **Not yet playtested:** S8 changed the shape of a turn (Recruit is now a one-way door that
-  closes the camp, and a hire is mandatory). The server/frontend suites cover the mechanics,
-  but nobody has actually played through it — do that before building on top of it.
+  closes the camp, and a hire is mandatory), and 2026-08-08 changed it again (a quiet turn ends
+  at Recruiting). The suites cover the mechanics, but see the "still not playtested" bullet at
+  the top of this block — play it before building on top of it.
 
 ### Project state (as of 2026-07-05)
 
