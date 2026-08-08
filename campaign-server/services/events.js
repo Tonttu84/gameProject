@@ -32,7 +32,7 @@ export const EVENT_POOL = [
   // ── normal (severity 2): the ranks swell or thin ──
   { id: 'reinforcement', title: 'The Rearguard Catches Up',  description: 'A company of your own rearguard, footsore from the march, rejoins the banner. +20 Soldiers.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
   { id: 'desertion',     title: 'Desertion in the Lines',    description: 'The long watch beside the siege saps the men; some slip away by night. 10% of soldiers desert.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
-  // ── recon-sensitive fates (Stage 4 1c): thematic threats — ambush / raid /
+  // ── recon-sensitive fates (Stage 4 1c): thematic threats — raiders /
   // night-attack, never plague or weather — carry a three-rung ladder. The
   // event itself IS the Blind rung (the full blow, and always what the augur
   // foretells); the scouting band at end-of-turn picks the rung that actually
@@ -60,17 +60,15 @@ export const EVENT_POOL = [
   // ── major (severity 3): fates that bend the campaign ──
   { id: 'defection',     title: 'Turncoats from the Vanguard', description: 'Enemy soldiers, sick of the siege and their warlord\'s whip, slip across to your banner in the night. +40 Soldiers.', severity: 3, effect: { type: 'roster',     unit: 'Soldier', delta: +40 } },
   { id: 'plague',        title: 'Camp Fever',        description: 'Sickness runs your crowded camp; the ranks thin by 5%.',                                severity: 3, effect: { type: 'all_roster', factor: 0.95 } },
-  // Blind and warned differ only in the telling until a battlefield surprise
-  // penalty exists — the rung machinery is what the later mechanic hooks into.
-  {
-    id: 'ambush', title: 'Enemy Ambush', description: 'Enemy scouts have located your camp.', severity: 3,
-    effect: { type: 'enemy_advance' },
-    reconSensitive: true,
-    rungs: {
-      warned:      { title: 'Ambush Foreseen', description: 'They advance, but your pickets give warning — you will meet them in good order.', effect: { type: 'enemy_advance' } },
-      anticipated: { title: 'Counter-Ambush',  description: 'You bait the trap; the ambushers are cut apart as they spring it.', effect: { type: 'enemy_losses', factor: 0.93 } },
-    },
-  },
+  // NOTE (2026-08-08): the `ambush` fate and the `enemy_advance` effect it
+  // carried are GONE. That effect set bossFightDue outright, which made sense
+  // when a pitched battle was one engagement among many — but the pitched
+  // battle is now the campaign's decisive end (the battle route sets
+  // status=won/lost either way). Since all three of a turn's true fates fire
+  // at end-of-day, an ambush drawn on turn 1 finished the whole campaign on
+  // turn 2, ~11% of turns, against a wall meter that needs 10+ turns. The
+  // WALL METER IS NOW THE ONLY THING THAT SETS bossFightDue (dayResolution
+  // step 4) — no fate may shortcut to the finale (user, 2026-08-08).
   // ── materials fates (Stage 3 sink feeds fortifications/militia) ──
   { id: 'quarry',        title: 'A Workable Seam',   description: 'Your pioneers strike stone and timber enough to shore up the earthworks. +25 materials.', severity: 1, effect: { type: 'materials',  delta: +25 } },
   { id: 'tool_rot',      title: 'Damp Ruins the Stores', description: 'Rain and river-mist rot the tools and cordage stacked in your camp. -15 materials.', severity: 2, effect: { type: 'materials',  delta: -15 } },
@@ -388,8 +386,6 @@ export const eventValence = (effect) => {
       return effect.factor > 1 ? 'good' : effect.factor < 1 ? 'bad' : 'neutral'
     case 'all_roster':
       return effect.factor > 1 ? 'good' : effect.factor < 1 ? 'bad' : 'neutral'
-    case 'enemy_advance':
-      return 'bad'
     // The enemy's losses and betrayed secrets are our gain.
     case 'enemy_losses':
     case 'enemy_reveal':
@@ -469,12 +465,6 @@ export function applyEffect(campaign, effect) {
     for (const [type, n] of campaign.roster)
       campaign.roster.set(type, Math.floor(n * effect.factor))
     log.push(`All units ×${effect.factor}.`)
-  } else if (effect.type === 'enemy_advance') {
-    // The enemy comes looking for a fight tomorrow — force the decisive battle
-    // early, regardless of the meter (what the retired 'offering_battle' stance
-    // used to signal; the boss fight is now the only pitched battle there is).
-    campaign.bossFightDue = true
-    log.push('The enemy host is moving on your camp.')
   } else if (effect.type === 'enemy_losses') {
     // The scouts' reversal (anticipated rung): the blow lands on the enemy
     // instead. The log is player-visible, so it stays a phrase — enemy

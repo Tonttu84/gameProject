@@ -15,11 +15,19 @@ export async function marchToRaids() {
   fireEvent.click(await screen.findByTestId('augury-continue'))
 }
 
-// …and on from the Raids screen, through Recruit (the default fixture's
-// recruit.hiredToday is already true, so the deploy exit is there
-// immediately — no hire/skip needed), to the Deploy/placement grid.
-export async function marchToDeployment() {
+// …and on from the Raids screen to Recruit (the default fixture's
+// recruit.hiredToday is already true, so the screen's exit is there
+// immediately — no hire needed).
+export async function marchToRecruit() {
   await marchToRaids()
   fireEvent.click(await screen.findByTestId('to-recruit'))
+}
+
+// …and out of Recruit to the Deploy/placement grid. REQUIRES a bossFightDue
+// fixture: that exit is the deployment screen only on the pitched-battle day
+// (2026-08-08) — on a quiet turn the same button ends the turn instead, so a
+// quiet-day fixture lands on the turn report, not the grid.
+export async function marchToDeployment() {
+  await marchToRecruit()
   fireEvent.click(await screen.findByTestId('to-deploy'))
 }

@@ -246,7 +246,7 @@ describe('EVENT_POOL structure', () => {
   // must not be.
   test('recon-sensitive events: complete ladders, bad when blind, defused when anticipated', () => {
     const sensitives = EVENT_POOL.filter((e) => e.reconSensitive)
-    expect(sensitives.map((e) => e.id).sort()).toEqual(['ambush', 'forage_raiders', 'night_raid'])
+    expect(sensitives.map((e) => e.id).sort()).toEqual(['forage_raiders', 'night_raid'])
     for (const e of sensitives) {
       expect(isBad(e)).toBe(true) // the base event is the full-bad Blind rung
       for (const name of ['warned', 'anticipated']) {
@@ -279,7 +279,6 @@ describe('eventValence', () => {
     expect(eventValence({ type: 'roster', unit: 'Soldier', delta: 20 })).toBe('good')
     expect(eventValence({ type: 'roster', unit: 'Soldier', factor: 0.9 })).toBe('bad')
     expect(eventValence({ type: 'all_roster', factor: 0.95 })).toBe('bad')
-    expect(eventValence({ type: 'enemy_advance' })).toBe('bad')
     expect(eventValence({ type: 'none' })).toBe('neutral')
     expect(eventValence(undefined)).toBe('neutral')
     // Stage 4 1c arms: the enemy's losses and betrayed secrets are our gain.
@@ -417,13 +416,23 @@ describe('applyEffect — recon-rung arms (Stage 4 1c)', () => {
     expect(log.length).toBeGreaterThan(0)
   })
 
-  test('enemy_advance forces the boss fight (bossFightDue) — the retired stance is gone', () => {
-    const c = makeTarget()
-    const log = applyEffect(c, { type: 'enemy_advance' })
-    // What the old 'offering_battle' stance used to signal is now the meter's
-    // bossFightDue flag: the decisive fight is due next day regardless of the meter.
-    expect(c.bossFightDue).toBe(true)
-    expect(log).toContain('The enemy host is moving on your camp.')
+  // The pitched battle IS the end of the campaign (the battle route sets
+  // status=won/lost either way), so no fate may shortcut to it — the wall meter
+  // is the only thing that sets bossFightDue. The retired `enemy_advance` effect
+  // did exactly that shortcut and finished campaigns on turn 2; this pins it out
+  // of the pool for good (2026-08-08).
+  test('no fate can force the pitched battle — bossFightDue is the meter\'s alone', () => {
+    const effects = []
+    for (const event of EVENT_POOL) {
+      effects.push(event.effect)
+      for (const rung of Object.values(event.rungs ?? {})) effects.push(rung.effect)
+      for (const choice of event.choices ?? []) effects.push(choice.effect)
+    }
+    for (const effect of effects) {
+      const c = { ...makeTarget(), scheduledEvents: [], eventFlags: new Map() }
+      applyEffect(c, effect)
+      expect(c.bossFightDue, `${effect?.type} set bossFightDue`).toBeFalsy()
+    }
   })
 
   test('multi applies every part in order and concatenates the logs', () => {
@@ -515,23 +524,23 @@ describe('firedRung (Stage 4 1c)', () => {
   }
 
   test('Blind: the event fires exactly as foretold', () => {
-    const fired = firedRung(stored('ambush'), 'Blind')
+    const fired = firedRung(stored('forage_raiders'), 'Blind')
     expect(fired).toMatchObject({
       rung: 'blind',
       intervened: false,
       reconSensitive: true,
-      title: 'Enemy Ambush',
+      title: 'Forage Raiders',
     })
-    expect(fired.effect).toEqual({ type: 'enemy_advance' })
+    expect(fired.effect).toEqual(EVENT_POOL.find((e) => e.id === 'forage_raiders').effect)
   })
 
   test('Outmatched/Contested: the warned rung fires, flagged as intervention', () => {
     for (const band of ['Outmatched', 'Contested']) {
-      const fired = firedRung(stored('ambush'), band)
+      const fired = firedRung(stored('forage_raiders'), band)
       expect(fired.rung).toBe('warned')
       expect(fired.intervened).toBe(true)
       expect(fired.title).toBeTruthy()
-      expect(fired.title).not.toBe('Enemy Ambush') // the downgraded rung has its own card
+      expect(fired.title).not.toBe('Forage Raiders') // the downgraded rung has its own card
     }
   })
 

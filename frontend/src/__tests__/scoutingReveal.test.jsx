@@ -203,6 +203,8 @@ describe('App: scouting reveal wiring', () => {
       {
         ...campaignFixture,
         augury: { ...campaignFixture.augury, consulted: true, accepted: true, visions: [] },
+        // bossFightDue: the placement grid only opens on the pitched-battle day.
+        bossFightDue: true,
         scouting: { band: 'Overwhelming' },
         enemy: {
           ...campaignFixture.enemy,

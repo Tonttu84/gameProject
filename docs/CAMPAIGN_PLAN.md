@@ -3353,6 +3353,26 @@ re-buy/reinforcement, and acquiring squads are all deferred and want their own g
 - Post-raid the squad is **reconciled from its battle survivors** exactly like the main battle
   route (`blue_squads`): composition = survivors, disbanded if the formation was wiped. This
   keeps the invariant `loose = roster − Σ squads.composition − forage`.
+- **The `ambush` fate is dropped, and with it `enemy_advance` — 2026-08-08 (user's call).** That
+  fate's effect set `bossFightDue` outright, "regardless of the meter" — a leftover from when a
+  pitched battle was one engagement among many. It is now the campaign's decisive end (the battle
+  route sets `status=won/lost` either way), and since all three of a turn's true fates fire at
+  end-of-day out of a ~27-event pool, an ambush drawn on turn 1 ended the whole campaign on turn 2
+  — roughly 11% of turns, against a wall meter that needs 10+. The event, its rung ladder, the
+  `enemy_advance` branch of `applyEffect`, and its `eventValence` case are all gone. **The wall
+  meter is now the only thing that sets `bossFightDue`**, pinned by a new augury test that walks
+  every event/rung/choice effect in the pool and asserts none of them sets it. Severity 3 still
+  holds 5 unconditional events (decoy peers are fine); `forage_raiders` and `night_raid` remain the
+  recon-sensitive ladder events, and the rung tests retarget to `forage_raiders`.
+- **The quiet turn no longer offers a battle — fixed 2026-08-08 (UX bug).** Recruiting's exit read
+  "Deploy for Battle" and opened the deployment screen on EVERY turn, so from turn 1 the game
+  looked like it was offering the decisive battle a dozen turns early — and the screen it opened
+  was dead: no `Fight!` (that is `bossFightDue`-only), placement state nothing would read, just an
+  "End Turn (no battle)" button. The exit is now `breakCamp` (`frontend/src/stores/flows.js`):
+  deployment only on the pitched-battle day, and on a quiet turn the button reads "End the Turn"
+  and ends it outright. The placement screen's `end-day` button stays as the no-soft-lock
+  guarantee (that screen has no back button). Test helper `marchToDeployment` now REQUIRES a
+  `bossFightDue` fixture; `marchToRecruit` is the quiet-turn walk.
 - **A raid party auto-deploys as squads — fixed 2026-08-08 (bug).** The party carried `squad_id`
   from the start, but the auto-placer (`makeZonePlacer.add`) scattered it one unit per hex, and
   the engine forms squads by **(hex, squad_id)** — so a raid fielded N one-member "squads" that

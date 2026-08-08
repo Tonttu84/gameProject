@@ -39,11 +39,20 @@ export const acceptFates = guarded(async () => {
   useUiStore.getState().setPhase('report')
 })
 
-export const musterForBattle = () => {
-  // Safety net: no marching past unsealed fates (e.g. a reload landed on a
-  // consulted-but-unaccepted council) — acceptance comes first.
-  const augury = useCampaignStore.getState().campaign?.augury
-  if (augury?.consulted && !augury.accepted) return acceptFates()
+// The Recruiting screen's one exit — the end of the turn's decisions.
+//
+// Deployment exists ONLY for the decisive pitched battle: the server 400s the
+// battle route until `bossFightDue`, and the placement the screen collects is
+// battle-only state that nothing else reads. So on a quiet turn there is
+// nothing to deploy FOR and the turn simply ends here. Walking the player
+// through an empty deployment screen instead read as the game offering a battle
+// that was never on offer (user, 2026-08-08).
+export const breakCamp = () => {
+  // Safety net: no ending the turn past unsealed fates (e.g. a reload landed on
+  // a consulted-but-unaccepted council) — acceptance comes first.
+  const campaign = useCampaignStore.getState().campaign
+  if (campaign?.augury?.consulted && !campaign.augury.accepted) return acceptFates()
+  if (!campaign?.bossFightDue) return nextDay()
   usePlacementStore.getState().clear()
   useUiStore.getState().setPhase('placement')
 }

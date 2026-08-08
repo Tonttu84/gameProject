@@ -114,7 +114,7 @@ const expectNoHiddenInfo = (body) => {
 
 // A no-op truth in every slot keeps events out of the supply/stance math
 // (same pin as raid.test.js). Re-pinned before EVERY end-day: each new turn
-// draws random fates, and a random enemy_losses / enemy_advance rung would
+// draws random fates, and a random enemy_losses / roster rung would
 // corrupt the arithmetic under test.
 const QUIET = {
   id: 'quiet', title: 'A Quiet Fortnight', description: 'Nothing stirs.',

@@ -7,7 +7,7 @@ import usePlacementStore from './stores/usePlacementStore'
 import useUiStore from './stores/useUiStore'
 import { guarded } from './stores/guarded'
 import {
-  handleLogin, handleLogout, startCampaign, musterForBattle, acceptFates,
+  handleLogin, handleLogout, startCampaign, breakCamp, acceptFates,
   startBattle, watchRaid, nextDay, watchDemo,
 } from './stores/flows'
 import {
@@ -486,11 +486,15 @@ const App = () => {
       )}
 
       {/* Phase 4 — RECRUIT: with raid gold in hand, spend the day's one hire,
-          then deploy for battle. No back button: opening this screen closed
+          then close the turn. No back button: opening this screen closed
           the camp for the day, so there is nothing behind it that would still
-          accept an action. Deploy stays locked until the hire is resolved —
+          accept an action. The exit stays locked until the hire is resolved —
           the hire is the only way forward, which the free Travellers card
-          guarantees is always possible. */}
+          guarantees is always possible.
+
+          The exit is deployment ONLY on the pitched-battle day; on a quiet turn
+          it ends the turn outright (breakCamp), since there is no battle to
+          deploy for and an empty deployment screen read as an offer of one. */}
       {phase === 'recruit' && (
         <div className="phase-recruit">
           <h2>Recruiting</h2>
@@ -499,11 +503,11 @@ const App = () => {
             <button
               className="btn-primary"
               data-testid="to-deploy"
-              onClick={musterForBattle}
+              onClick={breakCamp}
               disabled={!campaign.recruit?.hiredToday}
               title={campaign.recruit?.hiredToday ? undefined : 'Take the day\'s hire before you march'}
             >
-              Deploy for Battle
+              {campaign.bossFightDue ? 'Deploy for Battle' : 'End the Turn'}
             </button>
           </div>
         </div>
@@ -533,7 +537,7 @@ const App = () => {
               'Click a highlighted hex in your half to place troops; the enemy waits beyond the red line.',
               'Give standing orders in the Orders section — set Hold (turns) to make a stack hold position instead of advancing; a ⌛ badge marks held hexes.',
               'The pitched battle commits the whole army: Fight unlocks once every unit is on the field. Only foragers and raiders, out beyond the line, stay behind.',
-              'The pitched battle is decisive and mandatory — the turn cannot end until it is fought. On a quiet day there is no battle to give; just end the turn.',
+              'This screen only opens on the day of the pitched battle — the fight is decisive and mandatory, and the turn cannot end until it is fought.',
             ]}
           />
           {campaign.bossFightDue && (
@@ -577,7 +581,10 @@ const App = () => {
                 {/* The pitched battle is mandatory: the turn cannot end until it
                     is fought (the server 400s end-day otherwise), so the "end
                     without battle" escape is withheld until the field is won or
-                    lost. */}
+                    lost. It also stays as the no-soft-lock guarantee: this screen
+                    has no back button, and breakCamp only opens it when the
+                    battle is due, so should a campaign ever land here without one
+                    the turn can still be ended. */}
                 {!(campaign.bossFightDue && !campaign.battleFoughtToday) && (
                   <button className="login-toggle" data-testid="end-day" onClick={nextDay}>
                     End Turn{campaign.battleFoughtToday ? '' : ' (no battle)'}

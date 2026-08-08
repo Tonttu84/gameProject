@@ -464,7 +464,7 @@ describe('recon numeric brackets (R2)', () => {
 // silent swap. `pinBand` sets the recon level exactly as in the 1b describe above.
 describe('recon-sensitive event rungs (Stage 4 1c)', () => {
   const NIGHT_RAID = EVENT_POOL.find((e) => e.id === 'night_raid')
-  const AMBUSH = EVENT_POOL.find((e) => e.id === 'ambush')
+  const FORAGE_RAIDERS = EVENT_POOL.find((e) => e.id === 'forage_raiders')
 
   test('Contested: the warned rung fires and is named in the report', async () => {
     const { body: c } = await createCampaign()
@@ -516,26 +516,26 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
     }
   })
 
-  test('Superior: the anticipated Counter-Ambush reverses the fate onto the enemy', async () => {
+  test('Superior: the anticipated rung reverses the fate onto the enemy', async () => {
     const { body: c } = await createCampaign()
     await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
     await pinBand(c.id, 'Superior')
-    await pinAugury(c.id, AMBUSH, QUIET)
+    await pinAugury(c.id, FORAGE_RAIDERS, QUIET)
     const res = await auth(api.post(`/api/campaigns/${c.id}/end-day`)).send({})
     expectNoHiddenInfo(res.body)
 
-    // The blind rung (enemy_advance) would have forced the boss fight
-    // (bossFightDue); the anticipated reversal must not.
+    // No fate — blind rung or reversal — may bring on the pitched battle; that
+    // is the wall meter's alone (2026-08-08).
     expect(res.body.campaign.bossFightDue).toBe(false)
     for (const slot of res.body.report.augury) {
       expect(slot.fired.rung).toBe('anticipated')
-      expect(slot.fired.title).toBe(AMBUSH.rungs.anticipated.title)
+      expect(slot.fired.title).toBe(FORAGE_RAIDERS.rungs.anticipated.title)
       expect(slot.scoutsIntervened).toBe(true)
     }
-    // Three ×0.93 floors on every hidden enemy line — in the DB, never the response.
+    // Three ×0.95 floors on every hidden enemy line — in the DB, never the response.
     const doc = await Campaign.findById(c.id)
-    expect(doc.enemy.army.get('Soldier')).toBe(320) // 400 → 372 → 345 → 320
-    expect(doc.enemy.army.get('Zombie')).toBe(159) // 200 → 186 → 172 → 159
+    expect(doc.enemy.army.get('Soldier')).toBe(342) // 400 → 380 → 361 → 342
+    expect(doc.enemy.army.get('Zombie')).toBe(171) // 200 → 190 → 180 → 171
   })
 
   test('anticipated Night Raid: prisoners lay the enemy bare for exactly one turn', async () => {

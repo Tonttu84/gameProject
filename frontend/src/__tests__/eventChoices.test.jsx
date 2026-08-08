@@ -39,7 +39,7 @@ import {
   postCampaignChoice,
 } from '../services/api'
 import App from '../App'
-import { marchToDeployment } from './helpers/nav'
+import { marchToRecruit } from './helpers/nav'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
 
 const info = {
@@ -96,8 +96,10 @@ describe('a choice-fate in the day report', () => {
     })
     render(<App />)
     await screen.findByText(/War Council/)
-    await marchToDeployment()
-    fireEvent.click(await screen.findByTestId('end-day'))
+    // A quiet turn ends from Recruiting (its exit IS end-day; the deployment
+    // screen only opens on the pitched-battle day).
+    await marchToRecruit()
+    fireEvent.click(await screen.findByTestId('to-deploy'))
     await screen.findByTestId('reveal-beat-fate-0')
   }
 

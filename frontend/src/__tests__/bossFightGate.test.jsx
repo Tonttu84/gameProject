@@ -11,7 +11,7 @@
 
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
   getInfo: vi.fn(),
@@ -29,9 +29,9 @@ vi.mock('../services/api', () => ({
   endCampaignDay: vi.fn(),
 }))
 
-import { getInfo, getMap, getCampaigns } from '../services/api'
+import { getInfo, getMap, getCampaigns, endCampaignDay } from '../services/api'
 import App from '../App'
-import { marchToRaids, marchToDeployment } from './helpers/nav'
+import { marchToRaids, marchToRecruit } from './helpers/nav'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
 
 const info = {
@@ -57,19 +57,30 @@ beforeEach(() => {
 })
 
 describe('the pitched-battle gate', () => {
-  it('a quiet day offers no battle: no Fight!, no warning, End Turn stays', async () => {
+  it('a quiet day never offers a battle: Recruiting ends the turn outright', async () => {
+    endCampaignDay.mockResolvedValue({
+      report: { day: 1, entries: [], upkeep: { foodConsumed: 100, deserters: 0 }, augury: [] },
+      campaign: { ...quietDay, day: 2 },
+    })
     getCampaigns.mockResolvedValue([quietDay])
     render(<App />)
     await screen.findByText(/War Council/)
     // The Council does not warn of a pitched battle when none is due.
     expect(screen.queryByTestId('pitched-battle-warning')).not.toBeInTheDocument()
 
-    await marchToDeployment()
-    // No full-army battle exists yet — the button would only hit the server's 400.
+    await marchToRecruit()
+    // The turn's last exit says what it does: no battle is on offer, so there is
+    // nothing to deploy for and the deployment screen never opens (2026-08-08 —
+    // walking through an empty one read as an offer of battle).
+    const exit = await screen.findByTestId('to-deploy')
+    expect(exit).toHaveTextContent('End the Turn')
+    fireEvent.click(exit)
+
+    await waitFor(() => expect(endCampaignDay).toHaveBeenCalledWith(quietDay.id))
+    await screen.findByTestId('day-report')
     expect(screen.queryByRole('button', { name: /fight!/i })).not.toBeInTheDocument()
     expect(screen.queryByTestId('pitched-battle-deploy')).not.toBeInTheDocument()
-    // The turn ends normally, explicitly without a battle.
-    expect(screen.getByTestId('end-day')).toHaveTextContent('End Turn (no battle)')
+    expect(screen.queryByTestId('end-day')).not.toBeInTheDocument()
   })
 
   it('the pitched-battle day offers a mandatory Fight! and withholds End Turn', async () => {

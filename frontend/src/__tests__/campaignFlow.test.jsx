@@ -1,6 +1,6 @@
 /**
  * Campaign flow against the (mocked) server-side campaign API: start a
- * campaign, consult the augur, reach deployment, end the day. All state
+ * campaign, consult the augur, walk the turn's screens, end the turn. All state
  * transitions come from the campaign views the API returns — the component
  * never computes campaign state itself.
  */
@@ -35,7 +35,7 @@ import {
   endCampaignDay,
 } from '../services/api'
 import App from '../App'
-import { marchToDeployment } from './helpers/nav'
+import { marchToRecruit } from './helpers/nav'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
 
 const info = {
@@ -104,11 +104,10 @@ describe('campaign flow', () => {
     expect(screen.queryByTestId('augury-truth-2')).not.toBeInTheDocument()
 
     // Accepting (the fixture is already accepted) leaves the tent for the
-    // raids; from there Deploy for Battle reaches the placement grid.
+    // raids, and on through Recruiting to the turn's last screen.
     fireEvent.click(screen.getByTestId('augury-continue'))
     fireEvent.click(await screen.findByTestId('to-recruit'))
-    fireEvent.click(await screen.findByTestId('to-deploy'))
-    await screen.findByTestId('end-day') // reached deployment (non-boss day: no Fight! button)
+    expect(await screen.findByTestId('to-deploy')).toBeInTheDocument()
   })
 
   it('clicking a vision rerolls that slot only and spends the reroll', async () => {
@@ -156,8 +155,9 @@ describe('campaign flow', () => {
     expect(screen.queryByTestId('consult-augur')).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('augury-continue'))
     fireEvent.click(await screen.findByTestId('to-recruit'))
-    fireEvent.click(await screen.findByTestId('to-deploy'))
-    await screen.findByTestId('end-day') // reached deployment (non-boss day: no Fight! button)
+    // Recruiting is the last screen of a quiet turn — its exit ends the turn
+    // rather than opening deployment (no battle is on offer).
+    expect(await screen.findByTestId('to-deploy')).toHaveTextContent('End the Turn')
   })
 
   it('a finished (won) campaign shows the victory screen and a new-campaign button', async () => {
@@ -197,8 +197,10 @@ describe('campaign flow', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
-    await marchToDeployment()
-    fireEvent.click(await screen.findByTestId('end-day'))
+    // A quiet turn ends from Recruiting itself (the deployment screen only
+    // opens on the pitched-battle day).
+    await marchToRecruit()
+    fireEvent.click(await screen.findByTestId('to-deploy'))
 
     // The reveal deals one card per click: the first fate is on the table
     // (the augur foretold Plague but Supply Cache came instead), the second
