@@ -17,6 +17,14 @@ import UnitType from '../models/unitType.js'
 // is how squad members carry `squad_id` into the engine's placement JSON so a
 // raid returns a per-squad survivor breakdown (`blue_squads`), the same as the
 // main battle route.
+//
+// `add` scatters unit by unit (the enemy host, and any loose troops). A CAMPAIGN
+// SQUAD must use `addBlock` instead: the engine groups placement entries into
+// formations by (hex, squad_id), so a squad scattered one-unit-per-hex arrives as
+// N one-member squads with no cohesion, no shared morale and no squad movement.
+// The main battle route gets this right because the frontend drops a whole squad
+// on a single hex; `addBlock` is that same "one squad, one hex" placement done
+// server-side.
 export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
   // Candidate hexes with remaining capacity, shuffled once for this placer.
   const cells = []
@@ -48,7 +56,45 @@ export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
       }
     }
   }
-  return { add, result: () => placement }
+
+  // Place one whole group (a campaign squad) on a SINGLE hex, so the engine
+  // builds it as one formation. Prefers an untouched hex — two squads sharing a
+  // hex would still be two formations, but they'd be drawn stacked on top of
+  // each other — then any hex with room for the whole block. A group too big for
+  // one hex (Σ size > hexCapacity) can't be kept whole by any placement: it is
+  // packed hex-by-hex, filling each to capacity so it splits into as few
+  // formations as possible instead of scattering. Units that find no room are
+  // left off the field, same as `add`.
+  const addBlock = (army, extra = {}) => {
+    const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
+    const units = []
+    for (const [type, count] of entries) {
+      const size = sizeOf.get(type)
+      if (!size) continue // unknown type — engine would reject it anyway
+      for (let i = 0; i < count; i++) units.push({ type, size })
+    }
+    if (units.length === 0) return
+
+    const put = (cell, unit) => {
+      cell.used += unit.size
+      placement.push({ unit_type: unit.type, q: cell.q, r: cell.r, ...extra })
+    }
+
+    const total = units.reduce((sum, u) => sum + u.size, 0)
+    const whole = shuffled.find((c) => c.used === 0 && total <= hexCapacity)
+      ?? shuffled.find((c) => c.used + total <= hexCapacity)
+    if (whole) {
+      for (const unit of units) put(whole, unit)
+      return
+    }
+    for (const unit of units) {
+      const cell = shuffled.find((c) => c.used + unit.size <= hexCapacity)
+      if (!cell) break // zone full — the remainder guards the camp
+      put(cell, unit)
+    }
+  }
+
+  return { add, addBlock, result: () => placement }
 }
 
 // One-shot spread of a single army over a zone (the enemy's daily plan and the

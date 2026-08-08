@@ -473,7 +473,9 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     expectPublicOpportunities(res.body)
 
     // Both sides auto-placed in their own zones; a short battle, no walls. The
-    // player's 40 Soldiers all carry the squad_id tag (→ blue_squads breakdown).
+    // player's 40 Soldiers all carry the squad_id tag (→ blue_squads breakdown)
+    // and — because the engine forms squads by (hex, squad_id) — all land on ONE
+    // hex, so the party fights as the 1st Cohort instead of 40 loners.
     const input = engine.runBattle.mock.calls[0][0]
     expect(input.map).toBe('sample_battle')
     expect(input.max_turns).toBe(RAID_MAX_TURNS)
@@ -482,9 +484,11 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     for (const p of input.player_placement) {
       expect(p.unit_type).toBe('Soldier')
       expect(p.squad_id).toBe(1)
+      expect(p.squad_name).toBe('1st Cohort')
       expect(p.r).toBeGreaterThanOrEqual(infoFixture.playerZone.rowMin)
       expect(p.r).toBeLessThanOrEqual(infoFixture.playerZone.rowMax)
     }
+    expect(new Set(input.player_placement.map((p) => `${p.q}|${p.r}`)).size).toBe(1)
     expect(input.enemy_placement).toHaveLength(5)
     for (const p of input.enemy_placement) {
       expect(p.r).toBeGreaterThanOrEqual(infoFixture.enemyZone.rowMin)
@@ -507,6 +511,31 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     // The enemy host was NOT pre-subtracted for a loot raid.
     const doc = await Campaign.findById(c.id)
     expect(doc.enemy.army.get('Soldier')).toBe(540)
+  })
+
+  test('a multi-squad party deploys one formation per squad, each on its own hex', async () => {
+    engine.runBattle.mockResolvedValue(battleResult({
+      blue_squads: {
+        1: { survivors: { Soldier: 40 }, wiped: false },
+        2: { survivors: { Archer: 30 }, wiped: false },
+      },
+    }))
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ capacity: 2000 })])
+
+    // 1st Cohort (40 Soldier) + Skirmishers (30 Archer) on one raid.
+    expect((await launch(c.id, 'd1-0', [1, 2])).status).toBe(201)
+
+    const { player_placement: placement } = engine.runBattle.mock.calls[0][0]
+    expect(placement).toHaveLength(70)
+    const hexesOf = (sid) =>
+      new Set(placement.filter((p) => p.squad_id === sid).map((p) => `${p.q}|${p.r}`))
+    // Each squad whole on one hex, and the two squads on different hexes: two
+    // formations, not one blended stack and not 70 scattered loners.
+    expect(hexesOf(1).size).toBe(1)
+    expect(hexesOf(2).size).toBe(1)
+    expect([...hexesOf(1)]).not.toEqual([...hexesOf(2)])
+    expect(placement.filter((p) => p.squad_name === 'Skirmishers')).toHaveLength(30)
   })
 
   test('party capacity is enforced (Σ size × (40 − speed) / 40 ≤ capacity)', async () => {

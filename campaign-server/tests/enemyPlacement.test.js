@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { spreadPlacement } from '../services/enemyPlacement.js'
+import { makeZonePlacer, spreadPlacement } from '../services/enemyPlacement.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { ENEMY_ARMY } from '../utils/campaignConfig.js'
 
@@ -102,5 +102,97 @@ describe('spreadPlacement', () => {
     const placement = spreadPlacement({ Dragon: 3, Soldier: 2 }, zone, sizeOf)
     expect(placement).toHaveLength(2)
     expect(placement.every((p) => p.unit_type === 'Soldier')).toBe(true)
+  })
+})
+
+// addBlock is the squad path: the engine groups placement entries into
+// formations by (hex, squad_id), so a raid party only fights as squads if every
+// member of a squad lands on the SAME hex. These tests pin that — a scattered
+// squad is the bug they exist to catch.
+describe('makeZonePlacer.addBlock', () => {
+  const hexesOf = (placement) => new Set(placement.map((p) => `${p.q}|${p.r}`))
+
+  test('a whole squad lands on one hex, and each squad gets its own', () => {
+    const zone = { rowMin: 0, rowMax: 3, width: 4, hexCapacity: 640 }
+    for (let run = 0; run < RUNS; run++) {
+      const placer = makeZonePlacer(zone, sizeOf)
+      placer.addBlock({ Soldier: 20, Archer: 10 }, { squad_id: 1, squad_name: '1st Cohort' })
+      placer.addBlock({ Cavalry: 5 }, { squad_id: 2, squad_name: 'Outriders' })
+      const placement = placer.result()
+      expect(placement).toHaveLength(35)
+      expectNoOverstack(placement, zone.hexCapacity)
+
+      const first = placement.filter((p) => p.squad_id === 1)
+      const second = placement.filter((p) => p.squad_id === 2)
+      expect(hexesOf(first).size).toBe(1)
+      expect(hexesOf(second).size).toBe(1)
+      expect([...hexesOf(first)]).not.toEqual([...hexesOf(second)])
+      // The mixed squad keeps both unit types together on its single hex.
+      expect(first.filter((p) => p.unit_type === 'Archer')).toHaveLength(10)
+      expect(first.every((p) => p.squad_name === '1st Cohort')).toBe(true)
+    }
+  })
+
+  test('a squad shares a hex only when the zone has no empty one left', () => {
+    // One hex, capacity 640: two 100-point squads have nowhere else to go, so
+    // they stack — still two formations to the engine (distinct squad_id).
+    const zone = { rowMin: 0, rowMax: 0, width: 1, hexCapacity: 640 }
+    const placer = makeZonePlacer(zone, sizeOf)
+    placer.addBlock({ Soldier: 10 }, { squad_id: 1 })
+    placer.addBlock({ Soldier: 10 }, { squad_id: 2 })
+    const placement = placer.result()
+    expect(placement).toHaveLength(20)
+    expect(hexesOf(placement).size).toBe(1)
+    expectNoOverstack(placement, zone.hexCapacity)
+  })
+
+  test('a squad bigger than one hex packs into as few hexes as it can', () => {
+    // 10 Soldiers (100 points) into 30-capacity hexes: no single hex can hold
+    // the squad, so it fills 3 per hex — 4 hexes, the minimum — rather than
+    // scattering one per hex.
+    const zone = { rowMin: 0, rowMax: 1, width: 4, hexCapacity: 30 }
+    for (let run = 0; run < RUNS; run++) {
+      const placer = makeZonePlacer(zone, sizeOf)
+      placer.addBlock({ Soldier: 10 }, { squad_id: 7 })
+      const placement = placer.result()
+      expect(placement).toHaveLength(10)
+      expect(hexesOf(placement).size).toBe(4)
+      expectNoOverstack(placement, zone.hexCapacity)
+    }
+  })
+
+  test('a block that outgrows the zone leaves the remainder off the field', () => {
+    const zone = { rowMin: 0, rowMax: 0, width: 2, hexCapacity: 15 }
+    const placer = makeZonePlacer(zone, sizeOf)
+    placer.addBlock({ Soldier: 5 }, { squad_id: 1 })
+    const placement = placer.result()
+    expect(placement).toHaveLength(2)
+    expectNoOverstack(placement, zone.hexCapacity)
+  })
+
+  test('unknown types are skipped; an all-unknown block places nothing', () => {
+    const zone = { rowMin: 0, rowMax: 0, width: 4, hexCapacity: 640 }
+    const placer = makeZonePlacer(zone, sizeOf)
+    placer.addBlock({ Dragon: 3, Soldier: 2 }, { squad_id: 1 })
+    placer.addBlock({ Dragon: 2 }, { squad_id: 2 })
+    const placement = placer.result()
+    expect(placement).toHaveLength(2)
+    expect(placement.every((p) => p.unit_type === 'Soldier' && p.squad_id === 1)).toBe(true)
+  })
+
+  test('add and addBlock share the pool without overstacking', () => {
+    // A 30-capacity hex holds 3 Soldiers. The loose spread goes first, one per
+    // hex, leaving 20 free everywhere; the block must fit itself into what's
+    // left and still keep to a single hex.
+    const zone = { rowMin: 0, rowMax: 0, width: 3, hexCapacity: 30 }
+    for (let run = 0; run < RUNS; run++) {
+      const placer = makeZonePlacer(zone, sizeOf)
+      placer.add({ Soldier: 3 })
+      placer.addBlock({ Soldier: 2 }, { squad_id: 1 })
+      const placement = placer.result()
+      expect(placement).toHaveLength(5)
+      expectNoOverstack(placement, zone.hexCapacity)
+      expect(hexesOf(placement.filter((p) => p.squad_id === 1)).size).toBe(1)
+    }
   })
 })

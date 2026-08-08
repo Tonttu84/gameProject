@@ -561,7 +561,13 @@ router.post('/:id/raids/launch', async (req, res) => {
     const cleaned = cleanedByRaid[raidId]
     const squads = squadsByRaid[raidId]
     const placer = makeZonePlacer(zoneOf(info.playerZone), sizeOf)
-    for (const squad of squads) placer.add(squad.composition, { squad_id: squad.id })
+    // addBlock, not add: each squad lands on ONE hex so the engine builds it as
+    // a single formation (it groups by hex + squad_id). Scattering a squad's
+    // members over the zone would field N one-member squads instead — the raid
+    // party would fight as loners. squad_name matches the main battle route so
+    // the replay names the formation.
+    for (const squad of squads)
+      placer.addBlock(squad.composition, { squad_id: squad.id, squad_name: squad.name })
     const input = {
       map: MAP_NAME,
       player_placement: placer.result(),

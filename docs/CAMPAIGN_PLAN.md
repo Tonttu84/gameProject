@@ -3353,6 +3353,15 @@ re-buy/reinforcement, and acquiring squads are all deferred and want their own g
 - Post-raid the squad is **reconciled from its battle survivors** exactly like the main battle
   route (`blue_squads`): composition = survivors, disbanded if the formation was wiped. This
   keeps the invariant `loose = roster − Σ squads.composition − forage`.
+- **A raid party auto-deploys as squads — fixed 2026-08-08 (bug).** The party carried `squad_id`
+  from the start, but the auto-placer (`makeZonePlacer.add`) scattered it one unit per hex, and
+  the engine forms squads by **(hex, squad_id)** — so a raid fielded N one-member "squads" that
+  fought as loners with no cohesion or shared morale, while the main battle route worked because
+  the frontend drops a whole squad on one hex. Raids now use `makeZonePlacer.addBlock`, the
+  server-side twin of that: one squad → one (preferably empty) hex, packed hex-by-hex only if the
+  squad is bigger than `hexCapacity`; `squad_name` rides along too, so the replay names the
+  formation. Pinned by `enemyPlacement.test.js` (addBlock properties) + a multi-squad party test
+  in `raid.test.js`.
 - **Deferred alongside this step:** prestige earning from raids (the very next thing), the
   raiders upgrade spend, and the whole rest of the overhaul above.
 
