@@ -71,13 +71,23 @@ jobs:
       - name: Build the engine
         run: make
 
+      # node 24, NOT 22: campaign-server/.npmrc sets engine-strict=true against
+      # an engines.npm floor of >=11, and node 22 still ships npm 10 — `npm ci`
+      # hard-fails EBADENGINE before installing anything. Same reason the
+      # Dockerfile's frontend stage pins node:24.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
+      # MONGOMS_DISABLE_POSTINSTALL: mongodb-memory-server's postinstall hook
+      # downloads a mongod at install time. This job talks to the service
+      # container instead, so that download is pure waste (and the very fetch
+      # that is blocked on some networks).
       - name: Install dependencies
         working-directory: campaign-server
+        env:
+          MONGOMS_DISABLE_POSTINSTALL: '1'
         run: npm ci
 
       - name: Run the campaign-server suite
