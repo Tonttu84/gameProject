@@ -7,6 +7,19 @@ import {
   ENEMY_WITHDRAW_FRACTION,
 } from '../utils/campaignConfig.js'
 
+// The shadowing enemy host as a MODELLED PRESSURE, not an opponent.
+//
+// Renamed from `enemyAi.js` (2026-08-09) because that name was a standing
+// invitation to build the one thing this game has decided not to have. The
+// enemy is an abstract roguelite challenge: it makes no decisions, has no
+// behaviour and does not react to the player. Everything here is arithmetic on
+// state the player pushes against — it consumes a fixed amount, takes what the
+// shared land still offers, and its numbers follow from that. `enemy.stance`
+// was deleted outright in v19 for the same reason.
+//
+// So: nothing in this file should ever branch on "what would the enemy do".
+// See docs/CAMPAIGN_PLAN.md (START HERE) and DESIGN.md for the principle.
+
 export const armyTotal = (army) => [...army.values()].reduce((a, b) => a + b, 0)
 
 // The shadowing enemy host's per-turn upkeep. Runs during day resolution

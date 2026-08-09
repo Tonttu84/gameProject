@@ -5,7 +5,7 @@ import { createUserAndToken } from './helpers/auth.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { clearRolls } from '../utils/dice.js'
 
-// Enemy per-turn upkeep (services/enemyAi.js) + the near-annihilation
+// Enemy per-turn supply state (services/enemyHost.js) + the near-annihilation
 // withdrawal win in services/dayResolution.js step 6 — driven through the real
 // end-day route against the real DB. Everything here is deterministic: the
 // player never forages (so no clash rolls), pinned QUIET fates keep events out

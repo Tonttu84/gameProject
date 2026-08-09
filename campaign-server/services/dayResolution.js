@@ -15,7 +15,7 @@ import {
 import { bracketOnLevelUp } from './recon.js'
 import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
-import { enemyTurn, armyTotal } from './enemyAi.js'
+import { enemyTurn, armyTotal } from './enemyHost.js'
 import { meterFillAmount, meterBand } from './meter.js'
 import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'

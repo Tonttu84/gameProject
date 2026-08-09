@@ -16,7 +16,7 @@ import {
   RAID_SCOUT_COST_REVEAL,
   bandLabel,
 } from '../utils/campaignConfig.js'
-import { armyTotal } from './enemyAi.js'
+import { armyTotal } from './enemyHost.js'
 import { meterBand, meterFillAtShare } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'

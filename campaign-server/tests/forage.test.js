@@ -12,7 +12,7 @@ import {
   FORAGE_YIELD_BY_BAND, FORAGE_KG_PER_POINT, FORAGE_RING_YIELD,
   ENEMY_DRAIN_KG_PER_TURN, ENEMY_CONSUMPTION_KG_PER_TURN,
 } from '../utils/campaignConfig.js'
-import { enemySupplyState } from '../services/enemyAi.js'
+import { enemySupplyState } from '../services/enemyHost.js'
 
 // Pure campaign math — no DB, no engine, no catalog needed (S2 "effort
 // slider": foraging works off the pre-derived pool/share, not per-unit

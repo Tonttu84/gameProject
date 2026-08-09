@@ -26,18 +26,42 @@ source of truth.
 `git log --oneline -15` to see which stages have actually landed. Don't trust the "done"
 notes below over the git history if they ever disagree — the commits win.
 
+## Standing design principles
+
+Durable constraints on the campaign layer — these outlive any one stage. **They are deliberately
+NOT in the rolling "Where the work stands" handoff below, which gets rewritten every stage.**
+Add to this section only decisions meant to bind future work; record what merely *happened* in the
+stage write-ups instead.
+
+### 1. The enemy is an abstract challenge, not an opponent
+
+> *"We don't have any enemy behavior at least for now, the enemy is an abstract challenge in
+> roguelite fashion rather than a reactive opponent."* — user, 2026-08-09
+
+The shadowing host has no behaviour, no AI and no reactions. It is a **modelled pressure the
+player pushes against**: it consumes a fixed amount, takes what the shared land still offers, and
+its numbers follow from arithmetic — never from a decision.
+
+**What this rules out.** Do not propose, design or build "the enemy responds to X" — it forages
+harder when hungry, moves camp, forces the battle early, counter-raids, adapts to the player's
+posture. None of that is deferred work; it is **out of scope by design**, and its absence is not
+a gap to be helpfully filled.
+
+**What it licenses.** Dials the player pushes on, and consequences that follow mechanically from
+the world state: the supply balance (S4), the forage rings emptying, the boss-fight meter,
+raid-board pressure. A consequence is fine; a *choice* is not.
+
+**Evidence this is settled, not an oversight:** `enemy.stance` (a genuine behaviour machine) was
+deleted outright in v19 — that deletion applied this principle rather than awaiting a
+replacement. S4's supply system is a gauge plus an attrition rate with no agency anywhere.
+`services/enemyAi.js` was renamed `enemyHost.js` in 2026-08-09 because the old name was a
+standing invitation to build the thing this principle forbids.
+
 ### Where the work stands (2026-08-09) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
 schema version **31**.
 
-**STANDING DESIGN PRINCIPLE — the enemy is an abstract challenge, not an opponent.** (User,
-2026-08-09.) It has no behaviour, no AI, no reactions: it is a roguelite pressure the player
-pushes against, whose numbers answer arithmetic rather than decisions. Do NOT propose or build
-"the enemy responds to X" — that is out of scope by design, not a gap in the plan. This is why
-`enemy.stance` was deleted outright in v19, and why S4's supply system is a gauge plus an
-attrition rate with no agency in it. (`services/enemyAi.js` is a historical misnomer; it contains
-no AI and should not acquire any.)
 
 - **2026-08-09 (latest) — "starve the enemy" S1 landed.** The enemy host now feeds itself off the
   shared rings and is judged turn by turn (no stockpile): near ring = surplus and it grows, mid =
@@ -457,8 +481,10 @@ deliberate, not cleanup awaiting a replacement.
 What the enemy IS: a set of dials the player pushes on. It consumes a fixed amount, takes what the
 shared land still offers, and its numbers answer arithmetic — never a decision. S4 is built that
 way on purpose (a gauge and an attrition rate, no agency anywhere), and anything added later
-should be too. **Note `services/enemyAi.js` is a misnomer under this principle** — it holds no AI
-and should not acquire any; the name is historical.
+should be too. **`services/enemyAi.js` has been renamed `services/enemyHost.js`** (and
+`tests/enemyAi.test.js` → `tests/enemyHost.test.js`) — the old name was a standing invitation to
+build the very thing the principle forbids. Older references to `enemyAi.js` further down this
+file are historical and accurate to their date; leave them.
 
 **Still deferred from the slider epic** (genuinely deferred, not out of scope): optional food
 sinks; forager-clash flavour re-expressed as events.

@@ -255,3 +255,22 @@ feeding morale and reserve results back into the tactical layer.
   independent hexside engagement per body section
 - **Formation rotation**: facing direction tracked per hex, flanking defined relative
   to facing rather than just "number of engaged sides"
+
+---
+
+## Scope note: this document is the BATTLE layer
+
+Everything above designs the tactical battle (hexes, frontage, formations, cavalry) — the C++
+engine's domain. The **strategic campaign layer** is designed elsewhere:
+
+- **`docs/CAMPAIGN_PLAN.md` → "Standing design principles"** — durable constraints that bind all
+  future campaign work. Read that section before designing a campaign feature.
+- The same file's stage write-ups carry the per-feature design and the reasoning behind it.
+
+The most load-bearing of those principles, repeated here because it is the one most likely to be
+violated by accident: **the enemy is an abstract challenge, not an opponent.** The shadowing host
+has no behaviour, no AI and no reactions — it is a pressure the player pushes against, whose
+numbers answer arithmetic rather than decisions. "The enemy reacts to X" is out of scope by
+design, not a gap. (This is why `enemy.stance` was deleted in v19 and why `enemyAi.js` was
+renamed `enemyHost.js`.) Note this constrains the CAMPAIGN layer only — in-battle units of course
+have tactical behaviour, which is what the rest of this document describes.
