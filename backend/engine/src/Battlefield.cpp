@@ -1311,6 +1311,12 @@ bool Battlefield::tick()
     // log (and in the DB's per-tick log via ReplayRecorder).
     logEvent("Turn " + std::to_string(_ticksRun + 1));
     onTurnStart();
+    // Reinforcements land BEFORE the acting phases, so a wave can move, cast
+    // and fight on the very tick it arrives. Deliberate (asked and confirmed
+    // 2026-08-09): a tick is an abstraction, not a stopwatch, and "it arrived
+    // during the turn" is answer enough. Holding a wave for a tick would buy a
+    // marginal bit of fiction for a real chunk of machinery — an arrival flag
+    // to set, honour and clear across four phases. Don't add it.
     fireScheduledReinforcements();
     triggerSpecialPhase();
     moveUnits();

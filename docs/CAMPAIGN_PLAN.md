@@ -73,9 +73,14 @@ jobs** — nothing is in flight, so a new session starts from a clean `main`.
    S4 stage write-up below for the derivation. **Still open: the host's opening size** (721) is
    unbalanced against the player's roster and wants a playtest of its own — the per-turn swing was
    only half of that complaint.
-2. **Should a reinforcement wave be able to MOVE on the tick it arrives?** `tick()` runs
-   `fireScheduledReinforcements()` then `moveUnits()` in the same turn, so a garrison sally lands
-   and immediately steps. Both answers are defensible; the test no longer depends on which.
+2. ~~**Should a reinforcement wave be able to MOVE on the tick it arrives?**~~ **ANSWERED
+   2026-08-09 — yes, and the current order stays.** `tick()` runs `fireScheduledReinforcements()`
+   before `triggerSpecialPhase()`/`moveUnits()`, so a garrison sally lands and immediately acts.
+   A tick is an abstraction rather than a stopwatch, and "it arrived during the turn" is answer
+   enough. Holding a wave for a tick would buy a marginal bit of fiction for a real chunk of
+   machinery — an arrival flag to set, honour and clear across four phases — so it is not worth
+   the complication. Recorded as a comment at the `tick()` call site too, because that is where
+   someone would otherwise "fix" it. **No code change; do not revisit.**
 3. ~~**`randomPlaceArmy: zone is full` still prints during the C++ suite.**~~ **ANSWERED — the
    warning is not a bug.** It comes from exactly one test, the deliberate `SECURITY_NOTES.md #6`
    regression case ("returns false without terminating when zone is too full"), which overfills a
