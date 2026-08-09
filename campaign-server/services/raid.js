@@ -221,8 +221,9 @@ const randomRaidType = () => RAID_POOL[Math.floor(Math.random() * RAID_POOL.leng
 // Deal the turn's opening board: RAID_BASE_TARGETS base target(s) plus ONE
 // counter_event per sealed bad fate (each names its own slot). Everything
 // beyond this is bought during the turn with scouting points (addScoutedTarget).
-// The scoutingPoints pool itself is set by the caller (both deal sites) from
-// scoutingPointsFor — this only produces the opportunity list.
+// The scoutingPoints pool itself is set by the caller (both deal sites) as the
+// (1 − forage.share) slice of the day's fieldPointsFor pool — this only
+// produces the opportunity list.
 export function generateRaidOpportunities(campaign, catalog) {
   // eventValenceFor (not eventValence): a choice-fate stores only the `choice`
   // sentinel effect, its declared valence lives in the pool — a declared-bad

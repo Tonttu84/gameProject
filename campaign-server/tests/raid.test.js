@@ -150,7 +150,7 @@ const setSquads = async (id, squads) => {
 // per-squad survivor breakdown the launch route reconciles each raided squad
 // against (composition = survivors, disbanded if wiped). blue_survivors is
 // derived from it so the flat roster reconciliation and the per-squad one stay
-// consistent (the invariant loose = roster − Σ squads.composition − forage).
+// consistent (the invariant loose = roster − Σ squads.composition).
 const sumSurvivors = (squads) => {
   const acc = {}
   for (const s of Object.values(squads))
@@ -566,21 +566,6 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     expect((await launch(c.id, 'd1-0', [1.5])).status).toBe(400)       // non-integer id
     expect((await launch(c.id, 'd1-0', [999])).status).toBe(400)       // not one of your squads
     expect(engine.runBattle).not.toHaveBeenCalled()
-  })
-
-  test('a squad can raid even while loose troops are out foraging (separate pools)', async () => {
-    // Squads are a distinct pool from loose troops — foraging draws only on the
-    // loose remainder, so committing foragers never bars a squad from a raid.
-    engine.runBattle.mockResolvedValue(
-      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
-    )
-    const { body: c } = await createCampaign()
-    await pinRaid(c.id, [OPP()])
-    // 300 Soldier − 40 in the 1st Cohort = 260 loose; send them all foraging.
-    await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({ assignment: { Soldier: 260 } })
-    const res = await launch(c.id, 'd1-0', [1])
-    expect(res.status).toBe(201)
-    expect(engine.runBattle).toHaveBeenCalledTimes(1)
   })
 
   test('404 for an unknown opportunity, 400 for a resolved one', async () => {

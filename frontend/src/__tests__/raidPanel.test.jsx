@@ -38,7 +38,7 @@ vi.mock('../services/api', () => ({
   createCampaign: vi.fn(),
   consultCampaignAugury: vi.fn(),
   rerollCampaignAugury: vi.fn(),
-  setCampaignForage: vi.fn(),
+  setCampaignEffort: vi.fn(),
   spendCampaign: vi.fn(),
   postCampaignBattle: vi.fn(),
   postCampaignRaids: vi.fn(),

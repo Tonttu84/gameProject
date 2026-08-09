@@ -199,7 +199,11 @@ const pinAugury = async (id, trueEvent = QUIET, falseEvent = DOOMED) => {
 // Fixture-catalog campaign math, used by the expectations below:
 // - player food need/turn: 300 Soldier×28 + 50 Archer×28 + 3 Mage×28 +
 //   3 Priest×28 + 10 Cavalry×112 + 12 LightCavalry×112 = 12,432 kg
-// - enemy forage plan: 0.4 × (540×2 + 150×2 + 11×2 + 20×6 points × 15 kg) = 9,132 kg
+// - starting field-points pool (fieldPointsFor, S2 "effort slider"): 300×2 +
+//   50×5 + 3×6 + 3×2 + 10×5.6 + 12×15.2 = 1112.4 pts, split 50/50
+//   (DEFAULT_FORAGE_SHARE) between forage and the day-1 scouting-points pool
+// - the enemy's drain is now a flat ENEMY_DRAIN_KG_PER_TURN (9,000 kg), not
+//   derived from its army
 
 describe('POST /api/campaigns', () => {
   test('creates a campaign with starting state and turn-1 events', async () => {
@@ -217,18 +221,22 @@ describe('POST /api/campaigns', () => {
     // boss fight is not yet due (the retired stance is gone).
     expect(res.body.enemy).toEqual({})
     expect(res.body.bossFightDue).toBe(false)
-    // Fresh land: three untouched rings, nobody assigned to forage yet.
+    // Fresh land: three untouched rings. DEFAULT_FORAGE_SHARE is 0 (all
+    // scouting) — the pre-slider default too (forage.assignment started
+    // empty), so a fresh campaign forages nothing until the player commits.
     expect(res.body.forage.rings).toEqual([
-      { ring: 0, richness: 20000, initialRichness: 20000 },
-      { ring: 1, richness: 35000, initialRichness: 35000 },
-      { ring: 2, richness: 55000, initialRichness: 55000 },
+      { ring: 0, richness: 80000, initialRichness: 80000 },
+      { ring: 1, richness: 140000, initialRichness: 140000 },
+      { ring: 2, richness: 220000, initialRichness: 220000 },
     ])
-    expect(res.body.forage.assignment).toEqual({})
-    expect(res.body.forage.capacityKg).toBe(0)
+    expect(res.body.forage.pool).toBeCloseTo(1112.4)
+    expect(res.body.forage.share).toBe(0)
     // A fresh campaign has done no recon yet (0 points) → Blind, whose 0.7
-    // forage posture already scales the preview: round(30 × 0.7), round(84 × 0.7).
-    expect(res.body.forage.kgPerUnit.Soldier).toBe(21)
-    expect(res.body.forage.kgPerUnit.LightCavalry).toBe(59)
+    // forage posture already scales the preview: 16 × 0.7 = 11.2 kg/point.
+    expect(res.body.forage.kgPerPoint).toBeCloseTo(11.2)
+    expect(res.body.forage.capacityKg).toBe(0) // share 0 → nothing forages yet
+    // Blind is below the Outmatched recon gate — the enemy's drain is hidden.
+    expect(res.body.forage.enemyDrainKg).toBeNull()
     expect(res.body.scouting).toEqual({ band: 'Blind' })
     expectNoHiddenInfo(res.body)
   })
@@ -247,7 +255,9 @@ describe('POST /api/campaigns', () => {
       expect(slot.falseEvent.severity).toBe(slot.trueEvent.severity)
       expect(slot.shownTrue).toBeNull()
     }
-    expect(doc.forage.enemyPlan).toBe(9084)
+    expect(doc.forage.enemyDrainKg).toBe(9000) // ENEMY_DRAIN_KG_PER_TURN, flat since S2
+    expect(doc.forage.pool).toBeCloseTo(1112.4)
+    expect(doc.forage.share).toBe(0)
     // Placement only covers types present in the (test) catalog, but it must
     // exist and be axial-shaped.
     expect(Array.isArray(doc.enemy.plannedPlacement)).toBe(true)
@@ -683,11 +693,7 @@ describe('campaign schema versioning', () => {
       (await endTurn(c.id)).status,
     ).toBe(404)
     expect(
-      (
-        await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({
-          assignment: { Soldier: 1 },
-        })
-      ).status,
+      (await auth(api.post(`/api/campaigns/${c.id}/effort`)).send({ share: 0.5 })).status,
     ).toBe(404)
   })
 
@@ -802,56 +808,55 @@ describe('POST /api/campaigns/:id/augury/reroll', () => {
   })
 })
 
-describe('POST /api/campaigns/:id/forage', () => {
-  const assign = (id, assignment) =>
-    auth(api.post(`/api/campaigns/${id}/forage`)).send({ assignment })
+describe('POST /api/campaigns/:id/effort', () => {
+  const setEffort = (id, share) =>
+    auth(api.post(`/api/campaigns/${id}/effort`)).send({ share })
 
-  test('sets the assignment and reports capacity; re-issuing replaces it', async () => {
+  test('sets the share and reports the split preview; re-issuing replaces it', async () => {
     const { body: c } = await createCampaign()
     await pinBand(c.id, 'Contested') // neutral posture (×1) — this tests raw capacity, not scouting scaling
 
-    const res = await assign(c.id, { Soldier: 100, LightCavalry: 5 })
+    const res = await setEffort(c.id, 0.7)
     expect(res.status).toBe(200)
-    expect(res.body.forage.assignment).toEqual({ Soldier: 100, LightCavalry: 5 })
-    expect(res.body.forage.capacityKg).toBe(100 * 30 + 5 * 84)
+    expect(res.body.forage.share).toBe(0.7)
+    // pool 1112.4 × 0.7 × 16 kg/pt, floored
+    expect(res.body.forage.capacityKg).toBe(12458)
+    expect(res.body.raid.scoutingPoints).toBeCloseTo(1112.4 * 0.3)
     expectNoHiddenInfo(res.body)
 
-    const replaced = await assign(c.id, { Cavalry: 4 })
-    expect(replaced.body.forage.assignment).toEqual({ Cavalry: 4 })
-    expect(replaced.body.forage.capacityKg).toBe(4 * 84) // speed 28 → 5.6 pts × 15 kg
+    const replaced = await setEffort(c.id, 0.2)
+    expect(replaced.body.forage.share).toBe(0.2)
+    expect(replaced.body.forage.capacityKg).toBe(Math.floor(1112.4 * 0.2 * 16))
+    expect(replaced.body.raid.scoutingPoints).toBeCloseTo(1112.4 * 0.8)
   })
 
-  test('rejects overdrafts, bad counts, and missing bodies', async () => {
+  test('rejects out-of-range shares, non-numbers, and missing bodies', async () => {
     const { body: c } = await createCampaign()
-    expect((await assign(c.id, { Soldier: 301 })).status).toBe(400)
-    expect((await assign(c.id, { Soldier: -1 })).status).toBe(400)
-    expect((await assign(c.id, { Soldier: 2.5 })).status).toBe(400)
-    expect((await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({})).status).toBe(400)
-  })
-
-  // Playtest bug 2026-07-03: the forage menu offered troop types the player
-  // doesn't own. The view's kgPerUnit is the client's row source — pin it to
-  // exactly the roster's types so catalog-only units never get a stepper.
-  test('kgPerUnit covers exactly the roster types, nothing from the wider catalog', async () => {
-    const { body: c } = await createCampaign()
-    expect(Object.keys(c.forage.kgPerUnit).sort()).toEqual(Object.keys(c.roster).sort())
-    expect(c.forage.kgPerUnit.Zombie).toBeUndefined()
-    expect(c.forage.kgPerUnit.Necromancer).toBeUndefined()
+    expect((await setEffort(c.id, 1.5)).status).toBe(400)
+    expect((await setEffort(c.id, -0.1)).status).toBe(400)
+    expect((await setEffort(c.id, 'half')).status).toBe(400)
+    expect((await auth(api.post(`/api/campaigns/${c.id}/effort`)).send({})).status).toBe(400)
   })
 
   // Stage 4 1d: the scouting band sets the forage posture. The view's preview
-  // values (kgPerUnit, capacityKg) carry the same multiplier the resolution
+  // (kgPerPoint, capacityKg) carries the same multiplier the resolution
   // applies, so what the panel promises is what end-day delivers.
   test('Blind posture scales the forage preview the player plans against', async () => {
     const { body: c } = await createCampaign()
-    // A fresh campaign is Blind (0 recon); the Priest roster sets the forage math.
+    // A fresh campaign is Blind (0 recon). S2 snapshots the pool at newDay
+    // rather than deriving it live from the roster, so pin it directly to
+    // what a Priest-100 army's pool would be (100 × fieldPointValue(Priest)
+    // = 100 × 2 = 200) instead of relying on pinArmies to move it.
     await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
+    const doc = await Campaign.findById(c.id)
+    doc.forage.pool = 200
+    doc.forage.share = 1
+    await doc.save()
+
     const view = await getView(c.id)
     expect(view.scouting.band).toBe('Blind')
-    expect(view.forage.kgPerUnit.Priest).toBe(21) // round(30 × 0.7)
-    const res = await assign(c.id, { Priest: 40 })
-    expect(res.body.forage.capacityKg).toBe(840) // floor(40 × 30 × 0.7)
-    expectNoHiddenInfo(res.body)
+    expect(view.forage.kgPerPoint).toBeCloseTo(11.2) // 16 × 0.7
+    expect(view.forage.capacityKg).toBe(2240) // floor(200 × 1 × 16 × 0.7)
   })
 
   test('end-day forages at that posture and the report names it', async () => {
@@ -859,33 +864,20 @@ describe('POST /api/campaigns/:id/forage', () => {
     await pinArmies(c.id, { roster: { Priest: 100 }, enemyArmy: { LightCavalry: 50 } })
     await pinAugury(c.id) // QUIET ±0 keeps the food math exact
     const doc = await Campaign.findById(c.id)
-    doc.forage.assignment = new Map([['Priest', 100]])
-    doc.forage.enemyPlan = 0 // uncontested rings → no clash roll → deterministic
+    doc.forage.pool = 200 // 100 × fieldPointValue(Priest) = 100 × 2
+    doc.forage.share = 1
     await doc.save()
 
     const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     expect(res.body.report.forage.posture).toBe('Blind')
-    expect(res.body.report.forage.capacity).toBe(2100) // floor(100 × 30 × 0.7)
-    expect(res.body.report.forage.harvested).toEqual({ food: 1680, materials: 420 })
+    expect(res.body.report.forage.capacity).toBe(2240) // floor(200 × 16 × 0.7)
+    expect(res.body.report.forage.harvested).toEqual({ food: 1792, materials: 448 })
     expectNoHiddenInfo(res.body)
 
-    // 50,000 + 1,680 forage − 2,800 upkeep (100 Priests at 28 kg/turn).
-    expect(res.body.campaign.resources.food).toBe(48880)
-    expect(res.body.campaign.resources.materials).toBe(620) // 200 + 420
-  })
-
-  test('foragers are unavailable for the battle line', async () => {
-    const { body: c } = await createCampaign()
-    await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } }) // reach the battle (Stage B gate)
-    await assign(c.id, { Soldier: 300 })
-
-    const res = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
-      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4 }],
-    })
-    expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/out foraging/)
-    expect(engine.runBattle).not.toHaveBeenCalled()
+    // 50,000 + 1,792 forage − 2,800 upkeep (100 Priests at 28 kg/turn).
+    expect(res.body.campaign.resources.food).toBe(48992)
+    expect(res.body.campaign.resources.materials).toBe(648) // 200 + 448
   })
 })
 
@@ -1626,7 +1618,7 @@ describe('Recruit phase locks the rest of the turn', () => {
   const openRecruit = (id) => auth(api.post(`/api/campaigns/${id}/recruit/open`)).send({})
 
   const lockedActions = [
-    ['forage', { assignment: { 0: 1 } }],
+    ['effort', { share: 0.5 }],
     ['augury/consult', {}],
     ['augury/reroll', { slot: 0 }],
     ['augury/accept', {}],
@@ -1737,7 +1729,7 @@ describe('the one-way turn phase machine', () => {
       .not.toBe(409)
 
     await setPhase(c.id, 'omens')
-    const late = await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({ assignment: {} })
+    const late = await auth(api.post(`/api/campaigns/${c.id}/effort`)).send({ share: 0.5 })
     expect(late.status).toBe(409)
     expect(late.body.error).toMatch(/prepare phase is behind you/i)
   })
@@ -1834,15 +1826,15 @@ describe('POST /api/campaigns/:id/end-day', () => {
   })
 
   test('the other screens are NOT locked out on a boss-fight-due day — only End Turn is', async () => {
-    // The player may still forage/scout/etc; they simply can't skip the fight.
-    // (Raid launch lives on its own route with no bossFightDue gate, so it is
-    // structurally unaffected — forage here stands in for "screens still open".)
+    // The player may still adjust effort/scout/etc; they simply can't skip
+    // the fight. (Raid launch lives on its own route with no bossFightDue
+    // gate, so it is structurally unaffected — effort here stands in for
+    // "screens still open".)
     const { body: c } = await createCampaign()
     await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } })
 
-    const forageRes = await auth(api.post(`/api/campaigns/${c.id}/forage`))
-      .send({ assignment: { Soldier: 1 } })
-    expect(forageRes.status).toBe(200)
+    const effortRes = await auth(api.post(`/api/campaigns/${c.id}/effort`)).send({ share: 0.6 })
+    expect(effortRes.status).toBe(200)
 
     const consultRes = await auth(api.post(`/api/campaigns/${c.id}/augury/consult`)).send({})
     expect(consultRes.status).toBe(200)
@@ -1877,24 +1869,30 @@ describe('POST /api/campaigns/:id/end-day', () => {
     expect(res.body.campaign.resources.food).toBe(50000 - 12432)
   })
 
-  test('foragers harvest at end of turn; the assignment clears for the new turn', async () => {
+  test('foragers harvest at end of turn; the pool resnapshots and the share stays sticky', async () => {
     const { body: c } = await createCampaign()
     await pinBand(c.id, 'Contested') // neutral posture (×1) — this tests harvest math, not scouting scaling
     await pinAugury(c.id) // keep the food math free of event noise
-    await auth(api.post(`/api/campaigns/${c.id}/forage`)).send({
-      assignment: { Soldier: 100 }, // capacity 3000 kg
-    })
-    pushRoll(1000) // near ring is contested with the enemy — force no clash
+    // The default share is 0 (all-scouting) — dial in 0.5 explicitly so this
+    // test actually exercises the harvest math.
+    await Campaign.findByIdAndUpdate(c.id, { 'forage.share': 0.5 })
 
+    // Share 0.5 over the starting pool (1112.4): 556.2 pts × 16 = 8899 kg,
+    // entirely from the near ring (yield ×1.0, no spillover).
     const res = await endTurn(c.id)
     expect(res.status).toBe(200)
     expectNoHiddenInfo(res.body)
 
-    expect(res.body.report.forage.harvested).toEqual({ food: 2400, materials: 600 })
-    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 3000 - 9084)
-    expect(res.body.campaign.resources.food).toBe(50000 + 2400 - 12432)
-    expect(res.body.campaign.resources.materials).toBe(200 + 600) // 200 starting + 0.2 × 3000 forage
-    expect(res.body.campaign.forage.assignment).toEqual({})
+    expect(res.body.report.forage.harvested).toEqual({ food: 7119, materials: 1779 })
+    // Player takes 8899 kg, then the enemy's flat 9000 kg drain eats the rest
+    // (both near-first, no contention — decision 4).
+    expect(res.body.report.forage.rings[0].richness).toBe(80000 - 8899 - 9000)
+    expect(res.body.campaign.resources.food).toBe(50000 + 7119 - 12432)
+    expect(res.body.campaign.resources.materials).toBe(200 + 1779)
+    // The pool resnapshots from the (unchanged) roster; the share is STICKY —
+    // newDay never resets it (docs/CAMPAIGN_PLAN.md "Effort slider" decision 12).
+    expect(res.body.campaign.forage.pool).toBeCloseTo(1112.4)
+    expect(res.body.campaign.forage.share).toBe(0.5)
   })
 
   test('the day report reveals predicted vs actual per slot — the augur can lie', async () => {

@@ -10,7 +10,7 @@ import {
   armyFoodPerTurn,
   reconBand,
   reconLevel,
-  scoutingPointsFor,
+  fieldPointsFor,
 } from '../utils/capabilities.js'
 import { bracketOnLevelUp } from './recon.js'
 import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
@@ -26,20 +26,21 @@ import { resolveForaging } from './forage.js'
 // later stages splice into it:
 //   0.5 scouting band    (read once, against the hosts as they stand at dawn —
 //                         the same band campaignView showed when the player
-//                         committed orders; sets the forage POSTURE in 1–2 and
+//                         committed orders; sets the forage POSTURE in 1 and
 //                         picks each recon-sensitive fate's RUNG in 3)
-//   1. forage            (both hosts strip the rings; player yield × posture)
-//   2. forager clashes   (inside the forage step — contested rings, clash
-//                         odds × posture damper)
+//   1. forage            (passive since S2 — no assignment, no clashes: the
+//                         player's slider share of the pool converts to kg,
+//                         the enemy drains the same rings by a flat amount)
 //   3. apply true event  (regardless of what the augur foretold — the reveal;
 //                         the band decides WHICH RUNG of the fate fires)
 //   4. meter + enemy turn (boss-fight meter fill/threshold read against the
-//                         day's pre-reset forage/raid assignments, THEN enemy
-//                         upkeep/tomorrow's forage plan — see services/meter.js)
+//                         day's pre-reset forage share/raid assignment, THEN
+//                         enemy upkeep — see services/meter.js)
 //   5. player upkeep     (food, desertion at zero)
 //   6. check end         (annihilation / enemy near-annihilation withdrawal)
-//   7. new turn          (draw events, clear forage assignment, regenerate
-//                         the enemy's planned placement)
+//   7. new turn          (draw events, clear raid assignment, resnapshot the
+//                         forage pool + scouting-points split, regenerate the
+//                         enemy's planned placement)
 //
 // Annihilation ends the campaign the moment it happens — after a battle as
 // well as at end-of-turn. A wiped player roster loses even when the enemy
@@ -152,12 +153,12 @@ export async function endDay(campaign) {
   // 0.5. Scouting level, from recon points accumulated up to this turn's start
   // (this turn's leftover accrues in step 7 below, for NEXT turn) — the SAME
   // band campaignView showed while the player was committing orders. It sets
-  // the forage posture in steps 1–2 and picks each recon-sensitive fate's rung
+  // the forage posture in step 1 and picks each recon-sensitive fate's rung
   // in step 3.
   const band = reconBand(campaign.recon?.points ?? 0)
 
-  // 1–2. Foraging and forager clashes, at the band's posture
-  const foraging = resolveForaging(campaign, catalog, band)
+  // 1. Foraging, at the band's posture — passive since S2, no clashes.
+  const foraging = resolveForaging(campaign, band)
   entries.push(...foraging.entries)
   report.forage = foraging.forage
 
@@ -234,8 +235,8 @@ export async function endDay(campaign) {
     })
   }
 
-  // 4. Boss-fight meter, THEN the enemy turn (enemy upkeep/forage plan).
-  // Read against the day's pre-reset forage/raid assignments — step 7 below
+  // 4. Boss-fight meter, THEN the enemy turn (enemy upkeep). Read against the
+  // day's pre-reset forage share/raid assignment — step 7 below resnapshots/
   // clears them for the new turn. Garrison Resolve slice 2: the day's fill is
   // slowed by wallSlowFactor(resolve) — a heartened garrison holds the walls
   // (the player's one lever to push the breach back), rounded to keep the
@@ -310,7 +311,6 @@ export async function endDay(campaign) {
     // Back to the top of the one-way march (routes' rejectIfPhasePassed): the
     // new turn re-opens every phase that this one closed.
     campaign.phase = 'prepare'
-    campaign.forage.assignment = new Map()
     campaign.raid.assignment = new Map()
     campaign.raid.squadAssignment = []
     // The live doc IS the eligibility context (day already incremented above,
@@ -319,15 +319,20 @@ export async function endDay(campaign) {
     campaign.augury = drawAugury(campaign)
     campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
     // Tomorrow's board: one base target (+ a counter per FRESH bad fate drawn
-    // above), and the scouting-points pool refilled from the roster as the
-    // day's attrition left it — unused points from today expire here.
+    // above); the field-points pool below is what backs its scouting-points
+    // share.
     campaign.raid.opportunities = generateRaidOpportunities(campaign, catalog)
     // Recon: whatever scouting points went UNSPENT on the raid board this turn
     // pour into the accumulating recon pool (no decay) — this is what raises the
     // scouting level over the campaign (docs/CAMPAIGN_PLAN.md "Recon rework").
-    // Done BEFORE the pool refills below, so only the genuine leftover accrues.
+    // Done BEFORE the pool resnapshots below, so only the genuine leftover
+    // accrues.
     campaign.recon.points = (campaign.recon.points ?? 0) + Math.max(0, campaign.raid.scoutingPoints ?? 0)
-    campaign.raid.scoutingPoints = scoutingPointsFor(campaign.roster, catalog)
+    // Effort slider S2: resnapshot tomorrow's pool from the roster as the
+    // day's attrition left it, then split it by the STICKY forage.share the
+    // player already has set (newDay never touches forage.share itself).
+    campaign.forage.pool = fieldPointsFor(campaign.roster, catalog)
+    campaign.raid.scoutingPoints = campaign.forage.pool * (1 - (campaign.forage.share ?? 0))
     // Recon R2: a level-up (re)sets the numeric estimate brackets ONCE, from the
     // truth as it now stands (enemy count = live host size AFTER this turn's
     // casualties; meter = the value just filled). Within a level they hold — only

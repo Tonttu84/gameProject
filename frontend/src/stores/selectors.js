@@ -24,8 +24,8 @@ export const useTotalUnits = () => {
 
 export const useSquads = () => useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
 
-export const useForageAssignment = () =>
-  useCampaignStore((s) => s.campaign?.forage?.assignment ?? EMPTY_OBJECT)
+export const useRaidAssignment = () =>
+  useCampaignStore((s) => s.campaign?.raid?.assignment ?? EMPTY_OBJECT)
 
 export const useSquadCommitted = () => {
   const squads = useSquads()
@@ -38,16 +38,18 @@ export const useSquadCommitted = () => {
   return committed
 }
 
-// Units out foraging are unavailable for this turn's battle line. Squad
-// members are earmarked to their squad and aren't offered individually
-// under "Troops" — a squad is placed as a whole, not built up unit-by-unit.
+// Units out raiding are unavailable for this turn's battle line — foraging is
+// passive since S2 and no longer holds anyone back (docs/CAMPAIGN_PLAN.md
+// "Effort slider" decision 2). Squad members are earmarked to their squad and
+// aren't offered individually under "Troops" — a squad is placed as a whole,
+// not built up unit-by-unit.
 export const useAvailableRoster = () => {
   const roster = useRoster()
-  const forageAssignment = useForageAssignment()
+  const raidAssignment = useRaidAssignment()
   const squadCommitted = useSquadCommitted()
   return Object.fromEntries(
     Object.entries(roster).map(([type, n]) =>
-      [type, n - (forageAssignment[type] ?? 0) - (squadCommitted[type] ?? 0)]),
+      [type, n - (raidAssignment[type] ?? 0) - (squadCommitted[type] ?? 0)]),
   )
 }
 
@@ -64,13 +66,14 @@ export const useSquadPlacedCount = () => {
   }, 0)
 }
 
-// Battle commits the WHOLE army (user, 2026-07-05): only foragers stay
-// behind. Fight unlocks when every available unit — loose stock AND every
-// squad — is on the field; the server enforces the same rule.
+// Battle commits the WHOLE army (user, 2026-07-05): only raiders stay behind
+// (foraging is passive since S2). Fight unlocks when every available unit —
+// loose stock AND every squad — is on the field; the server enforces the
+// same rule.
 export const useTotalAvailableCount = () => {
   const totalUnits = useTotalUnits()
-  const forageAssignment = useForageAssignment()
-  return totalUnits - Object.values(forageAssignment).reduce((a, b) => a + b, 0)
+  const raidAssignment = useRaidAssignment()
+  return totalUnits - Object.values(raidAssignment).reduce((a, b) => a + b, 0)
 }
 
 export const useInCamp = () => {

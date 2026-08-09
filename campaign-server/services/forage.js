@@ -1,50 +1,30 @@
-import { forageValue } from '../utils/capabilities.js'
-import { chanceRoll } from '../utils/dice.js'
-import { resolveClash } from './skirmish.js'
 import {
   FORAGE_KG_PER_POINT,
   FORAGE_FOOD_SHARE,
   FORAGE_MATERIALS_SHARE,
   FORAGE_YIELD_BY_BAND,
-  FORAGE_CLASH_DAMPER_BY_BAND,
-  CLASH_BASE,
-  CLASH_CONTEST_FACTOR,
-  CLASH_CAP,
-  CLASH_LOSER_YIELD_FORFEIT,
-  ENEMY_FORAGE_FRACTION,
+  FORAGE_RING_YIELD,
 } from '../utils/campaignConfig.js'
 
-// Foraging step of day resolution. Both hosts strip the same three rings of
-// countryside; near depletes first, nothing grows back, and meeting the
-// enemy's parties out there is how forager clashes happen.
-
-const entriesOf = (army) =>
-  army instanceof Map ? [...army.entries()] : Object.entries(army ?? {})
-
-// Assignment → kg the party can gather this turn (capability-driven: a future
-// Flyer forages purely off its exported stats).
-export const forageCapacityKg = (assignment, catalog) => {
-  let points = 0
-  for (const [type, count] of entriesOf(assignment)) {
-    const stats = catalog.get(type)?.stats
-    if (!stats) continue
-    points += count * forageValue(stats)
-  }
-  return points * FORAGE_KG_PER_POINT
-}
+// Foraging step of day resolution — S2 "effort slider" (docs/CAMPAIGN_PLAN.md):
+// foraging is now PASSIVE. There is no per-unit assignment and no forager
+// clash — the player's slider share of the turn's ONE field-points pool
+// converts straight to kg, and the enemy drains the same rings by a flat,
+// abstract amount with no credit of its own. Both strip the same three rings,
+// near depletes first, nothing grows back.
 
 // Forage posture (Stage 4 1d): the scouting band's yield multiplier, ×1 for
 // an unknown/absent band (same degrade-safely convention as the catalog
-// guards). Shared with campaignView so the panel's preview values carry the
-// exact multiplier the resolution applies — promise and delivery can't drift.
+// guards).
 export const forageYieldMultiplier = (band) => FORAGE_YIELD_BY_BAND[band] ?? 1
 
-// What the committed assignment will actually gather at this posture.
-export const effectiveForageCapacityKg = (assignment, catalog, band) =>
-  Math.floor(forageCapacityKg(assignment, catalog) * forageYieldMultiplier(band))
+// Pool points → raw kg capacity this turn, before the ring distance curve.
+export const forageCapacityKg = (points, band) =>
+  Math.floor(Math.max(0, points) * FORAGE_KG_PER_POINT * forageYieldMultiplier(band))
 
 // Fill rings nearest-first, spilling leftover capacity outward. Returns the
-// kg wanted from each ring (before contention with the other side).
+// kg PHYSICALLY taken from each ring (before the ring-distance yield curve
+// reduces what's actually credited — see resolveForaging).
 export const allocateNearFirst = (capacityKg, richnessByRing) => {
   const want = richnessByRing.map(() => 0)
   let left = capacityKg
@@ -55,109 +35,49 @@ export const allocateNearFirst = (capacityKg, richnessByRing) => {
   return want
 }
 
-// The enemy's foraging detachment: a pro-rata slice of its whole host. Its
-// composition is what its foragers' escorts look like in a clash.
-export const enemyForageParty = (army) => {
-  const party = {}
-  for (const [type, count] of entriesOf(army)) {
-    const n = Math.floor(count * ENEMY_FORAGE_FRACTION)
-    if (n > 0) party[type] = n
-  }
-  return party
-}
-
-const applyLosses = (armyMap, losses) => {
-  for (const [type, dead] of Object.entries(losses))
-    armyMap.set(type, Math.max(0, (armyMap.get(type) ?? 0) - dead))
-}
-
-const total = (obj) => Object.values(obj).reduce((a, b) => a + b, 0)
-
-// Mutates the campaign (rings, resources, roster, enemy army/supplies) and
-// returns { forage: <report block>, entries: [log lines] }. `band` is the
-// turn's scouting band — the forage posture (Stage 4 1d): it scales how much
-// ground the player's parties sweep and how often the enemy's riders catch
-// them. Omitted (older tests) it behaves as Contested, the neutral posture.
-export function resolveForaging(campaign, catalog, band) {
+// Mutates the campaign (rings, resources) and returns { forage: <report
+// block>, entries: [log lines] }. `band` is the turn's scouting band — the
+// forage posture (Stage 4 1d): it scales how much ground the player's share
+// sweeps. Omitted (older tests) it behaves as Contested, the neutral posture.
+// Takes no catalog: S2's pool is precomputed (fieldPointsFor) before this
+// runs, so nothing here needs per-unit stats any more.
+export function resolveForaging(campaign, band) {
   const rings = campaign.forage.rings
-  const richness = rings.map((r) => r.richness)
+  const pool = campaign.forage.pool ?? 0
+  const share = campaign.forage.share ?? 0
+  const points = pool * share
 
-  const playerCapacity = effectiveForageCapacityKg(campaign.forage.assignment, catalog, band)
-  const clashDamper = FORAGE_CLASH_DAMPER_BY_BAND[band] ?? 1
-  const enemyCapacity = campaign.forage.enemyPlan
+  const capacityKg = forageCapacityKg(points, band)
+  const wantP = allocateNearFirst(capacityKg, rings.map((r) => r.richness))
+  wantP.forEach((kg, i) => { rings[i].richness -= kg })
 
-  const wantP = allocateNearFirst(playerCapacity, richness)
-  const wantE = allocateNearFirst(enemyCapacity, richness)
+  // The enemy drains what's LEFT after the player's sweep, also near-first —
+  // no contention, no clash: the two hosts just share a depleting clock.
+  const enemyDrainKg = campaign.forage.enemyDrainKg ?? 0
+  const wantE = allocateNearFirst(enemyDrainKg, rings.map((r) => r.richness))
+  wantE.forEach((kg, i) => { rings[i].richness -= kg })
 
-  // Both sides gather against start-of-turn richness simultaneously; a ring
-  // that can't feed both scales each side down pro-rata.
-  const harvestP = []
-  const harvestE = []
-  for (let i = 0; i < rings.length; i++) {
-    const want = wantP[i] + wantE[i]
-    const scale = want > richness[i] ? richness[i] / want : 1
-    harvestP.push(Math.floor(wantP[i] * scale))
-    harvestE.push(Math.floor(wantE[i] * scale))
-  }
-
-  // What a routed side abandons is scattered and spoiled, not returned to the
-  // land: the ring is depleted by everything gathered, credited or not.
-  const creditP = [...harvestP]
-  const creditE = [...harvestE]
-  const clashes = []
-  const entries = []
-
-  for (let i = 0; i < rings.length; i++) {
-    rings[i].richness -= harvestP[i] + harvestE[i]
-
-    if (harvestP[i] <= 0 || harvestE[i] <= 0) continue
-    const pressure =
-      (CLASH_CONTEST_FACTOR * Math.min(harvestP[i], harvestE[i])) /
-      (harvestP[i] + harvestE[i])
-    const p = Math.min(CLASH_CAP, (CLASH_BASE[i] + pressure) * clashDamper)
-    if (!chanceRoll(p)) continue
-
-    const playerParty = Object.fromEntries(campaign.forage.assignment)
-    const enemyParty = enemyForageParty(campaign.enemy.army)
-    const clash = resolveClash(playerParty, enemyParty, i, catalog)
-
-    applyLosses(campaign.roster, clash.playerLosses)
-    applyLosses(campaign.enemy.army, clash.enemyLosses)
-    if (clash.winner === 'enemy')
-      creditP[i] = Math.floor(creditP[i] * (1 - CLASH_LOSER_YIELD_FORFEIT))
-    if (clash.winner === 'player')
-      creditE[i] = Math.floor(creditE[i] * (1 - CLASH_LOSER_YIELD_FORFEIT))
-
-    entries.push(...clash.log)
-    clashes.push({
-      ring: i,
-      winner: clash.winner,
-      playerLosses: clash.playerLosses,
-      enemyLosses: clash.enemyLosses,
-    })
-  }
-
-  const gatheredP = creditP.reduce((a, b) => a + b, 0)
-  const gatheredE = creditE.reduce((a, b) => a + b, 0)
+  // Ring-distance yield (decision 5): what's credited from a ring is a
+  // fraction of what was physically swept from it — the far ring costs more
+  // capacity to net the same kg. The enemy gets no credit at all (decision 4).
+  const gatheredP = wantP.reduce((sum, kg, i) => sum + kg * (FORAGE_RING_YIELD[i] ?? 1), 0)
   const food = Math.floor(gatheredP * FORAGE_FOOD_SHARE)
   const materials = Math.floor(gatheredP * FORAGE_MATERIALS_SHARE)
   campaign.resources.food += food
   campaign.resources.materials += materials
-  // The enemy's forage feeds its supply train (its materials are its problem).
-  campaign.enemy.supplies += Math.floor(gatheredE * FORAGE_FOOD_SHARE)
 
+  const entries = []
   // Player-facing text speaks in tonnes; the numbers stay kg everywhere else.
   const inTons = (kg) => `${+(kg / 1000).toFixed(1)} t`
-  if (total(Object.fromEntries(campaign.forage.assignment)) > 0)
+  if (points > 0)
     entries.push(`Foragers brought in ${inTons(food)} of food and ${inTons(materials)} of materials.`)
 
   return {
     forage: {
       posture: band ?? 'Contested',
-      capacity: playerCapacity,
+      capacity: capacityKg,
       harvested: { food, materials },
       rings: rings.map((r) => ({ ring: r.ring, richness: r.richness, initialRichness: r.initialRichness })),
-      clashes,
     },
     entries,
   }

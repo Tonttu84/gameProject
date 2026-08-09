@@ -1,10 +1,15 @@
 import mongoose from 'mongoose'
 import config from '../utils/config.js'
-import { GARRISON_RESOLVE_START, RECRUITING_FERVOR_START } from '../utils/campaignConfig.js'
+import {
+  GARRISON_RESOLVE_START,
+  RECRUITING_FERVOR_START,
+  DEFAULT_FORAGE_SHARE,
+} from '../utils/campaignConfig.js'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
 // plain fields — enemy.army, enemy.plannedPlacement, augury.trueEvent/
-// decoyEvent/prediction internals, forage.enemyPlan — and must NEVER reach a
+// decoyEvent/prediction internals, forage.enemyDrainKg below the Outmatched
+// recon band — and must NEVER reach a
 // client through Mongoose toJSON. Every response goes
 // through services/campaignView.js, the single serializer that decides what
 // the player may see. Do not add routes that res.json() a campaign document.
@@ -100,7 +105,7 @@ const ringSchema = new mongoose.Schema(
 // to the server — 'deploy' is the server's name for all of the battle ones.
 export const TURN_PHASES = ['prepare', 'omens', 'raids', 'recruit', 'deploy']
 
-export const CAMPAIGN_SCHEMA_VERSION = 28 // v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 29 // v29: effort slider S2 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.assignment/enemyPlan are GONE, replaced by forage.pool (the day's field-points snapshot), forage.share (the player's slider split, sticky across turns) and forage.enemyDrainKg (a flat abstract number, no longer derived from the enemy's army); forager clashes and services/skirmish.js are deleted; v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -219,7 +224,8 @@ const campaignSchema = new mongoose.Schema({
   // Persistent, player-facing squads (playtest item 1, docs/CAMPAIGN_PLAN.md).
   // A squad's `composition` is always a subset reflected inside the matching
   // `roster` counts, never a separate pool — "loose" (unassigned) count for a
-  // type = roster[type] − Σ squads[*].composition[type] − forage.assignment[type].
+  // type = roster[type] − Σ squads[*].composition[type] (foraging is passive
+  // since S2 — see forage.share below — and no longer removes named units).
   // `id` is a small campaign-scoped int (not an ObjectId) since it flows
   // straight into the engine's placement JSON as squad_id. Seeded once at
   // campaign creation from STARTING_SQUADS; there is no squad create/split/
@@ -357,12 +363,24 @@ const campaignSchema = new mongoose.Schema({
 
   forage: {
     rings: { type: [ringSchema], required: true },
-    // This turn's player forager assignment, unit-type → count. Assigned
-    // units are unavailable for the turn's battle; cleared at newDay.
-    assignment: { type: Map, of: Number, default: {} },
-    // Forage capacity (in kg) the enemy commits this turn — HIDDEN (knowing
-    // the enemy's forage effort is scouting intel, not free information).
-    enemyPlan: { type: Number, default: 0 },
+    // The day's total field-points pool (fieldPointsFor over the roster),
+    // SNAPSHOTTED at newDay from the start-of-turn roster (S2 decision 1) —
+    // fixed for the whole turn even as raids spend down the roster during the
+    // day. Feeds BOTH tracks: `share` of it converts to forage kg below, the
+    // rest seeds raid.scoutingPoints.
+    pool: { type: Number, default: 0 },
+    // The player's split of today's pool between foraging (this fraction)
+    // and scouting (the rest), 0..1 — STICKY across turns (never reset at
+    // newDay, unlike the old per-unit assignment): the last choice carries
+    // forward as-is until the slider moves again. Seals the moment Prepare is
+    // left (routes' rejectIfPhasePassed) — POST /:id/effort is the only way
+    // to change it.
+    share: { type: Number, default: DEFAULT_FORAGE_SHARE },
+    // The enemy's abstract per-turn drain on the shared rings (S2 decision 4)
+    // — HIDDEN below the Outmatched recon band (campaignView gates it like
+    // the enemy view). It earns no forage credit; it's clock pressure only,
+    // and the seam a later "starve the enemy" system hangs off.
+    enemyDrainKg: { type: Number, default: 0 },
   },
 
   // The day's raid opportunities — redealt every new turn (step 7): one base
@@ -370,20 +388,21 @@ const campaignSchema = new mongoose.Schema({
   // spending scoutingPoints. See raidOpportunitySchema above.
   raid: {
     opportunities: { type: [raidOpportunitySchema], default: [] },
-    // The per-turn scouting-points pool, DERIVED from the army's recon
-    // capability (scoutingPointsFor) and reset at the start of every turn —
-    // spent to scout new targets or reveal a target's reward/enemy intel.
-    // Fractional (no rounding) and drawable at any point in the turn, so a
-    // future event can grant or spend points without touching the turn flow.
+    // The per-turn scouting-points pool: the (1 − forage.share) slice of
+    // forage.pool, set at newDay and whenever POST /:id/effort changes the
+    // split — spent to scout new targets or reveal a target's reward/enemy
+    // intel. Fractional (no rounding) and drawable at any point in the turn,
+    // so a future event can grant or spend points without touching the turn
+    // flow.
     scoutingPoints: { type: Number, default: 0 },
-    // This turn's cumulative committed-to-a-raid party, unit-type -> count —
-    // the raid twin of forage.assignment. A unit sent on ANY raid this turn
-    // (win or lose) stays counted here for the rest of the day even though it
-    // isn't removed from `roster` (survivors rejoin immediately): otherwise
-    // the same living roster count is free to join every raid opportunity the
-    // same day. Cleared at newDay alongside forage.assignment. Deliberately
-    // does NOT gate the day's main battle (open decision, raids stay
-    // independent of it) or foraging — only further raids.
+    // This turn's cumulative committed-to-a-raid party, unit-type -> count.
+    // A unit sent on ANY raid this turn (win or lose) stays counted here for
+    // the rest of the day even though it isn't removed from `roster`
+    // (survivors rejoin immediately): otherwise the same living roster count
+    // is free to join every raid opportunity the same day. Cleared at newDay.
+    // Deliberately does NOT gate the day's main battle (open decision, raids
+    // stay independent of it) or foraging (passive since S2 — see
+    // forage.share above) — only further raids.
     assignment: { type: Map, of: Number, default: {} },
     // Squad-only raiding (2026-07-21): the ids of squads already sent on a raid
     // this turn — the squad twin of `assignment`. A squad goes whole, so this

@@ -35,13 +35,19 @@ export const campaignFixture = {
   fortification: { level: 0, atCap: false, nextCost: 50, nextWorkerCost: 500, sides: [] },
   forage: {
     rings: [
-      { ring: 0, richness: 20000, initialRichness: 20000 },
-      { ring: 1, richness: 35000, initialRichness: 35000 },
-      { ring: 2, richness: 55000, initialRichness: 55000 },
+      { ring: 0, richness: 80000, initialRichness: 80000 },
+      { ring: 1, richness: 140000, initialRichness: 140000 },
+      { ring: 2, richness: 220000, initialRichness: 220000 },
     ],
-    assignment: {},
+    pool: 1112,
+    share: 0.5,
+    kgPerPoint: 16,
+    foodShare: 0.8,
+    materialsShare: 0.2,
     capacityKg: 0,
-    kgPerUnit: { Soldier: 30, Archer: 30, Mage: 30, Priest: 30, Cavalry: 60, LightCavalry: 90 },
+    meterFillAtNoForage: 10,
+    meterFillAtFullForage: 20,
+    enemyDrainKg: null,
   },
   // Raid opportunities (Stage 4 Part 2): public projection only — the hidden
   // target slice is stripped to its strength band; outcome appears once

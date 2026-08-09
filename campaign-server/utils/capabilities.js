@@ -27,26 +27,29 @@ import {
 const SPEED_POINTS_PER_FOOT = 10
 const speedFactor = (stats) => stats.speed / SPEED_POINTS_PER_FOOT
 
-// Scouting points a single unit contributes (Stage 4 Part 2.5): accuracy ×
-// mobility, plus the signed reconTag, on a scale where a baseline human
-// (accuracy 10, foot speed, reconTag 0) is worth 1.0. accuracy = ballisticSkill
-// × ACCURACY_PER_BALLISTIC (the engine derives the same; the catalog exports
-// ballisticSkill). An ABSOLUTE per-unit worth, summed raw into the turn's
-// points pool — spent on the raid board, the leftover accruing into recon.
-export const scoutingPointValue = (stats) =>
+// Field points a single unit contributes (Stage 4 Part 2.5, renamed + widened
+// under the effort slider — docs/CAMPAIGN_PLAN.md "Effort slider" decision 1):
+// accuracy × mobility, plus the signed reconTag, on a scale where a baseline
+// human (accuracy 10, foot speed, reconTag 0) is worth 1.0. accuracy =
+// ballisticSkill × ACCURACY_PER_BALLISTIC (the engine derives the same; the
+// catalog exports ballisticSkill). An ABSOLUTE per-unit worth, summed raw into
+// the turn's ONE points pool, which the effort slider then splits between
+// foraging and scouting — nothing here decides which track a unit feeds.
+export const fieldPointValue = (stats) =>
   ((stats.ballisticSkill * ACCURACY_PER_BALLISTIC) / BASELINE_ACCURACY) * speedFactor(stats) +
   stats.reconTag
 
-// The army's per-turn scouting-points pool: Σ count·scoutingPointValue — a RAW
-// sum (a bigger or scouting-heavier force scouts more openings), kept fractional
-// (the pool never rounds). Unknown types contribute nothing (safe-degrade
-// guard: routes validate, this only degrades).
-export const scoutingPointsFor = (army, catalog) => {
+// The army's per-turn field-points pool: Σ count·fieldPointValue — a RAW sum
+// (a bigger or sharper-eyed force generates more), kept fractional (the pool
+// never rounds). Snapshotted once at newDay (campaign.forage.pool) and split
+// by the effort slider for the rest of the turn. Unknown types contribute
+// nothing (safe-degrade guard: routes validate, this only degrades).
+export const fieldPointsFor = (army, catalog) => {
   const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
   let points = 0
   for (const [type, count] of entries) {
     const unitType = catalog.get(type)
-    if (unitType) points += count * scoutingPointValue(unitType.stats)
+    if (unitType) points += count * fieldPointValue(unitType.stats)
   }
   return points
 }
@@ -81,10 +84,6 @@ export const reconBand = (points) => SCOUTING_BANDS[reconLevel(points)]
 // the speed term meaningful — foot costs 3/4 of its size, a rider 3/10.
 export const raidCapacityCost = (stats, size) =>
   Math.max(0, (size * (RAID_CAPACITY_SPEED_SCALE - stats.speed)) / RAID_CAPACITY_SPEED_SCALE)
-
-// Foraging: covering ground is what matters — riders sweep a wide area dry
-// long before infantry could.
-export const forageValue = (stats) => Math.max(1, speedFactor(stats) * 2)
 
 // Screening (protecting foragers / countering enemy harassment): armoured,
 // dangerous, and mobile enough to intercept — heavy cavalry's specialty.

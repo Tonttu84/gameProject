@@ -20,10 +20,11 @@ import { clearRolls } from '../utils/dice.js'
 // sizes/speeds):
 // - enemy food need/turn: (540 Soldier + 150 Archer + 11 Necromancer) × 28 kg
 //   + 20 LightCavalry × 112 kg = 19,628 + 2,240 = 21,868 kg
-// - enemy forage plan: 0.4 × (701 × 2 + 20 × 5.6 forage pts) × 15 kg
-//   = 0.4 × 22,710 = 9,084 kg, of which floor(0.8 × 9,084) = 7,267 kg is
-//   food for the supply train (the rest is the materials share)
-// - so an untouched host nets 7,267 − 21,868 = −14,601 kg of supplies/turn.
+// - S2 "effort slider" (docs/CAMPAIGN_PLAN.md, decision 4): the enemy no
+//   longer plans a forage detachment off its army, and its flat abstract
+//   ring drain (ENEMY_DRAIN_KG_PER_TURN) earns it NO credit at all — only
+//   upkeep moves its supplies now, so an untouched host nets a flat
+//   −21,868 kg of supplies/turn.
 //
 // Near-annihilation win (utils/campaignConfig.js): the host melts away once it
 // drops below ENEMY_WITHDRAW_FRACTION (0.2) × its initial strength.
@@ -160,23 +161,21 @@ const pinResolve = async (id, resolve) => {
 }
 
 describe('enemy supply depletion', () => {
-  test('the host eats size²-scale food and forages 40% of its capacity — net −14,601 kg/turn', async () => {
+  test('the host eats size²-scale food and gets no credit for its abstract ring drain', async () => {
     const { body: c } = await createCampaign()
 
     await pinAugury(c.id)
     await endDay(c.id)
     let doc = await Campaign.findById(c.id)
-    // 90,000 + 7,267 forage − 21,868 upkeep = 75,399.
-    expect(doc.enemy.supplies).toBe(75399)
-    // Tomorrow's forage plan is recomputed from the (unchanged) host: 9,084.
-    expect(doc.forage.enemyPlan).toBe(9084)
+    // 90,000 − 21,868 upkeep = 68,132. The enemy's drain on the shared rings
+    // (ENEMY_DRAIN_KG_PER_TURN, flat) earns it nothing (S2 decision 4) — only
+    // upkeep moves its supplies.
+    expect(doc.enemy.supplies).toBe(68132)
 
     await pinAugury(c.id)
     await endDay(c.id)
     doc = await Campaign.findById(c.id)
-    // Ring 0 still covers the plan (20,000 − 9,084 = 10,916 left), so the
-    // same net: 75,399 − 14,601 = 60,798.
-    expect(doc.enemy.supplies).toBe(60798)
+    expect(doc.enemy.supplies).toBe(68132 - 21868) // 46264
   })
 })
 

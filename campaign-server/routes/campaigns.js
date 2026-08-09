@@ -16,13 +16,12 @@ import {
   resolveHire,
 } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
-import { enemyForagePlanKg } from '../services/enemyAi.js'
 import { generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget } from '../services/raid.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
 import { getCatalog } from '../utils/catalog.js'
-import { raidCapacityCost, scoutingPointsFor } from '../utils/capabilities.js'
+import { raidCapacityCost, fieldPointsFor } from '../utils/capabilities.js'
 import config from '../utils/config.js'
 import {
   MAP_NAME,
@@ -38,6 +37,8 @@ import {
   ENEMY_ARMY,
   ENEMY_SUPPLIES,
   FORAGE_RINGS,
+  ENEMY_DRAIN_KG_PER_TURN,
+  DEFAULT_FORAGE_SHARE,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
   GARRISON_RESOLVE_START,
@@ -144,6 +145,10 @@ router.post('/', async (req, res) => {
   // prerequisite-gated fates (events.js `requires`) are judged against the
   // opening army. No eventFlags yet — the first turn can't be a chain payoff.
   const augury = drawAugury({ day: 1, roster: STARTING_ROSTER })
+  // Effort slider (S2): one field-points pool, split by DEFAULT_FORAGE_SHARE
+  // (the schema default for forage.share) between the forage kg it seeds and
+  // the raid board's day-1 scouting-points pool.
+  const pool = fieldPointsFor(STARTING_ROSTER, catalog)
   const campaign = await Campaign.create({
     user: req.user._id,
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
@@ -158,8 +163,8 @@ router.post('/', async (req, res) => {
     squads: STARTING_SQUADS,
     forage: {
       rings: FORAGE_RINGS.map((richness, ring) => ({ ring, richness, initialRichness: richness })),
-      assignment: {},
-      enemyPlan: enemyForagePlanKg(ENEMY_ARMY, catalog),
+      pool,
+      enemyDrainKg: ENEMY_DRAIN_KG_PER_TURN,
     },
     augury,
     // The scripted siege spine (S8): three GUARANTEED beats forced into their
@@ -167,15 +172,14 @@ router.post('/', async (req, res) => {
     // they ride the same `chained`/scheduledEvents machinery as an event chain,
     // but guaranteed from the campaign's first turn rather than a player choice.
     scheduledEvents: SIEGE_SPINE.map((s) => ({ ...s })),
-    // Day-1 raid board: one base target (+ any counters), plus the turn's
-    // scouting-points pool derived from the starting roster's recon capability.
-    // end-day redeals both each new turn.
+    // Day-1 raid board: one base target (+ any counters), plus the scouting
+    // slice of the day-1 pool. end-day redeals both each new turn.
     raid: {
       opportunities: generateRaidOpportunities(
         { day: 1, augury, enemy: { army: ENEMY_ARMY } },
         catalog,
       ),
-      scoutingPoints: scoutingPointsFor(STARTING_ROSTER, catalog),
+      scoutingPoints: pool * (1 - DEFAULT_FORAGE_SHARE),
     },
     enemy: {
       army: ENEMY_ARMY,
@@ -244,29 +248,26 @@ router.post('/:id/phase', async (req, res) => {
   res.json(await campaignView(campaign))
 })
 
-// Set (replace) today's forager assignment: {assignment: {type: count}}.
-// Assigned units sweep the rings at end-of-turn and are unavailable for the
-// turn's battle. Can be re-issued any time before end-day.
-router.post('/:id/forage', async (req, res) => {
+// Set today's effort split between foraging and scouting: {share: 0..1}.
+// Sticky across turns (the schema never resets it at newDay) — re-issue any
+// time before leaving Prepare (rejectIfPhasePassed); the split then seals for
+// the rest of the turn (docs/CAMPAIGN_PLAN.md "Effort slider" decision 12).
+// Recomputes raid.scoutingPoints from the SAME pool snapshot forage reads, so
+// there is nothing separate to track — the client never spends against the
+// pool while still in Prepare (its raids screen only opens in the 'raids'
+// phase), so this is safe to recompute on every change.
+router.post('/:id/effort', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
   if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
   if (rejectIfPhasePassed(campaign, res, 'prepare')) return
 
-  const assignment = req.body?.assignment
-  if (assignment === null || typeof assignment !== 'object' || Array.isArray(assignment))
-    return res.status(400).json({ error: 'assignment required' })
+  const share = req.body?.share
+  if (typeof share !== 'number' || !Number.isFinite(share) || share < 0 || share > 1)
+    return res.status(400).json({ error: 'share must be a number between 0 and 1' })
 
-  const cleaned = {}
-  for (const [type, count] of Object.entries(assignment)) {
-    if (!Number.isInteger(count) || count < 0)
-      return res.status(400).json({ error: `bad count for ${type}` })
-    if (count > (campaign.roster.get(type) ?? 0))
-      return res.status(400).json({ error: `not enough ${type} in the roster` })
-    if (count > 0) cleaned[type] = count
-  }
-
-  campaign.forage.assignment = cleaned
+  campaign.forage.share = share
+  campaign.raid.scoutingPoints = campaign.forage.pool * (1 - share)
   await campaign.save()
   res.json(await campaignView(campaign))
 })
@@ -384,19 +385,14 @@ router.post('/:id/battles', async (req, res) => {
   for (const [type, count] of placed) {
     if (!placeableTypes.has(type))
       return res.status(400).json({ error: `not a placeable unit type: ${type}` })
-    // Units out foraging OR committed to a raid this turn are unavailable for
-    // the battle (raid.assignment mirrors forage.assignment — a raided unit
-    // must not be double-counted onto the battle line as well).
-    const foraging = campaign.forage.assignment.get(type) ?? 0
+    // Only units committed to a raid this turn are unavailable for the
+    // battle — foraging is passive since S2 and no longer removes named
+    // units from camp (docs/CAMPAIGN_PLAN.md "Effort slider" decision 2).
     const raiding = campaign.raid.assignment.get(type) ?? 0
-    if (count > (campaign.roster.get(type) ?? 0) - foraging - raiding) {
-      const away = [
-        foraging > 0 && `${foraging} out foraging`,
-        raiding > 0 && `${raiding} out raiding`,
-      ].filter(Boolean).join(', ')
+    if (count > (campaign.roster.get(type) ?? 0) - raiding) {
       return res.status(400).json({
-        error: away
-          ? `not enough ${type} in camp (${away})`
+        error: raiding > 0
+          ? `not enough ${type} in camp (${raiding} out raiding)`
           : `not enough ${type} in the roster`,
       })
     }
@@ -417,11 +413,11 @@ router.post('/:id/battles', async (req, res) => {
     })
 
   // Battle commits the WHOLE army (user, 2026-07-05): every unit not out
-  // foraging must take the field — no reserves skulking in camp.
+  // raiding must take the field — no reserves skulking in camp. Foraging is
+  // passive since S2 and no longer holds anyone back (decision 2).
   let inCamp = 0
   for (const [type, n] of campaign.roster)
     inCamp += n
-      - (campaign.forage.assignment.get(type) ?? 0)
       - (campaign.raid.assignment.get(type) ?? 0)
       - (placed.get(type) ?? 0)
   if (inCamp > 0)

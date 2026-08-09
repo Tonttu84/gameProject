@@ -59,7 +59,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, assignForagers, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -446,7 +446,7 @@ const App = () => {
             {campaign.forage && (
               <ForagePanel
                 key={campaign.day}
-                onAssign={guarded(assignForagers)}
+                onSetShare={guarded(setEffort)}
                 locked={committed}
               />
             )}

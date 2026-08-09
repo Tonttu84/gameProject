@@ -3,43 +3,51 @@ import TutorialIntro from './TutorialIntro'
 import { tons } from '../utils/format'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
-import { useRoster, EMPTY_OBJECT } from '../stores/selectors'
+import { EMPTY_OBJECT } from '../stores/selectors'
 
-// Forager assignment for the turn: per-type steppers against the roster,
-// a live capacity preview from the server-provided kg-per-unit values, and
-// ring gauges showing how much the land has left. All math the client shows
-// comes from the campaign view — the server owns the formulas. forage/roster
-// come straight from the campaign store; only onAssign (the guarded action)
-// is still a prop. `locked` means the turn marched past Prepare: the committed
-// assignment stays on screen as a record, but can no longer be changed (the
-// server refuses it too — routes' rejectIfPhasePassed).
+// The effort slider (S2, docs/CAMPAIGN_PLAN.md "Effort slider"): ONE points
+// pool (forage.pool), split between foraging and scouting by forage.share.
+// Foraging is passive now — no per-unit assignment, no roster steppers — so
+// this panel is just the split control plus a live preview computed by
+// multiplying the server-provided scalars (pool, kgPerPoint, the food/
+// materials shares, the meter's two endpoint fills). All math the client
+// shows still comes from the campaign view — the server owns the formulas,
+// the client only multiplies. `locked` means the turn marched past Prepare:
+// the committed split stays on screen as a record, but can no longer be
+// changed (the server refuses it too — routes' rejectIfPhasePassed).
 //
-// Mount with key={campaign.day} so a new turn resets the local draft.
+// Mount with key={campaign.day} so a new turn resets the local draft to the
+// (sticky) committed share.
 
 const RING_NAMES = ['Near', 'Middle', 'Far']
 
-const ForagePanel = ({ onAssign, locked }) => {
+const ForagePanel = ({ onSetShare, locked }) => {
   const forage = useCampaignStore((s) => s.campaign?.forage ?? EMPTY_OBJECT)
-  const roster = useRoster()
   const tutorial = useUiStore((s) => s.tutorial)
-  const [assignment, setAssignment] = useState({ ...forage.assignment })
+  const [share, setShare] = useState(forage.share ?? 0.5)
   const [saved, setSaved] = useState(true)
 
-  const setCount = (type, raw) => {
-    const max = roster[type] ?? 0
-    const count = Math.max(0, Math.min(max, Math.floor(Number(raw) || 0)))
-    setAssignment((a) => ({ ...a, [type]: count }))
+  const setDraft = (raw) => {
+    const clamped = Math.max(0, Math.min(1, Number(raw)))
+    setShare(clamped)
     setSaved(false)
   }
 
-  const capacity = Object.entries(assignment).reduce(
-    (sum, [type, count]) => sum + count * (forage.kgPerUnit?.[type] ?? 0),
-    0,
-  )
-  const assignedTotal = Object.values(assignment).reduce((a, b) => a + b, 0)
+  const pool = forage.pool ?? 0
+  const kgPerPoint = forage.kgPerPoint ?? 0
+  const capacityKg = pool * share * kgPerPoint
+  const foodKg = capacityKg * (forage.foodShare ?? 0)
+  const materialsKg = capacityKg * (forage.materialsShare ?? 0)
+  const scoutingPoints = pool * (1 - share)
+  // The meter's fill is linear in share (services/meter.js): interpolate
+  // between the two endpoints the server sent rather than reimplementing the
+  // formula here.
+  const meterAtNoForage = forage.meterFillAtNoForage ?? 0
+  const meterAtFullForage = forage.meterFillAtFullForage ?? 0
+  const meterFill = meterAtNoForage + (meterAtFullForage - meterAtNoForage) * share
 
   const submit = async () => {
-    await onAssign(assignment)
+    await onSetShare(share)
     setSaved(true)
   }
 
@@ -51,13 +59,13 @@ const ForagePanel = ({ onAssign, locked }) => {
         title="Foraging"
         lines={[
           'The land around Karrowgate must feed your army through the siege — strip it before the enemy does.',
-          'Send troops to strip the countryside for food and materials; riders sweep the widest area.',
+          'The whole army works the land passively now: slide the effort split toward Forage for food and materials, or toward Scout for raid-board points.',
           'The near ring empties first and nothing grows back — the land is a clock.',
-          'The enemy forages the same rings: the further out and the more crowded, the likelier a clash.',
-          'Foragers are away for the turn and cannot fight in a battle.',
+          'The enemy drains the same rings on its own account and gets no credit for it — just fewer supplies for everyone.',
+          'Leaning toward Forage exposes more of the army — it fills the boss-fight meter faster.',
         ]}
       />
-      <h3>Foraging Parties</h3>
+      <h3>Effort</h3>
       <div className="forage-rings">
         {(forage.rings ?? []).map((r) => (
           <div className="forage-ring" key={r.ring} data-testid={`forage-ring-${r.ring}`}>
@@ -67,37 +75,39 @@ const ForagePanel = ({ onAssign, locked }) => {
           </div>
         ))}
       </div>
-      <div className="forage-assign">
-        {Object.entries(roster)
-          .filter(([type, n]) => n > 0 && (forage.kgPerUnit?.[type] ?? 0) > 0)
-          .map(([type, n]) => (
-            <label key={type} className="forage-row">
-              {type} ({forage.kgPerUnit?.[type]} kg each, {n} available)
-              <input
-                type="number"
-                min="0"
-                max={n}
-                value={assignment[type] ?? 0}
-                data-testid={`forage-input-${type}`}
-                disabled={locked}
-                onChange={(e) => setCount(type, e.target.value)}
-              />
-            </label>
-          ))}
+      <div className="effort-slider">
+        <label>
+          Forage
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={share}
+            data-testid="effort-slider"
+            disabled={locked}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          Scout
+        </label>
       </div>
-      <div className="forage-summary">
-        <span data-testid="forage-capacity">
-          {assignedTotal} foragers — up to {tons(capacity)} this turn
+      <div className="effort-preview">
+        <span data-testid="effort-preview-food">{tons(foodKg)} food</span>
+        <span data-testid="effort-preview-materials">{tons(materialsKg)} materials</span>
+        <span data-testid="effort-preview-scouting">{Math.round(scoutingPoints)} scouting points</span>
+        <span data-testid="effort-preview-meter">+{Math.round(meterFill)} to the boss-fight meter</span>
+        <span data-testid="effort-enemy-drain">
+          Enemy foraging: {forage.enemyDrainKg == null ? 'unknown' : `${tons(forage.enemyDrainKg)}/turn`}
         </span>
-        <button
-          className="btn-primary"
-          data-testid="forage-submit"
-          onClick={submit}
-          disabled={locked || saved}
-        >
-          {locked ? 'Foragers are out' : !saved ? 'Send foragers' : assignedTotal > 0 ? 'Foragers assigned' : 'No foragers'}
-        </button>
       </div>
+      <button
+        className="btn-primary"
+        data-testid="effort-submit"
+        onClick={submit}
+        disabled={locked || saved}
+      >
+        {locked ? 'Effort is committed' : !saved ? 'Set effort' : 'Effort set'}
+      </button>
     </div>
   )
 }

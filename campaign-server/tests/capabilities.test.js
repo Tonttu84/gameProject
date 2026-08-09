@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
-  forageValue,
   screenValue,
   reconLevel,
   reconBand,
-  scoutingPointValue,
-  scoutingPointsFor,
+  fieldPointValue,
+  fieldPointsFor,
 } from '../utils/capabilities.js'
 import {
   RECON_LEVEL_THRESHOLDS,
@@ -25,67 +24,59 @@ const {
 } = engineStatsFixture
 
 describe('derived campaign capabilities', () => {
-  it('foraging scales with speed, minimum 1', () => {
-    // Light and heavy cavalry ride the same Horse (speed 28) until barding
-    // lands, so they forage identically — both far ahead of foot.
-    expect(forageValue(lightCavalry)).toBe(forageValue(cavalry))
-    expect(forageValue(cavalry)).toBeGreaterThan(forageValue(soldier))
-    expect(forageValue({ ...soldier, speed: 0 })).toBe(1)
-  })
-
   it('heavy cavalry screens foragers better than light', () => {
     expect(screenValue(cavalry)).toBeGreaterThan(screenValue(lightCavalry))
     expect(screenValue(cavalry)).toBeGreaterThan(screenValue(soldier))
   })
 })
 
-describe('scoutingPointValue (raid points one unit generates)', () => {
+describe('fieldPointValue (one points pool feeding both forage and scouting — S2)', () => {
   it('a baseline human (accuracy 10, foot speed, no tag) is worth exactly 1.0', () => {
     // accuracy = ballisticSkill × ACCURACY_PER_BALLISTIC; the baseline bs makes
     // accuracy == BASELINE_ACCURACY, so the whole product is 1.0 — no literal 10s.
     const baselineBs = BASELINE_ACCURACY / ACCURACY_PER_BALLISTIC
-    expect(scoutingPointValue({ ballisticSkill: baselineBs, speed: 10, reconTag: 0 })).toBeCloseTo(1)
+    expect(fieldPointValue({ ballisticSkill: baselineBs, speed: 10, reconTag: 0 })).toBeCloseTo(1)
   })
 
   it('the signed reconTag shifts a unit up or down from its accuracy×mobility worth', () => {
     const base = { ballisticSkill: 2, speed: 10, reconTag: 0 } // worth 1.0
-    expect(scoutingPointValue({ ...base, reconTag: 4 })).toBeCloseTo(5)
-    expect(scoutingPointValue({ ...base, reconTag: -2 })).toBeCloseTo(-1)
+    expect(fieldPointValue({ ...base, reconTag: 4 })).toBeCloseTo(5)
+    expect(fieldPointValue({ ...base, reconTag: -2 })).toBeCloseTo(-1)
   })
 
   it('faster, sharper eyes are worth more, and the value stays fractional (no rounding)', () => {
-    expect(scoutingPointValue(lightCavalry)).toBeGreaterThan(scoutingPointValue(soldier))
-    expect(Number.isInteger(scoutingPointValue({ ballisticSkill: 3, speed: 15, reconTag: 0 }))).toBe(
+    expect(fieldPointValue(lightCavalry)).toBeGreaterThan(fieldPointValue(soldier))
+    expect(Number.isInteger(fieldPointValue({ ballisticSkill: 3, speed: 15, reconTag: 0 }))).toBe(
       false,
     )
   })
 })
 
-describe('scoutingPointsFor (the turn pool)', () => {
+describe('fieldPointsFor (the turn pool)', () => {
   const catalog = new Map([
     ['Soldier', { size: 10, stats: soldier }],
     ['LightCavalry', { size: 20, stats: lightCavalry }],
   ])
 
-  it('is a RAW sum Σ(count·scoutingPointValue) — scales with army size, Map or object', () => {
-    const one = scoutingPointValue(soldier)
-    expect(scoutingPointsFor({ Soldier: 10 }, catalog)).toBeCloseTo(10 * one)
-    expect(scoutingPointsFor(new Map([['Soldier', 10]]), catalog)).toBeCloseTo(10 * one)
+  it('is a RAW sum Σ(count·fieldPointValue) — scales with army size, Map or object', () => {
+    const one = fieldPointValue(soldier)
+    expect(fieldPointsFor({ Soldier: 10 }, catalog)).toBeCloseTo(10 * one)
+    expect(fieldPointsFor(new Map([['Soldier', 10]]), catalog)).toBeCloseTo(10 * one)
     // Unlike scoutingCoverage (÷size), a bigger force strictly generates MORE.
-    expect(scoutingPointsFor({ Soldier: 20 }, catalog)).toBeGreaterThan(
-      scoutingPointsFor({ Soldier: 10 }, catalog),
+    expect(fieldPointsFor({ Soldier: 20 }, catalog)).toBeGreaterThan(
+      fieldPointsFor({ Soldier: 10 }, catalog),
     )
   })
 
   it('a scout-heavy force out-generates a plain one of equal count', () => {
-    expect(scoutingPointsFor({ LightCavalry: 50 }, catalog)).toBeGreaterThan(
-      scoutingPointsFor({ Soldier: 50 }, catalog),
+    expect(fieldPointsFor({ LightCavalry: 50 }, catalog)).toBeGreaterThan(
+      fieldPointsFor({ Soldier: 50 }, catalog),
     )
   })
 
   it('unknown types and an empty army degrade to 0 (never NaN/throw)', () => {
-    expect(scoutingPointsFor({ Dragon: 5 }, catalog)).toBe(0)
-    expect(scoutingPointsFor({}, catalog)).toBe(0)
+    expect(fieldPointsFor({ Dragon: 5 }, catalog)).toBe(0)
+    expect(fieldPointsFor({}, catalog)).toBe(0)
   })
 })
 

@@ -133,13 +133,14 @@ export const EVENT_RUNG_BY_BAND = {
   Overwhelming: 'anticipated',
 }
 
-// Forage posture (Stage 4 1d): the band sets HOW the host forages. Owning the
-// field lets foragers work in small dispersed parties — more ground swept
-// (yield ×) and enemy parties screened off (clash odds ×, applied before
-// CLASH_CAP). Losing it forces large defensive columns: less ground, and the
-// enemy's riders pick the moments of contact. Outmatched you can STILL forage
-// — just less of it — and Contested is exactly today's numbers. "Group size"
-// is the fluff for these two multipliers; the player never micro-manages it.
+// Forage posture (Stage 4 1d, decision 8 of the effort slider): the band sets
+// HOW efficiently the host forages. Owning the field lets foragers work in
+// small dispersed parties — more ground swept per point. Losing it forces
+// large defensive columns: less ground per point. Outmatched you can STILL
+// forage — just less of it — and Contested is exactly the neutral baseline.
+// "Group size" is the fluff for this multiplier; the player never
+// micro-manages it. (Forager clashes, and this table's old clash-damper
+// twin, are gone — S2 deleted the contention they applied to.)
 export const FORAGE_YIELD_BY_BAND = {
   Overwhelming: 1.25,
   Superior: 1.1,
@@ -147,27 +148,21 @@ export const FORAGE_YIELD_BY_BAND = {
   Outmatched: 0.85,
   Blind: 0.7,
 }
-export const FORAGE_CLASH_DAMPER_BY_BAND = {
-  Overwhelming: 0.5,
-  Superior: 0.75,
-  Contested: 1,
-  Outmatched: 1.25,
-  Blind: 1.5,
-}
 
 // ── Raids (Stage 4 Part 2.5 — the scouting-points mini-game) ─────────────────
 // Each turn opens with ONE base target (plus any counter-raids). The player
 // then spends a pool of SCOUTING POINTS to shape the board: scout a new target,
-// or reveal a target's hidden reward / per-type enemy strength. Points are
-// derived from the army's own recon capability (scoutingPointsFor, capabilities
-// .js) — a baseline human ≈ 1 point, summed raw over the army — so a bigger or
-// scouting-heavier force gets more raids. Abundance is tamed by the FLAT costs
-// below (not by the generation formula), which keep "more scouting → more
-// raids" true while stopping a big army from trivially revealing everything.
+// or reveal a target's hidden reward / per-type enemy strength. Points are the
+// (1 − forage.share) slice of the army's one field-points pool (fieldPointsFor,
+// capabilities.js) — a baseline human ≈ 1 point, summed raw over the army — so
+// a bigger or scouting-heavier force (or a share weighted toward scouting)
+// gets more raids. Abundance is tamed by the FLAT costs below (not by the
+// generation formula), which keep "more scouting → more raids" true while
+// stopping a big army from trivially revealing everything.
 export const RAID_BASE_TARGETS = 1
 export const RAID_SCOUT_COST_ADD = 200 // scout a NEW target
 export const RAID_SCOUT_COST_REVEAL = 50 // reveal one field (reward OR enemy) one level
-// scoutingPointValue = (accuracy / BASELINE_ACCURACY) × (speed / foot) + reconTag,
+// fieldPointValue = (accuracy / BASELINE_ACCURACY) × (speed / foot) + reconTag,
 // with accuracy = ballisticSkill × ACCURACY_PER_BALLISTIC. Named so no literal
 // 10s leak into the formula; baseline human (bs 2 → acc 10, speed 10) = 1.0.
 export const BASELINE_ACCURACY = 10
@@ -251,31 +246,45 @@ export const FOOD_KG_PER_SIZE_SQ_PER_DAY = 0.02
 // When food is exhausted, this fraction of every roster line deserts per turn.
 export const DESERTION_FRACTION = 0.1
 
-// ── Foraging ────────────────────────────────────────────────────────────────
+// ── Foraging (S2 "effort slider" — docs/CAMPAIGN_PLAN.md) ────────────────────
+// Foraging is passive now: there is no per-unit assignment or forager clash.
+// The whole army's fieldPointsFor pool (utils/capabilities.js) is snapshotted
+// once at newDay (campaign.forage.pool) and split by the player's slider
+// (campaign.forage.share) between food/materials and scouting points.
+//
 // Distance rings around the shared camp area, in kg of gatherable food. No
 // regrowth: ring depletion is the campaign clock — when the land is picked
-// clean, somebody has to fight.
-export const FORAGE_RINGS = [20000, 35000, 55000] // near / mid / far
-// One forageValue point gathers this many kg per turn. Calibrated so the
-// whole starting army foraging at once roughly breaks even against its own
-// consumption — and you can never afford to send everyone.
-export const FORAGE_KG_PER_POINT = 15
+// clean, somebody has to fight. Scaled up ~4× from the pre-slider numbers
+// (decision 7: the old rings would strip in ~5 turns against foraging alone;
+// this land should cover a whole 10–20 turn campaign even at a high forage
+// share) — approximate/tunable, like FORAGE_KG_PER_POINT below.
+export const FORAGE_RINGS = [80000, 140000, 220000] // near / mid / far
+// One pool point gathers this many kg per turn. Calibrated (decision 6) so
+// spending ~70% of the starting army's pool (≈1112 pts) on foraging roughly
+// breaks even against its own consumption (≈12,432 kg/turn): 0.7 × 1112 ×
+// 16 ≈ 12,454 kg gathered — feeding the army is the default burden, scouting
+// is bought with hunger.
+export const FORAGE_KG_PER_POINT = 16
 // Harvest splits into rations and useful salvage (timber, iron, cordage).
 export const FORAGE_FOOD_SHARE = 0.8
 export const FORAGE_MATERIALS_SHARE = 0.2
-// Base chance of a forager clash per contested ring, by distance — foraging
-// far from camp is where the war of outposts happens.
-export const CLASH_BASE = [0.05, 0.12, 0.25]
-// Contested pressure: + factor × min(P,E)/(P+E), capped.
-export const CLASH_CONTEST_FACTOR = 0.3
-export const CLASH_CAP = 0.6
-// The routed side abandons this share of what it gathered in the ring.
-export const CLASH_LOSER_YIELD_FORFEIT = 0.5
-// Detachment casualty ranges (percent of the foraging party), rolled per clash.
-export const CLASH_LOSER_CASUALTY_PCT = [2, 6]
-export const CLASH_WINNER_CASUALTY_PCT = [1, 2]
-// The enemy AI sends this fraction of its host's forage capacity out each turn.
-export const ENEMY_FORAGE_FRACTION = 0.4
+// Distance yield penalty (decision 5): spilling into a farther ring nets less
+// credit per kg physically swept — without forager clashes to contest them,
+// the three rings would otherwise be one pool wearing three gauges.
+export const FORAGE_RING_YIELD = [1.0, 0.8, 0.6] // near / mid / far
+// The enemy's abstract per-turn drain on the shared rings (decision 4): no
+// more enemy army composition, no contention, no clashes — it just eats land
+// and gets no credit for it. Roughly the enemy's old forage-plan magnitude
+// (~9,084 kg/turn at ENEMY_FORAGE_FRACTION 0.4 of its host), kept as a flat
+// number now that nothing derives it from the hidden army.
+export const ENEMY_DRAIN_KG_PER_TURN = 9000
+// The forage/scouting split's default and STICKY starting value (a fresh
+// campaign's forage.share) — 10% steps, sticky across turns (decision 13).
+// 0 (all-scouting) continues the pre-slider default exactly: the old
+// forage.assignment started empty (nobody foraging) until the player chose
+// otherwise, and every point of a 0-share pool flows to scouting just like
+// the old unsplit scoutingPoints pool did.
+export const DEFAULT_FORAGE_SHARE = 0
 
 // ── Fortifications (materials sink, Stage 3) ─────────────────────────────────
 // Fortifications are ABSTRACT LEVELS that wall the battle map at preset

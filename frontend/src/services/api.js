@@ -57,9 +57,10 @@ export const rerollCampaignAugury = (id, slot) =>
 // moves — except entering Recruit, which is openRecruit (it draws the offer).
 export const advanceCampaignPhase = (id, phase) =>
   axios.post(`/api/campaigns/${id}/phase`, { phase }, authed()).then(r => r.data)
-// Replace the turn's forager assignment ({unitType: count}); returns the view.
-export const setCampaignForage = (id, assignment) =>
-  axios.post(`/api/campaigns/${id}/forage`, { assignment }, authed()).then(r => r.data)
+// Set today's effort split between foraging and scouting ({share: 0..1});
+// returns the view. Sticky across turns; seals when Prepare is left.
+export const setCampaignEffort = (id, share) =>
+  axios.post(`/api/campaigns/${id}/effort`, { share }, authed()).then(r => r.data)
 // Spend stores at the camp; returns the refreshed view. body is
 // {action:'fortify'} (raise the fortification level with materials + labour) —
 // the only spend action; buying troops is the Recruit phase's hireRecruit.

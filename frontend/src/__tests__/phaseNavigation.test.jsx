@@ -31,7 +31,7 @@ vi.mock('../services/api', () => ({
   createCampaign: vi.fn(),
   consultCampaignAugury: vi.fn(),
   rerollCampaignAugury: vi.fn(),
-  setCampaignForage: vi.fn(),
+  setCampaignEffort: vi.fn(),
   postCampaignBattle: vi.fn(),
   endCampaignDay: vi.fn(),
 }))
@@ -74,13 +74,13 @@ describe('phased-turn back navigation', () => {
 
     fireEvent.click(screen.getByTestId('back-to-prepare'))
     // Back on the council — but the turn has moved past it, so it is a record:
-    // no second "Read the Omens", the forage controls are dead, and the only
+    // no second "Read the Omens", the effort slider is dead, and the only
     // button is the one that returns to where the turn actually stands.
     await screen.findByText(/War Council/)
     expect(screen.queryByTestId('omens-context')).not.toBeInTheDocument()
     expect(screen.queryByTestId('to-omens')).not.toBeInTheDocument()
     expect(screen.getByTestId('phase-committed')).toBeInTheDocument()
-    expect(screen.getByTestId('forage-submit')).toBeDisabled()
+    expect(screen.getByTestId('effort-submit')).toBeDisabled()
     expect(screen.getByTestId('fortify-button')).toBeDisabled()
 
     // …and it leads forward again, never sideways.

@@ -4,7 +4,7 @@ import {
   createCampaign,
   consultCampaignAugury,
   rerollCampaignAugury,
-  setCampaignForage,
+  setCampaignEffort,
   advanceCampaignPhase,
   spendCampaign,
   postCampaignBattle,
@@ -50,8 +50,8 @@ const useCampaignStore = create((set, get) => ({
     set({ campaign: await rerollCampaignAugury(get().campaign.id, slot) })
   },
 
-  assignForagers: async (assignment) => {
-    set({ campaign: await setCampaignForage(get().campaign.id, assignment) })
+  setEffort: async (share) => {
+    set({ campaign: await setCampaignEffort(get().campaign.id, share) })
   },
 
   // Move the turn on one phase. The server is the authority on which phase the

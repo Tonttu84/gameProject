@@ -1,13 +1,14 @@
 import { getCatalog } from '../utils/catalog.js'
 import {
   armyFoodPerTurn,
-  forageValue,
   reconBand,
   reconLevel,
   SCOUTING_BANDS,
 } from '../utils/capabilities.js'
 import {
   FORAGE_KG_PER_POINT,
+  FORAGE_FOOD_SHARE,
+  FORAGE_MATERIALS_SHARE,
   AUGURY_DEBUG_SHOW_TRUTH,
   MAP_NAME,
   ENEMY_SUPPLY_BANDS,
@@ -15,10 +16,10 @@ import {
   RAID_SCOUT_COST_REVEAL,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
-import { meterBand } from './meter.js'
+import { meterBand, meterFillAtShare } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
-import { effectiveForageCapacityKg, forageYieldMultiplier } from './forage.js'
+import { forageCapacityKg, forageYieldMultiplier } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValenceFor, choiceRung } from './events.js'
 import { findRecruitEntry, resolveHire } from './recruit.js'
@@ -27,9 +28,9 @@ import { findRecruitEntry, resolveHire } from './recruit.js'
 // information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
 // events and prediction internals (total/threshold/accurate — the raw dice
 // roll alone can't reconstruct accuracy without the hidden bonuses),
-// forage.enemyPlan — exists only server-side; every route responds with
-// campaignView(campaign), never a raw document. tests/campaigns.test.js
-// asserts the discipline.
+// forage.enemyDrainKg below the Outmatched recon band — exists only
+// server-side; every route responds with campaignView(campaign), never a raw
+// document. tests/campaigns.test.js asserts the discipline.
 //
 // Async because it derives display values (food need, forage capacity) from
 // the cached unit catalog — the client never re-implements campaign math.
@@ -236,29 +237,39 @@ export async function campaignView(campaign) {
         : fortifyWorkerCost(campaign.fortificationLevel),
       sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
     },
+    // Effort slider (S2, docs/CAMPAIGN_PLAN.md "Effort slider"): foraging is
+    // passive now — no per-unit assignment, just the player's slider share of
+    // the day's pool. The client previews both sides of a DRAFT share purely
+    // by multiplying the scalars below (pool, kgPerPoint, the two food/
+    // materials shares) — no formula lives in the client, same discipline as
+    // the old per-unit kgPerUnit table.
     forage: {
       rings: campaign.forage.rings.map(({ ring, richness, initialRichness }) => ({
         ring,
         richness,
         initialRichness,
       })),
-      assignment: Object.fromEntries(campaign.forage.assignment),
-      capacityKg: effectiveForageCapacityKg(campaign.forage.assignment, catalog, band),
-      // kg one unit of each roster type gathers per turn, so the client can
-      // preview capacity while the player drags steppers — values come from
-      // the server, the formula stays here. Both carry the scouting band's
-      // forage-posture multiplier (Stage 4 1d), the SAME one end-day applies:
-      // the preview the player plans against is what the resolution delivers.
-      kgPerUnit: Object.fromEntries(
-        [...campaign.roster.keys()].map((type) => [
-          type,
-          Math.round(
-            (catalog.get(type) ? forageValue(catalog.get(type).stats) : 0) *
-              FORAGE_KG_PER_POINT *
-              forageYieldMultiplier(band),
-          ),
-        ]),
-      ),
+      pool: campaign.forage.pool,
+      share: campaign.forage.share,
+      // kg one pool point gathers at the CURRENT scouting band (Stage 4 1d's
+      // posture multiplier folded in) — pool × share × this = the food+
+      // materials preview; pool × (1 − share) = the scouting-points preview.
+      kgPerPoint: FORAGE_KG_PER_POINT * forageYieldMultiplier(band),
+      foodShare: FORAGE_FOOD_SHARE,
+      materialsShare: FORAGE_MATERIALS_SHARE,
+      capacityKg: forageCapacityKg(campaign.forage.pool * campaign.forage.share, band),
+      // The boss-fight meter's fill at either extreme of the slider (decision
+      // 13's "live preview of ... the pitched-battle effect") — linear in
+      // share, so the client interpolates for any draft position without the
+      // meter's own constants ever crossing the wire.
+      meterFillAtNoForage: meterFillAtShare(campaign, 0),
+      meterFillAtFullForage: meterFillAtShare(campaign, 1),
+      // The enemy's abstract drain (decision 14): recon-gated like the enemy
+      // view below — "unknown" (null) under Outmatched, the real number above.
+      enemyDrainKg:
+        SCOUTING_BANDS.indexOf(band) >= SCOUTING_BANDS.indexOf('Outmatched')
+          ? campaign.forage.enemyDrainKg
+          : null,
     },
     // Raid opportunities (Stage 4 Part 2 + the 2.5 scouting mini-game): the
     // hidden targetForce and reward stay server-side; the player sees per-type

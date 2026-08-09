@@ -57,13 +57,34 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
   have earn sources, and no open design question is left in it.
 - **Next up / ACTIVE: the effort slider** (`### Effort slider — one points pool, split between
   foraging and scouting`, immediately below, is the SSOT). Designed and grilled 2026-08-08;
-  three stages, in order. **S1 (the server-owned one-way phase machine) is DONE** — schema is
-  now **28**. **START HERE: S2** — the slider + points unification, which deletes forager
-  clashes and enemy foraging outright. S3 (forage modifiers + persistent raid opportunities)
-  follows.
-  - **Verify first on a fresh session:** S1 was committed with `fe-test` green (247/247) and
-    oxlint clean, but the `cs-test` run had not finished — check CI (or run `cs-test`) before
-    building S2 on top of it.
+  three stages, in order. **S1 (the server-owned one-way phase machine) is DONE** — schema **28**.
+  **S2 (the slider itself) is DONE** — schema **29**. **START HERE: S3** — forage modifiers +
+  persistent raid opportunities (see the stage list below).
+  - **S2 landed on a remote/web session with `mongodb-memory-server`'s binary download BLOCKED by
+    egress policy** (`fastdl.mongodb.org` 403) — every DB-backed campaign-server suite
+    (`campaigns.test.js`, `raid.test.js`, `enemyAi.test.js`, `routes.test.js`, `models.test.js`,
+    `auth.test.js`, `battles.test.js`, `catalogSync.test.js`, `devSeed.test.js`,
+    `sampleBattle.test.js`, `bugReports.test.js`, `engine.integration.test.js`) could only be
+    checked by careful hand-arithmetic against the new formulas, NOT actually run. Pure-logic
+    suites (`forage.test.js`, `capabilities.test.js`, the rest of `cs-test`'s non-DB files) are
+    green (221/221 passing, same 12-suite mongod gap as any fresh remote session), `fe-test` is
+    green (249/249 — one file renamed `forageAssignment.test.jsx` →
+    `effortSlider.test.jsx`), `fe-lint` clean, `make test-serial` green (347/347). **Run the full
+    `cs-test` for real (CI, or a machine with mongod reachable) before touching S3** — the
+    creation/effort-route/harvest numbers in `campaigns.test.js` and `enemyAi.test.js` were
+    re-derived by hand from the real engine's `./game dump-units` stats, not observed passing.
+  - **Numeric choices S2 had to make that the design doc left approximate** (flagged "~"/"≈" in
+    the decisions below), picked for internal consistency and documented in
+    `utils/campaignConfig.js` rather than re-grilled: `FORAGE_KG_PER_POINT` 15→**16** (exact
+    break-even math against the real starting pool, ≈1112.4 pts — matches decision 6's "≈16"
+    almost exactly once real engine stats are used instead of the doc's rough ≈1092); `FORAGE_RINGS`
+    scaled **4×** (`[80000,140000,220000]`, was `[20000,35000,55000]`) to last a 10–20 turn
+    campaign; `ENEMY_DRAIN_KG_PER_TURN` **9000** (close to the old `enemyForagePlanKg`'s ~9,084 at
+    the starting enemy host, now flat/independent of army composition); **`DEFAULT_FORAGE_SHARE`
+    = 0** (all-scouting) — continues the pre-slider default exactly (old `forage.assignment`
+    started empty) and keeps the whole existing meter/garrison/wall-slow test suite's
+    hand-computed idle-army-at-FLOOR arithmetic valid with zero changes. All four are playtest-
+    tunable, not load-bearing design decisions — revisit if a real campaign feels off.
 - **Backlog** (was "next up" before the slider was designed). The nearest candidates:
   1. **Worker replenishment + workers-eat-food** — paired, deferred, blocked on picking a
      mechanism. Recruit's worker drain (every troop-lane hire permanently shrinks
@@ -104,7 +125,9 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
    now feeding both tracks. `forageValue` is deleted. Chosen over the forage formula because it
    already carries `reconTag` (LightCavalry +4, Warhorse −2) as the "ranging ahead is this
    unit's job" lever, and because it leaves the delicately-tuned recon ladder untouched.
-   Starting roster ⇒ `P ≈ 1092` pts/turn. Snapshot at newDay from the start-of-turn roster.
+   Starting roster ⇒ `P ≈ 1092` pts/turn (verified against the real engine's `./game dump-units`
+   stats during S2: **1112.4** exactly — close enough that every other approximation in this
+   section keyed off ≈1092 still holds). Snapshot at newDay from the start-of-turn roster.
 2. **Foraging goes passive.** No assignment map. Foragers are no longer absent from the pitched
    battle — deployment availability subtracts raiders only (`selectors.js`, `routes/campaigns.js`).
 3. **Forager clashes are deleted**, along with forage's only use of `skirmish.js`. If that
@@ -175,12 +198,25 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
     reset); ~47 end-day call sites routed through a new `endTurn(id)` helper that stamps the phase
     first; frontend suite **247/247 green**, oxlint clean. **cs-test was still running when this
     was committed — CI is the check.**
-- **S2 — the slider.** `fieldPointValue` (+ `forageValue` deleted), pool snapshot, `forage.share`,
-  ring distance penalty, abstract `enemyDrainKg`, the meter change, all the deletions in
-  decisions 2–4, `POST /:id/forage` → `POST /:id/effort {share}`, `ForagePanel` rewritten as the
-  split control, enemy-supplies HUD line. `forage.test.js` largely rewritten;
-  `campaigns.test.js` / `raid.test.js` / `capabilities.test.js` updated; meter coverage for the
-  new formula; frontend `forageAssignment.test.jsx` → a slider test.
+- **S2 — the slider. ✅ LANDED (schema v29).** `fieldPointValue`/`fieldPointsFor` (renamed from
+  `scoutingPointValue`/`scoutingPointsFor`; `forageValue` deleted), `campaign.forage.pool`
+  (snapshot) + `campaign.forage.share` (sticky, default 0), ring distance penalty
+  (`FORAGE_RING_YIELD`), abstract `campaign.forage.enemyDrainKg` (flat, recon-gated in
+  `campaignView`, replaces `enemyPlan`/`enemyForagePlanKg`), the meter formula (`meterFillAtShare`
+  in `services/meter.js`), all the deletions in decisions 2–4 (`services/skirmish.js` removed
+  outright — forager clashes are gone), `POST /:id/forage {assignment}` → `POST /:id/effort
+  {share}`, `ForagePanel` rewritten as the split-slider control (a `range` input, live
+  client-side preview off server-provided scalars — pool/kgPerPoint/foodShare/materialsShare/the
+  meter's two share-endpoint fills — never a formula duplicated in the client), an
+  always-present "Enemy foraging: N t/turn / unknown" HUD line gated the same way the enemy view
+  is. `forage.test.js` rewritten (no more catalog fixture — pure pool/share math);
+  `capabilities.test.js` / `campaigns.test.js` / `raid.test.js` / `enemyAi.test.js` updated;
+  `selectors.js`'s deployment-availability hooks now subtract raiders only
+  (`useRaidAssignment` replaces `useForageAssignment`); frontend `forageAssignment.test.jsx` →
+  `effortSlider.test.jsx`. See the "Where the work stands" block above for the DB-test caveat
+  (couldn't run `mongodb-memory-server` on the session that built this) and the four numeric
+  choices (`FORAGE_KG_PER_POINT`, `FORAGE_RINGS`, `ENEMY_DRAIN_KG_PER_TURN`,
+  `DEFAULT_FORAGE_SHARE`) the design doc left approximate.
 - **S3 — modifiers + persistent raids.** `campaign.forage.modifiers: [{id, label, target:
   'enemyDrain'|'playerYield', factor, deltaKg, turnsLeft}]` with `turnsLeft: null` = permanent
   (the default — the campaign is short enough that a setback or victory should mark the rest of
