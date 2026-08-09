@@ -1,15 +1,3 @@
-# **************************************************************************** #
-#                                                                              #
-#                                                         :::      ::::::::    #
-#    Makefile                                           :+:      :+:    :+:    #
-#                                                     +:+ +:+         +:+      #
-#    By: jrimpila <jrimpila@hive.fi>                +#+  +:+       +#+         #
-#                                                 +#+#+#+#+#+   +#+            #
-#    Created: 2025/06/03 14:53:47 by jrimpila          #+#    #+#              #
-#    Updated: 2026/07/07 00:00:00 by jrimpila         ###   ########.fr        #
-#                                                                              #
-# **************************************************************************** #
-
 # ── Windows shim ──────────────────────────────────────────────────────────────
 # No native Windows build (see CLAUDE.md). GNU make sets OS=Windows_NT when run
 # from cmd/PowerShell; forward every goal into WSL, where the toolchain lives,
