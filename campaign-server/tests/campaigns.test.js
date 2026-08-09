@@ -3,6 +3,7 @@ import supertest from 'supertest'
 import mongoose from 'mongoose'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { createUserAndToken } from './helpers/auth.js'
+import { PUBLIC_OPPORTUNITY_KEYS } from './helpers/publicShape.js'
 import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
@@ -156,14 +157,7 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"targetForce"')
   for (const c of [body, body.campaign]) {
     for (const o of c?.raid?.opportunities ?? [])
-      expect(Object.keys(o).sort()).toEqual([
-        // `persistent` (S3) is public: a card that survives the redeal is worth
-        // flagging, so scouting spent on it reads as keeping its value. Its
-        // `modifierId` sibling deliberately does NOT cross — the card's flavour
-        // already says what beating it undoes.
-        'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome', 'persistent',
-        'resolved', 'reward', 'rewardReveal', 'source', 'strengthBand', 'title', 'type',
-      ])
+      expect(Object.keys(o).sort()).toEqual(PUBLIC_OPPORTUNITY_KEYS)
   }
 }
 

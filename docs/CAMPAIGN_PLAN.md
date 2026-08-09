@@ -26,10 +26,33 @@ source of truth.
 `git log --oneline -15` to see which stages have actually landed. Don't trust the "done"
 notes below over the git history if they ever disagree — the commits win.
 
-### Where the work stands (2026-08-08) — START HERE
+### Where the work stands (2026-08-09) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **27** (unchanged by the 2026-08-08 fixes — no document field moved).
+schema version **30**.
+
+- **2026-08-09 (later) — THE EFFORT-SLIDER EPIC IS COMPLETE. S1+S2+S3 are merged to `main`
+  (`1e5b25b`, fast-forward), CI green on all six jobs, `cs-test` 498/498 confirmed twice over
+  (CI's `mongo:7` service AND the reference laptop, independently).** `main` had been 11 commits
+  behind, so that merge landed S2 as well as S3 — schema went **v28 → v30 in one step**, which
+  by the no-back-compat rule deletes every stored campaign from an older build on next listing.
+  Expected, but it means existing saves are gone.
+  - **There is NO S4 in this epic.** The stage list ends at S3, followed by "Deferred, noted not
+    built" (optional food sinks; enemy supplies reacting to its own foraging and to a stripped
+    countryside; forager-clash flavour re-expressed as events). A session told to "do S4" should
+    ask which epic is meant, or pick from that deferred list — do not invent one.
+  - **Fixed the trap that made S3's CI go red:** the public raid-opportunity key list was
+    copy-pasted into `campaigns.test.js` and `raid.test.js`, so adding one legitimate view field
+    (`persistent`) failed 45 tests across two suites and needed two edits. It is now ONE exported
+    constant, `PUBLIC_OPPORTUNITY_KEYS` in `tests/helpers/publicShape.js`. **Widening the public
+    shape is now a one-line diff there** — and it should stay a deliberate, visible choice.
+  - **The remote-session blind spot is structural, plan around it.** Claude's web/remote
+    container can run neither `mongodb-memory-server` (mongod download 403s through the agent
+    proxy) nor Docker (no usable daemon), so the 12 DB-backed server files CANNOT run there —
+    only the 10 DB-free ones. This has now cost one red CI run on both S2 and S3. Mitigations
+    that worked: push DB-independent logic into pure exported functions (S3 extracted
+    `ageForageModifiers` out of DB-only `resolveDay` for exactly this), and before pushing a
+    change that adds a field to `campaignView`, grep the pinned key sets.
 
 - **2026-08-09 — CI is GREEN on all five jobs (`00c6518`), and `cs-test` now runs there for the
   first time: 475/475.** Getting there took peeling three nested problems, each hidden by the one
@@ -343,9 +366,16 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
 
 ### Project state (as of 2026-07-05)
 
+> **⚠ HISTORICAL SNAPSHOT — do not read as current state.** Kept for the record; two lines
+> below were true in July and are actively misleading now. **Current state: the integration
+> branch is `main`** (`feature/campaign-mode` was merged and DELETED — it no longer exists on
+> the remote), and the campaign schema is **v30**, not v4. For where the work actually stands,
+> read the "Where the work stands" block and the effort-slider stage list above.
+
 - **Branch:** `feature/campaign-mode`. Turn length = **two weeks** (`DAYS_PER_TURN = 14`,
-  final). Campaign schema version is **4** — bump `CAMPAIGN_SCHEMA_VERSION` on every
-  incompatible campaign-model change (there is no back-compat; mismatched docs are deleted).
+  final — still true). Campaign schema version is **4** — bump `CAMPAIGN_SCHEMA_VERSION` on
+  every incompatible campaign-model change (there is no back-compat; mismatched docs are
+  deleted). *(The bump rule still holds; the version number is long superseded.)*
 - **Merged to `main`:** Stages 0–1 (merge `5fbbb9d`), Stage 2 foraging + Docker stack
   (merge `b6d2a40`).
 - **Done & committed on `feature/campaign-mode`:** Stage 5 augury rework (`77ee3ef`),
