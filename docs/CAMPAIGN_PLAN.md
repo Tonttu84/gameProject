@@ -64,9 +64,15 @@ schema version **31**. **Everything through `bd3a5ca` is merged to `main` and CI
 jobs** — nothing is in flight, so a new session starts from a clean `main`.
 
 **Open questions left deliberately unanswered — ask before assuming:**
-1. **The enemy grows 3%/turn while the near ring holds** (`ENEMY_REINFORCE_RATE`), which compounds
-   to roughly +34% over ten turns. That is a difficulty shift nobody asked for explicitly; it
-   wants a playtest before deciding whether it needs a cap or a lower rate.
+1. ~~**The enemy grows 3%/turn while the near ring holds.**~~ **ANSWERED 2026-08-09 — the rates are
+   gone.** The swing is now a FIXED headcount: `+ENEMY_REINFORCE_HEADCOUNT` (5) fed,
+   `−ENEMY_DESERTION_HEADCOUNT` (10) starving, steady untouched. No compounding, and asymmetric
+   because desertion is meant to be the easier lever. The three supply bands STAY — one grows the
+   host, one shrinks it, and the middle is a deliberate no-op (asked and confirmed), which is what
+   makes "which ring have you stripped them back to" the whole of the enemy's supply state. See the
+   S4 stage write-up below for the derivation. **Still open: the host's opening size** (721) is
+   unbalanced against the player's roster and wants a playtest of its own — the per-turn swing was
+   only half of that complaint.
 2. **Should a reinforcement wave be able to MOVE on the tick it arrives?** `tick()` runs
    `fireScheduledReinforcements()` then `moveUnits()` in the same turn, so a garrison sally lands
    and immediately steps. Both answers are defensible; the test no longer depends on which.
@@ -460,11 +466,23 @@ inner ring yourself pushes the enemy outward into thinner ground. Player foragin
 on their supply, exactly as asked — and the S3 `enemyDrain` modifiers (burn the depot, etc.) feed
 in for free, because they change what the host takes at all.
 
-**Consequences (v1, deliberately blunt):** surplus → every unit type ×(1 + `ENEMY_REINFORCE_RATE`
-0.03); starving → ×(1 − `ENEMY_DESERTION_RATE` 0.05); steady → untouched. Scaling every type
-preserves the host's composition. Floors per type, so a thin type (11 Necromancers) neither breeds
-nor bolts in one fortnight — the big formations carry the swing. Log lines stay PHRASES: the log
-is player-visible and the host's numbers are recon-gated intel.
+**Consequences (v2, 2026-08-09 — a FIXED headcount, not a rate):** surplus → `+ENEMY_REINFORCE_
+HEADCOUNT` (5) men; starving → `−ENEMY_DESERTION_HEADCOUNT` (10); steady → untouched. Exactly one
+band grows the host and one shrinks it; the middle is a deliberate no-op, not an unfinished case.
+
+v1 scaled every type by 3%/5%, which **compounded**: a fed host grew ~+34% over ten turns and grew
+faster the bigger it got, a difficulty curve nobody designed. Flat numbers are linear and legible —
+ten fed turns is ten times one fed turn — so stripping the rings is worth the same whenever you get
+round to it. The two figures are **asymmetric on purpose** (user, 2026-08-09: "easier to get troops
+to desert than to hire them"): hunger empties a camp faster than rations fill it, so a starved host
+drains at twice the rate a fed one trickles up.
+
+The headcount is split across unit types in proportion to the host's current composition, by
+largest-remainder, so the fixed number lands EXACTLY — v1's per-type flooring was fine for a rate
+but would silently lose men from a count that is supposed to be exact. A draft this small does
+round to nothing for the thin lines (11 Necromancers, 20 LightCavalry), which is the right answer:
+the big formations carry the swing. Desertion is clamped so a host cannot bleed past zero. Log
+lines stay PHRASES: the log is player-visible and the host's numbers are recon-gated intel.
 
 **A broken host does not recruit.** CI caught a real bug, not a stale assertion: reinforcement
 ran BEFORE the near-annihilation check, so a shattered host sitting on a full near ring grew 3%

@@ -2,8 +2,8 @@ import {
   bandLabel,
   ENEMY_CONSUMPTION_KG_PER_TURN,
   ENEMY_SUPPLY_BANDS,
-  ENEMY_REINFORCE_RATE,
-  ENEMY_DESERTION_RATE,
+  ENEMY_REINFORCE_HEADCOUNT,
+  ENEMY_DESERTION_HEADCOUNT,
   ENEMY_WITHDRAW_FRACTION,
 } from '../utils/campaignConfig.js'
 
@@ -43,19 +43,46 @@ export const enemySupplyState = (incomeKg) =>
     ENEMY_SUPPLY_BANDS,
   )
 
-// Scale every unit type by `factor`, preserving the host's composition, and
-// return the net change in headcount. Floors per type, so a rate too small to
-// move a thin type simply doesn't — deliberate at these rates: the big
-// formations carry the swing, and a handful of Necromancers neither breed nor
-// bolt over one fortnight.
-const scaleArmy = (army, factor) => {
-  let delta = 0
-  for (const [type, n] of army) {
-    const next = Math.max(0, Math.floor(n * factor))
-    delta += next - n
-    army.set(type, next)
+// Apply a FIXED headcount change (signed) to the host, split across its unit
+// types in proportion to the composition it already has, and return the net
+// change actually applied.
+//
+// Not a percentage: see ENEMY_REINFORCE_HEADCOUNT. The whole point is that the
+// swing per turn does not depend on how big the host currently is.
+//
+// Largest-remainder apportionment, so the fixed number lands EXACTLY rather
+// than being eaten by per-type flooring — under the old multiplicative version
+// a thin type simply never moved, which is fine for a rate but would silently
+// lose men from a headcount that is supposed to be exact.
+const adjustArmy = (army, delta) => {
+  const total = armyTotal(army)
+  if (total === 0 || delta === 0) return 0
+
+  // A host cannot lose more men than it has.
+  const want = delta < 0 ? -Math.min(-delta, total) : delta
+  const sign = Math.sign(want)
+  const magnitude = Math.abs(want)
+
+  // Each type's exact share is magnitude × (n / total) ≤ n, so no type can be
+  // apportioned more men than it has even before the clamp below.
+  const parts = [...army].map(([type, n]) => {
+    const exact = magnitude * (n / total)
+    const whole = Math.floor(exact)
+    return { type, n, whole, frac: exact - whole }
+  })
+
+  // Hand the rounding remainder to the largest fractions first.
+  const remainder = magnitude - parts.reduce((a, p) => a + p.whole, 0)
+  parts.sort((a, b) => b.frac - a.frac)
+  for (let i = 0; i < remainder; i++) parts[i].whole += 1
+
+  let applied = 0
+  for (const p of parts) {
+    const next = Math.max(0, p.n + sign * p.whole)
+    applied += next - p.n
+    army.set(p.type, next)
   }
-  return delta
+  return applied
 }
 
 // `enemyIncomeKg` is the host's ring-weighted take for the turn, from
@@ -84,10 +111,10 @@ export function enemyTurn(campaign, catalog, enemyIncomeKg = 0) {
   // is barred, so the collapse is one-way.
   const broken = size < enemy.initialStrength * ENEMY_WITHDRAW_FRACTION
   if (state === 'well-provisioned' && !broken) {
-    if (scaleArmy(enemy.army, 1 + ENEMY_REINFORCE_RATE) > 0)
+    if (adjustArmy(enemy.army, ENEMY_REINFORCE_HEADCOUNT) > 0)
       log.push('Their camp is well fed, and word of it draws fresh swords to their banner.')
   } else if (state === 'near starving') {
-    if (scaleArmy(enemy.army, 1 - ENEMY_DESERTION_RATE) < 0)
+    if (adjustArmy(enemy.army, -ENEMY_DESERTION_HEADCOUNT) < 0)
       log.push('Hunger is telling in the enemy camp — men are slipping away from it in the night.')
   }
 

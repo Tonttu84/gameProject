@@ -231,10 +231,17 @@ export const RAID_STRENGTH_BANDS = [
 // campaignView.js and raid.js — and S4 would have made it three copies.
 export const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
 
+// Exactly ONE band grows the host and exactly ONE shrinks it; the middle is a
+// deliberate no-op, not an unfinished third case (asked and confirmed
+// 2026-08-09). Against a consumption of 7200 the three rings land one to a
+// band by construction — near untouched 1.25 → grows, mid 1.00 → holds, far
+// 0.75 → bleeds — so which ring the player has stripped the countryside to IS
+// the enemy's supply state. Retune the ring yields and this mapping moves with
+// them; that is intended.
 export const ENEMY_SUPPLY_BANDS = [
-  { min: 1.1, label: 'well-provisioned' },
-  { min: 0.9, label: 'steady' },
-  { min: 0, label: 'near starving' },
+  { min: 1.1, label: 'well-provisioned' }, // +ENEMY_REINFORCE_HEADCOUNT
+  { min: 0.9, label: 'steady' }, // no change — the neutral middle
+  { min: 0, label: 'near starving' }, // −ENEMY_DESERTION_HEADCOUNT
 ]
 
 // The shadowing enemy host (hidden from the player; scouting reveals it).
@@ -246,9 +253,22 @@ export const ENEMY_ARMY = {
 }
 // How the host's numbers answer its supply state each turn (S4 v1, deliberately
 // blunt): a surplus buys recruits, a deficit bleeds deserters, steady holds.
-// Applied to EVERY unit type so the host's composition is preserved.
-export const ENEMY_REINFORCE_RATE = 0.03
-export const ENEMY_DESERTION_RATE = 0.05
+// Split across EVERY unit type in proportion to the host's composition, so
+// feeding it does not quietly turn it into a different army.
+//
+// A FIXED headcount, deliberately NOT a percentage. The old 3%/5% rates
+// compounded off the host's current size, so a host left well fed grew ~+34%
+// over ten turns and grew FASTER the bigger it got — a difficulty curve nobody
+// designed, and one that punished a slow campaign twice. Flat numbers make the
+// pressure linear and legible: ten fed turns is ten times one fed turn, and
+// stripping the rings is worth the same whenever you get round to it.
+//
+// Small, and ASYMMETRIC on purpose: starving a host is meant to be the more
+// effective lever of the two. Hunger empties a camp faster than good rations
+// fill it — men leave on their own, recruits have to be found, marched in and
+// paid. So a fed host trickles upward and a starved one drains at twice that.
+export const ENEMY_REINFORCE_HEADCOUNT = 5
+export const ENEMY_DESERTION_HEADCOUNT = 10
 
 // Daily food need per unit = size² × this (kg); a turn consumes 14 days of it.
 // The square makes big mounts expensive: cavalry is a supply decision.
