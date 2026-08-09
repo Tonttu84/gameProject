@@ -60,10 +60,27 @@ standing invitation to build the thing this principle forbids.
 ### Where the work stands (2026-08-09) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **31**. **Everything through `bd3a5ca` is merged to `main` and CI-green on all six
-jobs** — nothing is in flight, so a new session starts from a clean `main`.
+schema version **31** (unchanged — the 2026-08-09 work retuned constants, it did not touch the
+schema). **Everything through `f94237c` is merged to `main`** — nothing is in flight, so a new
+session starts from a clean `main`.
 
-**Open questions left deliberately unanswered — ask before assuming:**
+**All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
+calls the user made; one turned out to be a non-bug hiding a real bug next door.
+
+**What is actually open:**
+- **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
+  words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
+  `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number.
+- **The DB-backed campaign-server tests cannot run in the Claude-web container.**
+  `mongodb-memory-server` downloads its binary from `fastdl.mongodb.org`, which the sandbox's
+  network policy denies (403 on CONNECT); there is no cached binary, no system `mongod`, no Docker
+  daemon, and Ubuntu noble has no `mongodb-server` package. 12 of 23 files fail at setup for this
+  reason on a CLEAN `main` too — it is not a regression, and CI's `mongo:7` service container runs
+  them properly. The escape hatch already exists: set `MONGODB_TEST_URI` (see
+  `tests/helpers/db.js`) if you have a real mongod to point it at. **Verify DB-path changes in CI,
+  and say so rather than claiming a green local run.**
+
+**Answered — do not re-litigate:**
 1. ~~**The enemy grows 3%/turn while the near ring holds.**~~ **ANSWERED 2026-08-09 — the rates are
    gone.** The swing is now a FIXED headcount: `+ENEMY_REINFORCE_HEADCOUNT` (5) fed,
    `−ENEMY_DESERTION_HEADCOUNT` (10) starving, steady untouched. No compounding, and asymmetric
