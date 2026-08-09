@@ -31,6 +31,30 @@ notes below over the git history if they ever disagree — the commits win.
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
 schema version **27** (unchanged by the 2026-08-08 fixes — no document field moved).
 
+- **2026-08-09 — S2 had landed CI-RED; the two red jobs are fixed, and the "check it in CI"
+  plan for `cs-test` turns out not to exist.** Read this before trusting any "CI is the check"
+  note below.
+  1. **S2 broke both stack jobs** and the failure was sitting on `9f0184d` unnoticed. S2 replaced
+     `POST /:id/forage {assignment}` with `POST /:id/effort {share}` and rewrote `ForagePanel` as
+     the slider, but nothing outside the unit suites was updated: the **`docker`** job's smoke
+     still POSTed `/forage` (404 → `curl -fs` prints nothing → the piped `jq -e` exits **4**, the
+     bare "exit code 4" in the log), and the **`e2e`** job still drove `forage-input-*` /
+     `forage-submit` / "Foragers assigned", none of which exist any more. Both now drive the
+     slider (`effort-slider` arrowed in its 10% steps → `effort-submit` → "Effort set") and the
+     `/effort` route. **Lesson for the next route/panel rename: `.github/workflows/ci.yml` and
+     `e2e/tests/` are the two call sites the vitest suites cannot catch — grep them.**
+  2. **CI HAS NO `cs-test` JOB.** The `test` job is `make test-serial` (C++ only); `docker` and
+     `e2e` smoke the running stack. The campaign-server vitest suite **has never run in CI**, so
+     the instruction below to "run the full `cs-test` for real (CI, or a machine with mongod
+     reachable) before touching S3" **cannot be satisfied by CI** — only by a machine with mongod.
+     The 12 DB-backed suites listed below are still verified by hand-arithmetic only. Adding a
+     `cs-test` job (a `mongo:7` service container + `MONGOMS_*`/an external `MONGODB_URI`, since
+     `mongodb-memory-server` downloads a binary) is the obvious fix and is **not** done yet.
+  3. **A remote/web session still cannot run them:** `fastdl.mongodb.org` is **403 by egress
+     policy** (so `mongodb-memory-server` can't fetch mongod) and these containers have **no
+     docker daemon** (so the `mongo:7` fallback and `make docker-up` are both out). Treat
+     "run `cs-test`" as a task for a local box until a CI job exists.
+
 - **Last session (2026-08-08) — three playtest bug fixes, no new feature.** Details are in the
   dated bullets under `### Squad-centric overhaul`; the short version:
   1. **Raid parties now fight as squads** (`e0d9e8f`). The auto-placer scattered a squad one unit
@@ -70,7 +94,8 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
     green (221/221 passing, same 12-suite mongod gap as any fresh remote session), `fe-test` is
     green (249/249 — one file renamed `forageAssignment.test.jsx` →
     `effortSlider.test.jsx`), `fe-lint` clean, `make test-serial` green (347/347). **Run the full
-    `cs-test` for real (CI, or a machine with mongod reachable) before touching S3** — the
+    `cs-test` for real before touching S3 — on a machine with mongod reachable, NOT in CI (CI has
+    no `cs-test` job; see the 2026-08-09 block at the top)** — the
     creation/effort-route/harvest numbers in `campaigns.test.js` and `enemyAi.test.js` were
     re-derived by hand from the real engine's `./game dump-units` stats, not observed passing.
   - **Numeric choices S2 had to make that the design doc left approximate** (flagged "~"/"≈" in
@@ -197,7 +222,8 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
   - Tests: new `the one-way turn phase machine` suite (ladder, refusals, double-end-day, newDay
     reset); ~47 end-day call sites routed through a new `endTurn(id)` helper that stamps the phase
     first; frontend suite **247/247 green**, oxlint clean. **cs-test was still running when this
-    was committed — CI is the check.**
+    was committed — and "CI is the check" was WRONG: CI has no `cs-test` job (see the 2026-08-09
+    block at the top), so S1's ~47 rerouted end-day call sites are still unverified by a real run.**
 - **S2 — the slider. ✅ LANDED (schema v29).** `fieldPointValue`/`fieldPointsFor` (renamed from
   `scoutingPointValue`/`scoutingPointsFor`; `forageValue` deleted), `campaign.forage.pool`
   (snapshot) + `campaign.forage.share` (sticky, default 0), ring distance penalty

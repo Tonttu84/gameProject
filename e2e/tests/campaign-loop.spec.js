@@ -3,7 +3,7 @@ import { registerAndLogin, uniqueUsername, advanceReveal, clearPendingDecisions 
 
 // First real end-to-end coverage: a browser driving one full campaign turn
 // against a running stack — now through the PHASED turn (Prepare → Omens →
-// Raids → Recruit): login → council/forage → read the omens → augur
+// Raids → Recruit): login → council/effort split → read the omens → augur
 // consult/recast → Accept the Fates (the mid-turn reveal, which now leads on to
 // the raids) → raids → recruit (a mandatory hire) → End the Turn → next council.
 //
@@ -11,7 +11,7 @@ import { registerAndLogin, uniqueUsername, advanceReveal, clearPendingDecisions 
 // END, not a per-turn option (2026-08-08), so Recruiting's exit ends the turn
 // outright rather than opening a deployment grid. Everything here talks to the
 // actual campaign server + engine; there are no mocks.
-test('full campaign turn: forage → omens → accept fates → raids → recruit → end turn', async ({ page }) => {
+test('full campaign turn: effort → omens → accept fates → raids → recruit → end turn', async ({ page }) => {
   await page.goto('/')
 
   // ── Login (fresh throwaway commander) ──────────────────────────────────
@@ -24,12 +24,21 @@ test('full campaign turn: forage → omens → accept fates → raids → recrui
   await page.getByTestId('take-command').click()
   await expect(page.getByRole('heading', { name: /Turn 1 — War Council/ })).toBeVisible()
 
-  // ── Prepare: assign some foragers and send them out ────────────────────
-  const forageInput = page.locator('[data-testid^="forage-input-"]').first()
-  await expect(forageInput).toBeVisible()
-  await forageInput.fill('20')
-  await page.getByTestId('forage-submit').click()
-  await expect(page.getByTestId('forage-submit')).toContainText('Foragers assigned')
+  // ── Prepare: split the army's effort between foraging and scouting ──────
+  // The effort slider (S2) replaced the per-type forager steppers: one pool,
+  // one share. It opens at the sticky committed share — 0 (all scouting) on a
+  // fresh campaign, DEFAULT_FORAGE_SHARE — and "Set effort" stays disabled
+  // until the split actually moves.
+  const effortSlider = page.getByTestId('effort-slider')
+  await expect(effortSlider).toBeVisible()
+  await expect(effortSlider).toHaveValue('0')
+  // Arrow the slider up in its 10% steps rather than scripting .value: only a
+  // real input event reaches React's controlled onChange.
+  await effortSlider.focus()
+  for (let i = 0; i < 7; i++) await effortSlider.press('ArrowRight')
+  await expect(effortSlider).toHaveValue('0.7')
+  await page.getByTestId('effort-submit').click()
+  await expect(page.getByTestId('effort-submit')).toContainText('Effort set')
 
   // ── Read the Omens → the augur's tent ──────────────────────────────────
   await page.getByTestId('to-omens').click()

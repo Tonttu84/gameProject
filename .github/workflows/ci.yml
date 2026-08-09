@@ -63,7 +63,7 @@ jobs:
           echo "── mongo logs:"; docker logs mongo 2>&1 | tail -20 || true
           exit 1
 
-      - name: Smoke a campaign turn (login → create → forage → phases → recruit → end-day)
+      - name: Smoke a campaign turn (login → create → effort → phases → recruit → end-day)
         run: |
           set -e
           BASE=http://localhost:3001/api
@@ -81,10 +81,13 @@ jobs:
           echo "sample battle winner: $WINNER"; test -n "$WINNER" && test "$WINNER" != "null"
           ID=$(curl -fs -X POST $BASE/campaigns -H "$AUTH" -H 'Content-Type: application/json' -d '{}' | jq -r .id)
           test "$ID" != "null"
-          # Prepare phase: forage assignment proves the capability math + roster
-          # budget path (the forage/capacityKg the panel previews against).
-          curl -fs -X POST $BASE/campaigns/$ID/forage -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"assignment":{"Soldier":100}}' | jq -e '.forage.capacityKg > 0' > /dev/null
+          # Prepare phase: set the effort split (slider S2 replaced the per-type
+          # forage assignment with one share of one pool). Asserting capacityKg
+          # is non-zero proves the same thing the old assignment call did — the
+          # pool/kgPerPoint math the panel previews against — and only holds
+          # because we slid some effort onto foraging (the default share is 0).
+          curl -fs -X POST $BASE/campaigns/$ID/effort -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"share":0.7}' | jq -e '.forage.share == 0.7 and .forage.capacityKg > 0' > /dev/null
           # The one-way phase march (effort slider S1): prepare → omens → raids,
           # one forward step at a time, then Recruit through its own door (which
           # draws the day's offer as it stamps the phase).
