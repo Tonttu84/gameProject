@@ -4,6 +4,7 @@ import {
   ENEMY_SUPPLY_BANDS,
   ENEMY_REINFORCE_RATE,
   ENEMY_DESERTION_RATE,
+  ENEMY_WITHDRAW_FRACTION,
 } from '../utils/campaignConfig.js'
 
 export const armyTotal = (army) => [...army.values()].reduce((a, b) => a + b, 0)
@@ -61,7 +62,15 @@ export function enemyTurn(campaign, catalog, enemyIncomeKg = 0) {
   // The consequence, v1: a well-fed host grows, a starving one bleeds men, a
   // steady one holds. The log is player-visible, so these stay PHRASES — the
   // host's numbers are recon-gated intel and must not leak through the report.
-  if (state === 'well-provisioned') {
+  // A BROKEN host does not recruit, however well it is eating. Below the
+  // withdraw threshold it is already melting away down the road it came by
+  // (dayResolution's near-annihilation win), and letting food lift it back over
+  // that line would steal a win the player had already earned — CI caught
+  // exactly that. Fiction and mechanics agree here: fresh swords join a going
+  // concern, not a rout. Starvation still applies below the line; only growth
+  // is barred, so the collapse is one-way.
+  const broken = size < enemy.initialStrength * ENEMY_WITHDRAW_FRACTION
+  if (state === 'well-provisioned' && !broken) {
     if (scaleArmy(enemy.army, 1 + ENEMY_REINFORCE_RATE) > 0)
       log.push('Their camp is well fed, and word of it draws fresh swords to their banner.')
   } else if (state === 'near starving') {

@@ -213,6 +213,38 @@ describe('enemy supply balance (S4 "starve the enemy")', () => {
     expect(armyOf(doc)).toBe(before)
   })
 
+  test('a BROKEN host does not recruit, however well it is eating', async () => {
+    // Regression (CI, 2026-08-09): reinforcement was applied before the
+    // near-annihilation check, so a shattered host on a full near ring grew 3%
+    // back over the withdraw line and STOLE a win the player had earned.
+    // 144 < 721 × 0.2 = 144.2, and the near ring is untouched (well-provisioned).
+    const { body: c } = await createCampaign()
+    await pinEnemy(c.id, { army: { Soldier: 144 } })
+
+    await pinAugury(c.id)
+    const res = await endDay(c.id)
+
+    expect(res.body.report.status).toBe('won')
+    const doc = await Campaign.findById(c.id)
+    // Well fed, and still it did not grow — a rout attracts no fresh swords.
+    expect(doc.enemy.supplyState).toBe('well-provisioned')
+    expect(doc.enemy.army.get('Soldier')).toBe(144)
+  })
+
+  test('starvation still bites a broken host — the collapse is one-way', async () => {
+    const { body: c } = await createCampaign()
+    // Below the withdraw line AND on stripped land: growth is barred, but
+    // desertion must still apply, or a broken host would be frozen in place.
+    await pinEnemy(c.id, { army: { Soldier: 144 }, rings: [0, 0, 220000] })
+
+    await pinAugury(c.id)
+    await endDay(c.id)
+
+    const doc = await Campaign.findById(c.id)
+    expect(doc.enemy.supplyState).toBe('near starving')
+    expect(doc.enemy.army.get('Soldier')).toBeLessThan(144)
+  })
+
   test('the state is a per-turn verdict, not a running total — it recovers', async () => {
     const { body: c } = await createCampaign()
     await pinEnemy(c.id, { rings: [0, 0, 220000] })
@@ -398,7 +430,7 @@ describe('the withdraw threshold and the withdrawal win', () => {
   test('one man above the threshold, the beaten host still stands', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
-    await pinEnemy(c.id, { army: { Soldier: 145 }, supplies: 90000 })
+    await pinEnemy(c.id, { army: { Soldier: 145 } })
 
     const res = await endDay(c.id)
     expect(res.status).toBe(200)
@@ -410,7 +442,8 @@ describe('the withdraw threshold and the withdrawal win', () => {
   test('below the threshold the host withdraws — and that wins the campaign', async () => {
     const { body: c } = await createCampaign()
     await pinAugury(c.id)
-    await pinEnemy(c.id, { army: { Soldier: 144 }, supplies: 90000 })
+    // 144 < 721 × ENEMY_WITHDRAW_FRACTION (144.2) — a shattered host.
+    await pinEnemy(c.id, { army: { Soldier: 144 } })
 
     const res = await endDay(c.id)
     expect(res.status).toBe(200)

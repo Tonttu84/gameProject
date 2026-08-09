@@ -275,15 +275,23 @@ describe('POST /api/campaigns', () => {
 // campaignView stays the single gate. Armies are pinned straight on the doc to
 // force each band (fixture-catalog coverages; the default player roster sits
 // at 1494/4000 ≈ 0.374).
-const pinArmies = async (id, { roster, enemyArmy, enemySupplyState } = {}) => {
+const pinArmies = async (id, { roster, enemyArmy, enemySupplyState, rings } = {}) => {
   const doc = await Campaign.findById(id)
   if (roster) doc.roster = new Map(Object.entries(roster))
   if (enemyArmy) doc.enemy.army = new Map(Object.entries(enemyArmy))
   // S4: the stockpile is gone — what the view reports is the stored per-turn
   // verdict, so pin the state itself rather than a kg figure.
   if (enemySupplyState !== undefined) doc.enemy.supplyState = enemySupplyState
+  if (rings) doc.forage.rings.forEach((r, i) => { r.richness = rings[i] ?? r.richness })
   await doc.save()
 }
+
+// S4: end-day now grows a well-fed host and shrinks a starving one, so any test
+// asserting an EXACT enemy count after a turn has to say which it is or it is
+// really testing two mechanics at once. Emptying the near ring puts the host on
+// the mid ring, which is break-even by construction — it holds its numbers, and
+// the assertion measures only what the test is actually about.
+const STEADY_RINGS = [0, 140000, 220000]
 
 // Recon rework: the scouting band now comes from accumulated recon points, not
 // troop coverage. Pin the campaign to the minimum points that land in `band`
@@ -549,7 +557,9 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
 
   test('Superior: the anticipated rung reverses the fate onto the enemy', async () => {
     const { body: c } = await createCampaign()
-    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    // STEADY_RINGS so S4's supply swing cannot move these counts — the three
+    // ×0.95 floors below must be the FATE's doing and nothing else.
+    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 }, rings: STEADY_RINGS })
     await pinBand(c.id, 'Superior')
     await pinAugury(c.id, FORAGE_RAIDERS, QUIET)
     const res = await endTurn(c.id)
@@ -571,7 +581,9 @@ describe('recon-sensitive event rungs (Stage 4 1c)', () => {
 
   test('anticipated Night Raid: prisoners lay the enemy bare for exactly one turn', async () => {
     const { body: c } = await createCampaign()
-    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 } })
+    // STEADY_RINGS: the reveal must show the host UNCHANGED, so S4's growth
+    // must not be in the picture.
+    await pinArmies(c.id, { enemyArmy: { Soldier: 400, Zombie: 200 }, rings: STEADY_RINGS })
     await pinBand(c.id, 'Superior')
     await pinAugury(c.id, NIGHT_RAID, QUIET)
     const res = await endTurn(c.id)

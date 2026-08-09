@@ -405,6 +405,13 @@ preserves the host's composition. Floors per type, so a thin type (11 Necromance
 nor bolts in one fortnight — the big formations carry the swing. Log lines stay PHRASES: the log
 is player-visible and the host's numbers are recon-gated intel.
 
+**A broken host does not recruit.** CI caught a real bug, not a stale assertion: reinforcement
+ran BEFORE the near-annihilation check, so a shattered host sitting on a full near ring grew 3%
+back over `ENEMY_WITHDRAW_FRACTION` and **stole a withdrawal win the player had already earned**.
+Growth is now barred below that line — fresh swords join a going concern, not a rout — while
+starvation still applies below it, so the collapse is one-way. Two regression tests pin both
+halves. Anything added later that can INCREASE the host must respect the same rule.
+
 **Schema v31.** `enemy.supplies` (the stockpile: seeded once, drained by upkeep forever, never
 replenished, no consequence at zero) is GONE, replaced by `enemy.supplyState` — this turn's
 verdict only, recomputed each end-day. `ENEMY_SUPPLIES` deleted with it.
@@ -419,6 +426,11 @@ condition now, not the size of a wagon train.
 **Also deduped:** `bandLabel` was defined privately and identically in BOTH `campaignView.js` and
 `raid.js`; S4 would have made it three copies, so it now lives once in `utils/campaignConfig.js`
 beside the band tables. Same lesson as `PUBLIC_OPPORTUNITY_KEYS`.
+
+**Watch out when asserting exact enemy counts.** End-day now moves the host every turn unless it
+is exactly break-even, so any test that pins an enemy number after a turn is silently testing two
+mechanics at once. `campaigns.test.js` exports `STEADY_RINGS` ([0, 140000, 220000] — near ring
+stripped, host on the break-even mid ring) for exactly this; two event tests needed it.
 
 **Tests.** 23 pure cases in `forage.test.js` (income per ring depth, mid-sweep splits, modifier
 interaction, the state bands, the derived break-even identity) — all runnable anywhere. The
