@@ -80,6 +80,21 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
   `tests/helpers/db.js`) if you have a real mongod to point it at. **Verify DB-path changes in CI,
   and say so rather than claiming a green local run.**
 
+**Testing convention — rigging the RNG (2026-08-09).** The engine seeds from `std::random_device`,
+so the C++ suite is non-reproducible by design and a bad seed shows up as "passed on one run,
+failed on the next". Two rules came out of chasing exactly that twice in one day:
+- **Assert invariants that hold for EVERY roll.** Both garrison-sally flakes were assertions that
+  looked like they were about firing or landing but actually measured whether a unit *survived* the
+  tick. The fix each time was structural — assert the thing where it genuinely holds (the tick log,
+  or a direct spell cast with no combat), not a tighter statistical tolerance.
+- **Rig `Utility::pushDiceRoll` only for a clear reason, and then sweep rather than sample.**
+  Pinning one roll to make a *universal* claim pass quietly narrows it to "works for this roll" —
+  the failure mode is a green test that no longer means what its name says. Where a branch is
+  genuinely unreachable without controlling the draw (`randomPlaceArmy` picks its own scan start,
+  so the mock queue is the only seam), enumerate the whole space instead of picking a lucky point:
+  see "randomPlaceArmy finds the one free hex from EVERY random start", which sweeps all 64
+  free-hex × start combinations.
+
 **Answered — do not re-litigate:**
 1. ~~**The enemy grows 3%/turn while the near ring holds.**~~ **ANSWERED 2026-08-09 — the rates are
    gone.** The swing is now a FIXED headcount: `+ENEMY_REINFORCE_HEADCOUNT` (5) fed,

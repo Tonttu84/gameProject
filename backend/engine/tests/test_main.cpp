@@ -374,43 +374,62 @@ TEST_CASE("randomPlaceArmy returns false without terminating when zone is too fu
     // regression this test guards against.
 }
 
-// The two scans together must cover the zone exactly once. The forward pass
-// starts mid-zone at (wIter, hIter) and runs to the end; the wrap pass has to
-// pick up everything before it — including the columns LEFT of wIter on row
-// hIter itself, the one band that is neither "after the start" nor "on an
-// earlier row". Miss it and the function reports a full zone with a hex free.
-TEST_CASE("randomPlaceArmy wraps onto the columns left of its random start") {
+// The two scans together must cover the zone EXACTLY ONCE, from any start. The
+// forward pass begins mid-zone at (wIter, hIter) and runs to the end; the wrap
+// pass has to pick up everything before it — including the columns left of
+// wIter on row hIter itself, the one band that is neither "after the start" nor
+// "on an earlier row". That band was missed, so the function reported a full
+// zone with a hex still free (and BattleServer turns that into a rejected
+// battle request).
+//
+// Swept, not sampled. Mocking the rolls is what makes the branch reachable at
+// all, but pinning ONE (hIter, wIter) would prove only that this pass works
+// from one lucky corner while the claim being made is universal — a rigged test
+// quietly narrowing a general property. So it enumerates the whole space
+// instead: every free-hex position × every possible random start. The old
+// single-sample version is in there as one of the 64 cases.
+TEST_CASE("randomPlaceArmy finds the one free hex from EVERY random start") {
     Battlefield& field = Utility::getBattlefield();
-    Utility::clearDiceRolls();
+    const int wStart = 3, wEnd = 6, hStart = 5, hEnd = 6; // 8 hexes
 
-    const int row = 5;
-    const int freeCol = 3;
+    for (int freeH = hStart; freeH <= hEnd; ++freeH)
+    for (int freeW = wStart; freeW <= wEnd; ++freeW)
+    for (int startH = hStart; startH <= hEnd; ++startH)
+    for (int startW = wStart; startW <= wEnd; ++startW) {
+        Utility::clearDiceRolls();
 
-    // Build both armies BEFORE queueing rolls, so unit construction cannot eat
-    // the mocked values.
-    Army blockers, army;
-    appendArmy<Soldier>(blockers, 3, BLUETEAM);
-    appendArmy<Soldier>(army, 1, REDTEAM);
+        // Build the armies BEFORE queueing rolls, so unit construction cannot
+        // eat the mocked values.
+        Army blockers, army;
+        appendArmy<Soldier>(blockers, 7, BLUETEAM); // 8 hexes, one left free
+        appendArmy<Soldier>(army, 1, REDTEAM);
 
-    // Zone is one row, cols 3..6. Park an enemy unit on 4, 5 and 6 — canPlace()
-    // rejects a hex holding another team — so col 3 is the only hex left.
-    for (int i = 0; i < 3; ++i) {
-        Hex* hex = field.hexGrid.getHex({(freeCol + 1 + i) - row / 2, row});
-        REQUIRE(hex != nullptr);
-        blockers[i]->setHex(hex);
-        blockers[i]->setPlaced(true);
+        // Park an enemy unit on every hex but one — canPlace() rejects a hex
+        // holding another team — so exactly one landing spot exists.
+        int i = 0;
+        for (int h = hStart; h <= hEnd; ++h)
+            for (int w = wStart; w <= wEnd; ++w) {
+                if (h == freeH && w == freeW) continue;
+                Hex* hex = field.hexGrid.getHex({w - h / 2, h});
+                REQUIRE(hex != nullptr);
+                blockers[i]->setHex(hex);
+                blockers[i]->setPlaced(true);
+                ++i;
+            }
+
+        Utility::pushDiceRoll(startH); // hIter
+        Utility::pushDiceRoll(startW); // wIter
+
+        INFO("free=(" << freeW << "," << freeH << ") start=(" << startW << "," << startH << ")");
+        REQUIRE(randomPlaceArmy(army, field, {wStart, wEnd, hStart, hEnd}) == true);
+
+        const Hex* got = army[0]->getHex();
+        REQUIRE(got != nullptr);
+        CHECK(got->coord.q + got->coord.r / 2 == freeW);
+        CHECK(got->coord.r == freeH);
+        // Armies leave scope here → units destroyed → hexes reset for the next
+        // combination.
     }
-
-    // Start the scan at the far end, so the free hex sits behind it and is
-    // reachable only by the wrap.
-    Utility::pushDiceRoll(row); // hIter
-    Utility::pushDiceRoll(6);   // wIter
-
-    REQUIRE(randomPlaceArmy(army, field, {freeCol, 6, row, row}) == true);
-
-    const Hex* got = army[0]->getHex();
-    REQUIRE(got != nullptr);
-    REQUIRE(got->coord.q + got->coord.r / 2 == freeCol);
 
     Utility::clearDiceRolls();
 }
