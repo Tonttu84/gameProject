@@ -77,8 +77,15 @@ TEST_CASE("garrison sally: wave summons allies at the enemy's rear on its turn")
             REQUIRE(u->getHex() != nullptr);
         }
     }
-    CHECK(summoned == 3);
-    CHECK(bf.getTeam(BLUETEAM).size() == 4); // 1 original + 3 summoned
+    // NOT an exact headcount. Combat runs in this same tick, and the wave lands
+    // in Red's rear band with Red standing in it, so whether all three summons
+    // are still breathing at the end of the tick is a dice roll. The exact count
+    // is asserted in the direct-cast case below, where nothing has fought yet.
+    // What a tick can honestly claim is that the wave arrived, joined, and did
+    // not over-summon — and that the team and the summon count agree.
+    CHECK(summoned >= 1);
+    CHECK(summoned <= 3);
+    CHECK(bf.getTeam(BLUETEAM).size() == 1u + static_cast<size_t>(summoned));
 }
 
 TEST_CASE("garrison sally: reinforcements do not cross back as survivors") {
@@ -109,12 +116,21 @@ TEST_CASE("garrison sally: a wave fires exactly once") {
 
     Reinforcement r;
     r.tick = 1; r.team = BLUETEAM; r.count = 2; r.unitType = "Soldier";
+    r.message = "SALLY_ONCE_TEST";
     bf.scheduleReinforcement(r);
 
-    bf.tick(); // fires: 1 original + 2 = 3
-    CHECK(bf.getTeam(BLUETEAM).size() == 3);
-    bf.tick(); // must NOT fire again
-    CHECK(bf.getTeam(BLUETEAM).size() == 3);
+    // "Exactly once" is asserted on the LOG, never on a headcount. This used to
+    // check getTeam(BLUETEAM).size() == 3 after each tick, which measures
+    // whether the summons SURVIVED: they land in Red's rear band, Red is
+    // standing in it, and combat runs in the same tick. CI caught it on main
+    // (2026-08-09) reading 2 == 3 on BOTH checks — one summon was already dead
+    // by the end of the first tick, and the wave had fired correctly. The log
+    // line comes from fireScheduledReinforcements and no dice can touch it.
+    bf.tick();
+    CHECK(logHas(bf.takeTickLog(), "SALLY_ONCE_TEST")); // fired on its turn...
+
+    bf.tick();
+    CHECK_FALSE(logHas(bf.takeTickLog(), "SALLY_ONCE_TEST")); // ...and never again
 }
 
 // The landing band itself, with no tick and therefore no movement in the way:
