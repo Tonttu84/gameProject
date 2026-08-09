@@ -31,6 +31,14 @@ notes below over the git history if they ever disagree — the commits win.
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
 schema version **31**.
 
+**STANDING DESIGN PRINCIPLE — the enemy is an abstract challenge, not an opponent.** (User,
+2026-08-09.) It has no behaviour, no AI, no reactions: it is a roguelite pressure the player
+pushes against, whose numbers answer arithmetic rather than decisions. Do NOT propose or build
+"the enemy responds to X" — that is out of scope by design, not a gap in the plan. This is why
+`enemy.stance` was deleted outright in v19, and why S4's supply system is a gauge plus an
+attrition rate with no agency in it. (`services/enemyAi.js` is a historical misnomer; it contains
+no AI and should not acquire any.)
+
 - **2026-08-09 (latest) — "starve the enemy" S1 landed.** The enemy host now feeds itself off the
   shared rings and is judged turn by turn (no stockpile): near ring = surplus and it grows, mid =
   break-even, far = starving and it bleeds men. Stripping the inner rings is now a real attack on
@@ -439,10 +447,21 @@ behaviours that matter: near ring feeds and grows the host, stripped land starve
 mid ring holds exactly, and the state RECOVERS the moment the land does (which a stockpile model
 could not do). `campaigns.test.js` now covers both sides of the recon gate.
 
-**Deferred from this stage:** the enemy reacting to hunger (forage harder, move camp, force the
-battle early) — note the stance machine was deliberately deleted in v19, do not rebuild it by
-accident. Also still deferred from the slider epic: optional food sinks; forager-clash flavour as
-events.
+**NOT deferred — OUT OF SCOPE BY DESIGN: the enemy does not react.** (User, 2026-08-09: *"We
+don't have any enemy behavior at least for now, the enemy is an abstract challenge in roguelite
+fashion rather than a reactive opponent."*) So "the host forages harder / moves camp / forces the
+battle early when hungry" is not a future stage — do not write it, and do not treat its absence
+as a gap. This is the same principle that retired `enemy.stance` in v19; that deletion was
+deliberate, not cleanup awaiting a replacement.
+
+What the enemy IS: a set of dials the player pushes on. It consumes a fixed amount, takes what the
+shared land still offers, and its numbers answer arithmetic — never a decision. S4 is built that
+way on purpose (a gauge and an attrition rate, no agency anywhere), and anything added later
+should be too. **Note `services/enemyAi.js` is a misnomer under this principle** — it holds no AI
+and should not acquire any; the name is historical.
+
+**Still deferred from the slider epic** (genuinely deferred, not out of scope): optional food
+sinks; forager-clash flavour re-expressed as events.
 
 ### Project state (as of 2026-07-05)
 
