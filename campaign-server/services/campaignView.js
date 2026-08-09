@@ -19,7 +19,9 @@ import { armyTotal } from './enemyAi.js'
 import { meterBand, meterFillAtShare } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
-import { forageCapacityKg, forageYieldMultiplier } from './forage.js'
+import {
+  forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
+} from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValenceFor, choiceRung } from './events.js'
 import { findRecruitEntry, resolveHire } from './recruit.js'
@@ -165,6 +167,11 @@ export async function campaignView(campaign) {
   const points = campaign.recon?.points ?? 0
   const band = reconBand(points)
   const level = reconLevel(points)
+  // The one enemy-side forage gate (S2 decision 14, extended to S3's modifiers):
+  // Outmatched recon or better sees the enemy's drain and what's bending it.
+  const reconOpen = SCOUTING_BANDS.indexOf(band) >= SCOUTING_BANDS.indexOf('Outmatched')
+  // The player's own standing pressures, folded once for the scalars below.
+  const playerBend = foldForageModifiers(campaign.forage.modifiers, 'playerYield')
   return {
     id: campaign.id,
     day: campaign.day,
@@ -254,10 +261,29 @@ export async function campaignView(campaign) {
       // kg one pool point gathers at the CURRENT scouting band (Stage 4 1d's
       // posture multiplier folded in) — pool × share × this = the food+
       // materials preview; pool × (1 − share) = the scouting-points preview.
-      kgPerPoint: FORAGE_KG_PER_POINT * forageYieldMultiplier(band),
+      // Standing playerYield pressures (S3) ride in the SCALARS, not a finished
+      // total: the client interpolates capacity as the slider moves, so folding
+      // the factor into kgPerPoint keeps its preview honest at every position,
+      // and flatKg carries the additive half of the same formula
+      // (max(0, points × kgPerPoint + flatKg) — what applyForageModifiers does).
+      kgPerPoint: FORAGE_KG_PER_POINT * forageYieldMultiplier(band) * playerBend.factor,
+      flatKg: playerBend.deltaKg,
       foodShare: FORAGE_FOOD_SHARE,
       materialsShare: FORAGE_MATERIALS_SHARE,
-      capacityKg: forageCapacityKg(campaign.forage.pool * campaign.forage.share, band),
+      capacityKg: applyForageModifiers(
+        forageCapacityKg(campaign.forage.pool * campaign.forage.share, band),
+        campaign.forage.modifiers,
+        'playerYield',
+      ),
+      // The pressures themselves, as labels the panel can list. A playerYield
+      // one is the player's own foraging and always visible; an enemyDrain one
+      // is enemy-side fact, so it's held behind the SAME recon gate as
+      // enemyDrainKg below — label and all, or the gated number leaks by name.
+      modifiers: (campaign.forage.modifiers ?? [])
+        .filter((m) => m.target === 'playerYield' || reconOpen)
+        .map((m) => ({
+          id: m.id, label: m.label, target: m.target, turnsLeft: m.turnsLeft ?? null,
+        })),
       // The boss-fight meter's fill at either extreme of the slider (decision
       // 13's "live preview of ... the pitched-battle effect") — linear in
       // share, so the client interpolates for any draft position without the
@@ -266,10 +292,9 @@ export async function campaignView(campaign) {
       meterFillAtFullForage: meterFillAtShare(campaign, 1),
       // The enemy's abstract drain (decision 14): recon-gated like the enemy
       // view below — "unknown" (null) under Outmatched, the real number above.
-      enemyDrainKg:
-        SCOUTING_BANDS.indexOf(band) >= SCOUTING_BANDS.indexOf('Outmatched')
-          ? campaign.forage.enemyDrainKg
-          : null,
+      enemyDrainKg: reconOpen
+        ? applyForageModifiers(campaign.forage.enemyDrainKg, campaign.forage.modifiers, 'enemyDrain')
+        : null,
     },
     // Raid opportunities (Stage 4 Part 2 + the 2.5 scouting mini-game): the
     // hidden targetForce and reward stay server-side; the player sees per-type
@@ -287,6 +312,11 @@ export async function campaignView(campaign) {
         strengthBand: opp.strengthBand,
         capacity: opp.capacity,
         source: opp.source,
+        // Persistent cards (S3) are worth flagging to the player: this one will
+        // still be here next turn, so scouting spent on it keeps its value and
+        // there's no pressure to take it today. modifierId stays server-side —
+        // the card's own flavour already says what beating it undoes.
+        persistent: opp.persistent ?? false,
         // Range pre-reveal, exact once bought — per unit TYPE, never one
         // headcount (a fantasy roster reads "3 Giants + 20 spearmen").
         enemy: opp.enemyReveal >= 1 ? Object.fromEntries(opp.targetForce) : opp.enemyRange,

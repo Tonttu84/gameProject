@@ -35,7 +35,11 @@ const ForagePanel = ({ onSetShare, locked }) => {
 
   const pool = forage.pool ?? 0
   const kgPerPoint = forage.kgPerPoint ?? 0
-  const capacityKg = pool * share * kgPerPoint
+  // Standing pressures (S3) reach us as coefficients, not a finished total, so
+  // the preview bends with them at every slider position: kgPerPoint already
+  // carries their combined factor, flatKg the additive half. Floors at 0 —
+  // the same clamp resolveForaging applies.
+  const capacityKg = Math.max(0, pool * share * kgPerPoint + (forage.flatKg ?? 0))
   const foodKg = capacityKg * (forage.foodShare ?? 0)
   const materialsKg = capacityKg * (forage.materialsShare ?? 0)
   const scoutingPoints = pool * (1 - share)
@@ -100,6 +104,24 @@ const ForagePanel = ({ onSetShare, locked }) => {
           Enemy foraging: {forage.enemyDrainKg == null ? 'unknown' : `${tons(forage.enemyDrainKg)}/turn`}
         </span>
       </div>
+      {/* Standing pressures on the foraging (S3). The server has already
+          filtered out any enemy-side one the current recon can't see, so
+          whatever arrives here is safe to name. A permanent one (turnsLeft
+          null) says so — that it won't simply pass is the point of it. */}
+      {(forage.modifiers ?? []).length > 0 && (
+        <ul className="effort-modifiers" data-testid="effort-modifiers">
+          {forage.modifiers.map((m) => (
+            <li key={m.id} data-testid={`effort-modifier-${m.id}`}>
+              {m.label}
+              <span className="effort-modifier-term">
+                {m.turnsLeft == null
+                  ? 'for the rest of the campaign'
+                  : `${m.turnsLeft} turn${m.turnsLeft === 1 ? '' : 's'} left`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <button
         className="btn-primary"
         data-testid="effort-submit"

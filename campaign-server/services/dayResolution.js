@@ -20,7 +20,7 @@ import { meterFillAmount, meterBand } from './meter.js'
 import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
-import { resolveForaging } from './forage.js'
+import { resolveForaging, ageForageModifiers } from './forage.js'
 
 // End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
 // later stages splice into it:
@@ -313,6 +313,12 @@ export async function endDay(campaign) {
     campaign.phase = 'prepare'
     campaign.raid.assignment = new Map()
     campaign.raid.squadAssignment = []
+    // Standing forage pressures age out here (S3) — AFTER the day they were in
+    // force has resolved. Runs BEFORE the raid redeal below, so an expired
+    // modifier's persistent card is dropped with it rather than carried for a
+    // pressure that's already over.
+    if (campaign.forage.modifiers?.length)
+      campaign.forage.modifiers = ageForageModifiers(campaign.forage.modifiers)
     // The live doc IS the eligibility context (day already incremented above,
     // roster + eventFlags as this turn's fates left them), so a prerequisite
     // reads against next turn's state.

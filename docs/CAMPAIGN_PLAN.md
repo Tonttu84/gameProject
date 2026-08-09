@@ -292,13 +292,42 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
   (couldn't run `mongodb-memory-server` on the session that built this) and the four numeric
   choices (`FORAGE_KG_PER_POINT`, `FORAGE_RINGS`, `ENEMY_DRAIN_KG_PER_TURN`,
   `DEFAULT_FORAGE_SHARE`) the design doc left approximate.
-- **S3 — modifiers + persistent raids.** `campaign.forage.modifiers: [{id, label, target:
-  'enemyDrain'|'playerYield', factor, deltaKg, turnsLeft}]` with `turnsLeft: null` = permanent
-  (the default — the campaign is short enough that a setback or victory should mark the rest of
-  it). Raid opportunities gain a `persistent` flag: the newDay regeneration drops ordinary
-  unresolved ones as today but CARRIES persistent ones over with their already-rolled
-  `targetForce`/`reward`, and only defeating one removes it — which is also what lifts its
-  linked modifier.
+- **S3 — modifiers + persistent raids. ✅ LANDED (schema v30).**
+  `campaign.forage.modifiers: [{id, label, target: 'enemyDrain'|'playerYield', factor, deltaKg,
+  turnsLeft, raidable}]` with `turnsLeft: null` = permanent (the default). Raid opportunities
+  gained `persistent` + `modifierId`: the newDay redeal drops ordinary unresolved cards as before
+  but CARRIES persistent ones over with their already-rolled `targetForce`/`reward` *and their
+  bought reveal levels*, and only resolving one removes it — which is also what lifts its linked
+  modifier.
+
+  Five things the one-paragraph spec didn't settle, decided while building (all reversible):
+  1. **What creates one.** Events, via a new `forage_modifier` `applyEffect` case; raids only
+     *lift*. Without a source this would have been dead plumbing, the exact complaint this doc
+     already makes about `recruit.fervor`. Two fates ship with it so both targets are live:
+     `foraging_riders` (a choice — buy the problem off with a permanent ×0.85 escort tax, or take
+     ×0.6 and a card you can beat) and `enemy_supply_depot` (`enemyDrain` +4000 kg, raidable).
+  2. **Link direction:** the card carries `modifierId`, mirroring `counter_event`'s `reward.slot`
+     — the card points at what it unmakes. The lift is generic, outside the type switch, so ANY
+     future card type can carry one.
+  3. **Composition:** `base × Π(factor) + Σ(deltaKg)`, floored at 0 — multiply-then-add, so the
+     result never depends on array order.
+  4. **Visibility:** `playerYield` is the player's own foraging and always shown (label + term);
+     `enemyDrain` sits behind the SAME Outmatched recon gate as `enemyDrainKg`, label included —
+     and the effect deliberately writes no log line for one, since the log would walk past the
+     gate. The bend reaches the client as *coefficients* (`kgPerPoint` carries the folded factor,
+     new `flatKg` the additive half), not a finished total, because the slider preview
+     interpolates as it moves.
+  5. **`turnsLeft`** counts down at newDay AFTER the day it was in force resolved, and BEFORE the
+     raid redeal, so an expired modifier's card is dropped with it. Extracted as
+     `ageForageModifiers` so it's unit-testable outside DB-only `resolveDay`.
+
+  **Tests:** 31 new pure (DB-free) cases — `forage.test.js` extended, new
+  `tests/forageModifiers.test.js` covering the effect, the spawn/carry/drop lifecycle, the lift,
+  and the countdown — plus 4 frontend cases in `effortSlider.test.jsx`. Frontend 254/254 and all
+  10 DB-free server files green locally; the 12 DB-backed files could not run on the building
+  session (mongod download 403s through the proxy — same block as S2) and are CI's to confirm.
+  Sweeping every pool fate through `applyEffect` did catch one real bug locally: the new case
+  assumed `campaign.forage` exists, now guarded like the `flag` branch.
 
 **Deferred, noted not built:** optional food sinks; enemy supplies reacting to its own foraging
 (and to a stripped countryside); forager-clash flavour re-expressed as events.

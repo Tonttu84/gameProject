@@ -66,9 +66,20 @@ const raidOpportunitySchema = new mongoose.Schema(
     enemyReveal: { type: Number, default: 0 }, // 0 range, 1 exact
     source: {
       type: String,
-      enum: ['base', 'scouted', 'counter_event', 'garrison_sortie'],
+      enum: ['base', 'scouted', 'counter_event', 'garrison_sortie', 'forage_modifier'],
       default: 'base',
     },
+    // Persistent raids (S3): an ordinary unresolved card is DROPPED when the
+    // board is redealt at newDay, but a persistent one is carried over intact —
+    // same already-rolled targetForce/reward/reveal levels — so a standing
+    // problem stays on the board until the player actually deals with it
+    // instead of being reshuffled away. Only resolving it removes it.
+    persistent: { type: Boolean, default: false },
+    // The forage modifier (forage.modifiers[].id) this card exists to undo.
+    // Winning the raid lifts that modifier — the generic hook in applyRaidReward,
+    // independent of the card's `type`. Same direction as counter_event's
+    // reward.slot: the card points at the thing it unmakes.
+    modifierId: { type: String, default: null },
     // Garrison sortie (slice 4): a WON sortie of this kind inflicts its real
     // battle casualties on the hidden host, win or lose — like destroy_detachment
     // but per-opportunity (a sortie version may thin the besiegers OR pay other
@@ -76,6 +87,32 @@ const raidOpportunitySchema = new mongoose.Schema(
     thinsEnemy: { type: Boolean, default: false },
     resolved: { type: Boolean, default: false },
     outcome: { type: mongoose.Schema.Types.Mixed, default: null }, // {winner, battleId} once resolved
+  },
+  { _id: false },
+)
+
+// A standing pressure on one of the two forage kg figures (S3). Applied in
+// resolveForaging as base × Π(factor) + Σ(deltaKg), clamped at 0 — so a factor
+// scales and a deltaKg shifts, and a modifier may carry either or both.
+const forageModifierSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true },
+    // Player-facing name — this is the ONLY part of an enemyDrain modifier the
+    // player ever sees, and even that is recon-gated (campaignView).
+    label: { type: String, required: true },
+    // Which kg figure it bends: the player's sweeping capacity, or the enemy's
+    // drain on the same rings.
+    target: { type: String, enum: ['playerYield', 'enemyDrain'], required: true },
+    factor: { type: Number, default: 1 },
+    deltaKg: { type: Number, default: 0 },
+    // Turns remaining, decremented at newDay AFTER the day resolves. null (the
+    // default) = permanent: the campaign is short enough that a real setback or
+    // victory should mark the rest of it, so expiry is the exception.
+    turnsLeft: { type: Number, default: null },
+    // If set, the raid board spawns ONE persistent card per turn-less modifier
+    // that has none yet, and winning it lifts this modifier. A modifier without
+    // the flag simply stands (or times out) with no way to fight it off.
+    raidable: { type: Boolean, default: false },
   },
   { _id: false },
 )
@@ -105,7 +142,7 @@ const ringSchema = new mongoose.Schema(
 // to the server — 'deploy' is the server's name for all of the battle ones.
 export const TURN_PHASES = ['prepare', 'omens', 'raids', 'recruit', 'deploy']
 
-export const CAMPAIGN_SCHEMA_VERSION = 29 // v29: effort slider S2 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.assignment/enemyPlan are GONE, replaced by forage.pool (the day's field-points snapshot), forage.share (the player's slider split, sticky across turns) and forage.enemyDrainKg (a flat abstract number, no longer derived from the enemy's army); forager clashes and services/skirmish.js are deleted; v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 30 // v30: effort slider S3 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.modifiers (standing pressures on the player's capacity / the enemy's drain, granted by the new `forage_modifier` effect, permanent by default) plus raid.opportunities.persistent/modifierId, the carried-over card that lifts one by being beaten; v29: effort slider S2 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.assignment/enemyPlan are GONE, replaced by forage.pool (the day's field-points snapshot), forage.share (the player's slider split, sticky across turns) and forage.enemyDrainKg (a flat abstract number, no longer derived from the enemy's army); forager clashes and services/skirmish.js are deleted; v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -381,6 +418,10 @@ const campaignSchema = new mongoose.Schema({
     // the enemy view). It earns no forage credit; it's clock pressure only,
     // and the seam a later "starve the enemy" system hangs off.
     enemyDrainKg: { type: Number, default: 0 },
+    // Standing pressures on the two figures above (S3) — see
+    // forageModifierSchema. Granted by the `forage_modifier` event effect,
+    // lifted by winning a linked persistent raid or by running out of turns.
+    modifiers: { type: [forageModifierSchema], default: [] },
   },
 
   // The day's raid opportunities — redealt every new turn (step 7): one base

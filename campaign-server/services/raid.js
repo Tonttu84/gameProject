@@ -88,6 +88,28 @@ const FLAVOR = {
   },
 }
 
+// Flavour for the persistent card that lifts a forage modifier (S3), keyed by
+// the modifier's id. A modifier whose id isn't listed still gets a card — the
+// fallback keeps the system open, so a new `forage_modifier` fate works the day
+// it's written and only needs an entry here to read better.
+const FORAGE_MODIFIER_FLAVOR = {
+  foraging_riders: {
+    title: 'The Riders\' Camp',
+    description:
+      'Your scouts have followed the horse harrying your foragers back to the hollow they shelter in. Ride them down there and the foraging grounds are yours again.',
+  },
+  enemy_supply_depot: {
+    title: 'The Enemy Depot',
+    description:
+      'The fortified depot behind the enemy lines is the reason they strip the country on a schedule. Burn it and they go back to scavenging like anyone else.',
+  },
+}
+const forageModifierFlavor = (modifier) =>
+  FORAGE_MODIFIER_FLAVOR[modifier.id] ?? {
+    title: 'A Standing Problem',
+    description: `The source of it has been found at last: ${modifier.label}. Put a party into it and be rid of the thing.`,
+  }
+
 // A jittered RAID_TARGET_FRACTION slice of the enemy host. NOT pre-subtracted
 // from the army — the detachment becomes real only if the raid wins (a
 // destroy reward) or dies with the raid's defeat (it never existed apart).
@@ -159,7 +181,12 @@ const enemyRangeOf = (targetForce) => {
 // sortieEvent (for garrison_sortie) is the GARRISON_SORTIE_EVENTS entry whose
 // gate is met: its flavour becomes the card, and its `sortie` block the reward
 // (resolve — hidden — plus any loot) and the thins-enemy flag.
-const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot, sortieEvent }) => {
+// modifier (for the forage_modifier source) is the raidable forage.modifiers
+// entry this card exists to undo — it supplies the flavour and the modifierId
+// that applyRaidReward lifts on a win.
+const buildOpportunity = (
+  campaign, catalog, { type, seq, source, counterSlot, sortieEvent, modifier },
+) => {
   const targetForce = sliceTargetForce(campaign.enemy.army)
   if (Object.keys(targetForce).length === 0) return null // nothing left to raid
   // garrison_sortie carries its reward on the event; strip the control flag out
@@ -188,7 +215,9 @@ const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot, s
   const flavor =
     type === 'garrison_sortie'
       ? { title: sortieEvent.title, description: sortieEvent.description }
-      : FLAVOR[type]
+      : modifier
+        ? forageModifierFlavor(modifier)
+        : FLAVOR[type]
   const totalUnits = Object.values(targetForce).reduce((a, b) => a + b, 0)
   return {
     id: `d${campaign.day}-${seq}`,
@@ -206,6 +235,10 @@ const buildOpportunity = (campaign, catalog, { type, seq, source, counterSlot, s
     // A garrison sortie may inflict its real casualties on the host (like
     // destroy_detachment) or pay other loot instead — carried per-opportunity.
     thinsEnemy,
+    // Persistent raids (S3): a modifier card survives the newDay redeal with
+    // this force and reward intact, and stays until it's actually resolved.
+    persistent: Boolean(modifier),
+    modifierId: modifier?.id ?? null,
     resolved: false,
     outcome: null,
   }
@@ -232,7 +265,18 @@ export function generateRaidOpportunities(campaign, catalog) {
     .map((slot, i) => ({ i, event: slot.trueEvent }))
     .filter(({ event }) => eventValenceFor(event) === 'bad')
 
-  const opportunities = []
+  // Persistent cards (S3) survive the redeal: an ordinary unresolved card is
+  // dropped here, but a persistent one is carried over EXACTLY as it stands —
+  // same targetForce, reward and bought reveal levels — so scouting spent on it
+  // isn't wasted and the problem doesn't reshuffle away. Resolving it is the
+  // only thing that takes it off the board. A card whose modifier is already
+  // gone (lifted, or timed out) is dropped with the ordinary ones.
+  const liveModifierIds = new Set((campaign.forage?.modifiers ?? []).map((m) => m.id))
+  const carried = (campaign.raid?.opportunities ?? []).filter(
+    (o) => o.persistent && !o.resolved && (!o.modifierId || liveModifierIds.has(o.modifierId)),
+  )
+
+  const opportunities = [...carried]
   let seq = 0
   const push = (opp) => {
     if (opp) {
@@ -266,6 +310,22 @@ export function generateRaidOpportunities(campaign, catalog) {
           seq,
           source: 'garrison_sortie',
           sortieEvent: event,
+        }),
+      )
+  // Standing forage pressures (S3): one persistent card per RAIDABLE modifier
+  // that doesn't already have one on the board — the carry above means this
+  // spawns the card once and then never again while it stands. Typed
+  // destroy_detachment because that is what it is (ride the riders down, burn
+  // the depot); the lift rides on modifierId, not on the type.
+  const carriedModifierIds = new Set(carried.map((o) => o.modifierId).filter(Boolean))
+  for (const modifier of campaign.forage?.modifiers ?? [])
+    if (modifier.raidable && !carriedModifierIds.has(modifier.id))
+      push(
+        buildOpportunity(campaign, catalog, {
+          type: 'destroy_detachment',
+          seq,
+          source: 'forage_modifier',
+          modifier,
         }),
       )
   return opportunities
@@ -358,6 +418,18 @@ export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
     const slot = campaign.augury.slots[opportunity.reward?.slot]
     if (slot) slot.countered = true
     entries.push('The muster is scattered — a blow that was coming will never fall.')
+  }
+  // Standing forage pressure lifted (S3) — generic, outside the type switch:
+  // ANY card carrying a modifierId removes that modifier by being won, whatever
+  // it's typed as. The card itself is taken off the board by being resolved
+  // (the carry filter in generateRaidOpportunities drops resolved ones).
+  if (opportunity.modifierId) {
+    const mods = campaign.forage?.modifiers
+    const i = (mods ?? []).findIndex((m) => m.id === opportunity.modifierId)
+    if (i >= 0) {
+      const [lifted] = mods.splice(i, 1)
+      entries.push(`${lifted.label} — that is the end of it. Your foraging is free of it from now on.`)
+    }
   }
   return entries
 }

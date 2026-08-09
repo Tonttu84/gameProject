@@ -155,3 +155,70 @@ describe('effort slider', () => {
     expect(screen.getByText(/Food: 100 kg/)).toHaveTextContent('−?? t/turn')
   })
 })
+
+// ── Standing forage pressures (S3) ───────────────────────────────────────────
+// The server sends the bend as COEFFICIENTS (kgPerPoint already carries the
+// combined factor, flatKg the additive half) precisely so the preview stays
+// honest while the slider moves, rather than as one precomputed total.
+describe('forage modifiers in the preview', () => {
+  const withForage = (over) =>
+    getCampaigns.mockResolvedValue([
+      { ...campaignFixture, forage: { ...campaignFixture.forage, ...over } },
+    ])
+
+  it('applies the folded factor at every slider position', async () => {
+    // kgPerPoint 16 × the 0.5 factor the server already folded in = 8.
+    withForage({ kgPerPoint: 8 })
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    // 1112 × 0.5 × 8 = 4448 kg → food 0.8 × 4448 = 3558.4 → "3.6 t".
+    expect(screen.getByTestId('effort-preview-food')).toHaveTextContent('3.6 t')
+    fireEvent.change(screen.getByTestId('effort-slider'), { target: { value: '1' } })
+    // 1112 × 8 = 8896 → food 7116.8 → "7.1 t" — half the unmodified figure.
+    expect(screen.getByTestId('effort-preview-food')).toHaveTextContent('7.1 t')
+  })
+
+  it('adds flatKg once, on top of the interpolated capacity', async () => {
+    withForage({ flatKg: 1104 })
+    render(<App />)
+    await screen.findByText(/War Council/)
+    // 1112 × 0.5 × 16 + 1104 = 10000 kg → food 8000 → "8 t".
+    expect(screen.getByTestId('effort-preview-food')).toHaveTextContent('8 t')
+  })
+
+  it('never previews a negative harvest', async () => {
+    // A pressure big enough to swallow the whole sweep floors at zero — the
+    // same clamp resolveForaging applies server-side.
+    withForage({ flatKg: -999999 })
+    render(<App />)
+    await screen.findByText(/War Council/)
+    // tons() renders anything under a tonne in kg, so a floored sweep reads
+    // "0 kg" rather than "0 t".
+    expect(screen.getByTestId('effort-preview-food')).toHaveTextContent('0 kg')
+  })
+
+  it('lists whatever pressures the server sent, marking the permanent ones', async () => {
+    withForage({
+      modifiers: [
+        { id: 'foraging_riders', label: 'Harried by enemy horse', target: 'playerYield', turnsLeft: null },
+        { id: 'spoiled', label: 'Spoiled stores', target: 'playerYield', turnsLeft: 1 },
+      ],
+    })
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    expect(screen.getByTestId('effort-modifier-foraging_riders'))
+      .toHaveTextContent('Harried by enemy horse')
+    expect(screen.getByTestId('effort-modifier-foraging_riders'))
+      .toHaveTextContent('for the rest of the campaign')
+    // Singular at one turn left — the countdown reads as prose, not a stat.
+    expect(screen.getByTestId('effort-modifier-spoiled')).toHaveTextContent('1 turn left')
+  })
+
+  it('renders no list at all when nothing is bending the foraging', async () => {
+    render(<App />)
+    await screen.findByText(/War Council/)
+    expect(screen.queryByTestId('effort-modifiers')).toBeNull()
+  })
+})

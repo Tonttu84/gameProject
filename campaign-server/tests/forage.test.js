@@ -4,6 +4,8 @@ import {
   forageYieldMultiplier,
   allocateNearFirst,
   resolveForaging,
+  foldForageModifiers,
+  applyForageModifiers,
 } from '../services/forage.js'
 import { SCOUTING_BANDS } from '../utils/capabilities.js'
 import { FORAGE_YIELD_BY_BAND, FORAGE_KG_PER_POINT, FORAGE_RING_YIELD } from '../utils/campaignConfig.js'
@@ -12,13 +14,14 @@ import { FORAGE_YIELD_BY_BAND, FORAGE_KG_PER_POINT, FORAGE_RING_YIELD } from '..
 // slider": foraging works off the pre-derived pool/share, not per-unit
 // assignment, so these tests no longer need a catalog fixture at all).
 
-const makeCampaign = ({ pool = 0, share = 0, enemyDrainKg = 0, rings }) => ({
+const makeCampaign = ({ pool = 0, share = 0, enemyDrainKg = 0, rings, modifiers = [] }) => ({
   resources: { food: 0, materials: 0 },
   forage: {
     rings: rings.map((richness, ring) => ({ ring, richness, initialRichness: richness })),
     pool,
     share,
     enemyDrainKg,
+    modifiers,
   },
 })
 
@@ -111,5 +114,67 @@ describe('forage posture (Stage 4 1d)', () => {
     const over = makeCampaign({ pool: 1000, share: 1, rings: [20000, 35000, 55000] })
     const o = resolveForaging(over, 'Overwhelming')
     expect(o.forage.capacity).toBe(Math.floor(1000 * FORAGE_KG_PER_POINT * 1.25))
+  })
+})
+
+// Standing forage pressures (S3, docs/CAMPAIGN_PLAN.md "Effort slider"): a
+// modifier bends one of the two kg figures every turn until something lifts it.
+describe('forage modifiers', () => {
+  const player = (over) => ({ id: 'p', label: 'P', target: 'playerYield', ...over })
+  const enemy = (over) => ({ id: 'e', label: 'E', target: 'enemyDrain', ...over })
+
+  it('folds to an identity pair when nothing targets the figure', () => {
+    expect(foldForageModifiers([], 'playerYield')).toEqual({ factor: 1, deltaKg: 0 })
+    expect(foldForageModifiers(undefined, 'playerYield')).toEqual({ factor: 1, deltaKg: 0 })
+    // Only the matching target counts toward the fold.
+    expect(foldForageModifiers([enemy({ deltaKg: 4000 })], 'playerYield'))
+      .toEqual({ factor: 1, deltaKg: 0 })
+    expect(applyForageModifiers(5000, [], 'playerYield')).toBe(5000)
+  })
+
+  it('composes as base × Π(factor) + Σ(deltaKg)', () => {
+    const mods = [player({ id: 'a', factor: 0.5 }), player({ id: 'b', factor: 0.5 }), player({ id: 'c', deltaKg: 1000 })]
+    expect(foldForageModifiers(mods, 'playerYield')).toEqual({ factor: 0.25, deltaKg: 1000 })
+    expect(applyForageModifiers(10000, mods, 'playerYield')).toBe(10000 * 0.25 + 1000)
+  })
+
+  it('is order-independent — factors always scale the base, never a flat grant', () => {
+    const a = [player({ id: 'a', deltaKg: 1000 }), player({ id: 'b', factor: 0.5 })]
+    const b = [player({ id: 'b', factor: 0.5 }), player({ id: 'a', deltaKg: 1000 })]
+    expect(applyForageModifiers(10000, a, 'playerYield'))
+      .toBe(applyForageModifiers(10000, b, 'playerYield'))
+  })
+
+  it('floors at zero rather than going negative', () => {
+    expect(applyForageModifiers(100, [player({ deltaKg: -9999 })], 'playerYield')).toBe(0)
+    expect(applyForageModifiers(100, [player({ factor: 0 })], 'playerYield')).toBe(0)
+  })
+
+  it('a playerYield modifier bends capacity, harvest AND depletion together', () => {
+    const rings = [20000, 35000, 55000]
+    const plain = resolveForaging(makeCampaign({ pool: 1000, share: 1, rings }), 'Contested')
+    const bent = resolveForaging(
+      makeCampaign({ pool: 1000, share: 1, rings, modifiers: [player({ factor: 0.6 })] }),
+      'Contested',
+    )
+    expect(bent.forage.capacity).toBe(Math.floor(plain.forage.capacity * 0.6))
+    // Less capacity sweeps less ground, so more richness is left standing.
+    expect(bent.forage.rings[0].richness).toBeGreaterThan(plain.forage.rings[0].richness)
+    expect(bent.forage.harvested.food).toBeLessThan(plain.forage.harvested.food)
+  })
+
+  it('an enemyDrain modifier strips the rings faster without crediting anyone', () => {
+    const rings = [80000, 35000, 55000]
+    const base = makeCampaign({ pool: 0, share: 0, enemyDrainKg: 9000, rings })
+    const worse = makeCampaign({
+      pool: 0, share: 0, enemyDrainKg: 9000, rings, modifiers: [enemy({ deltaKg: 4000 })],
+    })
+    const b = resolveForaging(base, 'Contested')
+    const w = resolveForaging(worse, 'Contested')
+    expect(b.forage.rings[0].richness).toBe(80000 - 9000)
+    expect(w.forage.rings[0].richness).toBe(80000 - 13000)
+    // The enemy's drain earns no forage credit, modified or not (S2 decision 4).
+    expect(w.forage.harvested.food).toBe(0)
+    expect(w.forage.harvested.materials).toBe(0)
   })
 })

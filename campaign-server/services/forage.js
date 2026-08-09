@@ -22,6 +22,38 @@ export const forageYieldMultiplier = (band) => FORAGE_YIELD_BY_BAND[band] ?? 1
 export const forageCapacityKg = (points, band) =>
   Math.floor(Math.max(0, points) * FORAGE_KG_PER_POINT * forageYieldMultiplier(band))
 
+// Standing pressures (S3): fold every modifier aimed at `target` into one kg
+// figure — all the factors multiply, all the deltas then add, and the result
+// floors at 0 (a big enough setback zeroes the figure, it never goes negative).
+// Multiply-then-add so a factor always scales the BASE rather than someone
+// else's flat grant, which keeps the result independent of array order.
+// Collapse every modifier aimed at `target` into the single {factor, deltaKg}
+// pair that describes their combined effect. campaignView ships this pair to
+// the client so the slider's live preview applies the same bend the server will
+// (the client interpolates capacity as the share moves, so it needs the
+// coefficients, not a precomputed total).
+export const foldForageModifiers = (modifiers, target) =>
+  (modifiers ?? [])
+    .filter((m) => m.target === target)
+    .reduce(
+      (acc, m) => ({ factor: acc.factor * (m.factor ?? 1), deltaKg: acc.deltaKg + (m.deltaKg ?? 0) }),
+      { factor: 1, deltaKg: 0 },
+    )
+
+// Age the standing pressures by one turn, returning the survivors. Called at
+// newDay AFTER the day they were in force has resolved, so a turnsLeft:1
+// modifier bends that day's foraging and is gone the next. null never counts
+// down — permanent is the default, and the common case.
+export const ageForageModifiers = (modifiers) =>
+  (modifiers ?? [])
+    .map((m) => (m.turnsLeft == null ? m : { ...(m.toObject?.() ?? m), turnsLeft: m.turnsLeft - 1 }))
+    .filter((m) => m.turnsLeft == null || m.turnsLeft > 0)
+
+export const applyForageModifiers = (baseKg, modifiers, target) => {
+  const { factor, deltaKg } = foldForageModifiers(modifiers, target)
+  return Math.max(0, Math.floor(baseKg * factor + deltaKg))
+}
+
 // Fill rings nearest-first, spilling leftover capacity outward. Returns the
 // kg PHYSICALLY taken from each ring (before the ring-distance yield curve
 // reduces what's actually credited — see resolveForaging).
@@ -47,13 +79,18 @@ export function resolveForaging(campaign, band) {
   const share = campaign.forage.share ?? 0
   const points = pool * share
 
-  const capacityKg = forageCapacityKg(points, band)
+  // Standing pressures bend BOTH kg figures before either touches the rings, so
+  // a modifier changes how much ground is swept as well as what's credited.
+  const modifiers = campaign.forage.modifiers ?? []
+  const capacityKg = applyForageModifiers(forageCapacityKg(points, band), modifiers, 'playerYield')
   const wantP = allocateNearFirst(capacityKg, rings.map((r) => r.richness))
   wantP.forEach((kg, i) => { rings[i].richness -= kg })
 
   // The enemy drains what's LEFT after the player's sweep, also near-first —
   // no contention, no clash: the two hosts just share a depleting clock.
-  const enemyDrainKg = campaign.forage.enemyDrainKg ?? 0
+  const enemyDrainKg = applyForageModifiers(
+    campaign.forage.enemyDrainKg ?? 0, modifiers, 'enemyDrain',
+  )
   const wantE = allocateNearFirst(enemyDrainKg, rings.map((r) => r.richness))
   wantE.forEach((kg, i) => { rings[i].richness -= kg })
 

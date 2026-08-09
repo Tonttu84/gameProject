@@ -224,6 +224,28 @@ export const EVENT_POOL = [
       { id: 'march_on',   label: 'March on and trust to providence',       description: 'Keep the stores and the pace — and let the fever take whom it takes.', effect: { type: 'all_roster', factor: 0.98 } },
     ],
   },
+  // The first two `forage_modifier` fates (S3) — one per target, so both levers
+  // of the standing-pressure system have a live source. Each leaves a mark that
+  // lasts the rest of the campaign unless the player fights it off: the raidable
+  // branches put a persistent card on the raid board (generateRaidOpportunities)
+  // that lifts the modifier by being beaten.
+  {
+    id: 'foraging_riders', title: 'Riders in the Foraging Grounds', description: 'Enemy light horse have taken to shadowing your foraging parties — never closing, never quite leaving. The wagons come back lighter each day.', severity: 2,
+    effect: { type: 'choice' }, valence: 'bad',
+    choices: [
+      // Buy the problem off yourself: a smaller, PERMANENT tax with no card to
+      // beat — the escorts are troops not gathering, for the rest of the war.
+      { id: 'escort', label: 'Escort every party', description: 'Spears walk with the wagons from now on. The riders keep their distance — and your foragers are that many fewer.', effect: { type: 'forage_modifier', id: 'foraging_riders', label: 'Foraging parties under escort', target: 'playerYield', factor: 0.85, raidable: false } },
+      // Take the harder hit for a chance to end it outright.
+      { id: 'unguarded', label: 'Let them forage unguarded', description: 'Every hand stays on the harvest and the riders are left to their sport — until you can find their camp and finish them.', effect: { type: 'forage_modifier', id: 'foraging_riders', label: 'Harried by enemy horse', target: 'playerYield', factor: 0.6, raidable: true } },
+    ],
+  },
+  {
+    id: 'enemy_supply_depot', title: 'The Enemy Digs In', description: 'Scouts report the enemy has thrown up a fortified supply depot behind their lines and is stripping the countryside on a schedule now, not by chance.', severity: 2,
+    // enemyDrain, so the mood flips: MORE enemy drain empties the shared rings
+    // faster. Raidable — the depot is a thing you can burn.
+    effect: { type: 'forage_modifier', id: 'enemy_supply_depot', label: 'Enemy supply depot', target: 'enemyDrain', deltaKg: 4000, raidable: true },
+  },
   // A major boon with a real three-way fork: turn footmen into a mounted arm
   // NOW, bank the animals as remounts for the Recruit phase, or cash the herd
   // in for supply. The mount branch is the `convert` mechanic's first use —
@@ -397,6 +419,15 @@ export const eventValence = (effect) => {
     // its sibling effects in a bundle carry the fate's actual mood.
     case 'garrison':
       return 'neutral'
+    // A standing forage pressure (S3). The two targets read in OPPOSITE
+    // directions: more of the player's own capacity is a gain, but more enemy
+    // drain strips the shared rings faster, so it's a loss. Both levers point
+    // the same way once the sign is flipped for the enemy-side one.
+    case 'forage_modifier': {
+      const lift = (effect.factor ?? 1) - 1 + (effect.deltaKg ?? 0)
+      const forPlayer = effect.target === 'enemyDrain' ? -lift : lift
+      return forPlayer > 0 ? 'good' : forPlayer < 0 ? 'bad' : 'neutral'
+    }
     // A bundle reads as its parts' shared mood; genuinely mixed bundles
     // (a gain and a loss in one fate) net out to neutral.
     case 'multi': {
@@ -499,6 +530,35 @@ export function applyEffect(campaign, effect) {
     const next = effect.delta !== undefined ? cur + effect.delta : (effect.value ?? 1)
     if (flags instanceof Map) flags.set(effect.name, next)
     else flags[effect.name] = next
+  } else if (effect.type === 'forage_modifier') {
+    // Standing forage pressure (S3): push a modifier onto forage.modifiers,
+    // where resolveForaging folds it into the player's capacity or the enemy's
+    // drain every turn until something lifts it. Permanent unless `turnsLeft`
+    // says otherwise — the campaign is short, so a setback should mark it.
+    // Re-granting the same id REPLACES rather than stacks, so a fate that can
+    // recur can't silently multiply its own penalty.
+    // Degrade safely on a campaign with no forage block at all (the same
+    // convention the `flag` branch uses for eventFlags) — every fate in the
+    // pool gets swept through applyEffect by the structural tests.
+    if (!campaign.forage) campaign.forage = {}
+    if (!campaign.forage.modifiers) campaign.forage.modifiers = []
+    const mods = campaign.forage.modifiers
+    const existing = mods.findIndex((m) => m.id === effect.id)
+    const mod = {
+      id: effect.id,
+      label: effect.label,
+      target: effect.target,
+      factor: effect.factor ?? 1,
+      deltaKg: effect.deltaKg ?? 0,
+      turnsLeft: effect.turnsLeft ?? null,
+      raidable: effect.raidable ?? false,
+    }
+    if (existing >= 0) mods.set ? mods.set(existing, mod) : (mods[existing] = mod)
+    else mods.push(mod)
+    // A playerYield pressure is the player's OWN foraging, so naming it is fair
+    // play. An enemyDrain one is enemy-side fact — campaignView recon-gates even
+    // the label, so no line here (it would leak past the gate into the log).
+    if (effect.target === 'playerYield') log.push(`${effect.label} — your foraging suffers for it.`)
   } else if (effect.type === 'garrison') {
     // Garrison Resolve delta (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): move
     // the standing track by `delta`, clamped to [MIN, MAX]. Hidden state like
