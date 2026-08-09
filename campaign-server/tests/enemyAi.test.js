@@ -20,11 +20,16 @@ import { clearRolls } from '../utils/dice.js'
 // sizes/speeds):
 // - enemy food need/turn: (540 Soldier + 150 Archer + 11 Necromancer) × 28 kg
 //   + 20 LightCavalry × 112 kg = 19,628 + 2,240 = 21,868 kg
-// - S2 "effort slider" (docs/CAMPAIGN_PLAN.md, decision 4): the enemy no
-//   longer plans a forage detachment off its army, and its flat abstract
-//   ring drain (ENEMY_DRAIN_KG_PER_TURN) earns it NO credit at all — only
-//   upkeep moves its supplies now, so an untouched host nets a flat
-//   −21,868 kg of supplies/turn.
+// - S4 "starve the enemy" (docs/CAMPAIGN_PLAN.md): the enemy's stockpile is
+//   GONE. S2 decision 4 gave its ring drain no credit and let `enemy.supplies`
+//   tick down forever with no consequence; the host now feeds itself off the
+//   rings it drains, and each turn is judged on its own — income (the drain,
+//   weighted by the same FORAGE_RING_YIELD curve the player is credited by)
+//   against a FIXED ENEMY_CONSUMPTION_KG_PER_TURN. Break-even IS the mid ring
+//   by construction, so an untouched near ring feeds it (9000/7200 = 1.25,
+//   well-provisioned) and a stripped one starves it. Nothing accumulates
+//   between turns, so there is no per-turn kg figure to assert any more —
+//   assert the STATE.
 //
 // Near-annihilation win (utils/campaignConfig.js): the host melts away once it
 // drops below ENEMY_WITHDRAW_FRACTION (0.2) × its initial strength.
@@ -141,10 +146,14 @@ const pinAugury = async (id) => {
   await doc.save()
 }
 
-const pinEnemy = async (id, { army, supplies } = {}) => {
+const pinEnemy = async (id, { army, supplyState, rings } = {}) => {
   const doc = await Campaign.findById(id)
   if (army) doc.enemy.army = army
-  if (supplies !== undefined) doc.enemy.supplies = supplies
+  if (supplyState !== undefined) doc.enemy.supplyState = supplyState
+  // S4: the lever that decides the host's supply state is how much land is
+  // LEFT — strip the inner rings and its drain is forced outward into thinner
+  // ground. Pass e.g. [0, 0, 220000] to starve it.
+  if (rings) doc.forage.rings.forEach((r, i) => { r.richness = rings[i] ?? r.richness })
   await doc.save()
 }
 
@@ -160,22 +169,63 @@ const pinResolve = async (id, resolve) => {
   await doc.save()
 }
 
-describe('enemy supply depletion', () => {
-  test('the host eats size²-scale food and gets no credit for its abstract ring drain', async () => {
+describe('enemy supply balance (S4 "starve the enemy")', () => {
+  const armyOf = (doc) => [...doc.enemy.army.values()].reduce((a, b) => a + b, 0)
+
+  test('an untouched near ring feeds the host, and it grows on the surplus', async () => {
     const { body: c } = await createCampaign()
+    const before = armyOf(await Campaign.findById(c.id))
 
     await pinAugury(c.id)
     await endDay(c.id)
-    let doc = await Campaign.findById(c.id)
-    // 90,000 − 21,868 upkeep = 68,132. The enemy's drain on the shared rings
-    // (ENEMY_DRAIN_KG_PER_TURN, flat) earns it nothing (S2 decision 4) — only
-    // upkeep moves its supplies.
-    expect(doc.enemy.supplies).toBe(68132)
+
+    const doc = await Campaign.findById(c.id)
+    // Drain 9000 all from ring 0 (×1.0) = 9000 against consumption 7200 → 1.25.
+    expect(doc.enemy.supplyState).toBe('well-provisioned')
+    expect(armyOf(doc)).toBeGreaterThan(before)
+  })
+
+  test('a countryside stripped to the far ring starves it, and men desert', async () => {
+    const { body: c } = await createCampaign()
+    // The player got there first: nothing left but the far ring (×0.6) →
+    // 9000 × 0.6 = 5400 against 7200 → 0.75.
+    await pinEnemy(c.id, { rings: [0, 0, 220000] })
+    const before = armyOf(await Campaign.findById(c.id))
 
     await pinAugury(c.id)
     await endDay(c.id)
-    doc = await Campaign.findById(c.id)
-    expect(doc.enemy.supplies).toBe(68132 - 21868) // 46264
+
+    const doc = await Campaign.findById(c.id)
+    expect(doc.enemy.supplyState).toBe('near starving')
+    expect(armyOf(doc)).toBeLessThan(before)
+  })
+
+  test('the mid ring is break-even: the host holds, neither growing nor bleeding', async () => {
+    const { body: c } = await createCampaign()
+    await pinEnemy(c.id, { rings: [0, 140000, 220000] })
+    const before = armyOf(await Campaign.findById(c.id))
+
+    await pinAugury(c.id)
+    await endDay(c.id)
+
+    const doc = await Campaign.findById(c.id)
+    expect(doc.enemy.supplyState).toBe('steady')
+    expect(armyOf(doc)).toBe(before)
+  })
+
+  test('the state is a per-turn verdict, not a running total — it recovers', async () => {
+    const { body: c } = await createCampaign()
+    await pinEnemy(c.id, { rings: [0, 0, 220000] })
+    await pinAugury(c.id)
+    await endDay(c.id)
+    expect((await Campaign.findById(c.id)).enemy.supplyState).toBe('near starving')
+
+    // Nothing accumulated: give the land back and the very next turn is a
+    // surplus again. A stockpile model could not do this.
+    await pinEnemy(c.id, { rings: [80000, 140000, 220000] })
+    await pinAugury(c.id)
+    await endDay(c.id)
+    expect((await Campaign.findById(c.id)).enemy.supplyState).toBe('well-provisioned')
   })
 })
 

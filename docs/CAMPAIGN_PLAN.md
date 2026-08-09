@@ -29,7 +29,13 @@ notes below over the git history if they ever disagree — the commits win.
 ### Where the work stands (2026-08-09) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **30**.
+schema version **31**.
+
+- **2026-08-09 (latest) — "starve the enemy" S1 landed.** The enemy host now feeds itself off the
+  shared rings and is judged turn by turn (no stockpile): near ring = surplus and it grows, mid =
+  break-even, far = starving and it bleeds men. Stripping the inner rings is now a real attack on
+  their supply. Schema **v31** (`enemy.supplies` → `enemy.supplyState`). See the stage write-up
+  below for the derivation and what was deliberately deferred.
 
 - **2026-08-09 (later) — THE EFFORT-SLIDER EPIC IS COMPLETE. S1+S2+S3 are merged to `main`
   (`1e5b25b`, fast-forward), CI green on all six jobs, `cs-test` 498/498 confirmed twice over
@@ -363,35 +369,68 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
 
 **Deferred, noted not built:** optional food sinks; forager-clash flavour re-expressed as events.
 
-### NEXT STAGE — "starve the enemy" (chosen 2026-08-09, NOT yet designed)
+### "Starve the enemy" — S1 ✅ LANDED (schema v31, 2026-08-09)
 
-Promoted out of the deferred list by the user. This is the payoff the slider was built toward:
-S2's `enemyDrainKg` comment already calls itself *"the seam a later 'starve the enemy' system
-hangs off"*, and S3's `enemyDrain` modifiers are the lever that bends it.
+Grilled down by the user from the sprawling version briefed earlier: **fixed consumption, one
+per-turn comparison, three states, NO running total.** ("Either they have too much, enough or not
+enough … we don't need to keep track of the running total just turn by turn.")
 
-**The gap, verified in the code (2026-08-09), not assumed:**
-- `enemy.supplies` is seeded once at creation (`ENEMY_SUPPLIES`, routes/campaigns.js) and drained
-  every turn by `enemyTurn()` (services/enemyAi.js) via `armyFoodPerTurn`. It is **never
-  replenished**.
-- It has **exactly one reader: `campaignView` line ~118**, which renders it as a recon-gated band
-  label. **Nothing happens when it reaches 0** — no desertion, no withdrawal, no weakening. The
-  player starving *does* cause desertion, so today the rule is asymmetric.
-- The enemy strips `ENEMY_DRAIN_KG_PER_TURN` (9000) from the shared rings each turn and receives
-  **no credit for it** (S2 decision 4, deliberate). So its foraging feeds nothing, and a
-  countryside the player has stripped bare costs it nothing either.
+**The model.** The host now FEEDS ITSELF from the rings it drains — reversing S2 decision 4
+("gets no credit"), which was always the placeholder this stage existed to replace. Its income is
+the kg it actually took, weighted by the same `FORAGE_RING_YIELD` curve the player is credited by
+(`resolveForaging` → `forage.enemyIncomeKg`). That is measured against a FIXED
+`ENEMY_CONSUMPTION_KG_PER_TURN`, and the ratio picks a band.
 
-**Open design questions — GRILL THESE BEFORE BUILDING (CLAUDE.md rule; confidence is low):**
-1. Does the enemy's ring drain credit its `supplies`, 1:1 or at a discount like the player's
-   `FORAGE_RING_YIELD` curve? (This is what makes a stripped countryside bite.)
-2. What does running dry actually DO? Desertion mirroring the player's 10%, a forced withdrawal
-   (i.e. a second win condition that isn't the boss fight), or a weakened boss fight? This is the
-   biggest question — it decides whether starving them is a *strategy* or just chip damage.
-3. Should the enemy react — forage harder, move camp, force the battle early — or stay passive?
-   Note the old stance machine was deliberately deleted (v19); don't rebuild it by accident.
-4. Visibility: the supply band is already recon-gated. Does the player get to see the trend
-   (starving//recovering), and at which recon band?
-5. Does this need a schema bump? Probably not — `enemy.supplies` already exists — which would
-   make it the first stage in a while that does NOT purge saves.
+The constant is **derived, not tuned**: `ENEMY_DRAIN_KG_PER_TURN × FORAGE_RING_YIELD[1]`
+(9000 × 0.8 = 7200) — i.e. break-even IS the mid ring, by construction. The user's spec then
+falls straight out of the arithmetic, which is why no tuning pass was needed:
+
+| host draws from | income | ÷ 7200 | state |
+|---|---|---|---|
+| ring 0 (near) | 9000 | 1.25 | `well-provisioned` |
+| ring 1 (mid)  | 7200 | 1.00 | `steady` |
+| ring 2 (far)  | 5400 | 0.75 | `near starving` |
+
+Retuning the drain or the yield curve moves break-even with it. The bands carry a ±10% dead zone
+so a mixed-ring draw does not flicker on rounding.
+
+**Why this makes the slider a weapon.** Rings deplete near-first and are SHARED, so stripping the
+inner ring yourself pushes the enemy outward into thinner ground. Player foraging is now an attack
+on their supply, exactly as asked — and the S3 `enemyDrain` modifiers (burn the depot, etc.) feed
+in for free, because they change what the host takes at all.
+
+**Consequences (v1, deliberately blunt):** surplus → every unit type ×(1 + `ENEMY_REINFORCE_RATE`
+0.03); starving → ×(1 − `ENEMY_DESERTION_RATE` 0.05); steady → untouched. Scaling every type
+preserves the host's composition. Floors per type, so a thin type (11 Necromancers) neither breeds
+nor bolts in one fortnight — the big formations carry the swing. Log lines stay PHRASES: the log
+is player-visible and the host's numbers are recon-gated intel.
+
+**Schema v31.** `enemy.supplies` (the stockpile: seeded once, drained by upkeep forever, never
+replenished, no consequence at zero) is GONE, replaced by `enemy.supplyState` — this turn's
+verdict only, recomputed each end-day. `ENEMY_SUPPLIES` deleted with it.
+
+**UI.** The view key stays `supplies` behind the SAME Outmatched+ recon gate, so `ScoutReport`
+and every pinned recon key-set kept working — only the meaning and the labels changed. It is
+**accurate, never bracketed or fuzzed** like `count`: the gate decides whether the player learns
+it at all, and above the gate it is the truth (user's ask: "always accurate but requires a
+minimum scout level"). Copy reworded to "Their host looks …" since it describes the host's
+condition now, not the size of a wagon train.
+
+**Also deduped:** `bandLabel` was defined privately and identically in BOTH `campaignView.js` and
+`raid.js`; S4 would have made it three copies, so it now lives once in `utils/campaignConfig.js`
+beside the band tables. Same lesson as `PUBLIC_OPPORTUNITY_KEYS`.
+
+**Tests.** 23 pure cases in `forage.test.js` (income per ring depth, mid-sweep splits, modifier
+interaction, the state bands, the derived break-even identity) — all runnable anywhere. The
+DB-backed `enemyAi.test.js` supply describe was rewritten from stockpile arithmetic to the four
+behaviours that matter: near ring feeds and grows the host, stripped land starves and bleeds it,
+mid ring holds exactly, and the state RECOVERS the moment the land does (which a stockpile model
+could not do). `campaigns.test.js` now covers both sides of the recon gate.
+
+**Deferred from this stage:** the enemy reacting to hunger (forage harder, move camp, force the
+battle early) — note the stance machine was deliberately deleted in v19, do not rebuild it by
+accident. Also still deferred from the slider epic: optional food sinks; forager-clash flavour as
+events.
 
 ### Project state (as of 2026-07-05)
 

@@ -14,6 +14,7 @@ import {
   ENEMY_SUPPLY_BANDS,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
+  bandLabel,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyAi.js'
 import { meterBand, meterFillAtShare } from './meter.js'
@@ -65,7 +66,8 @@ const auguryView = (augury) => {
 }
 
 // Descending {min, label} table → the first phrase the value qualifies for.
-const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
+// bandLabel now lives in utils/campaignConfig.js, beside the band tables — it
+// had been defined identically here and in raid.js (imported below).
 
 // A raid target's reward as the player may see it (mini-game reveal, Stage 4
 // Part 2.5): a range until the reward field is bought (rewardReveal >= 1), then
@@ -115,10 +117,13 @@ const enemyView = (enemy, band, level, countBracket, catalog, revealed = false) 
     // it without leaking width); a free reveal (prisoners) shows it exact.
     const total = armyTotal(enemy.army)
     view.count = revealed ? { low: total, high: total } : displayBracket(countBracket, total, level)
-    view.supplies = bandLabel(
-      enemy.supplies / Math.max(1, armyFoodPerTurn(enemy.army, catalog)),
-      ENEMY_SUPPLY_BANDS,
-    )
+    // S4: the host's supply state — no longer "turns of stockpile left" but
+    // last turn's verdict on whether it fed itself off the shrinking rings.
+    // ACCURATE, never bracketed or fuzzed like `count`: the scouts either got
+    // close enough to see the state of their camp or they didn't, and this gate
+    // (Outmatched+) is what decides that. Already computed at end-day, so the
+    // view just reports it.
+    view.supplies = enemy.supplyState ?? ENEMY_SUPPLY_BANDS[0].label
   }
   if (rank >= SCOUTING_BANDS.indexOf('Superior')) {
     // Category shares by headcount, rounded — "mostly foot, a little horse".

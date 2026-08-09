@@ -94,6 +94,17 @@ export function resolveForaging(campaign, band) {
   const wantE = allocateNearFirst(enemyDrainKg, rings.map((r) => r.richness))
   wantE.forEach((kg, i) => { rings[i].richness -= kg })
 
+  // S4 "starve the enemy": what the host actually FED ITSELF on this turn — the
+  // same ring-distance curve the player is credited by, applied to the same
+  // near-first allocation. This is the whole mechanism: the enemy takes from the
+  // near ring while it lasts (a surplus), and as the shared land empties it is
+  // pushed outward into thinner ground (break-even, then starvation). Stripping
+  // the inner rings yourself is therefore an attack on their supply, and the S3
+  // enemyDrain modifiers feed in for free by changing what they take at all.
+  // Reverses S2 decision 4 ("gets no credit") deliberately — that was the
+  // placeholder this stage exists to replace.
+  const enemyIncomeKg = wantE.reduce((sum, kg, i) => sum + kg * (FORAGE_RING_YIELD[i] ?? 1), 0)
+
   // Ring-distance yield (decision 5): what's credited from a ring is a
   // fraction of what was physically swept from it — the far ring costs more
   // capacity to net the same kg. The enemy gets no credit at all (decision 4).
@@ -114,6 +125,9 @@ export function resolveForaging(campaign, band) {
       posture: band ?? 'Contested',
       capacity: capacityKg,
       harvested: { food, materials },
+      // S4: handed to enemyTurn, which turns it into the host's supply state.
+      // Reported here because this is where the rings are actually consumed.
+      enemyIncomeKg,
       rings: rings.map((r) => ({ ring: r.ring, richness: r.richness, initialRichness: r.initialRichness })),
     },
     entries,

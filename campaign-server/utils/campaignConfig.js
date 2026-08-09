@@ -219,12 +219,21 @@ export const RAID_STRENGTH_BANDS = [
   { min: 0, label: 'a handful' },
 ]
 
-// Turns of food the enemy has left (supplies ÷ its per-turn need) → supply
-// phrase — flavour only now that the battle offer is meter-driven, not a
-// supply threshold.
+// S4 "starve the enemy": the host's supply state is a PER-TURN BALANCE, not a
+// stockpile — income ÷ consumption this turn, with no running total carried
+// between turns (user, 2026-08-09: "either they have too much, enough or not
+// enough … just turn by turn"). Bands are that ratio → the phrase the scouts
+// report. The dead band around 1.0 keeps a mixed-ring draw from flickering
+// between states on rounding alone.
+// Pick a band's label for a value: the tables below are ordered high→low and
+// every one ends at min 0, so the first match wins. Lives here, beside the band
+// tables it reads, because it was previously defined privately in BOTH
+// campaignView.js and raid.js — and S4 would have made it three copies.
+export const bandLabel = (value, bands) => bands.find(({ min }) => value >= min).label
+
 export const ENEMY_SUPPLY_BANDS = [
-  { min: 3, label: 'well-provisioned' },
-  { min: 1.5, label: 'strained' },
+  { min: 1.1, label: 'well-provisioned' },
+  { min: 0.9, label: 'steady' },
   { min: 0, label: 'near starving' },
 ]
 
@@ -235,9 +244,11 @@ export const ENEMY_ARMY = {
   Necromancer: 11,
   LightCavalry: 20,
 }
-// ~4 turns for the enemy host (21,868 kg per turn); its forage deficit is
-// flavour only now — the battle offer is driven by the meter, not supply.
-export const ENEMY_SUPPLIES = 90000
+// How the host's numbers answer its supply state each turn (S4 v1, deliberately
+// blunt): a surplus buys recruits, a deficit bleeds deserters, steady holds.
+// Applied to EVERY unit type so the host's composition is preserved.
+export const ENEMY_REINFORCE_RATE = 0.03
+export const ENEMY_DESERTION_RATE = 0.05
 
 // Daily food need per unit = size² × this (kg); a turn consumes 14 days of it.
 // The square makes big mounts expensive: cavalry is a supply decision.
@@ -278,6 +289,15 @@ export const FORAGE_RING_YIELD = [1.0, 0.8, 0.6] // near / mid / far
 // (~9,084 kg/turn at ENEMY_FORAGE_FRACTION 0.4 of its host), kept as a flat
 // number now that nothing derives it from the hidden army.
 export const ENEMY_DRAIN_KG_PER_TURN = 9000
+// S4 "starve the enemy": what the host must find every turn to hold its
+// strength. Defined AS the mid-ring take (drain × FORAGE_RING_YIELD[1] =
+// 9000 × 0.8 = 7200), so the intended design falls out of the arithmetic
+// instead of being tuned into it: the host forages the NEAR ring at a surplus
+// (ratio 1.25), the MID ring exactly break-even (1.00), and the FAR ring at
+// starvation (0.75). Derived, not a magic number — retuning the drain or the
+// yield curve moves break-even along with it. MUST stay below both constants
+// it reads (they are `const`, so referencing them earlier is a TDZ crash).
+export const ENEMY_CONSUMPTION_KG_PER_TURN = ENEMY_DRAIN_KG_PER_TURN * FORAGE_RING_YIELD[1]
 // The forage/scouting split's default and STICKY starting value (a fresh
 // campaign's forage.share) — 10% steps, sticky across turns (decision 13).
 // 0 (all-scouting) continues the pre-slider default exactly: the old

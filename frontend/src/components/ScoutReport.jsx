@@ -31,7 +31,13 @@ const ScoutReport = ({ scouting, enemy }) => {
       )}
       {enemy.supplies && (
         <p>
-          Their supply train looks <strong>{enemy.supplies}</strong>.
+          {/* S4: this reads the enemy's per-turn supply BALANCE now, not the
+              size of a stockpile — "are they feeding themselves off this
+              country", which is what the player changes by stripping the inner
+              rings first. Worded for the host rather than its wagons to match.
+              Accurate whenever it shows at all: the server gates it on recon
+              (Outmatched+) instead of fuzzing it. */}
+          Their host looks <strong>{enemy.supplies}</strong>.
         </p>
       )}
       {enemy.composition && (

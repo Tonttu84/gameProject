@@ -35,7 +35,7 @@ import {
   STARTING_HORSES,
   RECRUITING_FERVOR_START,
   ENEMY_ARMY,
-  ENEMY_SUPPLIES,
+  ENEMY_SUPPLY_BANDS,
   FORAGE_RINGS,
   ENEMY_DRAIN_KG_PER_TURN,
   DEFAULT_FORAGE_SHARE,
@@ -184,7 +184,9 @@ router.post('/', async (req, res) => {
     enemy: {
       army: ENEMY_ARMY,
       initialStrength: Object.values(ENEMY_ARMY).reduce((a, b) => a + b, 0),
-      supplies: ENEMY_SUPPLIES,
+      // S4: day 1, the host is camped on an untouched near ring — a surplus.
+      // From here it's recomputed every end-day from what it managed to take.
+      supplyState: ENEMY_SUPPLY_BANDS[0].label,
       plannedPlacement: await buildEnemyPlacement(ENEMY_ARMY),
     },
   })

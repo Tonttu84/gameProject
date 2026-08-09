@@ -275,11 +275,13 @@ describe('POST /api/campaigns', () => {
 // campaignView stays the single gate. Armies are pinned straight on the doc to
 // force each band (fixture-catalog coverages; the default player roster sits
 // at 1494/4000 ≈ 0.374).
-const pinArmies = async (id, { roster, enemyArmy, enemySupplies } = {}) => {
+const pinArmies = async (id, { roster, enemyArmy, enemySupplyState } = {}) => {
   const doc = await Campaign.findById(id)
   if (roster) doc.roster = new Map(Object.entries(roster))
   if (enemyArmy) doc.enemy.army = new Map(Object.entries(enemyArmy))
-  if (enemySupplies !== undefined) doc.enemy.supplies = enemySupplies
+  // S4: the stockpile is gone — what the view reports is the stored per-turn
+  // verdict, so pin the state itself rather than a kg figure.
+  if (enemySupplyState !== undefined) doc.enemy.supplyState = enemySupplyState
   await doc.save()
 }
 
@@ -343,14 +345,24 @@ describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
     })
   })
 
-  test('supply state degrades as the enemy stores run out', async () => {
+  test('the supply state crosses the wire exactly as stored — accurate, never fuzzed', async () => {
     const { body } = await createCampaign()
-    // Supplies only cross the wire at Outmatched+; pin a band that shows them.
-    await pinArmies(body.id, { enemySupplies: 25000 })
+    // S4: the supply line is a per-turn verdict now, not turns-of-stockpile.
+    // It only crosses at Outmatched+, so pin a band that shows it.
+    await pinArmies(body.id, { enemySupplyState: 'near starving' })
     await pinBand(body.id, 'Contested')
     const view = await getView(body.id)
-    // 25,000 kg over 21,868 kg/turn ≈ 1.1 turns → the host is nearly starving.
+    // Unlike `count`, this is NOT bracketed by recon level — the gate decides
+    // whether the player learns it at all, and above the gate it is the truth.
     expect(view.enemy.supplies).toBe('near starving')
+  })
+
+  test('the supply state is withheld entirely below the recon gate', async () => {
+    const { body } = await createCampaign()
+    await pinArmies(body.id, { enemySupplyState: 'near starving' })
+    await pinBand(body.id, 'Blind')
+    const view = await getView(body.id)
+    expect(view.enemy.supplies).toBeUndefined()
   })
 
   test('Superior: adds composition by category percent', async () => {

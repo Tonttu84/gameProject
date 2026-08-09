@@ -8,7 +8,11 @@ import {
   applyForageModifiers,
 } from '../services/forage.js'
 import { SCOUTING_BANDS } from '../utils/capabilities.js'
-import { FORAGE_YIELD_BY_BAND, FORAGE_KG_PER_POINT, FORAGE_RING_YIELD } from '../utils/campaignConfig.js'
+import {
+  FORAGE_YIELD_BY_BAND, FORAGE_KG_PER_POINT, FORAGE_RING_YIELD,
+  ENEMY_DRAIN_KG_PER_TURN, ENEMY_CONSUMPTION_KG_PER_TURN,
+} from '../utils/campaignConfig.js'
+import { enemySupplyState } from '../services/enemyAi.js'
 
 // Pure campaign math — no DB, no engine, no catalog needed (S2 "effort
 // slider": foraging works off the pre-derived pool/share, not per-unit
@@ -176,5 +180,79 @@ describe('forage modifiers', () => {
     // The enemy's drain earns no forage credit, modified or not (S2 decision 4).
     expect(w.forage.harvested.food).toBe(0)
     expect(w.forage.harvested.materials).toBe(0)
+  })
+})
+
+// S4 "starve the enemy": what the host actually feeds itself on. Same
+// ring-distance curve the player is credited by, applied to the enemy's drain —
+// so the shared, emptying land is what decides whether it eats.
+describe('enemy forage income (S4)', () => {
+  const drained = (rings, enemyDrainKg = 9000, modifiers = []) =>
+    resolveForaging(
+      makeCampaign({ pool: 0, share: 0, enemyDrainKg, rings, modifiers }), 'Contested',
+    ).forage.enemyIncomeKg
+
+  it('credits the near ring in full and each outer ring by its yield', () => {
+    // Everything available near: 9000 × 1.0.
+    expect(drained([80000, 140000, 220000])).toBe(9000 * FORAGE_RING_YIELD[0])
+    // Near stripped by the player — pushed to the mid ring: 9000 × 0.8.
+    expect(drained([0, 140000, 220000])).toBe(9000 * FORAGE_RING_YIELD[1])
+    // Only the far ring left: 9000 × 0.6.
+    expect(drained([0, 0, 220000])).toBe(9000 * FORAGE_RING_YIELD[2])
+  })
+
+  it('splits credit across rings when the near ring runs out mid-sweep', () => {
+    // 4000 near (×1.0) + 5000 spilling into mid (×0.8) = 4000 + 4000.
+    expect(drained([4000, 140000, 220000]))
+      .toBe(4000 * FORAGE_RING_YIELD[0] + 5000 * FORAGE_RING_YIELD[1])
+  })
+
+  it('is zero when the land is stripped bare — nothing to take, nothing to eat', () => {
+    expect(drained([0, 0, 0])).toBe(0)
+  })
+
+  it('rises and falls with the S3 enemyDrain modifiers', () => {
+    const base = drained([80000, 140000, 220000])
+    const depot = [{ id: 'd', label: 'D', target: 'enemyDrain', deltaKg: 4000 }]
+    expect(drained([80000, 140000, 220000], 9000, depot)).toBeGreaterThan(base)
+    const burned = [{ id: 'd', label: 'D', target: 'enemyDrain', factor: 0.5 }]
+    expect(drained([80000, 140000, 220000], 9000, burned)).toBeLessThan(base)
+  })
+
+  it('counts only what the enemy took — the player is credited separately', () => {
+    // Player sweeps the near ring first; the enemy gets what is left.
+    const c = makeCampaign({ pool: 1000, share: 1, enemyDrainKg: 9000, rings: [16000, 140000, 220000] })
+    const { forage } = resolveForaging(c, 'Contested')
+    // Player capacity 16000 empties the near ring, so the enemy's whole drain
+    // falls on the mid ring: 9000 × 0.8.
+    expect(forage.enemyIncomeKg).toBe(9000 * FORAGE_RING_YIELD[1])
+  })
+})
+
+// The other half of the S4 chain: income → the phrase the scouts report.
+describe('enemy supply state (S4)', () => {
+  it('turns the three ring depths into the three states', () => {
+    const D = ENEMY_DRAIN_KG_PER_TURN
+    expect(enemySupplyState(D * FORAGE_RING_YIELD[0])).toBe('well-provisioned')
+    expect(enemySupplyState(D * FORAGE_RING_YIELD[1])).toBe('steady')
+    expect(enemySupplyState(D * FORAGE_RING_YIELD[2])).toBe('near starving')
+  })
+
+  it('break-even IS the mid ring, by construction rather than by tuning', () => {
+    expect(ENEMY_CONSUMPTION_KG_PER_TURN).toBe(ENEMY_DRAIN_KG_PER_TURN * FORAGE_RING_YIELD[1])
+    // Exactly meeting consumption is 'steady', not a deficit.
+    expect(enemySupplyState(ENEMY_CONSUMPTION_KG_PER_TURN)).toBe('steady')
+  })
+
+  it('a stripped countryside starves it, and zero income is the worst case', () => {
+    expect(enemySupplyState(0)).toBe('near starving')
+    // Never throws on a nonsensical negative — clamped, not crashed.
+    expect(enemySupplyState(-5000)).toBe('near starving')
+  })
+
+  it('has a dead band, so a mixed-ring draw does not flicker on rounding', () => {
+    // 5% either side of break-even still reads as holding.
+    expect(enemySupplyState(ENEMY_CONSUMPTION_KG_PER_TURN * 1.05)).toBe('steady')
+    expect(enemySupplyState(ENEMY_CONSUMPTION_KG_PER_TURN * 0.95)).toBe('steady')
   })
 })

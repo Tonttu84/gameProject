@@ -88,7 +88,7 @@ describe('ScoutReport', () => {
         scouting={{ band: 'Superior' }}
         enemy={{
           count: { low: 500, high: 800 },
-          supplies: 'strained',
+          supplies: 'steady', // S4: the mid band is 'steady' now — a per-turn balance, not a dwindling store
           composition: { Foot: 97, Mounted: 3 },
         }}
       />,

@@ -253,7 +253,10 @@ export async function endDay(campaign) {
   if (meterBand(campaign.meter.value) !== bandBefore) {
     adjustResolve(campaign, -GARRISON_BAND_CROSS_DECAY)
   }
-  entries.push(...enemyTurn(campaign, catalog))
+  // S4 "starve the enemy": the host's supply state for the turn is decided by
+  // what it managed to take from the rings back in step 1 — so the player
+  // stripping the near ring first is what pushes it outward into thin ground.
+  entries.push(...enemyTurn(campaign, catalog, foraging.forage.enemyIncomeKg))
 
   // 5. Player upkeep — size² × kg/day × days-per-turn, from live catalog sizes.
   const units = rosterTotal(campaign.roster)
