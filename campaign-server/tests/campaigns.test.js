@@ -157,7 +157,11 @@ const expectNoHiddenInfo = (body) => {
   for (const c of [body, body.campaign]) {
     for (const o of c?.raid?.opportunities ?? [])
       expect(Object.keys(o).sort()).toEqual([
-        'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome',
+        // `persistent` (S3) is public: a card that survives the redeal is worth
+        // flagging, so scouting spent on it reads as keeping its value. Its
+        // `modifierId` sibling deliberately does NOT cross — the card's flavour
+        // already says what beating it undoes.
+        'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome', 'persistent',
         'resolved', 'reward', 'rewardReveal', 'source', 'strengthBand', 'title', 'type',
       ])
   }

@@ -83,8 +83,12 @@ const launch = (id, raidId, party) => launchBatch(id, { [raidId]: party })
 // exact value; the raw hidden `targetForce` Map field name never crosses, and
 // a counter_event's reward.slot (which would out the bad fate) stays null on
 // the wire since its reward has no numeric range to reveal.
+// `persistent` (S3) is public: a card that survives the newDay redeal is worth
+// flagging, so the player reads scouting spent on it as keeping its value. Its
+// `modifierId` sibling deliberately does NOT cross — the card's own flavour
+// already says what beating it undoes.
 const PUBLIC_OPPORTUNITY_KEYS = [
-  'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome',
+  'capacity', 'description', 'enemy', 'enemyReveal', 'id', 'outcome', 'persistent',
   'resolved', 'reward', 'rewardReveal', 'source', 'strengthBand', 'title', 'type',
 ]
 const RAID_TYPES = [
