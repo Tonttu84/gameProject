@@ -31,9 +31,11 @@ notes below over the git history if they ever disagree — the commits win.
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
 schema version **27** (unchanged by the 2026-08-08 fixes — no document field moved).
 
-- **2026-08-09 — S2 had landed CI-RED; the two red jobs are fixed, and the "check it in CI"
-  plan for `cs-test` turns out not to exist.** Read this before trusting any "CI is the check"
-  note below.
+- **2026-08-09 — CI is GREEN on all five jobs (`00c6518`), and `cs-test` now runs there for the
+  first time: 475/475.** Getting there took peeling three nested problems, each hidden by the one
+  above it: a missing CI job hid a broken test helper, which hid a stale assertion. Read this
+  block before trusting any "CI is the check" note below. **S3's gate ("run the full `cs-test`
+  for real before touching S3") is now SATISFIED** — S3 is unblocked.
   1. **S2 broke both stack jobs** and the failure was sitting on `9f0184d` unnoticed. S2 replaced
      `POST /:id/forage {assignment}` with `POST /:id/effort {share}` and rewrote `ForagePanel` as
      the slider, but nothing outside the unit suites was updated: the **`docker`** job's smoke
@@ -156,10 +158,18 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
 - **Also still open, unrelated to Stage E:** worker replenishment + workers-eat-food (paired,
   deferred, blocked on picking a mechanism — Recruit's worker drain raises its priority but
   doesn't gate it); fortification-durability erosion (blocked on morale design).
-- **Test baseline (2026-08-08, Linux box WITH a compiled `./game`):** `cs-test` **472/472**,
-  `fe-test` **247/247**, `fe-lint` clean. On a machine with no compiled `./game` expect 3
-  EXPECTED failures instead — `engine.integration.test.js` ENOENT. Run everything through
-  `scripts/dev.sh` (see `CLAUDE.md`).
+- **Test baseline (2026-08-09, CI's `campaign-server` job, run `00c6518`): `cs-test`
+  21 files / 475 tests, ALL GREEN in ~57s.** This is the first baseline actually observed rather
+  than hand-derived. `make test-serial` green, `docker` + `e2e` green.
+  - Correction to the older note below: a missing `./game` does NOT produce 3 failures —
+    `engine.integration.test.js` **self-SKIPS** (`describe.skipIf`) and prints
+    "engine contract tests SKIPPED". So a local run without `make` goes green with the
+    engine↔schema contract UNCHECKED; CI builds the engine first precisely so it is checked
+    (verified: that warning is absent from the green run).
+  - Still unrun anywhere in CI: `fe-test` / `fe-lint` (last local: **247/247**, clean).
+- **Superseded (2026-08-08, Linux box WITH a compiled `./game`):** `cs-test` **472/472**,
+  `fe-test` **247/247**, `fe-lint` clean. Run everything through `scripts/dev.sh`
+  (see `CLAUDE.md`).
 - **Not yet playtested:** S8 changed the shape of a turn (Recruit is now a one-way door that
   closes the camp, and a hire is mandatory), and 2026-08-08 changed it again (a quiet turn ends
   at Recruiting). The suites cover the mechanics, but see the "still not playtested" bullet at
