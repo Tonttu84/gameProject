@@ -87,8 +87,12 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
      `forage.clashes` assertion was stale too (S2 deleted clashes outright) and had simply never
      been reached. **No game math was changed** — this was S2's hand-arithmetic finally being
      checked, and the code side of it held.
-  6. **Still NOT covered by CI: the frontend.** `fe-test` (vitest) and `fe-lint` (oxlint) run
-     nowhere in CI — same class of gap as the one above, not fixed here.
+  6. **The frontend is in CI too now (`frontend` job).** `fe-lint` (oxlint) + `fe-test` (vitest,
+     **36 files / 249 tests**) had been local-only commands, the same gap one directory over.
+     node 24 again (`frontend/.npmrc` carries the identical engine-strict floor). `npm run build`
+     is deliberately not repeated — `docker`/`e2e` already build the real bundle inside the image.
+     **Every test suite in the repo now runs in CI**: `make test-serial`, `cs-test`, `fe-test`,
+     `fe-lint`, the docker smoke, and the Playwright e2e.
 
 - **Last session (2026-08-08) — three playtest bug fixes, no new feature.** Details are in the
   dated bullets under `### Squad-centric overhaul`; the short version:
@@ -166,7 +170,8 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
     "engine contract tests SKIPPED". So a local run without `make` goes green with the
     engine↔schema contract UNCHECKED; CI builds the engine first precisely so it is checked
     (verified: that warning is absent from the green run).
-  - Still unrun anywhere in CI: `fe-test` / `fe-lint` (last local: **247/247**, clean).
+  - `fe-test` **249/249** (36 files, ~21s) and `fe-lint` clean — verified locally 2026-08-09 and
+    now pinned by CI's `frontend` job.
 - **Superseded (2026-08-08, Linux box WITH a compiled `./game`):** `cs-test` **472/472**,
   `fe-test` **247/247**, `fe-lint` clean. Run everything through `scripts/dev.sh`
   (see `CLAUDE.md`).

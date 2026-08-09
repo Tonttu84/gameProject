@@ -100,6 +100,42 @@ jobs:
           MONGODB_TEST_URI: mongodb://localhost:27017
         run: npm test
 
+  # The frontend's Vitest suite + oxlint. Like campaign-server above, this had
+  # never run in CI — `fe-test`/`fe-lint` were local-only commands, so a broken
+  # component test or a lint regression could reach main unnoticed.
+  #
+  # No DB and no ./game here: these are jsdom component/store tests that stub
+  # the API layer. `npm run build` is deliberately NOT repeated — the docker and
+  # e2e jobs already build the real frontend inside the image (Dockerfile stage
+  # 2), so a build break fails there with the bundle actually exercised.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # node 24 for the same reason as campaign-server: frontend/.npmrc sets
+      # engine-strict=true against an engines.npm floor of >=11, and node 22
+      # ships npm 10 — `npm ci` would hard-fail EBADENGINE.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run the frontend suite
+        working-directory: frontend
+        run: npm test
+
   # Builds the distributable image (engine + campaign server + frontend) and
   # smokes a real campaign turn through it — this is the only place the
   # Docker stack is exercised, since dev machines run the stack via WSL.
