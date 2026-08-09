@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include "Battlefield.hpp"
+#include "SpellList.hpp"
 #include "units/Soldier.hpp"
 #include <algorithm>
 
@@ -11,11 +12,19 @@
 // Spells::castGarrisonSally spell fired by tick() on its turn (S6 of the
 // garrison-support epic; see docs/CAMPAIGN_PLAN.md).
 //
-// The lone enemy sits at the far edge (row height-1): Blue flees toward row 0,
-// so its reinforcements land at Red's rear (rows >= height-3) and any movement
-// they make is TOWARD that edge — never back out of the band. maxHP is 10 and a
-// single Soldier does only a few points a round, so no summon is pruned within
-// the 1-2 rounds these cases run.
+// The lone enemy sits at the far edge (row height-1). maxHP is 10 and a single
+// Soldier does only a few points a round, so no summon is pruned within the 1-2
+// rounds these cases run.
+//
+// WHERE THE WAVE LANDS is asserted by casting the spell DIRECTLY, never after a
+// tick. tick() runs fireScheduledReinforcements() and then moveUnits() in the
+// SAME turn, so a summon is placed and then immediately moves: asserting its row
+// after a tick measures movement, not placement. This file used to claim "any
+// movement they make is TOWARD that edge — never back out of the band", which is
+// false about 7.5% of runs (CI, 2026-08-09: a summon observed at row 26 with the
+// band starting at 27), making the suite flaky. The tick-driven case below now
+// covers only what a tick is for — that the wave fires on its turn, logs, and
+// joins the team.
 
 static Hex* placeOne(Army& army, Battlefield& bf, HexCoord c, int team) {
     Hex* hex = bf.hexGrid.getHex(c);
@@ -62,8 +71,10 @@ TEST_CASE("garrison sally: wave summons allies at the enemy's rear on its turn")
     for (auto& u : bf.getTeam(BLUETEAM)) {
         if (u && u->getBattleSummon()) {
             ++summoned;
+            // Placed somewhere — but NOT where, since moveUnits() has already
+            // run this tick. The landing band is asserted in the direct-cast
+            // case below, where no movement can have happened yet.
             REQUIRE(u->getHex() != nullptr);
-            CHECK(u->getHex()->coord.r >= REAR_MIN_ROW); // enemy's rear edge
         }
     }
     CHECK(summoned == 3);
@@ -104,4 +115,32 @@ TEST_CASE("garrison sally: a wave fires exactly once") {
     CHECK(bf.getTeam(BLUETEAM).size() == 3);
     bf.tick(); // must NOT fire again
     CHECK(bf.getTeam(BLUETEAM).size() == 3);
+}
+
+// The landing band itself, with no tick and therefore no movement in the way:
+// this is the invariant the tick-driven case above cannot safely assert.
+TEST_CASE("garrison sally: the wave lands inside the enemy's rear band") {
+    Battlefield bf;
+    Army blue, red;
+    placeOne(blue, bf, PLAYER_HEX, BLUETEAM);
+    placeOne(red,  bf, ENEMY_HEX,  REDTEAM);
+    bf.loadArmies(std::move(red), std::move(blue));
+
+    Reinforcement r;
+    r.tick = 1; r.team = BLUETEAM; r.count = 3; r.unitType = "Soldier";
+    r.message = "GARRISON_SALLY_TEST";
+
+    const int placed = Spells::castGarrisonSally(bf, r);
+    CHECK(placed == 3);
+
+    int summoned = 0;
+    for (auto& u : bf.getTeam(BLUETEAM)) {
+        if (u && u->getBattleSummon()) {
+            ++summoned;
+            REQUIRE(u->getHex() != nullptr);
+            // Straight out of the spell, before anything can move it.
+            CHECK(u->getHex()->coord.r >= REAR_MIN_ROW);
+        }
+    }
+    CHECK(summoned == 3);
 }
