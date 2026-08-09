@@ -323,11 +323,20 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
 
   **Tests:** 31 new pure (DB-free) cases — `forage.test.js` extended, new
   `tests/forageModifiers.test.js` covering the effect, the spawn/carry/drop lifecycle, the lift,
-  and the countdown — plus 4 frontend cases in `effortSlider.test.jsx`. Frontend 254/254 and all
-  10 DB-free server files green locally; the 12 DB-backed files could not run on the building
-  session (mongod download 403s through the proxy — same block as S2) and are CI's to confirm.
-  Sweeping every pool fate through `applyEffect` did catch one real bug locally: the new case
-  assumed `campaign.forage` exists, now guarded like the `flag` branch.
+  and the countdown — plus 4 frontend cases in `effortSlider.test.jsx`. **Observed green:
+  cs-test 498/498 and frontend 254/254**, CI all six jobs (the docker job smokes a full campaign
+  turn through the stack), independently reproduced on the reference laptop. Sweeping every pool
+  fate through `applyEffect` caught one real bug on the building session: the new case assumed
+  `campaign.forage` exists, now guarded like the `flag` branch.
+
+  The building session again could not run the 12 DB-backed files (mongod download 403s through
+  the proxy, no usable Docker either — the same block as S2), and that gap cost one red CI run:
+  `persistent` widened the raid opportunity's public shape from 13 keys to 14, and the exact-key
+  assertion that guards against hidden-info leaks failed 45 times across `campaigns.test.js` and
+  `raid.test.js` — one assertion, not 45 problems, and the game code passed the DB suites either
+  side of it. **That list is duplicated, not shared** (`expectNoHiddenInfo` in campaigns.test.js,
+  `PUBLIC_OPPORTUNITY_KEYS` in raid.test.js), so every stage that adds a view field must edit
+  both. Worth collapsing into one exported constant next time either file is touched.
 
 **Deferred, noted not built:** optional food sinks; enemy supplies reacting to its own foraging
 (and to a stripped countryside); forager-clash flavour re-expressed as events.
