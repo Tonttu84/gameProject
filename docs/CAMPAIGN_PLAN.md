@@ -58,7 +58,25 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
      **403 by egress policy** (so `mongodb-memory-server` can't fetch mongod) and these containers
      have **no docker daemon** (so a local `mongo:7` and `make docker-up` are both out). A remote
      session gets its DB-backed coverage from **CI** now; only a local box can run it directly.
-  4. **Still NOT covered by CI: the frontend.** `fe-test` (vitest) and `fe-lint` (oxlint) run
+  4. **The first real run of `cs-test` immediately caught a broken S1 helper.** `endTurn(id)` —
+     the helper S1 routed **~47 end-day call sites** through — was committed as:
+
+     ```js
+     const endTurn = async (id) => {
+       await Campaign.findByIdAndUpdate(id, { phase: 'recruit' })
+       return endTurn(id)        // ← calls ITSELF; never posts to /end-day
+     }
+     ```
+
+     Infinite async recursion, in **all three** copies (`campaigns`/`enemyAi`/`raid`.test.js).
+     Every test that ends a turn spun until vitest's 30s timeout: `campaigns.test.js` alone ran
+     **20 minutes and failed 38 of 122**. Fixed to
+     `return auth(api.post(\`/api/campaigns/${id}/end-day\`)).send({})`, which is what the diff
+     replaced. **So S1's end-day coverage never actually ran — treat every end-day assertion as
+     first-verified by the run that follows this fix, not by S1.** This is precisely the failure
+     the missing CI job allowed: S1 shipped noting "cs-test was still running — CI is the check",
+     and CI had no such check.
+  5. **Still NOT covered by CI: the frontend.** `fe-test` (vitest) and `fe-lint` (oxlint) run
      nowhere in CI — same class of gap as the one above, not fixed here.
 
 - **Last session (2026-08-08) — three playtest bug fixes, no new feature.** Details are in the

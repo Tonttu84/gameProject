@@ -48,6 +48,10 @@ jobs:
   # uses transactions or sessions.
   campaign-server:
     runs-on: ubuntu-latest
+    # The suite runs in ~2-3 min. A cap well above that turns a hang into a
+    # failed job WITH its log (GitHub serves job logs only once the job stops —
+    # a hang otherwise sits there unreadable until the 6h default expires).
+    timeout-minutes: 20
 
     services:
       mongo:

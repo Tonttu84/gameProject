@@ -77,7 +77,7 @@ const auth = (req) => req.set('Authorization', `Bearer ${token}`)
 // screens stamps the phase first — the same state Recruiting leaves behind.
 const endTurn = async (id) => {
   await Campaign.findByIdAndUpdate(id, { phase: 'recruit' })
-  return endTurn(id)
+  return auth(api.post(`/api/campaigns/${id}/end-day`)).send({})
 }
 const createCampaign = () => auth(api.post('/api/campaigns')).send({})
 const endDay = (id) => endTurn(id)
