@@ -25,6 +25,12 @@
 #   fe-test [args]      frontend Vitest suite        (make frontend-test)
 #   fe-lint [args]      frontend oxlint              (npm --prefix frontend run lint)
 #   cs-test [args]      campaign-server Vitest suite
+#                       Spins up its own in-memory mongod, which mongodb-memory-
+#                       server DOWNLOADS on first use — blocked on some networks
+#                       (every DB-backed file then fails to start). Point
+#                       MONGODB_TEST_URI at a real mongod to skip the download,
+#                       e.g. MONGODB_TEST_URI=mongodb://localhost:27017 (this is
+#                       how CI's campaign-server job uses its mongo:7 service).
 #   info                build + ./game info
 # Env: TAIL=N trims output to the last N lines (default 40; 0 = no trim).
 # NOTE for Claude Code: pass the override as `dev.sh -tN <task>` (INSIDE the

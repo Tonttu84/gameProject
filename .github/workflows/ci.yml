@@ -34,6 +34,58 @@ jobs:
       - name: Build and run tests
         run: make test-serial
 
+  # The campaign server's own Vitest suite. Most of it is DB-backed (campaigns,
+  # raids, enemy AI, routes, models, auth, battles, catalog sync …) and until
+  # 2026-08-09 it had NEVER run in CI — the effort-slider stages were landing
+  # with their numbers verified only by hand-arithmetic, because the machine
+  # that built them couldn't reach a mongod either.
+  #
+  # It needs a real mongod, and mongodb-memory-server fetches one from
+  # fastdl.mongodb.org — a host that some networks block outright. A mongo:7
+  # service container supplies it instead (the same image the docker/e2e jobs
+  # already use) and MONGODB_TEST_URI points tests/helpers/db.js at it, so this
+  # job never downloads a database. Standalone is enough: nothing in the suite
+  # uses transactions or sessions.
+  campaign-server:
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # engine.integration.test.js is a contract test against the REAL binary
+      # (dump-units output must pass the Mongoose schema unchanged). It
+      # self-SKIPS when ./game is missing, so without this build the job would
+      # go green with the engine↔DB contract silently unchecked.
+      - name: Build the engine
+        run: make
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: campaign-server
+        run: npm ci
+
+      - name: Run the campaign-server suite
+        working-directory: campaign-server
+        env:
+          MONGODB_TEST_URI: mongodb://localhost:27017
+        run: npm test
+
   # Builds the distributable image (engine + campaign server + frontend) and
   # smokes a real campaign turn through it — this is the only place the
   # Docker stack is exercised, since dev machines run the stack via WSL.

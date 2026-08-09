@@ -43,17 +43,23 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
      slider (`effort-slider` arrowed in its 10% steps → `effort-submit` → "Effort set") and the
      `/effort` route. **Lesson for the next route/panel rename: `.github/workflows/ci.yml` and
      `e2e/tests/` are the two call sites the vitest suites cannot catch — grep them.**
-  2. **CI HAS NO `cs-test` JOB.** The `test` job is `make test-serial` (C++ only); `docker` and
-     `e2e` smoke the running stack. The campaign-server vitest suite **has never run in CI**, so
-     the instruction below to "run the full `cs-test` for real (CI, or a machine with mongod
-     reachable) before touching S3" **cannot be satisfied by CI** — only by a machine with mongod.
-     The 12 DB-backed suites listed below are still verified by hand-arithmetic only. Adding a
-     `cs-test` job (a `mongo:7` service container + `MONGOMS_*`/an external `MONGODB_URI`, since
-     `mongodb-memory-server` downloads a binary) is the obvious fix and is **not** done yet.
-  3. **A remote/web session still cannot run them:** `fastdl.mongodb.org` is **403 by egress
-     policy** (so `mongodb-memory-server` can't fetch mongod) and these containers have **no
-     docker daemon** (so the `mongo:7` fallback and `make docker-up` are both out). Treat
-     "run `cs-test`" as a task for a local box until a CI job exists.
+  2. **CI HAD NO `cs-test` JOB — now it does (`campaign-server`).** The `test` job is
+     `make test-serial` (C++ only); `docker`/`e2e` smoke the running stack. The campaign-server
+     vitest suite had **never run in CI**, which is why "verify it in CI before S3" was never a
+     real option and S1/S2 both shipped on hand-arithmetic. The new job runs `make` (so
+     `engine.integration.test.js` — which self-SKIPS without `./game` — actually checks the
+     engine↔schema contract) then `npm test` against a **`mongo:7` service container**.
+     `tests/helpers/db.js` gained one escape hatch for it: **`MONGODB_TEST_URI`**, which replaces
+     `mongodb-memory-server` with a real mongod and clears the DB on entry (a shared external DB
+     carries over what the previous FILE left; `fileParallelism: false` keeps that race-free).
+     Default is unchanged — a plain `npm test` still spins up the in-memory server, no setup.
+     Deliberately NOT the app's own `MONGODB_URI`, which switches the *server* to a persistent DB.
+  3. **A remote/web session still cannot run `cs-test` locally:** `fastdl.mongodb.org` is
+     **403 by egress policy** (so `mongodb-memory-server` can't fetch mongod) and these containers
+     have **no docker daemon** (so a local `mongo:7` and `make docker-up` are both out). A remote
+     session gets its DB-backed coverage from **CI** now; only a local box can run it directly.
+  4. **Still NOT covered by CI: the frontend.** `fe-test` (vitest) and `fe-lint` (oxlint) run
+     nowhere in CI — same class of gap as the one above, not fixed here.
 
 - **Last session (2026-08-08) — three playtest bug fixes, no new feature.** Details are in the
   dated bullets under `### Squad-centric overhaul`; the short version:
@@ -94,8 +100,8 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
     green (221/221 passing, same 12-suite mongod gap as any fresh remote session), `fe-test` is
     green (249/249 — one file renamed `forageAssignment.test.jsx` →
     `effortSlider.test.jsx`), `fe-lint` clean, `make test-serial` green (347/347). **Run the full
-    `cs-test` for real before touching S3 — on a machine with mongod reachable, NOT in CI (CI has
-    no `cs-test` job; see the 2026-08-09 block at the top)** — the
+    `cs-test` for real before touching S3 — now possible in CI via the `campaign-server` job added
+    2026-08-09 (see the block at the top), or on any machine with mongod reachable** — the
     creation/effort-route/harvest numbers in `campaigns.test.js` and `enemyAi.test.js` were
     re-derived by hand from the real engine's `./game dump-units` stats, not observed passing.
   - **Numeric choices S2 had to make that the design doc left approximate** (flagged "~"/"≈" in
@@ -222,8 +228,9 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
   - Tests: new `the one-way turn phase machine` suite (ladder, refusals, double-end-day, newDay
     reset); ~47 end-day call sites routed through a new `endTurn(id)` helper that stamps the phase
     first; frontend suite **247/247 green**, oxlint clean. **cs-test was still running when this
-    was committed — and "CI is the check" was WRONG: CI has no `cs-test` job (see the 2026-08-09
-    block at the top), so S1's ~47 rerouted end-day call sites are still unverified by a real run.**
+    was committed — and "CI is the check" was WRONG at the time: CI had no `cs-test` job until
+    2026-08-09 (see the block at the top), so S1's ~47 rerouted end-day call sites went unverified
+    by any real run until that job's first green.**
 - **S2 — the slider. ✅ LANDED (schema v29).** `fieldPointValue`/`fieldPointsFor` (renamed from
   `scoutingPointValue`/`scoutingPointsFor`; `forageValue` deleted), `campaign.forage.pool`
   (snapshot) + `campaign.forage.share` (sticky, default 0), ring distance penalty
