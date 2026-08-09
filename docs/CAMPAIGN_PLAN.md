@@ -70,9 +70,22 @@ jobs** — nothing is in flight, so a new session starts from a clean `main`.
 2. **Should a reinforcement wave be able to MOVE on the tick it arrives?** `tick()` runs
    `fireScheduledReinforcements()` then `moveUnits()` in the same turn, so a garrison sally lands
    and immediately steps. Both answers are defensible; the test no longer depends on which.
-3. **`randomPlaceArmy: zone is full` still prints during the C++ suite** (from some test other
-   than the sally one — not chased down). Tests pass, but that warning means units silently fail
-   to arrive, so it is worth a look.
+3. ~~**`randomPlaceArmy: zone is full` still prints during the C++ suite.**~~ **ANSWERED — the
+   warning is not a bug.** It comes from exactly one test, the deliberate `SECURITY_NOTES.md #6`
+   regression case ("returns false without terminating when zone is too full"), which overfills a
+   single-hex zone on purpose (70 Soldiers × size 10 = 700 > capacity 640) to prove the function
+   returns `false` rather than calling `exit(1)`. Run that case alone and the line appears; run the
+   other 350 and the suite is silent. No units were failing to arrive. **Leave the warning alone** —
+   it is the function correctly reporting a zone that really is full.
+
+   Chasing it did, however, turn up a *real* bug next door, now fixed: `randomPlaceArmy`'s
+   wrap-around scan skipped a band. The forward pass starts mid-zone at `(wIter, hIter)` and runs
+   to the end; the wrap pass then covered only rows `hStart..hIter-1`, so the columns **left of
+   `wIter` on row `hIter` itself** were never scanned. The function could report a full zone with a
+   hex still free — and `BattleServer.cpp` turns that `false` into a rejected battle request. Fixed
+   by extending the wrap to `h <= hIter` with the last column clamped to `wIter - 1` on that row.
+   Pinned by "randomPlaceArmy wraps onto the columns left of its random start", which forces the
+   scan start via `Utility::pushDiceRoll` and fails against the old code.
 
 **Recent cleanups worth not re-litigating:** `services/enemyAi.js` → `enemyHost.js` (the old name
 invited the behaviour the standing principle forbids); the 42/Hive ASCII headers are stripped from

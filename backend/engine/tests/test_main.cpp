@@ -374,6 +374,47 @@ TEST_CASE("randomPlaceArmy returns false without terminating when zone is too fu
     // regression this test guards against.
 }
 
+// The two scans together must cover the zone exactly once. The forward pass
+// starts mid-zone at (wIter, hIter) and runs to the end; the wrap pass has to
+// pick up everything before it — including the columns LEFT of wIter on row
+// hIter itself, the one band that is neither "after the start" nor "on an
+// earlier row". Miss it and the function reports a full zone with a hex free.
+TEST_CASE("randomPlaceArmy wraps onto the columns left of its random start") {
+    Battlefield& field = Utility::getBattlefield();
+    Utility::clearDiceRolls();
+
+    const int row = 5;
+    const int freeCol = 3;
+
+    // Build both armies BEFORE queueing rolls, so unit construction cannot eat
+    // the mocked values.
+    Army blockers, army;
+    appendArmy<Soldier>(blockers, 3, BLUETEAM);
+    appendArmy<Soldier>(army, 1, REDTEAM);
+
+    // Zone is one row, cols 3..6. Park an enemy unit on 4, 5 and 6 — canPlace()
+    // rejects a hex holding another team — so col 3 is the only hex left.
+    for (int i = 0; i < 3; ++i) {
+        Hex* hex = field.hexGrid.getHex({(freeCol + 1 + i) - row / 2, row});
+        REQUIRE(hex != nullptr);
+        blockers[i]->setHex(hex);
+        blockers[i]->setPlaced(true);
+    }
+
+    // Start the scan at the far end, so the free hex sits behind it and is
+    // reachable only by the wrap.
+    Utility::pushDiceRoll(row); // hIter
+    Utility::pushDiceRoll(6);   // wIter
+
+    REQUIRE(randomPlaceArmy(army, field, {freeCol, 6, row, row}) == true);
+
+    const Hex* got = army[0]->getHex();
+    REQUIRE(got != nullptr);
+    REQUIRE(got->coord.q + got->coord.r / 2 == freeCol);
+
+    Utility::clearDiceRolls();
+}
+
 TEST_CASE("countTeam matches placed army sizes after loadArmies") {
     Battlefield& field = Utility::getBattlefield();
 

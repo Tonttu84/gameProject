@@ -40,9 +40,12 @@ bool randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
 
         if (!placed)
         {
-            for (int h = zone.hStart; h < hIter && !placed; ++h)
+            // Rows before hIter in full, then row hIter's columns left of wIter
+            // — the band the forward pass skipped when it started mid-row.
+            for (int h = zone.hStart; h <= hIter && !placed; ++h)
             {
-                for (int w = zone.wStart; w <= zone.wEnd && !placed; ++w)
+                const int wLast = (h == hIter ? wIter - 1 : zone.wEnd);
+                for (int w = zone.wStart; w <= wLast && !placed; ++w)
                 {
                     Hex* hex = field.hexGrid.getHex({w - h / 2, h}); // visual col → axial q
                     if (canPlace(hex)) {
