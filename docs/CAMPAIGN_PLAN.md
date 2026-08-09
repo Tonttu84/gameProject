@@ -361,8 +361,37 @@ genuinely sends squads away; which activity a raiding squad "came from" is fluff
   `PUBLIC_OPPORTUNITY_KEYS` in raid.test.js), so every stage that adds a view field must edit
   both. Worth collapsing into one exported constant next time either file is touched.
 
-**Deferred, noted not built:** optional food sinks; enemy supplies reacting to its own foraging
-(and to a stripped countryside); forager-clash flavour re-expressed as events.
+**Deferred, noted not built:** optional food sinks; forager-clash flavour re-expressed as events.
+
+### NEXT STAGE — "starve the enemy" (chosen 2026-08-09, NOT yet designed)
+
+Promoted out of the deferred list by the user. This is the payoff the slider was built toward:
+S2's `enemyDrainKg` comment already calls itself *"the seam a later 'starve the enemy' system
+hangs off"*, and S3's `enemyDrain` modifiers are the lever that bends it.
+
+**The gap, verified in the code (2026-08-09), not assumed:**
+- `enemy.supplies` is seeded once at creation (`ENEMY_SUPPLIES`, routes/campaigns.js) and drained
+  every turn by `enemyTurn()` (services/enemyAi.js) via `armyFoodPerTurn`. It is **never
+  replenished**.
+- It has **exactly one reader: `campaignView` line ~118**, which renders it as a recon-gated band
+  label. **Nothing happens when it reaches 0** — no desertion, no withdrawal, no weakening. The
+  player starving *does* cause desertion, so today the rule is asymmetric.
+- The enemy strips `ENEMY_DRAIN_KG_PER_TURN` (9000) from the shared rings each turn and receives
+  **no credit for it** (S2 decision 4, deliberate). So its foraging feeds nothing, and a
+  countryside the player has stripped bare costs it nothing either.
+
+**Open design questions — GRILL THESE BEFORE BUILDING (CLAUDE.md rule; confidence is low):**
+1. Does the enemy's ring drain credit its `supplies`, 1:1 or at a discount like the player's
+   `FORAGE_RING_YIELD` curve? (This is what makes a stripped countryside bite.)
+2. What does running dry actually DO? Desertion mirroring the player's 10%, a forced withdrawal
+   (i.e. a second win condition that isn't the boss fight), or a weakened boss fight? This is the
+   biggest question — it decides whether starving them is a *strategy* or just chip damage.
+3. Should the enemy react — forage harder, move camp, force the battle early — or stay passive?
+   Note the old stance machine was deliberately deleted (v19); don't rebuild it by accident.
+4. Visibility: the supply band is already recon-gated. Does the player get to see the trend
+   (starving//recovering), and at which recon band?
+5. Does this need a schema bump? Probably not — `enemy.supplies` already exists — which would
+   make it the first stage in a while that does NOT purge saves.
 
 ### Project state (as of 2026-07-05)
 
