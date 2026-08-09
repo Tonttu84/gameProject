@@ -76,7 +76,16 @@ schema version **27** (unchanged by the 2026-08-08 fixes — no document field m
      first-verified by the run that follows this fix, not by S1.** This is precisely the failure
      the missing CI job allowed: S1 shipped noting "cs-test was still running — CI is the check",
      and CI had no such check.
-  5. **Still NOT covered by CI: the frontend.** `fe-test` (vitest) and `fe-lint` (oxlint) run
+  5. **With the helper fixed, the suite is 474/475 in ~56s — and the one failure was a stale S2
+     assertion, exactly the risk flagged below.** `campaigns.test.js`'s end-day test still
+     asserted `rings[0].richness === 20000 - 9084`, i.e. the PRE-S2 near ring and the retired
+     `enemyForagePlanKg`. The engine returned **71000 = `FORAGE_RINGS[0]` (80000) −
+     `ENEMY_DRAIN_KG_PER_TURN` (9000)** — S2's documented design, behaving correctly; only the
+     test was stale. Now reads both constants instead of restating them. The adjacent
+     `forage.clashes` assertion was stale too (S2 deleted clashes outright) and had simply never
+     been reached. **No game math was changed** — this was S2's hand-arithmetic finally being
+     checked, and the code side of it held.
+  6. **Still NOT covered by CI: the frontend.** `fe-test` (vitest) and `fe-lint` (oxlint) run
      nowhere in CI — same class of gap as the one above, not fixed here.
 
 - **Last session (2026-08-08) — three playtest bug fixes, no new feature.** Details are in the

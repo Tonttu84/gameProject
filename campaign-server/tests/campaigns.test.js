@@ -16,6 +16,8 @@ import {
   GARRISON_SALLY_TICK,
   GARRISON_SALLY_TEAM,
   GARRISON_SALLY_UNIT,
+  FORAGE_RINGS,
+  ENEMY_DRAIN_KG_PER_TURN,
 } from '../utils/campaignConfig.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
@@ -1791,10 +1793,17 @@ describe('POST /api/campaigns/:id/end-day', () => {
       visions: null,
     })
 
-    // The enemy foraged the near ring even though we sent nobody out.
+    // The enemy drained the near ring even though we sent nobody out. Since S2
+    // that drain is a flat abstract number, not a plan derived from its army,
+    // and it eats near-first. Read both constants rather than restating them:
+    // this assertion went stale (20000 − 9084) when S2 scaled the rings 4× and
+    // replaced enemyForagePlanKg with ENEMY_DRAIN_KG_PER_TURN.
     expect(res.body.report.forage.harvested).toEqual({ food: 0, materials: 0 })
-    expect(res.body.report.forage.rings[0].richness).toBe(20000 - 9084)
-    expect(res.body.report.forage.clashes).toEqual([])
+    expect(res.body.report.forage.rings[0].richness).toBe(
+      FORAGE_RINGS[0] - ENEMY_DRAIN_KG_PER_TURN,
+    )
+    // No forager-clash assertion: S2 deleted clashes outright (services/
+    // skirmish.js is gone), so the report carries no such key any more.
   })
 
   // ── Recon rework: leftover scouting points accrue into the scouting level ──
