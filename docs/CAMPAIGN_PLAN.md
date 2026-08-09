@@ -60,8 +60,24 @@ standing invitation to build the thing this principle forbids.
 ### Where the work stands (2026-08-09) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **31**.
+schema version **31**. **Everything through `bd3a5ca` is merged to `main` and CI-green on all six
+jobs** — nothing is in flight, so a new session starts from a clean `main`.
 
+**Open questions left deliberately unanswered — ask before assuming:**
+1. **The enemy grows 3%/turn while the near ring holds** (`ENEMY_REINFORCE_RATE`), which compounds
+   to roughly +34% over ten turns. That is a difficulty shift nobody asked for explicitly; it
+   wants a playtest before deciding whether it needs a cap or a lower rate.
+2. **Should a reinforcement wave be able to MOVE on the tick it arrives?** `tick()` runs
+   `fireScheduledReinforcements()` then `moveUnits()` in the same turn, so a garrison sally lands
+   and immediately steps. Both answers are defensible; the test no longer depends on which.
+3. **`randomPlaceArmy: zone is full` still prints during the C++ suite** (from some test other
+   than the sally one — not chased down). Tests pass, but that warning means units silently fail
+   to arrive, so it is worth a look.
+
+**Recent cleanups worth not re-litigating:** `services/enemyAi.js` → `enemyHost.js` (the old name
+invited the behaviour the standing principle forbids); the 42/Hive ASCII headers are stripped from
+all 19 files that carried them; `bandLabel` and `PUBLIC_OPPORTUNITY_KEYS` each live in exactly one
+place now, after both had been duplicated and both had caused a red CI run.
 
 - **2026-08-09 (latest) — "starve the enemy" S1 landed.** The enemy host now feeds itself off the
   shared rings and is judged turn by turn (no stockpile): near ring = surplus and it grows, mid =
