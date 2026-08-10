@@ -86,6 +86,33 @@ claiming to measure something else.
 **All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
 calls the user made; one turned out to be a non-bug hiding a real bug next door.
 
+**NEXT UP — the forage panel's meter readout (decided 2026-08-10, not yet built).**
+The panel shows "+80 to the boss-fight meter", which is a number with no scale: the player cannot
+see `BOSS_FIGHT_METER_THRESHOLD` (1000), so 80 means nothing. **Decision: show turns-to-breach
+instead** — "Walls breached in ~7 turns at this effort".
+
+The meter itself STAYS. The user asked whether it was just a turn-end tick unrelated to foraging;
+it is not, and the numbers settle it: `fill = CEILING − FLOOR × (inCamp/total)` with
+`inCamp = (total − raiders) × (1 − share)`, so all-scouting fills 50/turn and all-foraging 100.
+The slider DOUBLES the fill rate end to end — it is the cost side of foraging and the main lever on
+when the boss fight lands. "+80" is exactly share 0.6.
+
+**Two constraints whoever builds this must respect:**
+1. **The meter value is recon-gated** — `campaignView` sends a `band` phrase always and a numeric
+   `estimate` bracket only from recon R2 (`displayBracket`). Turns-to-breach needs
+   `threshold − value`, so computing it naively hands the player the hidden counter by arithmetic.
+   Gate it the same way the estimate is gated, or derive it FROM the estimate bracket so it inherits
+   that discipline and narrows with recon like everything else.
+2. **It is not linear in `share`, so the existing interpolation trick does not work.** The panel
+   currently interpolates the fill between `meterFillAtNoForage` and `meterFillAtFullForage`, which
+   is valid because fill IS linear in share. Turns is `remaining / fill` — hyperbolic. Interpolating
+   two turn endpoints would be quietly wrong in the middle of the track. Compute turns from the
+   already-interpolated fill instead.
+
+A leak-free fallback for recon level 0, where no numeric estimate exists: say it relatively — "the
+walls fall about twice as fast as holding everyone back" — which uses only the two endpoint fills,
+both already public, and needs no gate at all.
+
 **What is actually open:**
 - **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
   words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
