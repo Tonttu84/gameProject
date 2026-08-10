@@ -73,13 +73,29 @@ const slotFrom = (trueEvent, falseEvent) => ({
 // enters neither role until its trigger is met. `ctx` is {day, roster,
 // eventFlags}; an empty ctx (no gating context) admits only the ungated
 // events, which the tripwire guarantees keep every tier legible.
-const randomSlot = (ctx = {}) => {
+// Prefer an event no other slot in this reading has already taken (user,
+// 2026-08-10: "a bit boring to have multiple same events"). Applies to the
+// decoy as well as the truth — a false card repeating another slot's fate reads
+// just as flat, and worse, invites the player to think the repetition means
+// something.
+//
+// Falls back to the whole candidate list rather than failing. With three slots,
+// a prerequisite-gated pool and a severity-matched decoy, the unused set can
+// legitimately run dry; a repeated reading is a small disappointment, a missing
+// one is a broken turn. Preference, not a guarantee.
+const pickUnused = (candidates, used) => {
+  const fresh = candidates.filter((e) => !used.has(e.id))
+  const from = fresh.length > 0 ? fresh : candidates
+  return from[Math.floor(Math.random() * from.length)]
+}
+
+const randomSlot = (ctx = {}, used = new Set()) => {
   const pool = eligiblePool(ctx)
-  const trueEvent = pool[Math.floor(Math.random() * pool.length)]
+  const trueEvent = pickUnused(pool, used)
   const peers = pool.filter(
     (e) => e.severity === trueEvent.severity && e.id !== trueEvent.id,
   )
-  const falseEvent = peers[Math.floor(Math.random() * peers.length)]
+  const falseEvent = pickUnused(peers, used)
   return slotFrom(trueEvent, falseEvent)
 }
 
@@ -102,7 +118,19 @@ const forcedSlot = () => {
   return slotFrom(trueEvent, falseEvent)
 }
 
-const drawSlot = (ctx) => forcedSlot() ?? randomSlot(ctx)
+const drawSlot = (ctx, used) => forcedSlot() ?? randomSlot(ctx, used)
+
+// Every event id a slot has spoken for, truth and decoy alike. Forced and
+// scheduled slots count too: they are guaranteed beats and are never displaced,
+// but the random draws around them should still steer clear of repeating them.
+const claimedBy = (slots) => {
+  const used = new Set()
+  for (const slot of slots) {
+    if (slot?.trueEvent?.id) used.add(slot.trueEvent.id)
+    if (slot?.falseEvent?.id) used.add(slot.falseEvent.id)
+  }
+  return used
+}
 
 // Event chains (part 2): drain the campaign's schedule queue into FORCED slots.
 // Every entry whose day has arrived (`day <= ctx.day`) becomes a slot with the
@@ -145,10 +173,18 @@ const drainScheduled = (ctx) => {
 export function drawAugury(ctx = {}) {
   forcedDraws = [...config.DEV_AUGURY]
   const scheduled = drainScheduled(ctx)
+  // Built one at a time, threading what has been claimed so far — Array.from's
+  // generator runs in index order, so slot 2 already knows what 0 and 1 took.
+  const used = new Set()
+  const claim = (slot) => {
+    if (slot?.trueEvent?.id) used.add(slot.trueEvent.id)
+    if (slot?.falseEvent?.id) used.add(slot.falseEvent.id)
+    return slot
+  }
   return {
     slots: Array.from(
       { length: AUGURY_SLOTS },
-      (_, i) => scheduled[i] ?? drawSlot(ctx),
+      (_, i) => claim(scheduled[i] ?? drawSlot(ctx, used)),
     ),
     consulted: false,
     rerollsRemaining: AUGURY_REROLLS_PER_DAY,
@@ -174,7 +210,11 @@ export function consultAugury(campaign) {
 // Replace ONE fate: the slot gets a fresh pair and a fresh reading (new
 // roll, new odds); one reroll is spent. Returns the slot's newly shown event.
 export function rerollAugurySlot(campaign, index) {
-  const slot = drawSlot(campaign)
+  // Steer the redraw away from what the OTHER slots already hold — troubling
+  // the Vael for a thread and getting back one you are already reading is the
+  // most annoying way to spend the turn's only reroll.
+  const others = campaign.augury.slots.filter((_, i) => i !== index)
+  const slot = drawSlot(campaign, claimedBy(others))
   readSlot(campaign, slot)
   campaign.augury.slots.splice(index, 1, slot) // splice keeps Mongoose array change tracking
   campaign.augury.rerollsRemaining -= 1

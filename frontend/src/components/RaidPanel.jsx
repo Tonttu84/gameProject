@@ -196,6 +196,16 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch, locked }) => {
           </p>
           {!o.resolved && (
             <div className="raid-intel">
+              {/* A counter_event pays no loot — it unmakes a coming blow — so
+                  without naming the threat and its cost the card is pure
+                  flavour and cannot be weighed against its party budget. The
+                  server sends this only once the fates are accepted. */}
+              {o.threat && (
+                <p data-testid={`raid-threat-${o.id}`}>
+                  Prevents: {o.threat.title}
+                  {o.threat.effect?.length > 0 && ` — ${o.threat.effect.join(', ')}`}
+                </p>
+              )}
               {rewardParts(o.reward).length > 0 && (
                 <p data-testid={`raid-reward-${o.id}`}>
                   Reward: {rewardParts(o.reward).join(', ')}

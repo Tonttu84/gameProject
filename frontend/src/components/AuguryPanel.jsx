@@ -72,6 +72,15 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue, locked }) => {
                 </div>
                 <div className="augury-title">{vision.title}</div>
                 <div className="augury-desc">{vision.description}</div>
+                {/* What the fate MECHANICALLY does. The flavour above says what
+                    it feels like; this says what it costs, so the reading can
+                    actually be weighed. Formatted server-side (describeEffect)
+                    so hidden state stays silent and enemy figures stay phrases. */}
+                {vision.effectText?.length > 0 && (
+                  <div className="augury-effect" data-testid={`augury-effect-${i}`}>
+                    {vision.effectText.join(', ')}
+                  </div>
+                )}
                 <div className="augury-odds" data-testid={`augury-odds-${i}`}>
                   {Math.round(vision.odds * 100)}% true
                 </div>
@@ -85,6 +94,15 @@ const AuguryPanel = ({ onConsult, onReroll, onAccept, onContinue, locked }) => {
                     {vision.truth.id === vision.id
                       ? 'The vision holds true.'
                       : `In truth: ${vision.truth.title}`}
+                    {/* A false vision means the effect shown above is not the
+                        one that lands — so the real one has to be named here,
+                        or the reveal tells the player they were wrong without
+                        telling them what is actually coming. */}
+                    {vision.truth.id !== vision.id && vision.truth.effectText?.length > 0 && (
+                      <span data-testid={`augury-truth-effect-${i}`}>
+                        {' '}— {vision.truth.effectText.join(', ')}
+                      </span>
+                    )}
                   </div>
                 )}
                 {canReroll && <div className="augury-reroll-hint">Trouble the Vael to redraw this thread</div>}

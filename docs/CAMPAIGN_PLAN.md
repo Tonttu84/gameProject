@@ -150,6 +150,46 @@ end-of-run listener would never fire; and `std::uniform_int_distribution` is not
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
 
+### What a fate costs you, in numbers (2026-08-10)
+
+**The complaint:** raid cards and omens were pure flavour — "the benefits are extremely vague". A
+`counter_event` card was the worst of it: its reward is `{slot}`, no loot, so `rewardParts()` came
+back empty and the card showed no benefit line at all. You could not price it against a 500-point
+party budget.
+
+**What was actually broken underneath.** Counter cards are generated from `slot.trueEvent`, so the
+muster always genuinely exists — nobody was ever raiding a phantom. The real fault was the mirror
+image: **the card list leaked the truth.** A card existing said "this slot is truly bad" whatever
+vision you were shown, and a frightening omen with no card said "that reading was false" — handing
+away the augury's uncertainty for free.
+
+**The decisions (interviewed, do not re-litigate):**
+1. **The true/false uncertainty exists to price the REROLL, and nothing else.** It lifts the moment
+   that decision is over — by either route, reroll spent OR fates accepted. One predicate,
+   `auguryTruthRevealed`, because the augur's cards and the raid board must never disagree about
+   what the player may know. Accepting-with-reroll-unspent used to leave you unable to read your own
+   counter cards; it no longer does.
+2. **Accept reveals the true fate for every slot**, so a counter card can name what it unmakes.
+3. **Cards state the threat AND its mechanical cost** — `Prevents: Night Raid — Food −2 t`. The
+   VERDICT (whether it lands, whether the scouts turn it) still waits for end-day: that is the
+   2026-07-18 deferral, and naming a threat is not the same as calling its outcome.
+4. **Effects read as the MATH, never a rolled result** (`describeEffect`, one formatter, server-side
+   so no component can format a raw effect and sidestep the rules). It is deliberately SILENT on
+   `flag`/`schedule`/`garrison` — hidden state the prerequisite gates read — and keeps enemy figures
+   as phrases, except a multiplier like `The enemy host ×0.5`, which discloses force but not
+   headcount. It fails closed on an unknown effect type. `tests/describeEffect.test.js` pins the
+   silences, because "just print every field" would look like an improvement while unpicking three
+   gates at once.
+5. **No duplicate omens.** `drawAugury` threads the ids already claimed (truth AND decoy) through
+   each draw, and a reroll steers away from the other slots — spending the turn's only reroll to be
+   handed a thread you are already reading is the worst version of it. A PREFERENCE, not a
+   guarantee: with a gated pool the unused set can run dry, and a repeated reading beats a missing
+   one.
+
+**Still vague, deliberately not fixed:** two counter cards still share the title "Riders Massing"
+(flavour is per-TYPE). They are now told apart by the threat line, so this is cosmetic — it wants
+per-instance flavour variants, which is content authoring rather than a mechanism.
+
 **Testing convention — rigging the RNG (2026-08-09).** A bad seed shows up as "passed on one run,
 failed on the next". Two rules came out of chasing exactly that twice in one day:
 - **Assert invariants that hold for EVERY roll.** Both garrison-sally flakes were assertions that

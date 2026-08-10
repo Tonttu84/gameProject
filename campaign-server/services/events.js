@@ -441,6 +441,72 @@ export const eventValence = (effect) => {
   }
 }
 
+// What an effect DOES, in the abstract: the MATH, never the outcome of a roll
+// (user, 2026-08-10 — "if there is a roll, you don't need to show the result of
+// the roll, just the math"). A fate that reads as pure flavour is a fate the
+// player cannot price, which is the whole complaint this answers.
+//
+// Deliberately NOT a dump of the effect's fields. It goes to the same player as
+// applyEffect's log, so it obeys the same disclosure rules, and getting this
+// wrong would quietly undo three separate gates:
+//   - `flag` / `schedule` / `garrison` are HIDDEN state. They emit no log line
+//     on purpose — the chain's story is told by the event text, and a number
+//     here would leak the very state the prerequisite gates read. They describe
+//     as nothing.
+//   - the enemy's numbers are recon-gated, so enemy-side effects stay PHRASES.
+//   - an enemy-side forage modifier is likewise a phrase; only the player's own
+//     yield carries a figure.
+// Returns an array so `multi` flattens naturally and callers can join to taste.
+export const describeEffect = (effect) => {
+  if (!effect) return []
+  const signed = (n) => (n > 0 ? `+${n}` : `−${Math.abs(n)}`)
+  const tons = (kg) => `${+(Math.abs(kg) / 1000).toFixed(1)} t`
+  const signedTons = (kg) => `${kg > 0 ? '+' : '−'}${tons(kg)}`
+  switch (effect.type) {
+    case 'food':
+      return [`Food ${signedTons(effect.delta)}`]
+    case 'materials':
+      return [`Materials ${signed(effect.delta)}`]
+    case 'gold':
+      return [`Gold ${signed(effect.delta)}`]
+    case 'horses':
+      return [`Horses ${signed(effect.delta)}`]
+    case 'roster':
+      return [
+        effect.delta !== undefined
+          ? `${effect.unit} ${signed(effect.delta)}`
+          : `${effect.unit} ×${effect.factor}`,
+      ]
+    case 'all_roster':
+      return [`Every unit ×${effect.factor}`]
+    case 'convert':
+      return [`Up to ${effect.count} ${effect.from} → ${effect.to}`]
+    case 'enemy_losses':
+      // The MULTIPLIER, not a headcount: how hard the enemy is hit is the
+      // mechanical fact the player is owed, and it discloses nothing about how
+      // many of them there are — which is the recon-gated part.
+      return [`The enemy host ×${effect.factor}`]
+    case 'enemy_reveal':
+      return ['The enemy host lies open to your scouts for a turn']
+    case 'forage_modifier': {
+      if (effect.target === 'enemyDrain')
+        return [
+          (effect.deltaKg ?? 0) >= 0
+            ? 'The enemy strips the countryside faster'
+            : 'The enemy strips the countryside slower',
+        ]
+      if (effect.deltaKg) return [`Your foraging ${signedTons(effect.deltaKg)}/turn`]
+      return [`Your foraging ×${effect.factor ?? 1}`]
+    }
+    case 'multi':
+      return (effect.effects ?? []).flatMap(describeEffect)
+    case 'none':
+      return ['No consequence']
+    default:
+      return [] // flag / schedule / garrison — hidden state, see above
+  }
+}
+
 // An EVENT's mood, where eventValence above classifies an EFFECT: honours a
 // declared `valence` (looked up in the pool by id, since a stored slot copy
 // carries neither the declaration nor the choices it stands in for), falling

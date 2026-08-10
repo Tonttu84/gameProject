@@ -27,6 +27,14 @@ export const PUBLIC_OPPORTUNITY_KEYS = [
   'rewardReveal',
   'source',
   'strengthBand',
+  // `threat` (2026-08-10) is public, and is a DELIBERATE widening: a
+  // counter_event pays no loot, so without the fate it unmakes — named, with
+  // its mechanical cost — the card cannot be priced against its party budget.
+  // Non-null only once the augury's truth is out (auguryTruthRevealed), so it
+  // reveals nothing while the reroll decision is still live, and it carries the
+  // THREAT, never the verdict: whether the blow lands, and whether the scouts
+  // turn it, still wait for end-day.
+  'threat',
   'title',
   'type',
 ]

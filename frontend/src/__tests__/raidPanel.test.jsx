@@ -168,6 +168,41 @@ describe('raid panel — opportunities', () => {
     expect(screen.getByTestId('raid-band')).toHaveTextContent('Scouting: Contested')
   })
 
+  // A counter_event pays no loot, so before this it showed nothing but flavour
+  // and could not be weighed against its budget (user, 2026-08-10).
+  const COUNTER = {
+    ...OPPORTUNITY,
+    id: 'd1-c',
+    type: 'counter_event',
+    title: 'Riders Massing',
+    description: 'A coming blow is being readied.',
+    reward: null,
+    threat: { title: 'Night Raid', description: '...', effect: ['Food −2 t', 'Soldier −12'] },
+  }
+
+  it('names the fate a counter raid unmakes, and what it would cost', async () => {
+    getCampaigns.mockResolvedValue([withRaid([COUNTER])])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.getByTestId('raid-threat-d1-c')).toHaveTextContent(
+      'Prevents: Night Raid — Food −2 t, Soldier −12',
+    )
+  })
+
+  it('says nothing about the fate while the augury still withholds it', async () => {
+    // threat is null until auguryTruthRevealed on the server — the card must
+    // not invent a placeholder for it.
+    getCampaigns.mockResolvedValue([withRaid([{ ...COUNTER, threat: null }])])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.getByTestId('raid-card-d1-c')).toBeInTheDocument()
+    expect(screen.queryByTestId('raid-threat-d1-c')).not.toBeInTheDocument()
+  })
+
   it('renders nothing when the turn dealt no opportunities', async () => {
     getCampaigns.mockResolvedValue([withRaid([])])
     render(<App />)

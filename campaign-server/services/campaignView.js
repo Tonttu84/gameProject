@@ -24,7 +24,41 @@ import {
   forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
 } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
-import { eventValenceFor, choiceRung } from './events.js'
+import { eventValenceFor, choiceRung, describeEffect, rungOf } from './events.js'
+
+// Has the turn's true/false uncertainty finished doing its job? ONE predicate,
+// because the augur's cards and the raid board must never disagree about what
+// the player is allowed to know (2026-08-10).
+//
+// The uncertainty exists to price the REROLL — that is the only decision it
+// gates (confirmed with the user). So it lifts the moment that decision is
+// over, by either route: the reroll is spent, or the fates are accepted with it
+// unspent. The second half is new; before it, a player who hoarded the reroll
+// walked into the raids phase with counter cards they still could not read.
+const auguryTruthRevealed = (augury) =>
+  AUGURY_DEBUG_SHOW_TRUTH || augury.rerollsRemaining <= 0 || augury.accepted === true
+
+// The named threat behind a counter_event raid card, or null when there is
+// nothing to say. See the `threat` field in the raid view for why this waits
+// for the truth rather than showing from the moment the card is dealt.
+//
+// The rung comes from slot.firedRungName — the one acceptFates recorded and
+// pinned, so the card describes the effect that will ACTUALLY land rather than
+// re-deriving it from a scouting band that may have moved since. The rung name
+// itself is not exposed: this is a threat readout, not a recon readout.
+const counterThreat = (campaign, opp) => {
+  if (opp.type !== 'counter_event' || opp.resolved) return null
+  if (!campaign.augury || !auguryTruthRevealed(campaign.augury)) return null
+  const slot = campaign.augury.slots?.[opp.reward?.slot]
+  if (!slot?.trueEvent) return null
+  const fired = rungOf(slot.trueEvent, slot.firedRungName ?? 'blind')
+  return {
+    title: fired.title,
+    description: fired.description,
+    // Abstract, never a rolled outcome — describeEffect's whole contract.
+    effect: describeEffect(fired.effect),
+  }
+}
 import { findRecruitEntry, resolveHire } from './recruit.js'
 
 // THE single serializer between campaign documents and the client. Hidden
@@ -48,7 +82,7 @@ const auguryView = (augury) => {
   // spent — the payoff beat of the reroll minigame (user, 2026-07-05). While
   // AUGURY_DEBUG_SHOW_TRUTH is on (playtesting) the truth shows immediately
   // on consult instead.
-  const truthRevealed = AUGURY_DEBUG_SHOW_TRUTH || augury.rerollsRemaining <= 0
+  const truthRevealed = auguryTruthRevealed(augury)
   return {
     consulted: augury.consulted,
     // Fates sealed at the tent (own info): tells the client whether the
@@ -165,6 +199,13 @@ const visionCard = ({ id, title, description, severity, effect }) => ({
   // has no single effect, so its declared valence (pool lookup) is used.
   valence: eventValenceFor({ id, effect }),
   effect, // what WOULD happen if the vision is true — not a leak
+  // The same thing in words: what this MECHANICALLY does (user, 2026-08-10 —
+  // "not perfect knowledge, but a clear description on a mechanical level").
+  // Formatted here rather than in the client so there is one place that knows
+  // how an effect reads, and so the disclosure rules baked into describeEffect
+  // (hidden state stays silent, enemy figures stay phrases) cannot be
+  // sidestepped by a component formatting the raw effect itself.
+  effectText: describeEffect(effect),
 })
 
 export async function campaignView(campaign) {
@@ -328,6 +369,21 @@ export async function campaignView(campaign) {
         enemyReveal: opp.enemyReveal,
         reward: rewardView(opp),
         rewardReveal: opp.rewardReveal,
+        // What a counter_event card actually buys you. Its reward is {slot} —
+        // no loot, just a blow that never falls — so without this the card is
+        // pure flavour and cannot be priced against its party budget (user,
+        // 2026-08-10). Named threat + the abstract cost of it landing; the
+        // VERDICT (whether it lands, whether the scouts turn it) is still held
+        // back to end-day, which is the 2026-07-18 deferral this must not undo.
+        //
+        // Held back until auguryTruthRevealed, and that gate is the design:
+        // while the reroll decision is still live, naming the true fate here
+        // would hand the player the answer for free. The card's
+        // mere EXISTENCE already leaks "this slot is truly bad" — it is keyed
+        // off slot.trueEvent — but the board is not rendered before accept and
+        // the phase march is one-way, so that leak buys nothing. This does not
+        // widen it.
+        threat: counterThreat(campaign, opp),
         resolved: opp.resolved,
         outcome: opp.resolved ? opp.outcome : null,
       })),
