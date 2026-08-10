@@ -56,6 +56,6 @@ describe('CampaignHUD boss-fight meter + recon readout', () => {
 
   it('mirrors the raid scout-points pool, floored', () => {
     hudWith({ raid: { ...campaignFixture.raid, scoutingPoints: 23.7 } })
-    expect(screen.getByTestId('hud-scouting')).toHaveTextContent('Scout pts: 23')
+    expect(screen.getByTestId('hud-scouting')).toHaveTextContent('Screen pts: 23')
   })
 })

@@ -83,7 +83,8 @@ const ForagePanel = ({ onSetShare, locked }) => {
         title="Foraging"
         lines={[
           'The land around Karrowgate must feed your army through the siege — strip it before the enemy does.',
-          'The whole army works the land passively now: slide the effort split toward Forage for food and materials, or toward Scout for raid-board points.',
+          'The whole army works the land passively now: slide the effort split toward Forage for food and materials, or toward Screen for raid-board points.',
+          'Screening is the riders out ahead — they bring back word of the enemy AND harry what they find, which is what turns up targets worth raiding.',
           'The near ring empties first and nothing grows back — the land is a clock.',
           'The enemy drains the same rings on its own account and gets no credit for it — just fewer supplies for everyone.',
           'Leaning toward Forage exposes more of the army — it fills the boss-fight meter faster.',
@@ -112,13 +113,13 @@ const ForagePanel = ({ onSetShare, locked }) => {
             disabled={locked}
             onChange={(e) => setDraft(e.target.value)}
           />
-          Scout
+          Screen
         </label>
       </div>
       <div className="effort-preview">
         <span data-testid="effort-preview-food">{tons(foodKg)} food</span>
         <span data-testid="effort-preview-materials">{tons(materialsKg)} materials</span>
-        <span data-testid="effort-preview-scouting">{Math.round(scoutingPoints)} scouting points</span>
+        <span data-testid="effort-preview-scouting">{Math.round(scoutingPoints)} screening points</span>
         <span data-testid="effort-preview-meter">+{Math.round(meterFill)} to the boss-fight meter</span>
         <span data-testid="effort-enemy-drain">
           Enemy foraging: {forage.enemyDrainKg == null ? 'unknown' : `${tons(forage.enemyDrainKg)}/turn`}

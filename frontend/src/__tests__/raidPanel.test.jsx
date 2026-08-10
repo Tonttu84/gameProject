@@ -339,7 +339,7 @@ describe('raid panel — scouting mini-game', () => {
     await screen.findByText(/War Council/)
     await marchToRaids()
 
-    expect(screen.getByTestId('raid-points')).toHaveTextContent('Scouting points: 20')
+    expect(screen.getByTestId('raid-points')).toHaveTextContent('Screening points: 20')
     expect(screen.getByTestId('raid-reward-d1-0')).toHaveTextContent('Reward: 1500–2500 food, 50–100 materials')
     expect(screen.getByTestId('raid-enemy-d1-0')).toHaveTextContent('Enemy: 8–14 Soldier')
     // destroy_detachment pays coin: a gold range, revealable like any other.
@@ -382,7 +382,7 @@ describe('raid panel — scouting mini-game', () => {
     )
     expect(await screen.findByTestId('raid-reward-d1-0')).toHaveTextContent('Reward: 2000 food, 80 materials')
     expect(screen.queryByTestId('raid-reveal-reward-d1-0')).not.toBeInTheDocument()
-    expect(screen.getByTestId('raid-points')).toHaveTextContent('Scouting points: 17')
+    expect(screen.getByTestId('raid-points')).toHaveTextContent('Screening points: 17')
   })
 
   it('revealing the enemy spends points and swaps the range for exact per-type counts', async () => {
@@ -412,7 +412,7 @@ describe('raid panel — scouting mini-game', () => {
     fireEvent.click(screen.getByTestId('raid-scout-add'))
     await waitFor(() => expect(scoutRaidTarget).toHaveBeenCalledWith('c1', { action: 'add_target' }))
     expect(await screen.findByTestId('raid-card-d1-1')).toBeInTheDocument()
-    expect(screen.getByTestId('raid-points')).toHaveTextContent('Scouting points: 12')
+    expect(screen.getByTestId('raid-points')).toHaveTextContent('Screening points: 12')
   })
 
   it('disables scout/reveal buttons once points fall short of their cost', async () => {

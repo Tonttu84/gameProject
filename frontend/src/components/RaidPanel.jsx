@@ -176,7 +176,7 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch, locked }) => {
         Scouting: {scouting?.band ?? 'Unknown'}
       </p>
       <div className="raid-scouting-header">
-        <span data-testid="raid-points">Scouting points: {Math.floor(scoutingPoints)}</span>
+        <span data-testid="raid-points">Screening points: {Math.floor(scoutingPoints)}</span>
         <button
           className="login-toggle"
           data-testid="raid-scout-add"

@@ -143,7 +143,7 @@ const CampaignHUD = () => {
         Recon: {scouting?.band ?? 'Blind'}
       </span>
       <span className="hud-scouting" data-testid="hud-scouting">
-        Scout pts: {Math.floor(raid?.scoutingPoints ?? 0)}
+        Screen pts: {Math.floor(raid?.scoutingPoints ?? 0)}
       </span>
       <span className="hud-roster">
         {Object.entries(roster)

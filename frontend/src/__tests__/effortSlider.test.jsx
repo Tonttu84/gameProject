@@ -69,7 +69,7 @@ describe('effort slider', () => {
     expect(screen.getByTestId('effort-slider')).toHaveValue('0.5') // campaignFixture.forage.share
   })
 
-  it('previews food, materials, and scouting points as the slider drags — no server round-trip', async () => {
+  it('previews food, materials, and screening points as the slider drags — no server round-trip', async () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
@@ -77,12 +77,12 @@ describe('effort slider', () => {
     // → food 0.8×8896 = 7116.8 t → "7.1 t"; materials 0.2×8896 ≈ "1.8 t".
     expect(screen.getByTestId('effort-preview-food')).toHaveTextContent('7.1 t')
     expect(screen.getByTestId('effort-preview-materials')).toHaveTextContent('1.8 t')
-    expect(screen.getByTestId('effort-preview-scouting')).toHaveTextContent('556 scouting points')
+    expect(screen.getByTestId('effort-preview-scouting')).toHaveTextContent('556 screening points')
 
     fireEvent.change(screen.getByTestId('effort-slider'), { target: { value: '1' } })
     // Full forage: 1112×16 = 17792 kg → food 14233.6 → "14.2 t"; scouting 0.
     expect(screen.getByTestId('effort-preview-food')).toHaveTextContent('14.2 t')
-    expect(screen.getByTestId('effort-preview-scouting')).toHaveTextContent('0 scouting points')
+    expect(screen.getByTestId('effort-preview-scouting')).toHaveTextContent('0 screening points')
     // Nothing was sent to the server just from dragging.
     expect(setCampaignEffort).not.toHaveBeenCalled()
   })
