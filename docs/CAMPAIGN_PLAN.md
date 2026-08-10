@@ -148,6 +148,14 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
 was built and the two traps it had to avoid.
 
 **What is actually open:**
+- **An unidentified C++ flake was SEEN on 2026-08-10 and not caught.** One run of `make test-serial`
+  at `ef98380` came back 350/351; the next four runs passed, so it is rare. **The seed that would
+  have reproduced it was lost** — the run was piped through `tail -4`, which threw away the
+  `[rng] seed=…` line the suite prints for exactly this. Do not filter that line. When a C++ run
+  fails, capture the whole log first (`./run_tests > log 2>&1`), then replay with
+  `GAME_RNG_SEED=<seed> ./run_tests`. If CI reddens on an engine test with no obvious cause, this is
+  the likely culprit and the seed will be in the job log. Unknown whether it predates `ef98380`;
+  nobody has compared against `main` at `6ed43ca`.
 - **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
   words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
   `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number. **Note this is
