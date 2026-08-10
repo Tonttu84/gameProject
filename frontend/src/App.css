@@ -384,6 +384,10 @@ body {
 .choice-option .choice-option-effect { color: var(--gold); font-variant-numeric: tabular-nums; }
 .choice-outcome { color: #88cc88; }
 .fate-deferred { color: var(--gold); font-style: italic; }
+/* What the fate cost or gave, on the card that reports it — same treatment as a
+   choice branch's cost, for the same reason: prose sets the scene, this is the
+   figure. */
+.fate-effect { color: var(--gold); font-variant-numeric: tabular-nums; }
 
 .phase-placement {
   display: flex;

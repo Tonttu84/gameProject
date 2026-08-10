@@ -365,6 +365,9 @@ describe('auguryReveal', () => {
         title: 'Doom',
         description: DOOMED.description,
         severity: 3,
+        // What it DID, not only what it was (2026-08-10): the beat where a fate
+        // lands was the last card in the game showing flavour alone.
+        effect: ['Food −1 t'],
       })
     }
   })
@@ -381,10 +384,13 @@ describe('auguryReveal', () => {
     expect(reveal[0].odds).toBeCloseTo(0.3)
     expect(reveal[1].predicted.id).toBe('supply') // the lie the player saw
     expect(reveal[1].actual.id).toBe('doomed_omen') // ...and what really came
-    // The reveal card never carries the hidden legibility bonus or the effect
-    // machinery — display fields only.
+    // The reveal card never carries the hidden legibility bonus, and the
+    // effect crosses as DESCRIBED LINES only — the raw {type, delta} machinery
+    // still stays server-side, same contract describeEffect has everywhere.
     expect(reveal[0].actual.baseAccuracy).toBeUndefined()
-    expect(reveal[0].actual.effect).toBeUndefined()
+    expect(reveal[0].actual.effect).toEqual(['Food −1 t'])
+    expect(Array.isArray(reveal[0].actual.effect)).toBe(true)
+    for (const line of reveal[0].actual.effect) expect(typeof line).toBe('string')
   })
 })
 

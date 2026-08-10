@@ -68,7 +68,10 @@ is in flight, so a new session starts from a clean `main`.
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
 about DESIGN is still expected and welcome; asking whether to merge finished work is not.
 
-**2026-08-10, in order.** Six player-facing changes, each with its own section below:
+**2026-08-10, in order.** Seven player-facing changes, each with its own section below:
+- **The rule, audited card by card** — every event and every raid walked and read. Raids were
+  clean; the fate REVEAL card was the one gap and now states its outcome. See "The rule, audited
+  card by card".
 - **Turns-to-breach** — the forage panel reads the meter as time the walls have left, not a raw
   "+80" against a scale the player cannot see. See "Turns-to-breach" below.
 - **Fates and raid cards say what they cost** (`a6c7912`) — `describeEffect`, the counter-raid
@@ -175,6 +178,49 @@ Two caveats: the startup line is printed BEFORE the run because ASan/UBSan abort
 end-of-run listener would never fire; and `std::uniform_int_distribution` is not specified to map
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
+
+### The rule, audited card by card (2026-08-10) ✅ SHIPPED
+
+The standing rule ("no card shows flavour alone") was **verified by walking every card the game
+can deal**, rather than trusting the `describeEffect` sweep — which asserts the POOL can be
+described, not that the card the player reads says anything. Both halves were dumped and read:
+all 39 `EVENT_POOL` entries with their rungs and branches, and all six raid types generated for
+real and rendered through `campaignView`.
+
+**Raids: clean, all six.** `loot_supplies` food/materials/gold ranges · `seize_horses` horses ·
+`rescue_troops` a roster range · `destroy_detachment` gold **plus** "The enemy host is the thinner
+for it" · `counter_event` the named `threat` with its effect · `garrison_sortie` its payoff (the
+thins-enemy one) or its stores (`sortie_grand`'s materials). The persistent forage-pressure card
+states both the kill and the lift. Nothing to fix.
+
+**Events: one real gap, now closed.** Every card that PROMISES showed its figures — the augur's
+tent, the choice branches, the raid board. The card that REPORTS did not: `auguryReveal`'s
+`card()` picked `{id, title, description, severity}`, so the beat where a fate actually lands
+read as prose alone. "Forage Raiders — enemy riders fall on your foraging parties" named no
+figure anywhere on the card; the −4 t, −20 materials and −3% of the Soldiers reached the player
+only in the flat "fortnight, in full" list a beat later, mixed in with upkeep, foraging and the
+enemy's turn. Whether a fate's prose carried its own number was pure authoring accident —
+`quarry` says "+25 materials", `forage_raiders` says nothing.
+
+Fixed by adding `effect: describeEffect(...)` to the reveal card and to `attachFired`'s rung card
+(the beat renders `fired ?? actual`, so the rung needed it too, or "Raiders Intercepted — a few
+sacks lost, nothing more" is the whole account of a tonne), rendered by a new `FateEffect` in
+`EventRevealScreen`. Three properties held on purpose:
+
+- **The raw effect still does not cross** — described lines only, the same contract
+  `describeEffect` has everywhere else. The old assertion that `actual.effect` is `undefined` was
+  the rule this violated, and it is now the narrower "no `{type, delta}` machinery".
+- **The DEFERRED strip still holds.** `acceptFates` rebuilds a counter-raided slot from
+  `predicted`/`odds` alone, so the blow that has not fallen still states nothing. `predicted`
+  keeps its line — that is the card the tent already showed.
+- **The fired rung's figure, not the blind one's.** A warned Night Raid says −0.5 t, not the −2 t
+  it was spared.
+
+**A formatting wart fell out of it:** a zero delta printed "Food −0 t", a loss that isn't one.
+Unreachable from today's pool (a nothing-event is `type: 'none'` → "No consequence"), but the
+reveal card now prints these lines on every fate, so `sign()` gives 0 no sign at all.
+
+Green: campaign-server 612/612 (24 files), frontend 274/274, oxlint clean.
 
 ### Turns-to-breach — the forage panel's meter readout (2026-08-10) ✅ SHIPPED
 

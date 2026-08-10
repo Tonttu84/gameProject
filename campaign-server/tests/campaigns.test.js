@@ -1855,7 +1855,16 @@ describe('POST /api/campaigns/:id/end-day', () => {
       Array.from({ length: 3 }, () => ({
         predicted: null,
         odds: null,
-        actual: { id: 'quiet', title: 'Quiet Fortnight', description: 'Nothing stirs.', severity: 1 },
+        // `effect` (2026-08-10): every reveal card states what the fate did.
+        // QUIET is a 0 kg fixture, so its line takes no sign — see the `sign`
+        // helper in describeEffect.
+        actual: {
+          id: 'quiet',
+          title: 'Quiet Fortnight',
+          description: 'Nothing stirs.',
+          severity: 1,
+          effect: ['Food 0 t'],
+        },
         wasAccurate: null,
         countered: false, // no counter_event raid unmade this fate
       })),
@@ -2094,6 +2103,68 @@ describe('augury acceptance (fates at the tent)', () => {
     const doc = await Campaign.findById(c.id)
     expect(doc.resources.food).toBe(50000 - 3 * 999)
     expect(doc.augury.slots.map((s) => s.firedRungName)).toEqual([null, null, null])
+  })
+
+  // ── Every fate states what it DID (user, 2026-08-10) ───────────────────────
+  // The standing rule that no card shows flavour alone reached the augur's tent
+  // and the choice branches, but not the beat where a fate actually LANDS: the
+  // card named the fate and its prose, and the figure appeared only in the flat
+  // "fortnight, in full" list a beat later, among upkeep and the enemy's turn.
+  // Whether a fate's own prose carried a number was authoring accident.
+  describe('the reveal card states the fate\'s mechanical outcome', () => {
+    test('a plain fate reports its effect as described lines, not raw machinery', async () => {
+      const { body: c } = await createCampaign()
+      await pinAugury(c.id, DOOMED, QUIET)
+      await setConsulted(c.id)
+      await clearRaids(c.id)
+
+      const { body } = await accept(c.id)
+      for (const slot of body.report.augury) {
+        expect(slot.actual.effect).toEqual(['Food −1 t'])
+        // Described lines only — the raw {type, delta} never crosses, same
+        // contract describeEffect holds everywhere else.
+        expect(JSON.stringify(slot.actual)).not.toContain('"delta"')
+        expect(JSON.stringify(slot.actual)).not.toContain('"type"')
+      }
+    })
+
+    test('a recon-sensitive fate reports the FIRED rung\'s effect, not the blind one', async () => {
+      const { body: c } = await createCampaign()
+      await pinAugury(c.id, NIGHT_RAID, QUIET)
+      await setConsulted(c.id)
+      await clearRaids(c.id)
+      await pinBand(c.id, 'Contested') // → the `warned` rung fires
+
+      const { body } = await accept(c.id)
+      const slot = body.report.augury[0]
+      // The beat renders `fired ?? actual`, so the line must be the rung's.
+      // "Pickets Hold — they flee with next to nothing" is −0.5 t; the blind
+      // rung it replaced would have been −2 t and a slice of the Soldiers.
+      expect(slot.fired.title).toBe('Pickets Hold')
+      expect(slot.fired.effect).toEqual(['Food −0.5 t'])
+      expect(slot.fired.effect).not.toEqual(slot.actual.effect)
+    })
+
+    test('a DEFERRED slot still states nothing — the strip holds', async () => {
+      const { body: c } = await createCampaign()
+      await pinAugury(c.id, DOOMED, QUIET)
+      await setConsulted(c.id)
+      await pinCounterRaid(c.id, 1)
+
+      const { body } = await accept(c.id)
+      const tent = body.report.augury[1]
+      expect(tent.deferred).toBe(true)
+      // The blow has not fallen: no card, so no effect line either. Adding the
+      // figure to the reveal must not reach around the 2026-07-18 deferral.
+      expect(tent.actual).toBeUndefined()
+      expect(tent.fired).toBeUndefined()
+      // The TRUTH's figure is what must not appear. `predicted` keeps its own
+      // line — that is the card the player was shown at the tent, and it has
+      // carried its effect since the tent card was built; here it is the QUIET
+      // decoy, so its line says nothing about the doom being deferred.
+      expect(tent.predicted.id).toBe('quiet')
+      expect(JSON.stringify(tent)).not.toContain('−1 t') // DOOMED's −999 kg
+    })
   })
 
   test('guards: no accept before consult, no double accept, no reroll after', async () => {

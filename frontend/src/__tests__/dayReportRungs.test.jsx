@@ -102,6 +102,74 @@ describe('EventRevealScreen: recon-sensitive rungs', () => {
   })
 })
 
+// ── Every fate says what it DID (user, 2026-08-10) ──────────────────────────
+// The standing rule that no card shows flavour alone had reached the augur's
+// tent, the choice branches and the raid board, but not the beat where a fate
+// LANDS. The figures were only in the flat "fortnight, in full" list a beat
+// later, mixed with upkeep and the enemy's turn — and whether a fate's own
+// prose happened to name a number was authoring accident.
+describe('EventRevealScreen: the fate card states its mechanical outcome', () => {
+  it('shows the effect lines beside what came to pass', () => {
+    renderReport([
+      {
+        ...nightRaidSlot,
+        actual: { ...nightRaidSlot.actual, effect: ['Food −2 t', 'Soldier ×0.98'] },
+      },
+    ])
+    const line = screen.getByTestId('fate-effect-0')
+    expect(line).toHaveTextContent('Food −2 t, Soldier ×0.98')
+  })
+
+  it('shows the FIRED rung\'s effect, not the blind one it replaced', () => {
+    renderReport([
+      {
+        ...nightRaidSlot,
+        actual: { ...nightRaidSlot.actual, effect: ['Food −2 t', 'Soldier ×0.98'] },
+        fired: {
+          title: 'Pickets Hold',
+          description: 'They flee with next to nothing.',
+          rung: 'warned',
+          effect: ['Food −0.5 t'],
+        },
+        scoutsIntervened: true,
+      },
+    ])
+    // The beat renders `fired ?? actual`, so the line must follow it: the
+    // downgraded rung cost half a tonne, not the two the blind rung would have.
+    const line = screen.getByTestId('fate-effect-0')
+    expect(line).toHaveTextContent('Food −0.5 t')
+    expect(line).not.toHaveTextContent('−2 t')
+  })
+
+  it('states it on an unconsulted fate too, where there is no prophecy to read', () => {
+    renderReport([
+      {
+        predicted: null,
+        odds: null,
+        wasAccurate: null,
+        actual: { id: 'quarry', title: 'A Workable Seam', description: 'Stone enough.', effect: ['Materials +25'] },
+      },
+    ])
+    expect(screen.getByTestId('fate-effect-0')).toHaveTextContent('Materials +25')
+  })
+
+  it('says nothing when there is nothing mechanical to say', () => {
+    // A choice-fate carries no effect of its own (the branch cards price
+    // themselves) and a bookkeeping flag is the rule's one exemption — neither
+    // should render an empty line.
+    renderReport([{ ...nightRaidSlot, actual: { ...nightRaidSlot.actual, effect: [] } }])
+    expect(screen.queryByTestId('fate-effect-0')).not.toBeInTheDocument()
+  })
+
+  it('a deferred slot shows no outcome line — the blow has not fallen', () => {
+    renderReport([
+      { predicted: { id: 'night_raid', title: 'Night Raid' }, odds: 70, deferred: true },
+    ])
+    expect(screen.getByTestId('fate-deferred')).toBeInTheDocument()
+    expect(screen.queryByTestId('fate-effect-0')).not.toBeInTheDocument()
+  })
+})
+
 describe('ScoutReport: free reveal (prisoners taken)', () => {
   it('says why the enemy is an open book when enemy.revealed is set', () => {
     render(

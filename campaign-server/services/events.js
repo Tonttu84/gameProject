@@ -470,9 +470,14 @@ export const eventValence = (effect) => {
 // Returns an array so `multi` flattens naturally and callers can join to taste.
 export const describeEffect = (effect) => {
   if (!effect) return []
-  const signed = (n) => (n > 0 ? `+${n}` : `−${Math.abs(n)}`)
+  // Zero takes NO sign: "Food −0 t" is what a naive ternary prints, and it
+  // reads as a loss that isn't one. Unreachable from today's pool (a nothing
+  // event is `type: 'none'` → "No consequence"), but the reveal card now shows
+  // these lines on every fate, so an authoring slip must not print a lie.
+  const sign = (n) => (n > 0 ? '+' : n < 0 ? '−' : '')
+  const signed = (n) => `${sign(n)}${Math.abs(n)}`
   const tons = (kg) => `${+(Math.abs(kg) / 1000).toFixed(1)} t`
-  const signedTons = (kg) => `${kg > 0 ? '+' : '−'}${tons(kg)}`
+  const signedTons = (kg) => `${sign(kg)}${tons(kg)}`
   switch (effect.type) {
     case 'food':
       return [`Food ${signedTons(effect.delta)}`]

@@ -13,7 +13,14 @@ import {
   fieldPointsFor,
 } from '../utils/capabilities.js'
 import { bracketOnLevelUp } from './recon.js'
-import { applyEffect, firedRung, rungOf, rosterTotal, optionCard } from './events.js'
+import {
+  applyEffect,
+  firedRung,
+  rungOf,
+  rosterTotal,
+  optionCard,
+  describeEffect,
+} from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyHost.js'
 import { meterFillAmount, meterBand } from './meter.js'
@@ -62,7 +69,18 @@ export function checkAnnihilation(campaign) {
 // leaves the card untouched (its `actual` already carries the truth).
 const attachFired = (revealSlot, fired) => {
   if (!fired.reconSensitive) return
-  revealSlot.fired = { title: fired.title, description: fired.description, rung: fired.rung }
+  // The rung card is what the beat actually RENDERS for a recon-sensitive fate
+  // (`came = fired ?? actual`), so it needs the same mechanical line the plain
+  // card gained — otherwise "Raiders Intercepted — a few sacks lost, nothing
+  // more" is the whole of what the player is told, and the sacks are 1 t. The
+  // rung's title, prose and the scouts' intervention are all on the card
+  // already; the figure adds no disclosure the card wasn't making.
+  revealSlot.fired = {
+    title: fired.title,
+    description: fired.description,
+    rung: fired.rung,
+    effect: describeEffect(fired.effect),
+  }
   revealSlot.scoutsIntervened = fired.intervened
 }
 

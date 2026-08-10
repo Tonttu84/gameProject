@@ -9,7 +9,7 @@ import {
   AUGURY_REROLLS_PER_DAY,
   AUGURY_MAGE_BONUS_CAP,
 } from '../utils/campaignConfig.js'
-import { EVENT_POOL, POOL_LEGIBILITY, eligiblePool } from './events.js'
+import { EVENT_POOL, POOL_LEGIBILITY, eligiblePool, describeEffect } from './events.js'
 
 // The augur's visions. Each turn holds AUGURY_SLOTS independent fates; a slot
 // is a hidden {trueEvent, falseEvent} pair drawn from ONE pool (severity
@@ -227,7 +227,26 @@ export function rerollAugurySlot(campaign, index) {
 // `countered` marks a fate a won counter_event raid unmade (Stage 4 Part 2) —
 // its effect never fired.
 export function auguryReveal(campaign) {
-  const card = ({ id, title, description, severity }) => ({ id, title, description, severity })
+  // `effect` (2026-08-10) closes the last place a card showed flavour alone:
+  // the beat where a fate actually LANDS. "Forage Raiders — enemy riders fall
+  // on your foraging parties" named no figure anywhere, and the −4 t it cost
+  // reached the player only in the flat "fortnight, in full" list a beat later,
+  // mixed in with upkeep and the enemy's turn. Whether a fate's prose happened
+  // to carry its own number was pure authoring accident (`quarry` says "+25
+  // materials", `forage_raiders` says nothing) — this makes it structural.
+  //
+  // Nothing new is disclosed: `actual` is the truth being revealed on this very
+  // card, and `predicted` is the shown vision, whose effectText the augur's
+  // tent has already been printing since the tent card was built. The one card
+  // that must NOT gain it is a DEFERRED slot's — acceptFates rebuilds that from
+  // `predicted`/`odds` alone, so the strip still holds.
+  const card = ({ id, title, description, severity, effect }) => ({
+    id,
+    title,
+    description,
+    severity,
+    effect: describeEffect(effect),
+  })
   const { consulted, slots } = campaign.augury
   return slots.map((slot) => ({
     predicted: consulted ? card(shownEvent(slot)) : null,

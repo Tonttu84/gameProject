@@ -95,6 +95,19 @@ const ForageBeat = ({ forage }) => (
 // what came to pass. Recon-sensitive fates (Stage 4 1c) show the FIRED rung —
 // the augur always foretold the blind one; a countered fate (a won
 // counter_event raid) never fired at all.
+// What the fate DID, beside what it was. The standing rule (user, 2026-08-10)
+// is that no card shows flavour alone, and this beat was the last place one
+// still did: the figures existed, but only down in the flat "fortnight, in
+// full" list, a beat away and mixed with upkeep, foraging and the enemy's turn.
+// Empty for a choice-fate (the branch cards carry their own costs, below) and
+// for a pure bookkeeping flag, which is the rule's one stated exemption.
+const FateEffect = ({ effect, index }) =>
+  effect?.length > 0 ? (
+    <p className="fate-effect" data-testid={`fate-effect-${index}`}>
+      {effect.join(', ')}
+    </p>
+  ) : null
+
 const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
   // Deferred (a counter-raid target): the blow hasn't fallen. The tent shows
   // only the prophecy and the pending threat — no verdict, no came-to-pass, no
@@ -127,15 +140,19 @@ const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
             What came to pass: <strong>{came.title}</strong>
             {came.description && ` — ${came.description}`}
           </p>
+          <FateEffect effect={came.effect} index={index} />
           <p className={slot.wasAccurate ? 'augury-true' : 'augury-false'}>
             {slot.wasAccurate ? 'The augur spoke true.' : 'The augur was wrong.'}
           </p>
         </>
       ) : (
-        <p>
-          Unconsulted, fate struck anyway: <strong>{came.title}</strong>
-          {came.description && ` — ${came.description}`}
-        </p>
+        <>
+          <p>
+            Unconsulted, fate struck anyway: <strong>{came.title}</strong>
+            {came.description && ` — ${came.description}`}
+          </p>
+          <FateEffect effect={came.effect} index={index} />
+        </>
       )}
       {slot.countered && (
         <p className="scout-intervened" data-testid="fate-countered">
