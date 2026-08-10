@@ -93,12 +93,14 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
   package managers"** or you lose npm and GitHub. The container is provisioned with the policy in
   force at session start, so the change lands in NEW sessions, not the one you edit it from.
 
-  **Verification status, stated plainly:** every dead end below was reproduced first-hand in a
-  cloud session on 2026-08-10. The remedy itself is **from the documented feature, not yet observed
-  working here** — the session that wrote this could not test it, precisely because of the
-  session-start pinning above. **The first session started under a Custom-allowlist environment
-  should run `npm test` in `campaign-server/` and replace this paragraph with the result** (expect
-  23/23 files; the DB-free 11 already pass at 261 tests).
+  **VERIFIED WORKING 2026-08-10: `cs-test` runs in a cloud session — 23/23 files, 521/521 tests,
+  64s.** (Before the allowlist: 11 files / 261 tests, with 12 files dead at setup.) The fix took
+  effect in the *same* session that edited the environment, so the session-start pinning above is
+  softer than the docs imply — but the tell is subtle, so know what you are looking at: a denied
+  host fails as `curl: (56) CONNECT tunnel failed` with code **000** (the proxy refuses the tunnel),
+  whereas an allowed host returns a real status **from the origin**. `fastdl.mongodb.org/linux/`
+  answering **403** is SUCCESS — that is S3 declining a directory listing through an open tunnel,
+  not the policy. Fetch an actual `.tgz` to confirm rather than trusting a directory URL.
 
   **Dead ends — do not re-investigate, all four were checked on 2026-08-10:**
   - **"No Docker daemon" was wrong.** `/usr/bin/dockerd` is present and starts fine
@@ -112,11 +114,12 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
     the installed driver is `mongodb@6.21` (mongoose 8), which needs server 4.0+.
   - **No npm package bundles a mongod**; they all download from the blocked hosts.
 
-  **Vendoring the binary into the repo was considered and REJECTED (2026-08-10).** A mongod is
-  ~130–150 MB, over GitHub's 100 MiB hard per-file limit, so it would need committing compressed
-  (~35–45 MB) plus a decompress-at-setup step. That is ~10× this repo (GitHub reports 4 MB; the
-  largest tracked file is 0.9 MB), permanent in history, re-cloned every remote session, and stacked
-  again on every version bump. It would also be the only binary the tree tracks — `game`,
+  **Vendoring the binary into the repo was considered and REJECTED (2026-08-10).** Measured, not
+  estimated: the extracted `mongod` is **175.7 MB** — comfortably over GitHub's 100 MiB hard
+  per-file limit — and even the upstream `.tgz` is **81.8 MB**. So it could only go in compressed,
+  plus a decompress-at-setup step. That is ~20× this repo (GitHub reports 4 MB; the largest tracked
+  file is 0.9 MB), permanent in history, re-cloned every remote session, and stacked again on every
+  version bump. It would also be the only binary the tree tracks — `game`,
   `run_tests`, `game_clang` and `BUILD/` are all gitignored — and this repo is **public**, so
   shipping mongod is SSPL redistribution. `git-lfs` is not even installed in the sandbox and its
   backend (`github-cloud.s3.amazonaws.com`) is 403, so LFS is not an escape hatch either.
