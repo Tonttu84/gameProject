@@ -123,6 +123,21 @@ body {
 .scout-report h3 { color: var(--gold); font-size: 0.95rem; margin-bottom: 0.3rem; }
 .scout-report p  { font-size: 0.85rem; margin: 0.2rem 0; }
 
+/* Effort slider preview: what this turn's forage/scout split buys. These are
+   bare inline spans in the markup, so with no rule at all they render run
+   together — "6 t food1.5 t materials445 scouting points". Flex + gap gives
+   them real separators, and wrapping keeps the row readable at narrow widths
+   rather than overflowing the column. */
+.effort-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  font-size: 0.85rem;
+}
+/* The last item is a sentence ("Enemy foraging: unknown"), not a figure —
+   give it the whole row so it does not read as another number in the list. */
+.effort-preview > [data-testid='effort-enemy-drain'] { flex-basis: 100%; }
+
 /* Raid opportunities (Stage 4 Part 2): one card per scouted target, with a
    party-builder against the capacity budget. Same box treatment as the
    scouting report. */
