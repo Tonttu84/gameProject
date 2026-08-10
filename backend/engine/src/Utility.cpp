@@ -20,7 +20,32 @@ int Utility::throwDice()
     return result;
 }
 
-    std::mt19937 Utility::gen(std::random_device{}());
+    // Random per run by default — a fixed seed would make the suite green and
+    // blind, hiding exactly the rare-draw bugs it is there to catch. But the
+    // seed is chosen ONCE, here, and kept, so a failure is replayable:
+    // GAME_RNG_SEED=<value> repeats the entire draw sequence.
+    //
+    // Caveat worth knowing before chasing a CI failure locally: mt19937 is
+    // portable, but std::uniform_int_distribution is not specified to give the
+    // same mapping across standard-library implementations. Same seed + same
+    // toolchain reproduces; a different libstdc++ may not.
+    static unsigned int resolveSeed()
+    {
+        if (const char* env = std::getenv("GAME_RNG_SEED")) {
+            errno = 0;
+            char* end = nullptr;
+            const unsigned long v = std::strtoul(env, &end, 10);
+            if (end != env && errno == 0)
+                return static_cast<unsigned int>(v);
+            std::cerr << "GAME_RNG_SEED is not a number, ignoring: " << env << '\n';
+        }
+        return std::random_device{}();
+    }
+
+    unsigned int Utility::seed = resolveSeed();
+    std::mt19937 Utility::gen(Utility::seed);
+
+    unsigned int Utility::rngSeed() { return seed; }
 #ifdef TESTING
     std::queue<int> Utility::mockValues;
 #endif

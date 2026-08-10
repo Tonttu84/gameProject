@@ -25,12 +25,22 @@ public:
         static int getRandom(int lowerBound, int upperBound);
         static int calcDistance(const Hex* a, const Hex* b);
 
+        // The seed the RNG was started with this process. Random every run (a
+        // fixed default would hide the rare-seed bugs the suite exists to
+        // catch), but RECORDED so a failure can be replayed: re-run with
+        // GAME_RNG_SEED=<value> and the whole draw sequence repeats. The test
+        // binary prints it — see the listener in test_main.cpp.
+        static unsigned int rngSeed();
+
 #ifdef TESTING
         static void pushDiceRoll(int value);
         static void clearDiceRolls();
 #endif
 
     private:
+        // Declared BEFORE gen: statics in one translation unit initialise in
+        // declaration order, and gen is seeded from this.
+        static unsigned int seed;
         static std::mt19937 gen;
 #ifdef TESTING
         static std::queue<int> mockValues;

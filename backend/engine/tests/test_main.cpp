@@ -1,6 +1,35 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
+#include "Utility.hpp"
+
+// The suite runs on a RANDOM seed every time, on purpose: a fixed one would be
+// green and blind, and both flakes chased on 2026-08-09 were rare-draw bugs a
+// pinned seed would have hidden for months. The cost of that is a failure you
+// cannot re-run — so the seed is printed.
+//
+// Up front, because ASan/UBSan abort the process and a listener at the END
+// would never fire; and again after a failing run, so it sits next to the
+// failure instead of scrolled off the top of a CI log. Both go to stderr, so
+// nothing is added to the stdout Catch2 reporters parse.
+namespace {
+struct SeedReporter : Catch::TestEventListenerBase {
+    using TestEventListenerBase::TestEventListenerBase;
+
+    void testRunStarting(Catch::TestRunInfo const&) override {
+        std::cerr << "[rng] seed=" << Utility::rngSeed() << '\n';
+    }
+
+    void testRunEnded(Catch::TestRunStats const& stats) override {
+        if (stats.totals.assertions.failed > 0)
+            std::cerr << "[rng] FAILED with seed=" << Utility::rngSeed()
+                      << " — replay with: GAME_RNG_SEED=" << Utility::rngSeed()
+                      << " ./run_tests\n";
+    }
+};
+} // namespace
+CATCH_REGISTER_LISTENER(SeedReporter)
+
 #include "units/Soldier.hpp"
 #include "units/Zombie.hpp"
 #include "units/Archer.hpp"

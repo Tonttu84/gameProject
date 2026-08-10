@@ -69,7 +69,8 @@ supply swing (`f218da2`), the reinforcement tick-order decision (`f94237c`), the
 test fixes — the garrison sally cases that measured survival rather than firing (`115a3ab`, which
 had turned `main` red), and the placement sweep that replaced a single rigged roll (`c141022`).
 Both of the latter are covered by the testing convention below; read it before touching an
-RNG-adjacent test.
+RNG-adjacent test. On top of that sits the RNG seed logging (the commit after `c141022`), which is
+what makes any future version of those hunts a one-line replay instead of detective work.
 
 **All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
 calls the user made; one turned out to be a non-bug hiding a real bug next door.
@@ -87,8 +88,25 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
   `tests/helpers/db.js`) if you have a real mongod to point it at. **Verify DB-path changes in CI,
   and say so rather than claiming a green local run.**
 
-**Testing convention — rigging the RNG (2026-08-09).** The engine seeds from `std::random_device`,
-so the C++ suite is non-reproducible by design and a bad seed shows up as "passed on one run,
+**Reproducing a random failure (2026-08-09).** The seed stays RANDOM every run — a fixed one would
+be green and blind, and both flakes chased that day were rare-draw bugs a pinned seed would have
+hidden for months — but it is now **chosen once and logged**, so a failure is replayable:
+
+```sh
+./run_tests                       # prints "[rng] seed=1814267557" to stderr at startup,
+                                  # and on failure repeats it with the replay command
+GAME_RNG_SEED=1814267557 ./run_tests   # same seed → same draw sequence
+GAME_RNG_SEED=42 ./game sample         # works for the engine binary too
+```
+
+`Utility::rngSeed()` holds it; `GAME_RNG_SEED` overrides it. Verified end to end — the same seed
+produces a byte-identical 15 MB replay, different seeds differ, and an unseeded run still varies.
+Two caveats: the startup line is printed BEFORE the run because ASan/UBSan abort the process and an
+end-of-run listener would never fire; and `std::uniform_int_distribution` is not specified to map
+identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
+may not replay on a different libstdc++.
+
+**Testing convention — rigging the RNG (2026-08-09).** A bad seed shows up as "passed on one run,
 failed on the next". Two rules came out of chasing exactly that twice in one day:
 - **Assert invariants that hold for EVERY roll.** Both garrison-sally flakes were assertions that
   looked like they were about firing or landing but actually measured whether a unit *survived* the
