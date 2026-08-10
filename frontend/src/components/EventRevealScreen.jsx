@@ -44,6 +44,16 @@ const ChoiceOptions = ({ slot, options, onPick, busy }) => (
       >
         <strong>{option.label}</strong>
         <span>{option.description}</span>
+        {/* What the branch MECHANICALLY costs or gives. Formatted server-side
+            (describeEffect, via optionCard) so hidden state stays hidden — a
+            garrison branch reads as a direction, never a resolve figure. Before
+            this the options carried prose alone and a decision could only be
+            made on tone. */}
+        {option.effectText?.length > 0 && (
+          <span className="choice-option-effect" data-testid={`choice-effect-${option.id}`}>
+            {option.effectText.join(', ')}
+          </span>
+        )}
       </button>
     ))}
   </div>

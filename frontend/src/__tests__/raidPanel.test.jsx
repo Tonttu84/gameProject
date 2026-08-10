@@ -203,6 +203,52 @@ describe('raid panel — opportunities', () => {
     expect(screen.queryByTestId('raid-threat-d1-c')).not.toBeInTheDocument()
   })
 
+  // A garrison sortie's whole payoff is the besiegers' losses (plus resolve,
+  // which is hidden), and the server strips that out of the reward object as a
+  // control flag — so this card rendered NO reward line at all until `payoff`
+  // gave the non-loot half of a reward somewhere to go (user, 2026-08-10).
+  it('states the payoffs that are not loot, so a sortie card is not pure flavour', async () => {
+    getCampaigns.mockResolvedValue([withRaid([{
+      ...OPPORTUNITY,
+      id: 'd1-s',
+      type: 'garrison_sortie',
+      title: 'A Coordinated Sally',
+      reward: null,
+      payoff: ['The enemy host is the thinner for it'],
+    }])])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.getByTestId('raid-payoff-d1-s')).toHaveTextContent(
+      'Gains: The enemy host is the thinner for it.',
+    )
+    // No loot on this one — the card must not invent an empty reward line.
+    expect(screen.queryByTestId('raid-reward-d1-s')).not.toBeInTheDocument()
+  })
+
+  it('shows a payoff and its loot together, and omits the line when there is neither', async () => {
+    getCampaigns.mockResolvedValue([withRaid([
+      {
+        ...OPPORTUNITY,
+        id: 'd1-d',
+        type: 'destroy_detachment',
+        reward: { gold: [22, 38] },
+        payoff: ['The enemy host is the thinner for it', 'Ends "Harried by enemy horse" (now: Your foraging ×0.6)'],
+      },
+      { ...OPPORTUNITY, id: 'd1-l', payoff: [] }, // plunder: loot is the whole story
+    ])])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await marchToRaids()
+
+    expect(screen.getByTestId('raid-payoff-d1-d')).toHaveTextContent(
+      'Gains: The enemy host is the thinner for it. Ends "Harried by enemy horse" (now: Your foraging ×0.6).',
+    )
+    expect(screen.getByTestId('raid-reward-d1-d')).toHaveTextContent('22–38 gold')
+    expect(screen.queryByTestId('raid-payoff-d1-l')).not.toBeInTheDocument()
+  })
+
   it('renders nothing when the turn dealt no opportunities', async () => {
     getCampaigns.mockResolvedValue([withRaid([])])
     render(<App />)

@@ -13,7 +13,7 @@ import {
   fieldPointsFor,
 } from '../utils/capabilities.js'
 import { bracketOnLevelUp } from './recon.js'
-import { applyEffect, firedRung, rungOf, rosterTotal } from './events.js'
+import { applyEffect, firedRung, rungOf, rosterTotal, optionCard } from './events.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyHost.js'
 import { meterFillAmount, meterBand } from './meter.js'
@@ -66,8 +66,9 @@ const attachFired = (revealSlot, fired) => {
   revealSlot.scoutsIntervened = fired.intervened
 }
 
-// Push the option CARDS (never the effects) onto a reveal slot and record the
-// owed decision — shared by acceptance and the end-day fallback.
+// Push the option CARDS (never the raw effects — optionCard renders each
+// branch's cost through the one formatter instead) onto a reveal slot and
+// record the owed decision — shared by acceptance and the end-day fallback.
 const pendChoice = (campaign, revealSlot, i, slotDoc, fired, day, deferred) => {
   campaign.pendingChoices.push({
     slot: i,
@@ -76,9 +77,7 @@ const pendChoice = (campaign, revealSlot, i, slotDoc, fired, day, deferred) => {
     day,
     deferred,
   })
-  revealSlot.pendingChoice = {
-    options: fired.choices.map(({ id, label, description }) => ({ id, label, description })),
-  }
+  revealSlot.pendingChoice = { options: fired.choices.map(optionCard) }
 }
 
 // Fates come to pass at the tent (2026-07-18): once the player accepts the

@@ -16,6 +16,13 @@ export const PUBLIC_OPPORTUNITY_KEYS = [
   'enemyReveal',
   'id',
   'outcome', // {winner, battleId}, only once resolved
+  // `payoff` (2026-08-10) is public and is the second deliberate widening, for
+  // the same reason `threat` was: the payoffs that aren't loot (the enemy host
+  // thinned, a standing forage pressure ended) had no channel at all, so a
+  // garrison_sortie card listed no reward whatsoever. Phrases only — the
+  // casualties are the target force `enemy` already brackets, and the pressure
+  // goes through describeEffect, so nothing gated crosses that didn't before.
+  'payoff',
   // `persistent` (S3) is public: a card that survives the newDay redeal is worth
   // flagging, so the player reads scouting spent on it as keeping its value. Its
   // `modifierId` sibling deliberately does NOT cross — the card's own flavour

@@ -206,6 +206,13 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch, locked }) => {
                   {o.threat.effect?.length > 0 && ` — ${o.threat.effect.join(', ')}`}
                 </p>
               )}
+              {/* The payoffs that aren't loot, formatted server-side: the host
+                  thinned, a standing forage pressure ended. A garrison sortie
+                  has no numeric reward at all, so this is the only line that
+                  tells the player what the sally is for. */}
+              {o.payoff?.length > 0 && (
+                <p data-testid={`raid-payoff-${o.id}`}>Gains: {o.payoff.join('. ')}.</p>
+              )}
               {rewardParts(o.reward).length > 0 && (
                 <p data-testid={`raid-reward-${o.id}`}>
                   Reward: {rewardParts(o.reward).join(', ')}

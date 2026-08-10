@@ -68,9 +68,12 @@ is in flight, so a new session starts from a clean `main`.
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
 about DESIGN is still expected and welcome; asking whether to merge finished work is not.
 
-**2026-08-10, in order.** Four player-facing changes, each with its own section below:
+**2026-08-10, in order.** Five player-facing changes, each with its own section below:
 - **Fates and raid cards say what they cost** (`a6c7912`) — `describeEffect`, the counter-raid
   `threat`, and the one `auguryTruthRevealed` gate. See "What a fate costs you, in numbers".
+- **Every card states its reward — the rule, not another instance** — the standing rule finished:
+  the raid `payoff` field, `optionCard`, and direction-only lines for `garrison`/`schedule`. See
+  "No card shows flavour alone" below.
 - **The recruitment ladder** (`c7cf253`) — workers → Militia → Soldier/Archer → Cavalry, each rung
   promoted out of the one below. See "The recruitment ladder".
 - **The forage slider commits itself** (`33f552b`) — debounced, no confirm button.
@@ -85,30 +88,6 @@ claiming to measure something else.
 
 **All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
 calls the user made; one turned out to be a non-bug hiding a real bug next door.
-
-**TODO (user, 2026-08-10) — every raid and every event must state its reward, at some level.**
-2026-08-10 fixed three of these one at a time (counter_event's `threat`, the fates' `effectText`,
-the forage pressures). That was treating instances; the standing rule is that **no card may show
-flavour alone.** Audit all of them and give each a line.
-
-The known gap that prompted this is `garrison_sortie` — "A Coordinated Sally" renders no reward at
-all. The cause is specific: a sortie carries its reward on the event
-(`sortieEvent.sortie`), and `raid.js:194` strips `thinsEnemy` out of it as a control flag. A sortie
-whose whole payoff IS thinning the besiegers therefore ends up with an empty reward object,
-`rewardParts()` returns nothing, and the card promises to catch them between two fires while
-listing no benefit. `thinsEnemy` needs to become a stated payoff ("the enemy takes losses"), not
-just a flag.
-
-Work through every type rather than only that one:
-`destroy_detachment` (gold), `loot_supplies` (food/materials/gold), `rescue_troops` (roster),
-`seize_horses` (horses), `counter_event` (done — `threat`), `garrison_sortie` (BROKEN, above), and
-the persistent forage-modifier card (its lift is implied by flavour only — say it outright).
-Then the same pass over the event pool: any fate whose card shows no `effectText` because
-`describeEffect` returns `[]` for its effect type is a fate the player cannot price.
-
-Reuse what exists — `describeEffect` is the one formatter and already honours the disclosure rules
-(hidden state silent, enemy figures as phrases). Do NOT hand-roll a second one per card type; that
-is how the vocabulary drifted in the first place.
 
 **NEXT UP — the forage panel's meter readout (decided 2026-08-10, not yet built).**
 The panel shows "+80 to the boss-fight meter", which is a number with no scale: the player cannot
@@ -263,12 +242,13 @@ away the augury's uncertainty for free.
    VERDICT (whether it lands, whether the scouts turn it) still waits for end-day: that is the
    2026-07-18 deferral, and naming a threat is not the same as calling its outcome.
 4. **Effects read as the MATH, never a rolled result** (`describeEffect`, one formatter, server-side
-   so no component can format a raw effect and sidestep the rules). It is deliberately SILENT on
+   so no component can format a raw effect and sidestep the rules). It was deliberately SILENT on
    `flag`/`schedule`/`garrison` — hidden state the prerequisite gates read — and keeps enemy figures
    as phrases, except a multiplier like `The enemy host ×0.5`, which discloses force but not
    headcount. It fails closed on an unknown effect type. `tests/describeEffect.test.js` pins the
    silences, because "just print every field" would look like an improvement while unpicking three
-   gates at once.
+   gates at once. (**The silence has since narrowed to `flag` alone** — `garrison` and `schedule`
+   now give a DIRECTION with no figure. See the next section for why that is not a widening.)
 5. **No duplicate omens.** `drawAugury` threads the ids already claimed (truth AND decoy) through
    each draw, and a reroll steers away from the other slots — spending the turn's only reroll to be
    handed a thread you are already reading is the worst version of it. A PREFERENCE, not a
@@ -278,6 +258,61 @@ away the augury's uncertainty for free.
 **Still vague, deliberately not fixed:** two counter cards still share the title "Riders Massing"
 (flavour is per-TYPE). They are now told apart by the threat line, so this is cosmetic — it wants
 per-instance flavour variants, which is content authoring rather than a mechanism.
+
+### No card shows flavour alone — the rule, finished (2026-08-10)
+
+**The standing rule (user):** *every raid and every event must state its reward, at some level.*
+The three fixes before this each treated one instance (the counter-raid `threat`, the fates'
+`effectText`, the forage pressures). This pass audited every card type and closed the rest, so a
+NEW card written with nothing to say now fails a test instead of shipping as prose.
+
+**The guard is structural, not another instance.** `tests/describeEffect.test.js` sweeps the whole
+`EVENT_POOL` — every fate's effect, every rung's, every branch's — and fails if `describeEffect`
+comes back empty. It is a `it.each` over the pool, so a fate added next month is covered the day
+it is written. The one legitimate silence, a bare `flag`, is exempted deliberately and by name.
+
+**Three gaps were real:**
+1. **`garrison_sortie` showed NO reward line at all.** A sortie's reward rides on the event, and
+   `raid.js` strips `thinsEnemy` out of it as a control flag — so "A Coordinated Sally", whose
+   entire payoff IS the besiegers' losses, arrived at `rewardParts()` with an empty object and
+   promised to catch them between two fires while listing no benefit.
+2. **`destroy_detachment` named the coin and not the kill** — it stated the gold picked off the
+   field afterwards and never the thing the card is named for.
+3. **Choice branches carried prose alone.** `pendingChoices` options crossed as
+   `{id, label, description}`, so every decision in the game — including "spend 1.5 t of food" —
+   could only be made on tone.
+
+**What was built:**
+- **`payoff`, a new public field on a raid opportunity**: the half of a reward that isn't loot, as
+  phrases. Today: the host is thinned, and a persistent card's standing forage pressure is ended
+  (the pressure's own bite, through `describeEffect`, so an enemy-side one stays a phrase exactly
+  as it is on the forage panel). `reward` keeps the numbers and the scouting reveal mini-game;
+  `threat` keeps a counter_event. It is the third deliberate widening in
+  `tests/helpers/publicShape.js` and is argued there.
+- **`thinsEnemyHost(opportunity)`** in `raid.js`, replacing the open-coded
+  `type === 'destroy_detachment' || thinsEnemy` at the launch site. Two places ask — the site that
+  BOOKS the casualties and the card that PROMISES them — and they must not drift.
+- **`optionCard(choice)`** in `events.js`, the one builder for a branch card, now used by both
+  `dayResolution`'s `pendChoice` (the tent) and `campaignView`'s `pendingChoices` (the owed
+  decision). They built the same card separately before, so the two screens could have disagreed.
+  The raw `effect` still never crosses — the branch is re-looked-up by id at choose time.
+
+**The one judgement call: `garrison` and `schedule` now speak.** Both described as nothing, and
+that silence was reasoned for `applyEffect`'s LOG, where naming a scheduled follow-up spoils a beat
+the player never chose. It was over-broad as a CARD rule: every such effect in the pool sits on a
+choice the player is being asked to make, and each option's own prose already promises the thing
+("the blow will fall a fortnight hence", "does not forget who stayed in camp"). Five branches were
+priceable only by tone. They now give a direction and nothing else —
+`Karrowgate thinks the worse of you`, `Sets a fate in motion, to come to pass in a later turn`.
+
+**No number crosses, and that is the part to keep:** no resolve delta (the track is what
+`minResolve`/`maxResolve` gate on), no scheduled event id, no target day. `flag` stays silent
+outright — it moves no resource and opens no priceable choice, so describing it would leak chain
+structure for nothing. **Resolve is likewise still absent from a sortie card**: the sally's stated
+payoff is the losses it inflicts, and its standing is felt, not read.
+
+**Still open, unchanged:** two counter cards can share the title "Riders Massing" — cosmetic, and
+content authoring rather than a mechanism.
 
 **Testing convention — rigging the RNG (2026-08-09).** A bad seed shows up as "passed on one run,
 failed on the next". Two rules came out of chasing exactly that twice in one day:

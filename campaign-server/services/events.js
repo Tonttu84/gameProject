@@ -449,13 +449,24 @@ export const eventValence = (effect) => {
 // Deliberately NOT a dump of the effect's fields. It goes to the same player as
 // applyEffect's log, so it obeys the same disclosure rules, and getting this
 // wrong would quietly undo three separate gates:
-//   - `flag` / `schedule` / `garrison` are HIDDEN state. They emit no log line
-//     on purpose — the chain's story is told by the event text, and a number
-//     here would leak the very state the prerequisite gates read. They describe
-//     as nothing.
+//   - hidden state never crosses as a NUMBER. `garrison` and `schedule` move
+//     bookkeeping the prerequisite gates read (minResolve thresholds, the
+//     scheduled queue), so they describe as a DIRECTION only — see below.
+//     `flag` stays silent outright.
 //   - the enemy's numbers are recon-gated, so enemy-side effects stay PHRASES.
 //   - an enemy-side forage modifier is likewise a phrase; only the player's own
 //     yield carries a figure.
+//
+// The direction-only lines for `garrison`/`schedule` are new (2026-08-10, the
+// "every card states its reward" pass) and replace a blanket silence. The
+// silence was over-broad: it was reasoned for applyEffect's LOG, where naming a
+// scheduled follow-up would spoil a beat the player never chose. But every
+// `schedule` and `garrison` effect in the pool sits on a CHOICE the player is
+// being asked to make, and each option's own prose already promises the thing
+// ("the blow will fall a fortnight hence", "does not forget who stayed in
+// camp"). Saying it mechanically therefore leaks nothing new, while the silence
+// left five options priceable only by reading tone. Numbers still never cross:
+// no resolve delta, no scheduled event id, no target day.
 // Returns an array so `multi` flattens naturally and callers can join to taste.
 export const describeEffect = (effect) => {
   if (!effect) return []
@@ -498,14 +509,46 @@ export const describeEffect = (effect) => {
       if (effect.deltaKg) return [`Your foraging ${signedTons(effect.deltaKg)}/turn`]
       return [`Your foraging ×${effect.factor ?? 1}`]
     }
+    case 'garrison':
+      // Direction, never the delta — the resolve TRACK is what minResolve /
+      // maxResolve gates read, so a figure here would let the player solve for
+      // which fates are about to open or close.
+      return [
+        effect.delta > 0
+          ? 'Karrowgate thinks the better of you'
+          : effect.delta < 0
+            ? 'Karrowgate thinks the worse of you'
+            : 'Karrowgate\'s regard is unmoved',
+      ]
+    case 'schedule':
+      // That a follow-up is coming, and nothing else: naming the event would
+      // spoil the beat, and the target day would hand over the queue the
+      // augury drains. `delay` is not disclosed for the same reason.
+      return ['Sets a fate in motion, to come to pass in a later turn']
     case 'multi':
       return (effect.effects ?? []).flatMap(describeEffect)
     case 'none':
       return ['No consequence']
     default:
-      return [] // flag / schedule / garrison — hidden state, see above
+      return [] // flag (pure bookkeeping) / choice / unknown — see above
   }
 }
+
+// A choice branch as the player sees it on a card: its label, its prose, and —
+// since 2026-08-10 — what it MECHANICALLY does. The effect itself never
+// crosses (the branch is re-looked-up by id at choose time), so effectText is
+// the only channel by which an option can be priced.
+//
+// One helper because two places build these cards — the tent's reveal beat
+// (dayResolution's pendChoice) and the campaign view's pendingChoices — and a
+// player who read an option at the tent must not meet a different one when the
+// decision is still owed a screen later.
+export const optionCard = ({ id, label, description, effect }) => ({
+  id,
+  label,
+  description,
+  effectText: describeEffect(effect),
+})
 
 // An EVENT's mood, where eventValence above classifies an EFFECT: honours a
 // declared `valence` (looked up in the pool by id, since a stored slot copy

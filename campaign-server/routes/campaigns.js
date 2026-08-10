@@ -16,7 +16,9 @@ import {
   resolveHire,
 } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
-import { generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget } from '../services/raid.js'
+import {
+  generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
+} from '../services/raid.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
@@ -675,7 +677,7 @@ router.post('/:id/raids/launch', async (req, res) => {
     // the real dead; a garrison_sortie is a spoiling attack — no pursuit, only
     // the real casualties. Loot/rescue/counter raids never pre-subtract their
     // (narrative) target force, so a lost one still leaves the host untouched.
-    if (opportunity.type === 'destroy_detachment' || opportunity.thinsEnemy)
+    if (thinsEnemyHost(opportunity))
       for (const [type, n] of opportunity.targetForce) {
         const casualties = Math.max(0, n - (summary.red_survivors[type] ?? 0))
         campaign.enemy.army.set(type, Math.max(0, (campaign.enemy.army.get(type) ?? 0) - casualties))

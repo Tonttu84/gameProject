@@ -24,7 +24,7 @@ import {
   forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
 } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
-import { eventValenceFor, choiceRung, describeEffect, rungOf } from './events.js'
+import { eventValenceFor, choiceRung, describeEffect, optionCard, rungOf } from './events.js'
 
 // Has the turn's true/false uncertainty finished doing its job? ONE predicate,
 // because the augur's cards and the raid board must never disagree about what
@@ -60,6 +60,53 @@ const counterThreat = (campaign, opp) => {
   }
 }
 import { findRecruitEntry, resolveHire } from './recruit.js'
+import { thinsEnemyHost } from './raid.js'
+
+// What a raid card buys you that ISN'T loot, as phrases. The standing rule
+// (user, 2026-08-10) is that no card may show flavour alone; `reward` covers
+// the numeric payoffs and `threat` covers a counter_event, but two payoffs fell
+// through both and left cards promising nothing:
+//   - the KILL. destroy_detachment states its stripped-field gold and never the
+//     thing it is named for, and a thins-enemy garrison_sortie ("A Coordinated
+//     Sally") rendered no reward line WHATSOEVER — its whole payoff is the
+//     besiegers' losses plus hidden resolve, and raid.js strips thinsEnemy out
+//     of the reward object as a control flag, so rewardParts had nothing left.
+//   - the LIFT. A persistent forage-modifier card said what it undid in flavour
+//     only; the pressure's actual bite lived on the forage panel, a screen away.
+// No numbers are added here: the casualties are the target force the card
+// already brackets above, and the lift reuses describeEffect, so an enemy-side
+// pressure stays the same phrase it is on the forage panel.
+//
+// Resolve stays SILENT on purpose — a won sortie feeds the garrison track, but
+// that track gates events by threshold and is never a number to the player
+// (adjustResolve logs nothing either). The sally's stated payoff is the losses
+// it inflicts; its standing is felt, not read.
+const raidPayoff = (campaign, opp) => {
+  if (opp.resolved) return []
+  const parts = []
+  if (thinsEnemyHost(opp)) parts.push('The enemy host is the thinner for it')
+  if (opp.modifierId) {
+    // Naming the pressure is no wider than the card already is: its own title
+    // and description name the thing (forageModifierFlavor), and the effect
+    // goes through the one formatter, which keeps an enemyDrain pressure a
+    // phrase exactly as the forage panel does.
+    const modifier = (campaign.forage?.modifiers ?? []).find((m) => m.id === opp.modifierId)
+    if (modifier) {
+      const now = describeEffect({
+        type: 'forage_modifier',
+        target: modifier.target,
+        factor: modifier.factor,
+        deltaKg: modifier.deltaKg,
+      })
+      parts.push(
+        now.length > 0
+          ? `Ends "${modifier.label}" (now: ${now.join(', ')})`
+          : `Ends "${modifier.label}"`,
+      )
+    }
+  }
+  return parts
+}
 
 // THE single serializer between campaign documents and the client. Hidden
 // information — enemy.army, enemy.plannedPlacement, the augury's true/decoy
@@ -396,6 +443,10 @@ export async function campaignView(campaign) {
         // the phase march is one-way, so that leak buys nothing. This does not
         // widen it.
         threat: counterThreat(campaign, opp),
+        // The non-loot half of what winning buys — see raidPayoff. Without it
+        // a sortie card promised nothing at all and a destroy card promised
+        // only the coin picked off the field afterwards.
+        payoff: raidPayoff(campaign, opp),
         resolved: opp.resolved,
         outcome: opp.resolved ? opp.outcome : null,
       })),
@@ -455,7 +506,10 @@ export async function campaignView(campaign) {
         slot,
         title: def.title,
         description: def.description,
-        options: def.choices.map(({ id, label, description }) => ({ id, label, description })),
+        // optionCard, not a hand-rolled pick: the branch's mechanical cost is
+        // the thing an option most needs to state, and the tent's reveal beat
+        // builds its cards the same way so the two screens cannot disagree.
+        options: def.choices.map(optionCard),
       }]
     }),
     // Scouting: derived at view time (like foodNeedPerTurn), no schema field.

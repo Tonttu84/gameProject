@@ -121,18 +121,23 @@ const expectNoHiddenInfo = (body) => {
   // Events with choices: a pending decision crosses as display fields plus
   // option cards only — never the branch effects (the pool's `choices`
   // entries), the pool id, or the rung that fired.
+  //
+  // `effectText` (2026-08-10) is a DELIBERATE widening and the reason `effect`
+  // itself still must not cross: an option carried prose alone, so a decision
+  // could only be made on tone. The formatted line obeys the disclosure rules
+  // (describeEffect) — the raw effect would hand over every gate at once.
+  const OPTION_KEYS = ['description', 'effectText', 'id', 'label']
   expect(raw).not.toContain('"choices"')
   expect(raw).not.toContain('"eventId"')
   for (const c of [body, body.campaign]) {
     for (const p of c?.pendingChoices ?? []) {
       expect(Object.keys(p).sort()).toEqual(['description', 'options', 'slot', 'title'])
-      for (const o of p.options)
-        expect(Object.keys(o).sort()).toEqual(['description', 'id', 'label'])
+      for (const o of p.options) expect(Object.keys(o).sort()).toEqual(OPTION_KEYS)
     }
   }
   for (const slot of body.report?.augury ?? [])
     for (const o of slot.pendingChoice?.options ?? [])
-      expect(Object.keys(o).sort()).toEqual(['description', 'id', 'label'])
+      expect(Object.keys(o).sort()).toEqual(OPTION_KEYS)
   // Scouting crosses the boundary as the banded label ONLY — a raw coverage
   // or ratio number would let the client solve for the enemy composition.
   expect(raw).not.toContain('"coverage"')
@@ -2249,6 +2254,42 @@ describe('events with choices', () => {
       expect(res.body.campaign.pendingChoices[i].title).toBe(REFUGEES.title)
     }
     expect(res.body.report.entries.join(' ')).toMatch(/decision/i)
+  })
+
+  // Every card states what it does (user, 2026-08-10). A branch used to cross
+  // as prose alone, so a decision could only be made on tone — and the tent's
+  // reveal beat and the campaign view built their option cards separately, so
+  // the two screens could have disagreed. One optionCard now serves both.
+  test('an option states its mechanical cost, on the tent card and in the view alike', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, REFUGEES)
+    const res = await endDayReq(c.id)
+
+    const tentCards = res.body.report.augury[0].pendingChoice.options
+    const viewCards = (await getView(c.id)).pendingChoices[0].options
+    expect(viewCards).toEqual(tentCards) // one builder, so they cannot drift
+
+    const byId = Object.fromEntries(tentCards.map((o) => [o.id, o.effectText]))
+    // Taking them in costs stores and musters militia; turning them away is a
+    // genuine no-op and says so rather than showing an empty line.
+    expect(byId.take_in).toEqual(['Food −3 t', 'Militia +20'])
+    expect(byId.turn_away).toEqual(['No consequence'])
+  })
+
+  test('a garrison branch reads as a direction, never a resolve figure', async () => {
+    // breach_threatens is the siege spine's turn-5 beat: one branch spends food
+    // AND standing, the other spends only standing. The resolve delta is what
+    // minResolve/maxResolve gate on, so it must never cross as a number.
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, EVENT_POOL.find((e) => e.id === 'breach_threatens'))
+    const res = await endDayReq(c.id)
+    const options = res.body.report.augury[0].pendingChoice.options
+    const byId = Object.fromEntries(options.map((o) => [o.id, o.effectText]))
+    expect(byId.into_the_breach).toEqual([
+      'Food −2 t', 'Soldier ×0.98', 'Karrowgate thinks the better of you',
+    ])
+    expect(byId.cannot_spare).toEqual(['Karrowgate thinks the worse of you'])
+    expect(JSON.stringify(options)).not.toMatch(/[-−+]?\d+ ?(resolve|standing)/i)
   })
 
   test('every mutating action 409s while a decision is pending; reads stay open', async () => {

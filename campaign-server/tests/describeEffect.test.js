@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeEffect } from '../services/events.js'
+import { describeEffect, optionCard, EVENT_POOL } from '../services/events.js'
 
 // describeEffect renders an effect as what it MECHANICALLY does (user,
 // 2026-08-10: "not perfect knowledge of everything, but a clear description on
@@ -67,16 +67,81 @@ describe('the enemy stays recon-gated', () => {
   })
 })
 
-describe('hidden state describes as nothing at all', () => {
-  // These three emit no log line in applyEffect for the same reason: the
-  // prerequisite gates read them, and the narrative is carried by event text.
-  // A number here would leak straight past the gate.
-  it.each([
-    ['flag', { type: 'flag', name: 'siege_seen', value: 1 }],
-    ['schedule', { type: 'schedule', event: 'breach_threatens', delay: 3 }],
-    ['garrison', { type: 'garrison', delta: -2 }],
-  ])('%s says nothing', (_name, effect) => {
-    expect(describeEffect(effect)).toEqual([])
+describe('hidden state gives a direction, never a figure', () => {
+  // These emit no log line in applyEffect, and until 2026-08-10 they described
+  // as nothing here either. That was too broad: every `garrison` and `schedule`
+  // effect in the pool sits on a CHOICE, so five branches could be priced only
+  // by tone. They now say which WAY they push — and nothing a gate reads.
+  it('says which way the garrison’s regard moves, without the delta', () => {
+    expect(describeEffect({ type: 'garrison', delta: 15 }))
+      .toEqual(['Karrowgate thinks the better of you'])
+    const [line] = describeEffect({ type: 'garrison', delta: -10 })
+    expect(line).toBe('Karrowgate thinks the worse of you')
+    // The resolve TRACK is what minResolve/maxResolve gate on. A number here
+    // would let the player solve for which fates are about to open or close.
+    expect(line).not.toMatch(/\d/)
+  })
+
+  it('promises a follow-up without naming it or dating it', () => {
+    const [line] = describeEffect({ type: 'schedule', event: 'breach_threatens', delay: 3 })
+    expect(line).toBe('Sets a fate in motion, to come to pass in a later turn')
+    expect(line).not.toMatch(/breach|3/) // neither the beat nor the target day
+  })
+
+  it('still says nothing at all for a flag — pure bookkeeping', () => {
+    // A flag moves no resource and opens no priceable choice; it only gates
+    // later draws. Describing it would leak chain structure for no gain.
+    expect(describeEffect({ type: 'flag', name: 'siege_seen', value: 1 })).toEqual([])
+  })
+})
+
+describe('every card in the pool states what it does', () => {
+  // The standing rule (user, 2026-08-10): "every raid and every event must state
+  // its reward, at some level" — no card may show flavour alone. Three earlier
+  // fixes each treated one instance; this is the rule itself, so a NEW fate or
+  // branch written with an undescribable effect fails here instead of shipping
+  // as prose the player cannot price.
+  //
+  // The one legitimate silence is a bare `flag`, which moves nothing (see
+  // above). Nothing in the pool is one today; if that changes, exempt it here
+  // deliberately rather than deleting the assertion.
+  const rungsOf = (event) => [event, ...Object.values(event.rungs ?? {})]
+
+  it.each(EVENT_POOL.flatMap((event) =>
+    rungsOf(event)
+      .filter((rung) => rung.effect && rung.effect.type !== 'choice')
+      .map((rung) => [`${event.id}${rung === event ? '' : ` (${rung.title})`}`, rung.effect]),
+  ))('fate %s describes its effect', (_id, effect) => {
+    expect(describeEffect(effect).length).toBeGreaterThan(0)
+  })
+
+  it.each(EVENT_POOL.flatMap((event) =>
+    rungsOf(event).flatMap((rung) =>
+      (rung.choices ?? []).map((choice) => [`${event.id} → ${choice.id}`, choice]),
+    ),
+  ))('branch %s states its cost', (_id, choice) => {
+    expect(optionCard(choice).effectText.length).toBeGreaterThan(0)
+  })
+})
+
+describe('optionCard', () => {
+  it('carries the branch’s prose AND its mechanical cost, never the raw effect', () => {
+    const card = optionCard({
+      id: 'answer_the_call',
+      label: 'Send provisions',
+      description: 'Spend from your own stores.',
+      effect: { type: 'multi', effects: [{ type: 'food', delta: -1500 }, { type: 'garrison', delta: 15 }] },
+    })
+    expect(card).toEqual({
+      id: 'answer_the_call',
+      label: 'Send provisions',
+      description: 'Spend from your own stores.',
+      // The food cost is a figure; the resolve half is a direction only.
+      effectText: ['Food −1.5 t', 'Karrowgate thinks the better of you'],
+    })
+    // The branch is re-looked-up by id at choose time — the effect must not ride
+    // along to the client, where it would hand over every gate at once.
+    expect(card).not.toHaveProperty('effect')
   })
 })
 
@@ -86,7 +151,7 @@ describe('bundles and edges', () => {
       type: 'multi',
       effects: [
         { type: 'food', delta: -1000 },
-        { type: 'garrison', delta: 1 }, // silent, and must not leave a gap
+        { type: 'flag', name: 'chain_open' }, // silent, and must not leave a gap
         { type: 'gold', delta: 25 },
       ],
     })).toEqual(['Food −1 t', 'Gold +25'])

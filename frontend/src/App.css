@@ -379,6 +379,9 @@ body {
 .choice-option:disabled { opacity: 0.6; cursor: default; }
 .choice-option strong { color: var(--gold); }
 .choice-option span { font-size: 12px; color: #8888aa; }
+/* The branch's mechanical cost, distinct from its prose: the description sets
+   the scene, this is the number you decide on. */
+.choice-option .choice-option-effect { color: var(--gold); font-variant-numeric: tabular-nums; }
 .choice-outcome { color: #88cc88; }
 .fate-deferred { color: var(--gold); font-style: italic; }
 

@@ -158,6 +158,39 @@ describe('EventRevealScreen: one card per click', () => {
     expect(onChoose).toHaveBeenCalledWith(1, 'buy_provisions')
   })
 
+  // Every card states what it does (user, 2026-08-10). A branch used to carry
+  // label + prose only, so the decision could be made on tone alone. The line
+  // is formatted server-side (describeEffect) precisely so the client cannot
+  // invent one — an option with nothing to say renders no line rather than an
+  // empty one.
+  it('prices each branch by its stated effect, and skips the line when there is none', () => {
+    const report = {
+      day: 5, kind: 'fates',
+      augury: [{
+        predicted: { id: 'a', title: 'Foretold' },
+        actual: { id: 'breach_threatens', title: 'A Breach Threatens' },
+        wasAccurate: true,
+        pendingChoice: {
+          options: [
+            {
+              id: 'into_the_breach', label: 'Throw men into the breach', description: 'Shoulder to shoulder.',
+              effectText: ['Food −2 t', 'Soldier ×0.98', 'Karrowgate thinks the better of you'],
+            },
+            { id: 'cannot_spare', label: 'You cannot spare them', description: 'They hold it alone.', effectText: [] },
+          ],
+        },
+      }],
+      entries: [],
+    }
+    render(<EventRevealScreen report={report} onChoose={vi.fn()} onContinue={() => {}} />)
+
+    expect(screen.getByTestId('choice-effect-into_the_breach')).toHaveTextContent(
+      'Food −2 t, Soldier ×0.98, Karrowgate thinks the better of you',
+    )
+    expect(screen.getByTestId('choice-cannot_spare')).toBeInTheDocument()
+    expect(screen.queryByTestId('choice-effect-cannot_spare')).not.toBeInTheDocument()
+  })
+
   // The exact shape the campaign-loop E2E wedged on: choice → DEFERRED → choice.
   // Resolving fate-0's choice, advancing PAST the deferred fate-1 (threat only,
   // no gate), then resolving fate-2's choice must all work — the deferred card

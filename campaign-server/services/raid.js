@@ -331,6 +331,14 @@ export function generateRaidOpportunities(campaign, catalog) {
   return opportunities
 }
 
+// Does beating this card cost the enemy host real strength? A
+// destroy_detachment always does (that IS the card), and a garrison_sortie does
+// when its version carries `thinsEnemy`. ONE predicate because two places ask:
+// the launch site, which books the casualties, and the card view, which
+// promises them. They must never disagree about what a card is worth.
+export const thinsEnemyHost = (opportunity) =>
+  opportunity.type === 'destroy_detachment' || Boolean(opportunity.thinsEnemy)
+
 // Spend-a-point outcomes (the route validates points/ownership; these mutate).
 // Bump one field's reveal level; false if already at the max (range→exact = 1),
 // leaving room for finer levels later without a schema change.

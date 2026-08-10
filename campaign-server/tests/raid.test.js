@@ -1141,6 +1141,110 @@ describe('POST /api/campaigns/:id/raids/scout', () => {
     expect((await scout(c.id, { action: 'wat' })).status).toBe(400)
     expect((await scout(c.id, {})).status).toBe(400)
   })
+
+  // ── Every card states its payoff (user, 2026-08-10) ───────────────────────
+  // The standing rule: no card may show flavour alone. `reward` covers the loot
+  // and `threat` covers a counter_event; `payoff` is the channel for what is
+  // neither — the host thinned, a standing forage pressure ended. The gap that
+  // prompted it: a thins-enemy garrison_sortie's whole point is the besiegers'
+  // losses, raid.js strips `thinsEnemy` out of the reward as a control flag, so
+  // the card rendered NO reward line at all.
+  describe('payoff — the half of the reward that is not loot', () => {
+    const payoffOf = async (id, i = 0) =>
+      (await getView(id)).body.raid.opportunities[i].payoff
+
+    test('a thins-enemy sortie promises the losses it inflicts — its only payoff', async () => {
+      const { body: c } = await createCampaign()
+      await pinRaid(c.id, [
+        OPP({ type: 'garrison_sortie', reward: { resolve: 10 }, rewardRange: null, thinsEnemy: true }),
+      ])
+      const view = (await getView(c.id)).body.raid.opportunities[0]
+      expect(view.reward).toBeNull() // resolve is hidden, so loot says nothing
+      expect(view.payoff).toEqual(['The enemy host is the thinner for it'])
+      // Resolve stays hidden bookkeeping — the sally's standing is felt, not
+      // read. (`resolved` is a different field; match the reward key exactly.)
+      expect(JSON.stringify(view)).not.toContain('"resolve"')
+      expect(view.payoff.join(' ')).not.toMatch(/\d/)
+    })
+
+    test('a loot sortie states its stores and claims no losses it will not inflict', async () => {
+      const { body: c } = await createCampaign()
+      await pinRaid(c.id, [
+        OPP({
+          type: 'garrison_sortie',
+          reward: { resolve: 14, materials: 250 },
+          rewardRange: { materials: [200, 300] },
+          thinsEnemy: false,
+        }),
+      ])
+      const view = (await getView(c.id)).body.raid.opportunities[0]
+      expect(view.payoff).toEqual([])
+      expect(view.reward).toEqual({ materials: [200, 300] })
+    })
+
+    test('a destroy_detachment names the kill, not just the coin off the field', async () => {
+      const { body: c } = await createCampaign()
+      await pinRaid(c.id, [OPP({ type: 'destroy_detachment', reward: { gold: 30 }, rewardRange: { gold: [22, 38] } })])
+      expect(await payoffOf(c.id)).toEqual(['The enemy host is the thinner for it'])
+    })
+
+    test('a plundering raid claims nothing beyond its loot', async () => {
+      const { body: c } = await createCampaign()
+      await pinRaid(c.id, [OPP()]) // loot_supplies: the host is never touched
+      expect(await payoffOf(c.id)).toEqual([])
+    })
+
+    test('a persistent card says which pressure it ends, and what that pressure costs', async () => {
+      const { body: c } = await createCampaign()
+      const doc = await Campaign.findById(c.id)
+      doc.forage.modifiers = [{
+        id: 'foraging_riders',
+        label: 'Harried by enemy horse',
+        target: 'playerYield',
+        factor: 0.6,
+        raidable: true,
+      }]
+      doc.raid.opportunities = [OPP({
+        type: 'destroy_detachment',
+        reward: { gold: 30 },
+        rewardRange: { gold: [22, 38] },
+        persistent: true,
+        modifierId: 'foraging_riders',
+      })]
+      await doc.save()
+      expect(await payoffOf(c.id)).toEqual([
+        'The enemy host is the thinner for it',
+        'Ends "Harried by enemy horse" (now: Your foraging ×0.6)',
+      ])
+    })
+
+    test('an enemy-side pressure stays a phrase on the card, exactly as on the forage panel', async () => {
+      const { body: c } = await createCampaign()
+      const doc = await Campaign.findById(c.id)
+      doc.forage.modifiers = [{
+        id: 'enemy_supply_depot',
+        label: 'Enemy supply depot',
+        target: 'enemyDrain',
+        deltaKg: 4000,
+        raidable: true,
+      }]
+      doc.raid.opportunities = [OPP({
+        type: 'loot_supplies', persistent: true, modifierId: 'enemy_supply_depot',
+      })]
+      await doc.save()
+      const [line] = await payoffOf(c.id)
+      expect(line).toBe('Ends "Enemy supply depot" (now: The enemy strips the countryside faster)')
+      expect(line).not.toMatch(/4000|4 t/) // the drain figure is recon-gated
+    })
+
+    test('a resolved card promises nothing — the outcome is the reveal', async () => {
+      const { body: c } = await createCampaign()
+      await pinRaid(c.id, [
+        OPP({ type: 'destroy_detachment', resolved: true, outcome: { winner: 'blue', battleId: 'b1' } }),
+      ])
+      expect(await payoffOf(c.id)).toEqual([])
+    })
+  })
 })
 
 // ── Double-assignment (playtest finding, 2026-07-15; squad-only 2026-07-21) ──
