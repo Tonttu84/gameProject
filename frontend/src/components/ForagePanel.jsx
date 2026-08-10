@@ -133,6 +133,13 @@ const ForagePanel = ({ onSetShare, locked }) => {
           {forage.modifiers.map((m) => (
             <li key={m.id} data-testid={`effort-modifier-${m.id}`}>
               {m.label}
+              {/* What it actually does. Without this the line named a pressure
+                  and gave its duration, which together say something is wrong
+                  but not how badly — nothing you can act on. */}
+              {m.effectText?.length > 0 && (
+                <span className="effort-modifier-effect"> — {m.effectText.join(', ')}</span>
+              )}
+              {' — '}
               <span className="effort-modifier-term">
                 {m.turnsLeft == null
                   ? 'for the rest of the campaign'

@@ -329,6 +329,18 @@ export async function campaignView(campaign) {
         .filter((m) => m.target === 'playerYield' || reconOpen)
         .map((m) => ({
           id: m.id, label: m.label, target: m.target, turnsLeft: m.turnsLeft ?? null,
+          // What the pressure DOES. The label and the duration between them
+          // said a thing was happening and for how long, but never how much it
+          // cost — so the line carried a name and no information (user,
+          // 2026-08-10). Same describeEffect the fates use, fed the modifier's
+          // own terms, so an enemy-side pressure stays a phrase here exactly as
+          // it does there.
+          effectText: describeEffect({
+            type: 'forage_modifier',
+            target: m.target,
+            factor: m.factor,
+            deltaKg: m.deltaKg,
+          }),
         })),
       // The boss-fight meter's fill at either extreme of the slider (decision
       // 13's "live preview of ... the pitched-battle effect") — linear in
