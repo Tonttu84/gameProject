@@ -146,14 +146,22 @@ const expectNoHiddenInfo = (body) => {
     if (scouting) expect(Object.keys(scouting)).toEqual(['band'])
   // Boss-fight meter (recon R2): the banded phrase always, plus a numeric
   // `estimate` [low, high] that's null at recon level 0 and a bracket above it
-  // (exact at the top). No raw value key, no `revealed` flag — recon drives it.
+  // (exact at the top), and `remaining` — the gap to the threshold, derived
+  // FROM that estimate so it is gated by it rather than alongside it. No raw
+  // value key, no `revealed` flag — recon drives it.
   for (const c of [body, body.campaign]) {
     if (!c?.meter) continue
-    expect(Object.keys(c.meter).sort()).toEqual(['band', 'estimate'])
-    // At level 0 (no scouting sibling / Blind) the estimate is withheld.
+    expect(Object.keys(c.meter).sort()).toEqual(['band', 'estimate', 'remaining'])
+    // At level 0 (no scouting sibling / Blind) the estimate is withheld — and
+    // `remaining` goes with it, or the gap alone would give the value back.
     const level0 = !c.scouting || c.scouting.band === 'Blind'
-    if (level0) expect(c.meter.estimate).toBeNull()
-    else expect(c.meter.estimate).toMatchObject({ low: expect.any(Number), high: expect.any(Number) })
+    if (level0) {
+      expect(c.meter.estimate).toBeNull()
+      expect(c.meter.remaining).toBeNull()
+    } else {
+      expect(c.meter.estimate).toMatchObject({ low: expect.any(Number), high: expect.any(Number) })
+      expect(c.meter.remaining).toMatchObject({ low: expect.any(Number), high: expect.any(Number) })
+    }
   }
   // Raid opportunities (Stage 4 Part 2 + the 2.5 scouting mini-game): the raw
   // hidden target-slice Map (`targetForce`) never crosses — the wire carries
@@ -478,6 +486,42 @@ describe('recon numeric brackets (R2)', () => {
     await doc.save()
     view = await getView(body.id)
     expect(view.meter.estimate).toEqual({ low: 300, high: 600 })
+  })
+
+  test('meter.remaining is the threshold gap of the ESTIMATE, inverted and gated with it', async () => {
+    const { body } = await createCampaign()
+    // Blind: no estimate, so no remainder either. The forage panel's
+    // turns-to-breach readout falls back to its relative phrasing here.
+    expect((await getView(body.id)).meter.remaining).toBeNull()
+
+    await pinBand(body.id, 'Contested')
+    await pinBracket(body.id, 'meter', { atLevel: 2, floorOffset: -100, ceilOffset: 200 })
+    const doc = await Campaign.findById(body.id)
+    doc.meter.value = 400
+    await doc.save()
+    const view = await getView(body.id)
+    // estimate [300, 600] against the 1000 threshold. It INVERTS: the high
+    // estimate is the LOW remainder (more meter = less wall left).
+    expect(view.meter.estimate).toEqual({ low: 300, high: 600 })
+    expect(view.meter.remaining).toEqual({ low: 400, high: 700 })
+    // The truth (600 remaining) sits inside the bracket, and the bracket is no
+    // narrower than the estimate's — nothing was leaked by the subtraction.
+    expect(view.meter.remaining.high - view.meter.remaining.low)
+      .toBe(view.meter.estimate.high - view.meter.estimate.low)
+  })
+
+  test('a bracket running past the threshold floors the remainder at 0, never negative', async () => {
+    const { body } = await createCampaign()
+    await pinBand(body.id, 'Contested')
+    // Ceiling estimate 1100 > the 1000 threshold: the walls may already be down
+    // as far as this player can tell. Turns-to-breach must not go negative.
+    await pinBracket(body.id, 'meter', { atLevel: 2, floorOffset: -100, ceilOffset: 200 })
+    const doc = await Campaign.findById(body.id)
+    doc.meter.value = 900
+    await doc.save()
+    const view = await getView(body.id)
+    expect(view.meter.estimate).toEqual({ low: 800, high: 1100 })
+    expect(view.meter.remaining).toEqual({ low: 0, high: 200 })
   })
 
   test('an end-day level-up sets both brackets once, then holds within the level', async () => {

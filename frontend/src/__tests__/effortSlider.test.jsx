@@ -87,16 +87,83 @@ describe('effort slider', () => {
     expect(setCampaignEffort).not.toHaveBeenCalled()
   })
 
-  it('interpolates the meter preview linearly between the two server-provided endpoints', async () => {
+  // The meter readout (decided 2026-08-10): turns-to-breach, not a raw "+80"
+  // against a threshold the player cannot see. The fixture's endpoint fills are
+  // 10 (no forage) and 20 (full), so the fill doubles across the track.
+  const withRemaining = (remaining) => [
+    { ...campaignFixture, meter: { ...campaignFixture.meter, remaining } },
+  ]
+
+  it('reads the meter as turns-to-breach, dividing the INTERPOLATED fill', async () => {
+    // 400–700 of wall left (recon-bracketed remainder, from the server).
+    getCampaigns.mockResolvedValue(withRemaining({ low: 400, high: 700 }))
     render(<App />)
     await screen.findByText(/War Council/)
 
-    // fixture: meterFillAtNoForage 10, meterFillAtFullForage 20 — at share 0.5
-    // the interpolated preview is 15.
-    expect(screen.getByTestId('effort-preview-meter')).toHaveTextContent('+15')
+    // Share 0.5 → fill 15 → ceil(400/15)=27, ceil(700/15)=47.
+    //
+    // This is the case that pins the hyperbola: turns is remaining/fill, so
+    // interpolating the two TURN endpoints instead — 40–70 at no forage, 20–35
+    // at full — would read 30–53 here. Both approaches agree at the ends of the
+    // track and only differ across the middle, which is where the player
+    // actually sits, so the ends cannot be what guards this.
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent(
+      'Walls breached in 27–47 turns at this effort',
+    )
 
     fireEvent.change(screen.getByTestId('effort-slider'), { target: { value: '1' } })
-    expect(screen.getByTestId('effort-preview-meter')).toHaveTextContent('+20')
+    // Fill 20 → 20–35 turns: leaning on the land brings the assault forward.
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent(
+      'Walls breached in 20–35 turns at this effort',
+    )
+
+    fireEvent.change(screen.getByTestId('effort-slider'), { target: { value: '0' } })
+    // Fill 10 → 40–70 turns.
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent(
+      'Walls breached in 40–70 turns at this effort',
+    )
+  })
+
+  it('collapses to a single figure when recon has pinned the remainder exactly', async () => {
+    getCampaigns.mockResolvedValue(withRemaining({ low: 300, high: 300 }))
+    render(<App />)
+    await screen.findByText(/War Council/)
+    // Top recon level: the bracket is a point, so the readout is one number.
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent(
+      'Walls breached in ~20 turns at this effort',
+    )
+  })
+
+  it('says the walls are already down when the remainder has run out', async () => {
+    getCampaigns.mockResolvedValue(withRemaining({ low: 0, high: 0 }))
+    render(<App />)
+    await screen.findByText(/War Council/)
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent(/breached/)
+    expect(screen.getByTestId('effort-preview-breach')).not.toHaveTextContent(/turns at this effort/)
+  })
+
+  it('falls back to a RELATIVE reading while Blind, leaking no threshold', async () => {
+    // campaignFixture.meter.remaining is null (recon level 0) — there is no
+    // numeric estimate to divide, so the readout compares the two public
+    // endpoint fills instead and names no absolute number at all.
+    render(<App />)
+    await screen.findByText(/War Council/)
+    // Share 0.5 → fill 15 against 10 = 1.5×.
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent(
+      'Walls fall about 1.5× as fast as holding everyone back',
+    )
+
+    fireEvent.change(screen.getByTestId('effort-slider'), { target: { value: '1' } })
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent('about 2× as fast')
+
+    // Everyone held back IS the baseline, so it reads as itself, not "1× as
+    // fast as" itself.
+    fireEvent.change(screen.getByTestId('effort-slider'), { target: { value: '0' } })
+    expect(screen.getByTestId('effort-preview-breach')).toHaveTextContent(
+      'Walls fall as slowly as they can at this effort',
+    )
+    // Nothing in the Blind readout names a turn count or a meter total.
+    expect(screen.getByTestId('effort-preview-breach')).not.toHaveTextContent(/\d+ turns/)
   })
 
   it('shows the enemy drain as unknown when the recon band withholds it', async () => {

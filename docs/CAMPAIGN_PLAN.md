@@ -68,7 +68,9 @@ is in flight, so a new session starts from a clean `main`.
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
 about DESIGN is still expected and welcome; asking whether to merge finished work is not.
 
-**2026-08-10, in order.** Five player-facing changes, each with its own section below:
+**2026-08-10, in order.** Six player-facing changes, each with its own section below:
+- **Turns-to-breach** — the forage panel reads the meter as time the walls have left, not a raw
+  "+80" against a scale the player cannot see. See "Turns-to-breach" below.
 - **Fates and raid cards say what they cost** (`a6c7912`) — `describeEffect`, the counter-raid
   `threat`, and the one `auguryTruthRevealed` gate. See "What a fate costs you, in numbers".
 - **Every card states its reward — the rule, not another instance** — the standing rule finished:
@@ -89,32 +91,8 @@ claiming to measure something else.
 **All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
 calls the user made; one turned out to be a non-bug hiding a real bug next door.
 
-**NEXT UP — the forage panel's meter readout (decided 2026-08-10, not yet built).**
-The panel shows "+80 to the boss-fight meter", which is a number with no scale: the player cannot
-see `BOSS_FIGHT_METER_THRESHOLD` (1000), so 80 means nothing. **Decision: show turns-to-breach
-instead** — "Walls breached in ~7 turns at this effort".
-
-The meter itself STAYS. The user asked whether it was just a turn-end tick unrelated to foraging;
-it is not, and the numbers settle it: `fill = CEILING − FLOOR × (inCamp/total)` with
-`inCamp = (total − raiders) × (1 − share)`, so all-scouting fills 50/turn and all-foraging 100.
-The slider DOUBLES the fill rate end to end — it is the cost side of foraging and the main lever on
-when the boss fight lands. "+80" is exactly share 0.6.
-
-**Two constraints whoever builds this must respect:**
-1. **The meter value is recon-gated** — `campaignView` sends a `band` phrase always and a numeric
-   `estimate` bracket only from recon R2 (`displayBracket`). Turns-to-breach needs
-   `threshold − value`, so computing it naively hands the player the hidden counter by arithmetic.
-   Gate it the same way the estimate is gated, or derive it FROM the estimate bracket so it inherits
-   that discipline and narrows with recon like everything else.
-2. **It is not linear in `share`, so the existing interpolation trick does not work.** The panel
-   currently interpolates the fill between `meterFillAtNoForage` and `meterFillAtFullForage`, which
-   is valid because fill IS linear in share. Turns is `remaining / fill` — hyperbolic. Interpolating
-   two turn endpoints would be quietly wrong in the middle of the track. Compute turns from the
-   already-interpolated fill instead.
-
-A leak-free fallback for recon level 0, where no numeric estimate exists: say it relatively — "the
-walls fall about twice as fast as holding everyone back" — which uses only the two endpoint fills,
-both already public, and needs no gate at all.
+**The forage panel's meter readout ✅ SHIPPED 2026-08-10** — see "Turns-to-breach" below for what
+was built and the two traps it had to avoid.
 
 **What is actually open:**
 - **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
@@ -197,6 +175,53 @@ Two caveats: the startup line is printed BEFORE the run because ASan/UBSan abort
 end-of-run listener would never fire; and `std::uniform_int_distribution` is not specified to map
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
+
+### Turns-to-breach — the forage panel's meter readout (2026-08-10) ✅ SHIPPED
+
+**The complaint:** the panel showed "+80 to the boss-fight meter". The threshold
+(`BOSS_FIGHT_METER_THRESHOLD`, 1000) is server-side, so 80 could be a tenth of the siege or the
+whole of it — a number against an invisible scale, on the one slider whose cost the player is
+supposed to be weighing. **Now: "Walls breached in 27–47 turns at this effort."**
+
+The meter itself STAYS, and it is not a turn-end tick unrelated to foraging — the numbers settle
+that: `fill = CEILING − FLOOR × (inCamp/total)` with `inCamp = (total − raiders) × (1 − share)`, so
+all-scouting fills 50/turn and all-foraging 100. The slider DOUBLES the fill rate end to end. It is
+the cost side of foraging and the main lever on when the boss fight lands. "+80" was exactly
+share 0.6.
+
+**What was built.** `remainingBracket(estimate)` in `services/meter.js`, surfaced as
+`meter.remaining` in the campaign view; `breachReadout()` in `ForagePanel.jsx` divides the
+already-interpolated fill into it.
+
+**The two traps, and how each is closed** — both are the kind that pass a casual read:
+
+1. **The remainder IS the hidden counter.** Turns-to-breach needs `threshold − value`, and the
+   threshold is a constant: hand over the true remainder and the player subtracts it from 1000 to
+   get `meter.value` exactly, undoing recon R2 in one step. So `remaining` is derived from the
+   **displayed `estimate` bracket**, never from `meter.value` — null exactly when the estimate is
+   null (Blind), inheriting exactly the width recon has bought, with no second gate to keep in
+   step. It inverts on the way through (a higher value is *less* wall left, so `estimate.high` sets
+   `remaining.low`) and floors at 0, since a wide bracket can run past the threshold. Note the HUD's
+   `WALLS_METER_THRESHOLD = 1000` mirror is for scaling a bar and must not be reused for this.
+2. **Turns is hyperbolic in `share`.** The fill is linear, which is why the panel may interpolate it
+   between `meterFillAtNoForage`/`AtFullForage`; `remaining / fill` is not. Interpolating two *turn*
+   endpoints agrees at both ends of the track and is wrong across the whole middle — which is where
+   the player actually sits. The guarding test is deliberately a MIDPOINT: fills 10/20 and a 400–700
+   remainder read 27–47 at share 0.5, where endpoint-interpolation would say 30–53. An end-of-track
+   assertion cannot catch this.
+
+**What the player sees**, in the four cases: a range that narrows with recon ("in 27–47 turns"); one
+number once the bracket is a point at the top level ("~20 turns"), read the same way `format.js`
+`estimate` reads a collapsed bracket; "the walls are breached" when the remainder is gone; and while
+**Blind**, a purely RELATIVE line — "Walls fall about 1.5× as fast as holding everyone back", or "as
+slowly as they can" at share 0. That fallback uses only the two endpoint fills, both already public,
+so it needs no gate at all and names no absolute number anywhere.
+
+Ceil, then floor at 1: a part-turn still has to be taken, and the meter fills at end of day, so the
+soonest any breach can land is next turn.
+
+Green: campaign-server 609/609 (24 files), frontend 269/269, oxlint clean. No schema change — this
+is a view field and a readout.
 
 ### The recruitment ladder (2026-08-10)
 

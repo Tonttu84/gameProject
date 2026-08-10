@@ -21,8 +21,49 @@ import { EMPTY_OBJECT } from '../stores/selectors'
 
 const RING_NAMES = ['Near', 'Middle', 'Far']
 
+// Turns-to-breach — the meter readout the player can actually price (decided
+// 2026-08-10). "+80 to the boss-fight meter" was a number against an invisible
+// scale: the threshold is server-side, so 80 could be a tenth of the siege or
+// the whole of it, and the one lever with a real cost read as noise.
+//
+// Two things constrain how it may be computed, and both are easy to get wrong:
+//
+//   • The meter is RECON-GATED. `meter.remaining` arrives already derived from
+//     the same displayBracket estimate the HUD shows, and is null while Blind.
+//     Never reconstruct it from a client-side threshold (the HUD's
+//     WALLS_METER_THRESHOLD mirror is for scaling a bar, nothing else) — the
+//     remainder subtracted from 1000 IS the hidden counter.
+//   • Turns is remaining/fill — HYPERBOLIC in share, unlike the fill itself.
+//     So the fill is interpolated linearly (below, which is valid) and divided
+//     HERE. Interpolating between two turn endpoints would agree at both ends
+//     of the track and be quietly wrong across the whole middle of it.
+const breachReadout = (remaining, fill, fillAtNoForage) => {
+  if (remaining) {
+    if (remaining.high <= 0) return 'The walls are breached — the assault comes now'
+    if (!(fill > 0)) return null
+    // Ceil, then floor at 1: a part-turn still has to be taken, and the meter
+    // fills at end of day, so the soonest any breach can land is next turn.
+    const soonest = Math.max(1, Math.ceil(remaining.low / fill))
+    const latest = Math.max(1, Math.ceil(remaining.high / fill))
+    // Collapses to one number at the top recon level, same as format.js
+    // `estimate` — the range narrowing IS the thing scouting bought.
+    return soonest === latest
+      ? `Walls breached in ~${soonest} turn${soonest === 1 ? '' : 's'} at this effort`
+      : `Walls breached in ${soonest}–${latest} turns at this effort`
+  }
+  // Blind (recon 0): no estimate exists, so say it RELATIVELY. Both endpoint
+  // fills are already public and this uses nothing else, so it needs no gate —
+  // the ratio says what this slider position costs without saying how far along
+  // the siege is.
+  if (!(fillAtNoForage > 0)) return null
+  const times = fill / fillAtNoForage
+  if (times < 1.05) return 'Walls fall as slowly as they can at this effort'
+  return `Walls fall about ${+times.toFixed(1)}× as fast as holding everyone back`
+}
+
 const ForagePanel = ({ onSetShare, locked }) => {
   const forage = useCampaignStore((s) => s.campaign?.forage ?? EMPTY_OBJECT)
+  const meter = useCampaignStore((s) => s.campaign?.meter ?? EMPTY_OBJECT)
   const tutorial = useUiStore((s) => s.tutorial)
   const [share, setShare] = useState(forage.share ?? 0.5)
   const [saving, setSaving] = useState(false)
@@ -74,6 +115,9 @@ const ForagePanel = ({ onSetShare, locked }) => {
   const meterAtNoForage = forage.meterFillAtNoForage ?? 0
   const meterAtFullForage = forage.meterFillAtFullForage ?? 0
   const meterFill = meterAtNoForage + (meterAtFullForage - meterAtNoForage) * share
+  // ...and the fill is only the input: what the player reads is how long the
+  // walls last at it. See breachReadout above.
+  const breachText = breachReadout(meter.remaining, meterFill, meterAtNoForage)
 
   return (
     <div className="forage-panel" data-testid="forage-panel">
@@ -87,7 +131,7 @@ const ForagePanel = ({ onSetShare, locked }) => {
           'Screening is the riders out ahead — they bring back word of the enemy AND harry what they find, which is what turns up targets worth raiding.',
           'The near ring empties first and nothing grows back — the land is a clock.',
           'The enemy drains the same rings on its own account and gets no credit for it — just fewer supplies for everyone.',
-          'Leaning toward Forage exposes more of the army — it fills the boss-fight meter faster.',
+          'Leaning toward Forage exposes more of the army — Karrowgate’s walls fall faster for it.',
         ]}
       />
       <h3>Effort</h3>
@@ -120,7 +164,7 @@ const ForagePanel = ({ onSetShare, locked }) => {
         <span data-testid="effort-preview-food">{tons(foodKg)} food</span>
         <span data-testid="effort-preview-materials">{tons(materialsKg)} materials</span>
         <span data-testid="effort-preview-scouting">{Math.round(scoutingPoints)} screening points</span>
-        <span data-testid="effort-preview-meter">+{Math.round(meterFill)} to the boss-fight meter</span>
+        {breachText && <span data-testid="effort-preview-breach">{breachText}</span>}
         <span data-testid="effort-enemy-drain">
           Enemy foraging: {forage.enemyDrainKg == null ? 'unknown' : `${tons(forage.enemyDrainKg)}/turn`}
         </span>

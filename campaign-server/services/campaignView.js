@@ -17,7 +17,7 @@ import {
   bandLabel,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
-import { meterBand, meterFillAtShare } from './meter.js'
+import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
 import {
@@ -265,6 +265,10 @@ export async function campaignView(campaign) {
   const reconOpen = SCOUTING_BANDS.indexOf(band) >= SCOUTING_BANDS.indexOf('Outmatched')
   // The player's own standing pressures, folded once for the scalars below.
   const playerBend = foldForageModifiers(campaign.forage.modifiers, 'playerYield')
+  // Named once because `remaining` is derived from the ESTIMATE, not from the
+  // true meter value — see remainingBracket in services/meter.js for why that
+  // distinction is the whole gate.
+  const meterEstimate = displayBracket(campaign.recon?.brackets?.meter, campaign.meter.value, level)
   return {
     id: campaign.id,
     day: campaign.day,
@@ -281,9 +285,16 @@ export async function campaignView(campaign) {
     // level 0), narrowing with the recon level and exact ({v, v}) at the top —
     // same discipline as the enemy `count` below. `bossFightDue` itself is own
     // info — it's what unlocks the decisive battle, not a secret.
+    //
+    // `remaining` (2026-08-10) is the gap left to the threshold, so the forage
+    // panel can say turns-to-breach instead of a raw "+80" against a scale the
+    // player cannot see. It is a DELIBERATE widening and carries no new
+    // information: it is computed from `estimate` alone, so it is null while
+    // Blind and no narrower than what recon has already sold.
     meter: {
       band: meterBand(campaign.meter.value),
-      estimate: displayBracket(campaign.recon?.brackets?.meter, campaign.meter.value, level),
+      estimate: meterEstimate,
+      remaining: remainingBracket(meterEstimate),
     },
     bossFightDue: campaign.bossFightDue,
     // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison-support epic"): shown as

@@ -14,7 +14,10 @@ export const campaignFixture = {
   // Boss-fight meter (docs/CAMPAIGN_PLAN.md "Boss-fight campaign loop"):
   // banded phrase always; a numeric estimate ([low,high], exact {v,v} at the
   // top recon level) once recon reveals it — null while Blind (recon level 0).
-  meter: { band: 'intact', estimate: null },
+  // `remaining` is the gap left to the threshold, derived server-side from that
+  // estimate (so: null here too, and the forage panel's turns-to-breach readout
+  // falls back to its relative phrasing).
+  meter: { band: 'intact', estimate: null, remaining: null },
   bossFightDue: false,
   // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): own info shown
   // as a coarse band word only — the raw resolve number never crosses the wire.

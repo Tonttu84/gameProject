@@ -121,9 +121,14 @@ const expectNoHiddenInfo = (body) => {
   }
   for (const c of [body, body.campaign]) {
     if (!c?.meter) continue
-    expect(Object.keys(c.meter).sort()).toEqual(['band', 'estimate'])
+    // `remaining` (the threshold gap, for turns-to-breach) rides the same gate:
+    // it is computed from `estimate`, so it is null wherever that is.
+    expect(Object.keys(c.meter).sort()).toEqual(['band', 'estimate', 'remaining'])
     const level0 = !c.scouting || c.scouting.band === 'Blind'
-    if (level0) expect(c.meter.estimate).toBeNull()
+    if (level0) {
+      expect(c.meter.estimate).toBeNull()
+      expect(c.meter.remaining).toBeNull()
+    }
   }
 }
 
