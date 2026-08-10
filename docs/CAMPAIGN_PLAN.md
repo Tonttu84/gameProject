@@ -61,14 +61,27 @@ standing invitation to build the thing this principle forbids.
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
 schema version **31** (unchanged — everything since has retuned constants and views, not the
-schema). **Everything through `0b6a4ed` is merged to `main`; `main` is the ONLY branch** — nothing
-is in flight, so a new session starts from a clean `main`.
+schema). **Everything through `4d885e1` is merged to `main` and CI-green** — nothing is in flight,
+so a new session starts from a clean `main`. (A stale `claude/…` branch may exist on the remote
+with zero unique commits; it is harness leftover, not work.)
 
 **Read `CLAUDE.md`'s "Shipping" section first.** Standing instruction as of 2026-08-10: finish a
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
 about DESIGN is still expected and welcome; asking whether to merge finished work is not.
 
-**2026-08-10, in order.** Seven player-facing changes, each with its own section below:
+**2026-08-10, in order.** Nine player-facing changes, each with its own section below:
+- **The tent names the fate a raid can still unmake** (`4d885e1`) — a deferred fate showed its
+  PREDICTED card, which may be the bluff, while the raid board's counter card read `trueEvent`: the
+  two screens disagreed about what the player knew while they chose a raid between them. The tent
+  now names the true threat and its cost and drops the decoy. Not a loosened gate — the truth is
+  already public at accept, so the strip was out of step, not protective. The VERDICT (whether it
+  lands, whether scouts turn it, the effect) still waits for end-day, which is what leaves a raid
+  able to unmake it. **`AUGURY_DEBUG_SHOW_TRUTH` is now `false`** — the early-playtest window is
+  over, and leaving it on made every bluff transparent on consult, collapsing the reroll.
+- **"Screening", not "Scouting"** (`2eb3c1e`) — the slider's other end. Player-facing text only;
+  identifiers and the persisted field keep the old name. `scouting.band` and the HUD's "Recon" line
+  were deliberately NOT renamed: those measure how well you SEE the enemy, which really is
+  reconnaissance. Two ideas had been sharing one word.
 - **The rule, audited card by card** — every event and every raid walked and read. Raids were
   clean; the fate REVEAL card was the one gap and now states its outcome. See "The rule, audited
   card by card".
