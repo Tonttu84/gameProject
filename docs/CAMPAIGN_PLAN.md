@@ -79,14 +79,55 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
 - **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
   words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
   `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number.
-- **The DB-backed campaign-server tests cannot run in the Claude-web container.**
-  `mongodb-memory-server` downloads its binary from `fastdl.mongodb.org`, which the sandbox's
-  network policy denies (403 on CONNECT); there is no cached binary, no system `mongod`, no Docker
-  daemon, and Ubuntu noble has no `mongodb-server` package. 12 of 23 files fail at setup for this
-  reason on a CLEAN `main` too — it is not a regression, and CI's `mongo:7` service container runs
-  them properly. The escape hatch already exists: set `MONGODB_TEST_URI` (see
-  `tests/helpers/db.js`) if you have a real mongod to point it at. **Verify DB-path changes in CI,
-  and say so rather than claiming a green local run.**
+- **The DB-backed campaign-server tests need ONE environment setting to run in a cloud session —
+  it is a config gap, not a law of nature (investigated 2026-08-10).** `mongodb-memory-server`
+  downloads mongod from `fastdl.mongodb.org`, and a cloud environment on the default **Trusted**
+  network level denies it (403 on CONNECT). 12 of 23 files then fail at setup — on a clean tree
+  too, so it is never a regression.
+
+  **The fix is one line of environment config, not code.** A Claude cloud environment has a
+  **Custom** network access level with an editable allowed-domains list: claude.ai/code → the cloud
+  icon *in the row above the message box* (there is no settings page or direct URL for it) → hover
+  the environment → gear → **Network access: Custom** → add `fastdl.mongodb.org` (and
+  `downloads.mongodb.org` for version metadata), and **tick "Also include default list of common
+  package managers"** or you lose npm and GitHub. The container is provisioned with the policy in
+  force at session start, so the change lands in NEW sessions, not the one you edit it from.
+
+  **Verification status, stated plainly:** every dead end below was reproduced first-hand in a
+  cloud session on 2026-08-10. The remedy itself is **from the documented feature, not yet observed
+  working here** — the session that wrote this could not test it, precisely because of the
+  session-start pinning above. **The first session started under a Custom-allowlist environment
+  should run `npm test` in `campaign-server/` and replace this paragraph with the result** (expect
+  23/23 files; the DB-free 11 already pass at 261 tests).
+
+  **Dead ends — do not re-investigate, all four were checked on 2026-08-10:**
+  - **"No Docker daemon" was wrong.** `/usr/bin/dockerd` is present and starts fine
+    (`dockerd --iptables=false --ip6tables=false --bridge=none --storage-driver=vfs`). Docker is
+    still unusable, but for a different reason: `mongo:7`'s manifest resolves and then the *blob*
+    download 403s, because Docker Hub's CDN (`production.cloudfront.docker.com`) is off-allowlist.
+    Adding that domain would presumably also work; the mongod allowlist is the smaller ask.
+  - **Every MongoDB-owned host is denied**, not just fastdl: `repo.mongodb.org`,
+    `downloads.mongodb.com`, `downloads.mongodb.org`.
+  - **Ubuntu's archive is reachable but useless** — newest `mongodb-server` there is **3.6.3**, and
+    the installed driver is `mongodb@6.21` (mongoose 8), which needs server 4.0+.
+  - **No npm package bundles a mongod**; they all download from the blocked hosts.
+
+  **Vendoring the binary into the repo was considered and REJECTED (2026-08-10).** A mongod is
+  ~130–150 MB, over GitHub's 100 MiB hard per-file limit, so it would need committing compressed
+  (~35–45 MB) plus a decompress-at-setup step. That is ~10× this repo (GitHub reports 4 MB; the
+  largest tracked file is 0.9 MB), permanent in history, re-cloned every remote session, and stacked
+  again on every version bump. It would also be the only binary the tree tracks — `game`,
+  `run_tests`, `game_clang` and `BUILD/` are all gitignored — and this repo is **public**, so
+  shipping mongod is SSPL redistribution. `git-lfs` is not even installed in the sandbox and its
+  backend (`github-cloud.s3.amazonaws.com`) is 403, so LFS is not an escape hatch either.
+  Swapping MongoDB out was rejected for the same reason: the query surface is tiny (one file uses
+  aggregate/bulkWrite) but `models/campaign.js` is 499 lines of nested document, and the motivation
+  would be a sandbox networking quirk rather than anything wrong with Mongo for this domain.
+
+  The older escape hatch still stands: set `MONGODB_TEST_URI` (see `tests/helpers/db.js`) to point
+  at a real mongod. CI is unaffected either way — its `mongo:7` service container runs these suites
+  properly. **If you are in an environment without the allowlist, verify DB-path changes in CI and
+  say so rather than claiming a green local run.**
 
 **Reproducing a random failure (2026-08-09).** The seed stays RANDOM every run — a fixed one would
 be green and blind, and both flakes chased that day were rare-draw bugs a pinned seed would have
@@ -184,7 +225,10 @@ place now, after both had been duplicated and both had caused a red CI run.
   - **The remote-session blind spot is structural, plan around it.** Claude's web/remote
     container can run neither `mongodb-memory-server` (mongod download 403s through the agent
     proxy) nor Docker (no usable daemon), so the 12 DB-backed server files CANNOT run there —
-    only the 10 DB-free ones. This has now cost one red CI run on both S2 and S3. Mitigations
+    only the 10 DB-free ones.
+    **[SUPERSEDED 2026-08-10 — it is not structural.** The blocker is the environment's network
+    allowlist, and "no usable daemon" is simply wrong: `dockerd` starts fine. See the live handoff
+    at the top of this file for the one-line fix and the full list of dead ends.**]** This has now cost one red CI run on both S2 and S3. Mitigations
     that worked: push DB-independent logic into pure exported functions (S3 extracted
     `ageForageModifiers` out of DB-only `resolveDay` for exactly this), and before pushing a
     change that adds a field to `campaignView`, grep the pinned key sets.
@@ -214,7 +258,10 @@ place now, after both had been duplicated and both had caused a red CI run.
      carries over what the previous FILE left; `fileParallelism: false` keeps that race-free).
      Default is unchanged — a plain `npm test` still spins up the in-memory server, no setup.
      Deliberately NOT the app's own `MONGODB_URI`, which switches the *server* to a persistent DB.
-  3. **A remote/web session still cannot run `cs-test` locally:** `fastdl.mongodb.org` is
+  3. **A remote/web session still cannot run `cs-test` locally** *(as of 2026-07; **superseded
+     2026-08-10** — an environment on **Custom** network access with `fastdl.mongodb.org`
+     allowlisted runs it fine, and `dockerd` does start. See the live handoff up top.)*:
+     `fastdl.mongodb.org` is
      **403 by egress policy** (so `mongodb-memory-server` can't fetch mongod) and these containers
      have **no docker daemon** (so a local `mongo:7` and `make docker-up` are both out). A remote
      session gets its DB-backed coverage from **CI** now; only a local box can run it directly.
