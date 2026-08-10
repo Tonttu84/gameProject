@@ -61,8 +61,15 @@ standing invitation to build the thing this principle forbids.
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
 schema version **31** (unchanged — the 2026-08-09 work retuned constants, it did not touch the
-schema). **Everything through `f94237c` is merged to `main`** — nothing is in flight, so a new
-session starts from a clean `main`.
+schema). **Everything through `c141022` is merged to `main` and CI-green** — nothing is in flight,
+so a new session starts from a clean `main`.
+
+That last stretch was: the `randomPlaceArmy` wrap-scan fix (`375306e`), the enemy's fixed-headcount
+supply swing (`f218da2`), the reinforcement tick-order decision (`f94237c`), then two RNG-shaped
+test fixes — the garrison sally cases that measured survival rather than firing (`115a3ab`, which
+had turned `main` red), and the placement sweep that replaced a single rigged roll (`c141022`).
+Both of the latter are covered by the testing convention below; read it before touching an
+RNG-adjacent test.
 
 **All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
 calls the user made; one turned out to be a non-bug hiding a real bug next door.
