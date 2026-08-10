@@ -27,8 +27,7 @@ test('full campaign turn: effort → omens → accept fates → raids → recrui
   // ── Prepare: split the army's effort between foraging and scouting ──────
   // The effort slider (S2) replaced the per-type forager steppers: one pool,
   // one share. It opens at the sticky committed share — 0 (all scouting) on a
-  // fresh campaign, DEFAULT_FORAGE_SHARE — and "Set effort" stays disabled
-  // until the split actually moves.
+  // fresh campaign, DEFAULT_FORAGE_SHARE.
   const effortSlider = page.getByTestId('effort-slider')
   await expect(effortSlider).toBeVisible()
   await expect(effortSlider).toHaveValue('0')
@@ -37,8 +36,11 @@ test('full campaign turn: effort → omens → accept fates → raids → recrui
   await effortSlider.focus()
   for (let i = 0; i < 7; i++) await effortSlider.press('ArrowRight')
   await expect(effortSlider).toHaveValue('0.7')
-  await page.getByTestId('effort-submit').click()
-  await expect(page.getByTestId('effort-submit')).toContainText('Effort set')
+  // The split commits itself — there is no confirming press any more
+  // (2026-08-10). Seven arrow presses are seven change events, so this also
+  // exercises the debounce: the status settles back to "Effort set" once the
+  // single write for the whole sweep has landed.
+  await expect(page.getByTestId('effort-status')).toContainText('Effort set')
 
   // ── Read the Omens → the augur's tent ──────────────────────────────────
   await page.getByTestId('to-omens').click()
