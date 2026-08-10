@@ -86,6 +86,30 @@ claiming to measure something else.
 **All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
 calls the user made; one turned out to be a non-bug hiding a real bug next door.
 
+**TODO (user, 2026-08-10) — every raid and every event must state its reward, at some level.**
+2026-08-10 fixed three of these one at a time (counter_event's `threat`, the fates' `effectText`,
+the forage pressures). That was treating instances; the standing rule is that **no card may show
+flavour alone.** Audit all of them and give each a line.
+
+The known gap that prompted this is `garrison_sortie` — "A Coordinated Sally" renders no reward at
+all. The cause is specific: a sortie carries its reward on the event
+(`sortieEvent.sortie`), and `raid.js:194` strips `thinsEnemy` out of it as a control flag. A sortie
+whose whole payoff IS thinning the besiegers therefore ends up with an empty reward object,
+`rewardParts()` returns nothing, and the card promises to catch them between two fires while
+listing no benefit. `thinsEnemy` needs to become a stated payoff ("the enemy takes losses"), not
+just a flag.
+
+Work through every type rather than only that one:
+`destroy_detachment` (gold), `loot_supplies` (food/materials/gold), `rescue_troops` (roster),
+`seize_horses` (horses), `counter_event` (done — `threat`), `garrison_sortie` (BROKEN, above), and
+the persistent forage-modifier card (its lift is implied by flavour only — say it outright).
+Then the same pass over the event pool: any fate whose card shows no `effectText` because
+`describeEffect` returns `[]` for its effect type is a fate the player cannot price.
+
+Reuse what exists — `describeEffect` is the one formatter and already honours the disclosure rules
+(hidden state silent, enemy figures as phrases). Do NOT hand-roll a second one per card type; that
+is how the vocabulary drifted in the first place.
+
 **NEXT UP — the forage panel's meter readout (decided 2026-08-10, not yet built).**
 The panel shows "+80 to the boss-fight meter", which is a number with no scale: the player cannot
 see `BOSS_FIGHT_METER_THRESHOLD` (1000), so 80 means nothing. **Decision: show turns-to-breach
