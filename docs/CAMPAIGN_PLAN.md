@@ -57,20 +57,31 @@ replacement. S4's supply system is a gauge plus an attrition rate with no agency
 `services/enemyAi.js` was renamed `enemyHost.js` in 2026-08-09 because the old name was a
 standing invitation to build the thing this principle forbids.
 
-### Where the work stands (2026-08-09) — START HERE
+### Where the work stands (2026-08-10) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **31** (unchanged — the 2026-08-09 work retuned constants, it did not touch the
-schema). **Everything through `c141022` is merged to `main` and CI-green** — nothing is in flight,
-so a new session starts from a clean `main`.
+schema version **31** (unchanged — everything since has retuned constants and views, not the
+schema). **Everything through `0b6a4ed` is merged to `main`; `main` is the ONLY branch** — nothing
+is in flight, so a new session starts from a clean `main`.
 
-That last stretch was: the `randomPlaceArmy` wrap-scan fix (`375306e`), the enemy's fixed-headcount
-supply swing (`f218da2`), the reinforcement tick-order decision (`f94237c`), then two RNG-shaped
-test fixes — the garrison sally cases that measured survival rather than firing (`115a3ab`, which
-had turned `main` red), and the placement sweep that replaced a single rigged roll (`c141022`).
-Both of the latter are covered by the testing convention below; read it before touching an
-RNG-adjacent test. On top of that sits the RNG seed logging (the commit after `c141022`), which is
-what makes any future version of those hunts a one-line replay instead of detective work.
+**Read `CLAUDE.md`'s "Shipping" section first.** Standing instruction as of 2026-08-10: finish a
+feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
+about DESIGN is still expected and welcome; asking whether to merge finished work is not.
+
+**2026-08-10, in order.** Four player-facing changes, each with its own section below:
+- **Fates and raid cards say what they cost** (`a6c7912`) — `describeEffect`, the counter-raid
+  `threat`, and the one `auguryTruthRevealed` gate. See "What a fate costs you, in numbers".
+- **The recruitment ladder** (`c7cf253`) — workers → Militia → Soldier/Archer → Cavalry, each rung
+  promoted out of the one below. See "The recruitment ladder".
+- **The forage slider commits itself** (`33f552b`) — debounced, no confirm button.
+- **The shipping instruction** (`0b6a4ed`) — into `CLAUDE.md`.
+
+**2026-08-09, still worth knowing.** The `randomPlaceArmy` wrap-scan fix (`375306e`), the enemy's
+fixed-headcount supply swing (`f218da2`), the reinforcement tick-order decision (`f94237c`), two
+RNG-shaped test fixes (`115a3ab`, which had turned `main` red, and `c141022`), and the RNG seed
+logging that makes the next such hunt a one-line replay. Read the testing convention below before
+touching an RNG-adjacent test — both of those flakes were assertions that measured survival while
+claiming to measure something else.
 
 **All three of the previous handoff's open questions are now ANSWERED** (below). Two were design
 calls the user made; one turned out to be a non-bug hiding a real bug next door.
@@ -78,7 +89,14 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
 **What is actually open:**
 - **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
   words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
-  `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number.
+  `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number. **Note this is
+  now entangled with the recruitment ladder:** promotions consume the rung below, so the player's
+  army grows more slowly than it did on 2026-08-09. Judge 721 against the NEW curve, not the old
+  one, and playtest the two together rather than retuning either alone.
+- **Two counter-raid cards can still share a title.** Raid flavour is per TYPE, so a turn with two
+  bad fates deals two cards both called "Riders Massing". They are now told apart by their `threat`
+  line, so this is cosmetic — it wants per-instance flavour variants, which is content authoring
+  rather than a mechanism. The augury itself no longer repeats an event (2026-08-10).
 - **The DB-backed campaign-server tests need ONE environment setting to run in a cloud session —
   it is a config gap, not a law of nature (investigated 2026-08-10).** `mongodb-memory-server`
   downloads mongod from `fastdl.mongodb.org`, and a cloud environment on the default **Trusted**
