@@ -13,17 +13,31 @@ import {
 // events.js's EVENT_POOL + eventEligible.
 //
 // Two lanes:
-//   - troop: batch/count hires drawn from the `workers` pool + food/materials,
-//     tiered via the same presence-only `requires: {hasUnit}` gate events.js
-//     already uses (own >=1 of the prerequisite type, not a minimum count).
-//     Cavalry/LightCavalry additionally cost `horses`.
+//   - troop: batch/count hires costing food/materials, tiered via the same
+//     presence-only `requires: {hasUnit}` gate events.js already uses (own >=1
+//     of the prerequisite type). Cavalry/LightCavalry additionally cost
+//     `horses`.
+//
+//     WHERE THE BODIES COME FROM is the ladder (user, 2026-08-10 — "better
+//     troops trained from militia rather than directly from workers"). Only
+//     Militia is raised from the `workers` pool. Everything above it carries
+//     `from`, and TRAINS one of those instead: 15 Soldier consumes 15 Militia,
+//     5 Cavalry consumes 5 Soldier. The militiaman IS the soldier, promoted —
+//     the body already exists, so only kit and rations are new, which is why
+//     those rows no longer cost workers at all. The ladder is therefore
+//     workers → Militia → Soldier/Archer → Cavalry/LightCavalry.
+//
+//     Consumption is 1:1 with the RESOLVED count, deliberately not a separate
+//     cost key: a boosted hire doubles the count, so it must eat double the
+//     trainees, and tying the two together makes that automatic rather than
+//     something a future boost rule can forget to scale.
 //   - caster: individual (count-1) hires, gold only, no tier gate.
 export const RECRUIT_POOL = [
   { id: 'militia', unit: 'Militia', lane: 'troop', count: 20, cost: { food: 40, materials: 20, workers: 20 } },
-  { id: 'soldier', unit: 'Soldier', lane: 'troop', count: 15, cost: { food: 60, materials: 30, workers: 15 }, requires: { hasUnit: 'Militia' } },
-  { id: 'archer', unit: 'Archer', lane: 'troop', count: 15, cost: { food: 50, materials: 25, workers: 15 }, requires: { hasUnit: 'Militia' } },
-  { id: 'cavalry', unit: 'Cavalry', lane: 'troop', count: 5, cost: { food: 40, materials: 20, workers: 5, horses: 5 }, requires: { hasUnit: 'Soldier' } },
-  { id: 'light_cavalry', unit: 'LightCavalry', lane: 'troop', count: 5, cost: { food: 35, materials: 15, workers: 5, horses: 5 }, requires: { hasUnit: 'Soldier' } },
+  { id: 'soldier', unit: 'Soldier', lane: 'troop', count: 15, cost: { food: 60, materials: 30 }, from: 'Militia', requires: { hasUnit: 'Militia' } },
+  { id: 'archer', unit: 'Archer', lane: 'troop', count: 15, cost: { food: 50, materials: 25 }, from: 'Militia', requires: { hasUnit: 'Militia' } },
+  { id: 'cavalry', unit: 'Cavalry', lane: 'troop', count: 5, cost: { food: 40, materials: 20, horses: 5 }, from: 'Soldier', requires: { hasUnit: 'Soldier' } },
+  { id: 'light_cavalry', unit: 'LightCavalry', lane: 'troop', count: 5, cost: { food: 35, materials: 15, horses: 5 }, from: 'Soldier', requires: { hasUnit: 'Soldier' } },
   { id: 'mage', unit: 'Mage', lane: 'caster', count: 1, cost: { gold: 100 } },
   { id: 'priest', unit: 'Priest', lane: 'caster', count: 1, cost: { gold: 80 } },
 ]
@@ -64,14 +78,27 @@ export const canAfford = (cost, resources = {}, workersFree = 0) => {
   return true
 }
 
+// Are there enough bodies on the rung below to train `count` of this entry?
+// Entries without `from` (Militia, the casters) are raised from workers or coin
+// and always pass. `requires.hasUnit` is a presence gate and deliberately stays
+// — it decides whether the option is OFFERED at all; this decides whether it
+// can actually be paid for, which is a different question once one Militia no
+// longer buys fifteen Soldier.
+export const hasTrainees = (entry, roster, count = entry.count) =>
+  !entry.from || (roster?.get?.(entry.from) ?? roster?.[entry.from] ?? 0) >= count
+
 // Prerequisite gate only — reuses events.js's presence-only `hasUnit` check
 // (own >=1 of the type, not a minimum count) so the two systems can't drift.
 export const eligiblePool = (ctx) => RECRUIT_POOL.filter((e) => eventEligible(e, ctx))
 
 // Eligible AND currently affordable — what the day's offer is actually drawn
-// from.
+// from. Affordable now means the trainees exist as well as the resources: an
+// offer you cannot pay for would break the "the hire is the only exit from the
+// Recruit phase" rule, since there is no skip.
 export const affordablePool = (ctx) =>
-  eligiblePool(ctx).filter((e) => canAfford(e.cost, ctx.resources, ctx.workersFree))
+  eligiblePool(ctx).filter(
+    (e) => canAfford(e.cost, ctx.resources, ctx.workersFree) && hasTrainees(e, ctx.roster),
+  )
 
 // Recruiting Fervor is a straight 1:1 percent chance, clamped to [0,100] for
 // the roll only — the stored value itself is uncapped in both directions (see
@@ -104,7 +131,10 @@ export const resolveHire = (entry, boosted, ctx) => {
 
   if (entry.lane === 'troop') {
     const doubled = scaleCost(entry.cost, 2)
-    if (canAfford(doubled, ctx.resources, ctx.workersFree))
+    // Double the count eats double the trainees, so the rung below has to hold
+    // them — otherwise a boost would conjure Soldier out of Militia that were
+    // never there.
+    if (canAfford(doubled, ctx.resources, ctx.workersFree) && hasTrainees(entry, ctx.roster, entry.count * 2))
       return { count: entry.count * 2, cost: doubled, secondUnit: null }
     return { count: entry.count, cost: scaleCost(entry.cost, 1 - RECRUIT_BOOST_DISCOUNT), secondUnit: null }
   }
@@ -127,6 +157,7 @@ export function applyHire(campaign, entryId, boosted = false) {
   const { count, cost, secondUnit } = resolveHire(entry, boosted, {
     resources: campaign.resources,
     workersFree,
+    roster: campaign.roster,
   })
 
   if (cost.food) campaign.resources.food = Math.max(0, campaign.resources.food - cost.food)
@@ -137,8 +168,18 @@ export function applyHire(campaign, entryId, boosted = false) {
   // `total` shrinks, `used` (fort labour) is untouched.
   if (cost.workers) campaign.workers.total = Math.max(0, campaign.workers.total - cost.workers)
 
-  campaign.roster.set(entry.unit, (campaign.roster.get(entry.unit) ?? 0) + count)
-  const log = [`${count} ${entry.unit} join the roster.`]
+  // Promotion, not recruitment: the bodies come off the rung below, 1:1 with
+  // the count. Clamped at what is actually there so a stale offer can never
+  // drive the source negative — and `trained` is what the roster then gains,
+  // so an entry can never mint more troops than it consumed.
+  const available = campaign.roster.get(entry.from) ?? 0
+  const trained = entry.from ? Math.min(count, available) : count
+  if (entry.from) campaign.roster.set(entry.from, available - trained)
+
+  campaign.roster.set(entry.unit, (campaign.roster.get(entry.unit) ?? 0) + trained)
+  const log = entry.from
+    ? [`${trained} ${entry.from} are trained up as ${entry.unit}.`]
+    : [`${trained} ${entry.unit} join the roster.`]
   if (secondUnit) {
     campaign.roster.set(secondUnit, (campaign.roster.get(secondUnit) ?? 0) + 1)
     log.push(`A second hire besides: 1 ${secondUnit}.`)

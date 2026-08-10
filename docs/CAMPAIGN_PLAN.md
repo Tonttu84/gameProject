@@ -150,6 +150,26 @@ end-of-run listener would never fire; and `std::uniform_int_distribution` is not
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
 
+### The recruitment ladder (2026-08-10)
+
+**workers → Militia → Soldier/Archer → Cavalry/LightCavalry.** Only Militia is raised from the
+workforce. Everything above it carries `from` in `RECRUIT_POOL` and is a **promotion**: 15 Soldier
+consumes 15 Militia, 5 Cavalry consumes 5 Soldier. The militiaman IS the soldier, drilled and
+equipped, so those rows cost no workers at all — only food and materials (and horses for the
+mounted ones). User's reason was fluff; the mechanical effect is that Militia stops being a
+throwaway tier and becomes the pipeline everything else draws on.
+
+Before this, `requires: {hasUnit: 'Militia'}` was presence-only — a single militiaman standing in
+camp let you buy fifteen Soldier straight out of the worker pool. That gate STAYS (it decides what
+is offered); `hasTrainees` is the separate question of whether the offer can be paid for.
+
+Consumption is 1:1 with the RESOLVED count, deliberately not a cost key: a boosted hire doubles the
+count, so it must eat double the trainees, and tying them together means a future boost rule cannot
+forget to scale it. `applyHire` clamps to what the roster actually holds and grants only what it
+consumed, so a stale offer can neither drive a line negative nor mint the shortfall. The client
+gets `from` and greys the card when the rung below is too thin — the resource-only check would
+otherwise arm a button the server would then silently under-fill.
+
 ### What a fate costs you, in numbers (2026-08-10)
 
 **The complaint:** raid cards and omens were pure flavour — "the benefits are extremely vague". A

@@ -1496,9 +1496,12 @@ describe('Recruit phase (docs/CAMPAIGN_PLAN.md)', () => {
     expectNoHiddenInfo(res.body)
     expect(res.body.recruit.drawn).toBe(true)
     expect(res.body.recruit.hiredToday).toBe(false)
+    // `from` is null on both: Militia is the base rung, raised from the
+    // workforce rather than promoted out of anything (the tiers above it carry
+    // a unit name here — see the ladder in services/recruit.js).
     expect(res.body.recruit.options).toEqual([
-      { id: 'militia', unit: 'Militia', lane: 'troop', count: militia.count, cost: militia.cost, secondUnit: null },
-      { id: 'travellers', unit: 'Militia', lane: 'troop', count: FREE_MILITIA_AMOUNT, cost: {}, secondUnit: null },
+      { id: 'militia', unit: 'Militia', lane: 'troop', from: null, count: militia.count, cost: militia.cost, secondUnit: null },
+      { id: 'travellers', unit: 'Militia', lane: 'troop', from: null, count: FREE_MILITIA_AMOUNT, cost: {}, secondUnit: null },
     ])
   })
 

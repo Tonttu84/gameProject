@@ -238,7 +238,10 @@ describe('applyHire', () => {
   test('a Cavalry hire spends horses too', () => {
     const cavalry = poolEntry('cavalry')
     const campaign = {
-      roster: new Map([['Soldier', 1]]),
+      // Enough Soldier to promote: the ladder consumes them 1:1 now, so a lone
+      // Soldier no longer buys a whole troop of horse (it did when `requires`
+      // was a presence-only gate and the bodies came from the worker pool).
+      roster: new Map([['Soldier', 5]]),
       resources: { food: 1000, materials: 1000, gold: 0, horses: 1000 },
       workers: { total: 1000, used: 0 },
       recruit: { fervor: 0 },
@@ -246,6 +249,63 @@ describe('applyHire', () => {
     applyHire(campaign, 'cavalry', false)
     expect(campaign.roster.get('Cavalry')).toBe(cavalry.count)
     expect(campaign.resources.horses).toBe(1000 - cavalry.cost.horses)
+  })
+})
+
+// The ladder (user, 2026-08-10): workers → Militia → Soldier/Archer → Cavalry.
+// Only Militia is raised from the workforce; everything above it is a PROMOTION
+// that spends the rung below.
+describe('better troops are trained out of the rung below', () => {
+  const campaignWith = (roster) => ({
+    roster: new Map(roster),
+    resources: { food: 1000, materials: 1000, gold: 1000, horses: 1000 },
+    workers: { total: 1000, used: 0 },
+    recruit: { fervor: 0 },
+  })
+
+  test('a Soldier hire consumes Militia one for one, and no workers', () => {
+    const soldier = poolEntry('soldier')
+    const c = campaignWith([['Militia', 40]])
+    applyHire(c, 'soldier', false)
+
+    expect(c.roster.get('Soldier')).toBe(soldier.count)
+    expect(c.roster.get('Militia')).toBe(40 - soldier.count)
+    // The body already existed — the workforce is untouched.
+    expect(c.workers.total).toBe(1000)
+    expect(soldier.cost.workers).toBeUndefined()
+  })
+
+  test('raising Militia still comes out of the workforce', () => {
+    const militia = poolEntry('militia')
+    const c = campaignWith([])
+    applyHire(c, 'militia', false)
+
+    expect(c.roster.get('Militia')).toBe(militia.count)
+    expect(c.workers.total).toBe(1000 - militia.cost.workers)
+  })
+
+  test('never mints more troops than it consumed', () => {
+    // A stale offer resolved against a roster that has since been thinned must
+    // not drive the source negative, and must not conjure the shortfall.
+    const c = campaignWith([['Militia', 4]])
+    applyHire(c, 'soldier', false)
+
+    expect(c.roster.get('Militia')).toBe(0)
+    expect(c.roster.get('Soldier')).toBe(4) // the four that existed, no more
+  })
+
+  test('a boosted hire needs double the trainees, or it takes the discount', () => {
+    const soldier = poolEntry('soldier')
+    // Exactly enough for the normal count, not the doubled one.
+    const lean = campaignWith([['Militia', soldier.count]])
+    applyHire(lean, 'soldier', true)
+    expect(lean.roster.get('Soldier')).toBe(soldier.count)
+
+    // Enough for both: the boost doubles the promotion as well as the cost.
+    const flush = campaignWith([['Militia', soldier.count * 2]])
+    applyHire(flush, 'soldier', true)
+    expect(flush.roster.get('Soldier')).toBe(soldier.count * 2)
+    expect(flush.roster.get('Militia')).toBe(0)
   })
 })
 

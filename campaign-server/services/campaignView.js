@@ -424,8 +424,12 @@ export async function campaignView(campaign) {
         const resolved = resolveHire(entry, campaign.recruit.boosted, {
           resources: campaign.resources,
           workersFree: campaign.workers.total - campaign.workers.used,
+          roster: campaign.roster,
         })
-        return [{ id: entry.id, unit: entry.unit, lane: entry.lane, ...resolved }]
+        // `from` crosses so the card can say the hire PROMOTES rather than
+        // recruits — the trainees are the player's own troops leaving one line
+        // of the roster for another, which is the cost most worth seeing.
+        return [{ id: entry.id, unit: entry.unit, lane: entry.lane, from: entry.from ?? null, ...resolved }]
       }),
     },
     // Decisions owed (events with choices): display fields + option CARDS

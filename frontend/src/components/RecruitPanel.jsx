@@ -27,6 +27,9 @@ const RecruitPanel = ({ onHire }) => {
   const recruit = useCampaignStore((s) => s.campaign?.recruit)
   const resources = useCampaignStore((s) => s.campaign?.resources)
   const workers = useCampaignStore((s) => s.campaign?.workers)
+  // Needed for the trainee check: everything above Militia is a promotion, so
+  // affordability depends on the roster as much as on the stores.
+  const roster = useCampaignStore((s) => s.campaign?.roster)
   const tutorial = useUiStore((s) => s.tutorial)
   const [busy, setBusy] = useState(false)
 
@@ -35,10 +38,15 @@ const RecruitPanel = ({ onHire }) => {
   const options = recruit.options ?? []
   const workersFree = workers?.available ?? 0
 
-  const canAfford = (cost) =>
-    Object.entries(cost).every(([key, n]) =>
+  // An option is affordable only if the TRAINEES exist too: above Militia the
+  // count comes off the rung below, one for one, so a card can be perfectly
+  // affordable in food and materials and still be unpayable. Without this the
+  // button would arm and the server would then quietly train only as many as
+  // the roster held.
+  const canAfford = (o) =>
+    Object.entries(o.cost).every(([key, n]) =>
       key === 'workers' ? workersFree >= n : (resources?.[key] ?? 0) >= n,
-    )
+    ) && (!o.from || (roster?.[o.from] ?? 0) >= o.count)
 
   const hire = async (entryId) => {
     setBusy(true)
@@ -57,7 +65,8 @@ const RecruitPanel = ({ onHire }) => {
         title="Recruiting"
         lines={[
           'Word of the camp\'s cause spreads — each day two ways to grow your strength turn up. Take one; you cannot march without recruiting.',
-          'Troops draw on your workforce plus food and materials; casters cost gold instead. Cavalry also costs horses. When little is on offer, a band of travellers will always take your colours for nothing.',
+          'Militia are raised from your workforce. Better troops are TRAINED OUT OF THEM — a soldier is a militiaman drilled and equipped, and horse are made from soldiers — so each promotion spends the men on the rung below, plus food and materials. Casters cost gold instead; cavalry also costs horses.',
+          'When little is on offer, a band of travellers will always take your colours for nothing.',
           'Recruiting Fervor can boost the day\'s pick when it fires — a bigger hire at a bigger cost, or the same hire at a discount.',
         ]}
       />
@@ -73,7 +82,8 @@ const RecruitPanel = ({ onHire }) => {
       ) : (
         <>
           {options.map((o) => {
-            const affordable = canAfford(o.cost)
+            const affordable = canAfford(o)
+            const trainees = o.from ? (roster?.[o.from] ?? 0) : 0
             return (
               <div className="raid-card" key={o.id} data-testid={`recruit-card-${o.id}`}>
                 <strong>
@@ -81,6 +91,15 @@ const RecruitPanel = ({ onHire }) => {
                   {o.secondUnit && ` + 1 ${o.secondUnit}`}
                 </strong>
                 <p data-testid={`recruit-cost-${o.id}`}>Cost: {costLabel(o.cost)}</p>
+                {/* The trainees are the real price of a promotion — troops
+                    leaving one line of the roster for another — so they get
+                    their own line rather than hiding among the resources, with
+                    what you actually have beside it. */}
+                {o.from && (
+                  <p data-testid={`recruit-from-${o.id}`}>
+                    Trained from: {o.count} {o.from} (you have {trainees})
+                  </p>
+                )}
                 <button
                   className="btn-primary"
                   data-testid={`recruit-hire-${o.id}`}

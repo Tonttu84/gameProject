@@ -68,11 +68,13 @@ const TRAVELLERS_OPTION = {
 }
 
 // Raids screen needs an already-accepted augury to be reachable via marchToRaids.
-const withRecruit = (recruit, { resources, workers } = {}) => ({
+const withRecruit = (recruit, { resources, workers, roster } = {}) => ({
   ...campaignFixture,
   augury: consultedAugury,
   ...(resources && { resources: { ...campaignFixture.resources, ...resources } }),
   ...(workers && { workers }),
+  // Promotions are paid in troops, so some cases need to pin the roster.
+  ...(roster && { roster }),
   recruit,
 })
 
@@ -255,5 +257,51 @@ describe('recruit panel — the hire is the only way forward', () => {
     expect(await screen.findByTestId('recruit-panel')).toBeInTheDocument()
     expect(screen.queryByText(/War Council/)).not.toBeInTheDocument()
     expect(openRecruit).not.toHaveBeenCalled() // already drawn — re-opening would be a pointless round-trip
+  })
+})
+
+// The ladder (user, 2026-08-10): only Militia is raised from the workforce.
+// Above it a hire is a PROMOTION that spends the rung below one for one, so the
+// trainees are part of the price and have to be visible and enforced.
+describe('promotions are paid in troops', () => {
+  const SOLDIER_OPTION = {
+    id: 'soldier', unit: 'Soldier', lane: 'troop', count: 15,
+    cost: { food: 60, materials: 30 }, from: 'Militia', secondUnit: null,
+  }
+
+  // Same walk every other case here makes: boot the app on the council, then
+  // march to Recruit (which is what draws the offer).
+  const openWith = async (recruit, opts) => {
+    getCampaigns.mockResolvedValue([withRecruit(UNOPENED)])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    await toRecruitScreen(recruit, opts)
+  }
+
+  it('names the trainees it will spend, and what you have', async () => {
+    await openWith({ ...UNOPENED, options: [SOLDIER_OPTION] }, { roster: { Militia: 40 } })
+
+    expect(await screen.findByTestId('recruit-from-soldier')).toHaveTextContent(
+      'Trained from: 15 Militia (you have 40)',
+    )
+  })
+
+  it('refuses the hire when the rung below is too thin, however full the stores', async () => {
+    // Affordable in food and materials, and still unpayable — the case the old
+    // resource-only check would have armed the button for.
+    await openWith(
+      { ...UNOPENED, options: [SOLDIER_OPTION] },
+      { resources: { food: 9999, materials: 9999 }, roster: { Militia: 4 } },
+    )
+
+    expect(await screen.findByTestId('recruit-from-soldier')).toHaveTextContent('(you have 4)')
+    expect(screen.getByTestId('recruit-hire-soldier')).toBeDisabled()
+  })
+
+  it('says nothing about trainees for Militia, which is raised from the workforce', async () => {
+    await openWith({ ...UNOPENED, options: [MILITIA_OPTION] }, { resources: { materials: 100 } })
+
+    expect(await screen.findByTestId('recruit-card-militia')).toBeInTheDocument()
+    expect(screen.queryByTestId('recruit-from-militia')).not.toBeInTheDocument()
   })
 })
