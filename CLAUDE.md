@@ -26,6 +26,30 @@ only in Claude's per-machine auto-memory (`~/.claude/…`, which does NOT move b
 - Auto-memory may still be used for cross-project user preferences, but anything another machine
   needs to continue the work belongs in a committed file.
 
+## Shipping: finish the feature, then merge to main — don't ask
+
+**Standing instruction (user, 2026-08-10): once a feature is COMPLETE and CI is green, merge it to
+`main` yourself.** Don't stop to ask for permission on a finished piece of work, and don't leave it
+parked on a branch waiting for a nod. This is a solo project; a completed, green feature sitting
+unmerged is pure friction.
+
+"Complete" is doing the work, not declaring it:
+- the full suite for every layer the change touches (`make test-serial`, `cs-test`, `frontend-test`
+  — whichever apply), plus `npm run lint` in `frontend/` when the change is front-end;
+- the design decision written into `docs/CAMPAIGN_PLAN.md` if there was one worth not
+  re-litigating;
+- CI green on the pushed commit. Watch it rather than assuming — a red `main` is the one outcome
+  this instruction must never produce. If CI fails, fixing it is part of the same task.
+
+Committing straight to `main` is fine for work of this size, and is what most of 2026-08-10 did —
+there is no separate branch to merge and nothing to reconcile. Use a branch when a change is big
+enough to want isolation, and then merge it yourself once it is green. Either way, **do not open a
+PR unless the user asks for one.**
+
+Still ask, before building, about the things a test cannot settle: a design call, a balance number,
+a rule with two defensible answers. That is what the grilling skill above is for. The distinction is
+DESIGN vs SHIPPING — interview freely on the former, never ask permission for the latter.
+
 ## Build & test commands
 
 This is a Linux-targeted project. The engine is fully headless (no SFML/X11/font deps — the
