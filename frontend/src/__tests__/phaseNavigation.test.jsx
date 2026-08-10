@@ -80,7 +80,10 @@ describe('phased-turn back navigation', () => {
     expect(screen.queryByTestId('omens-context')).not.toBeInTheDocument()
     expect(screen.queryByTestId('to-omens')).not.toBeInTheDocument()
     expect(screen.getByTestId('phase-committed')).toBeInTheDocument()
-    expect(screen.getByTestId('effort-submit')).toBeDisabled()
+    // The slider itself is the control now — there is no submit button to
+    // disable, so "dead" means the input is disabled and says so.
+    expect(screen.getByTestId('effort-slider')).toBeDisabled()
+    expect(screen.getByTestId('effort-status')).toHaveTextContent('Effort is committed')
     expect(screen.getByTestId('fortify-button')).toBeDisabled()
 
     // …and it leads forward again, never sideways.

@@ -123,11 +123,33 @@ describe('effort slider', () => {
     render(<App />)
     await screen.findByText(/War Council/)
 
+    // No confirming press: moving the slider IS the commit (2026-08-10). The
+    // write is debounced, so it lands shortly after the change rather than
+    // synchronously with it.
     fireEvent.change(screen.getByTestId('effort-slider'), { target: { value: '0.8' } })
-    fireEvent.click(screen.getByTestId('effort-submit'))
 
     await waitFor(() => expect(setCampaignEffort).toHaveBeenCalledWith('c1', 0.8))
     expect(await screen.findByText('Effort set')).toBeInTheDocument()
+  })
+
+  it('a drag across the track is ONE write, of where it came to rest', async () => {
+    // A range input fires per step while dragging. Without the debounce a
+    // single sweep would be a dozen writes to a route that seals the turn's
+    // split — so the sweep below must collapse to one call, at the final value.
+    setCampaignEffort.mockResolvedValue({
+      ...campaignFixture,
+      forage: { ...campaignFixture.forage, share: 0.9 },
+    })
+    render(<App />)
+    await screen.findByText(/War Council/)
+
+    const slider = screen.getByTestId('effort-slider')
+    for (const value of ['0.6', '0.7', '0.8', '0.9']) {
+      fireEvent.change(slider, { target: { value } })
+    }
+
+    await waitFor(() => expect(setCampaignEffort).toHaveBeenCalledWith('c1', 0.9))
+    expect(setCampaignEffort).toHaveBeenCalledTimes(1)
   })
 
   it('the HUD shows stores in tonnes, per-turn need, and land remaining', async () => {

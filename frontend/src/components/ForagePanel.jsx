@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import TutorialIntro from './TutorialIntro'
 import { tons } from '../utils/format'
 import useCampaignStore from '../stores/useCampaignStore'
@@ -25,13 +25,38 @@ const ForagePanel = ({ onSetShare, locked }) => {
   const forage = useCampaignStore((s) => s.campaign?.forage ?? EMPTY_OBJECT)
   const tutorial = useUiStore((s) => s.tutorial)
   const [share, setShare] = useState(forage.share ?? 0.5)
-  const [saved, setSaved] = useState(true)
+  const [saving, setSaving] = useState(false)
 
-  const setDraft = (raw) => {
-    const clamped = Math.max(0, Math.min(1, Number(raw)))
-    setShare(clamped)
-    setSaved(false)
-  }
+  const setDraft = (raw) => setShare(Math.max(0, Math.min(1, Number(raw))))
+
+  // The split commits itself — no separate "Set effort" press (user,
+  // 2026-08-10). Debounced rather than sent on every change: a range input
+  // fires per STEP while dragging, so a single sweep across the track would be
+  // a dozen writes to a route that seals the turn's split.
+  //
+  // Debounce, not onPointerUp, because the slider is also driven by arrow keys
+  // and that route has no release event to hang a commit on — one timer covers
+  // mouse, touch and keyboard alike.
+  const committed = useRef(forage.share ?? 0.5)
+  // onSetShare is a fresh closure on most renders. Held in a ref so it is NOT
+  // an effect dependency: as a dependency it would restart the timer on every
+  // render and the commit would never fire.
+  const latestSetShare = useRef(onSetShare)
+  useEffect(() => { latestSetShare.current = onSetShare })
+
+  useEffect(() => {
+    if (locked || share === committed.current) return undefined
+    const timer = setTimeout(async () => {
+      committed.current = share
+      setSaving(true)
+      try {
+        await latestSetShare.current(share)
+      } finally {
+        setSaving(false)
+      }
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [share, locked])
 
   const pool = forage.pool ?? 0
   const kgPerPoint = forage.kgPerPoint ?? 0
@@ -49,11 +74,6 @@ const ForagePanel = ({ onSetShare, locked }) => {
   const meterAtNoForage = forage.meterFillAtNoForage ?? 0
   const meterAtFullForage = forage.meterFillAtFullForage ?? 0
   const meterFill = meterAtNoForage + (meterAtFullForage - meterAtNoForage) * share
-
-  const submit = async () => {
-    await onSetShare(share)
-    setSaved(true)
-  }
 
   return (
     <div className="forage-panel" data-testid="forage-panel">
@@ -122,14 +142,11 @@ const ForagePanel = ({ onSetShare, locked }) => {
           ))}
         </ul>
       )}
-      <button
-        className="btn-primary"
-        data-testid="effort-submit"
-        onClick={submit}
-        disabled={locked || saved}
-      >
-        {locked ? 'Effort is committed' : !saved ? 'Set effort' : 'Effort set'}
-      </button>
+      {/* A status line, not a control: the split saves itself, so the only
+          thing left to say is whether it has landed. */}
+      <p className="effort-status" data-testid="effort-status">
+        {locked ? 'Effort is committed' : saving ? 'Saving…' : 'Effort set'}
+      </p>
     </div>
   )
 }
