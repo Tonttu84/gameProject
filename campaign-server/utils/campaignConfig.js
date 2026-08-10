@@ -73,9 +73,14 @@ export const AUGURY_ODDS_MAX = 0.9
 export const AUGURY_REROLLS_PER_DAY = 1 // rerolling a slot REPLACES that fate: new pair, new roll, new odds
 // The tent reveals each slot's TRUE card once the turn's reroll is spent
 // (user: "I need to see the true cards when the reroll has been resolved").
-// TEMP DEBUG: true = reveal immediately on consult while the augury is
-// playtested; flip to false for the reroll-gated final behavior.
-export const AUGURY_DEBUG_SHOW_TRUTH = true
+// OFF as of 2026-08-10 — the early-playtest window it existed for is over
+// ("we can now hide the debugging knowledge of the true event"). With it false
+// the truth is gated as designed: it surfaces when the reroll DECISION ends,
+// either because the reroll was spent or the fates were accepted
+// (auguryTruthRevealed, services/campaignView.js). Set true again only to
+// playtest the augury itself — it makes every bluff transparent on consult,
+// which collapses the reroll minigame.
+export const AUGURY_DEBUG_SHOW_TRUTH = false
 export const AUGURY_MAGE_BONUS_CAP = 3 // mageBonus = min(cap, floor(sqrt(mages)))
 
 // ── Scouting (Stage 4 → Recon rework) ────────────────────────────────────────

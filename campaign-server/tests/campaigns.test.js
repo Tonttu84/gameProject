@@ -814,12 +814,11 @@ describe('POST /api/campaigns/:id/augury/consult', () => {
       severity: 3,
       effect: DOOMED.effect,
     })
-    // Truth reveal: with AUGURY_DEBUG_SHOW_TRUTH on (playtest debug) the
-    // slot's true card rides along immediately; the final rule gates it on
-    // the reroll being spent. Flipping the flag flips this expectation.
-    expect(res.body.augury.visions.map((v) => v.truth.id)).toEqual(
-      Array(3).fill('doomed_omen'),
-    )
+    // Truth reveal: AUGURY_DEBUG_SHOW_TRUTH is OFF as of 2026-08-10, so this is
+    // now the real rule — a fresh consult still holds a reroll, the decision the
+    // uncertainty exists to price, so the true card is WITHHELD. It surfaces
+    // when that decision ends: the reroll spent, or the fates accepted.
+    expect(res.body.augury.visions.map((v) => v.truth)).toEqual(Array(3).fill(null))
     expectNoHiddenInfo(res.body)
 
     // The DB knows which visions were true; no response ever does.
@@ -2145,7 +2144,7 @@ describe('augury acceptance (fates at the tent)', () => {
       expect(slot.fired.effect).not.toEqual(slot.actual.effect)
     })
 
-    test('a DEFERRED slot still states nothing — the strip holds', async () => {
+    test('a DEFERRED slot names the TRUE fate and its cost, but no verdict', async () => {
       const { body: c } = await createCampaign()
       await pinAugury(c.id, DOOMED, QUIET)
       await setConsulted(c.id)
@@ -2154,16 +2153,21 @@ describe('augury acceptance (fates at the tent)', () => {
       const { body } = await accept(c.id)
       const tent = body.report.augury[1]
       expect(tent.deferred).toBe(true)
-      // The blow has not fallen: no card, so no effect line either. Adding the
-      // figure to the reveal must not reach around the 2026-07-18 deferral.
+      // The VERDICT is still deferred — whether the blow landed and whether the
+      // scouts turned it wait for end-day, which is what lets a raid unmake it.
       expect(tent.actual).toBeUndefined()
       expect(tent.fired).toBeUndefined()
-      // The TRUTH's figure is what must not appear. `predicted` keeps its own
-      // line — that is the card the player was shown at the tent, and it has
-      // carried its effect since the tent card was built; here it is the QUIET
-      // decoy, so its line says nothing about the doom being deferred.
-      expect(tent.predicted.id).toBe('quiet')
-      expect(JSON.stringify(tent)).not.toContain('−1 t') // DOOMED's −999 kg
+      // But the THREAT is named, with what it will cost (2026-08-10). The truth
+      // is already public by now — auguryTruthRevealed goes on at accept — and
+      // the counter card on the raid board has always read trueEvent, so
+      // showing the decoy here made the two screens contradict each other while
+      // the player decided whether to raid it.
+      expect(tent.threat.title).toBe('Doom')
+      expect(tent.threat.effect).toEqual(['Food −1 t']) // DOOMED's −999 kg
+      // And the bluff is gone: once the truth is out, the decoy the player was
+      // shown is no longer information.
+      expect(tent.predicted).toBeUndefined()
+      expect(JSON.stringify(tent)).not.toContain('quiet')
     })
   })
 

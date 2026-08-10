@@ -89,6 +89,33 @@ describe('EventRevealScreen: one card per click', () => {
   // reveal-next goes disabled with nothing to click and the tent deadlocks (a
   // real stuck-reveal the campaign-loop E2E hit once choice density rose). The
   // decision is owed later via the pendingChoices overlay, not here.
+  // A deferred fate names the TRUE threat and what it will cost (2026-08-10).
+  // The truth is already public by the time the tent renders — it surfaces at
+  // accept — and the counter card on the raid board has always read trueEvent,
+  // so showing the shown-vision here had the two screens contradicting each
+  // other while the player decided whether to raid it.
+  it('a deferred fate names the true threat and its cost, not the bluff', () => {
+    const report = {
+      day: 3,
+      kind: 'fates',
+      augury: [
+        {
+          odds: 0.4,
+          deferred: true,
+          threat: { title: 'Doom', description: '…', effect: ['Food −1 t'] },
+        },
+      ],
+      entries: [],
+    }
+    render(<EventRevealScreen report={report} onContinue={() => {}} />)
+
+    expect(screen.getByTestId('fate-threat-0')).toHaveTextContent('Coming: Doom — Food −1 t')
+    // Still no verdict: whether it lands waits for end-day, which is what
+    // leaves a raid able to unmake it.
+    expect(screen.getByTestId('fate-deferred')).toBeInTheDocument()
+    expect(screen.queryByText(/The augur foretold/)).not.toBeInTheDocument()
+  })
+
   it('a deferred fate that also owes a choice never deadlocks the reveal', () => {
     const report = {
       day: 3,

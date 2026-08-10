@@ -132,9 +132,25 @@ export async function acceptFates(campaign) {
       // rung is recorded so exactly what was foreseen is what lands.
       slot.firedRungName = fired.rung
       report.augury[i] = {
-        predicted: report.augury[i].predicted,
         odds: report.augury[i].odds,
         deferred: true,
+        // The TRUE fate, named, with what it will cost — NOT the shown vision.
+        // By the time this card renders the truth is already public
+        // (auguryTruthRevealed goes on at accept), so showing the prediction
+        // here left the tent displaying a card the raid board simultaneously
+        // contradicted: the counter card's `threat` has always read trueEvent.
+        // Once the truth is out the bluff is no longer information, so it goes.
+        //
+        // This is the identity of the threat, never its VERDICT. Whether the
+        // blow lands, whether the scouts turn it, and the effect itself still
+        // wait for end-day — that is the 2026-07-18 deferral, and it is what
+        // lets a raid still unmake this. Naming a threat is not calling its
+        // outcome.
+        threat: {
+          title: fired.title,
+          description: fired.description,
+          effect: describeEffect(fired.effect),
+        },
       }
       entries.push('A coming blow has been foreseen — your raiders may yet unmake it before it falls.')
       if (fired.choices?.length) pendChoice(campaign, report.augury[i], i, slot, fired, report.day, true)

@@ -116,9 +116,14 @@ const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
     return (
       <div className="reveal-card report-augury-slot" data-testid={`reveal-beat-fate-${index}`}>
         <h3>{FATE_NAMES[index] ?? `Fate ${index + 1}`}</h3>
-        {slot.predicted && (
-          <p>
-            The augur foretold: <strong>{slot.predicted.title}</strong>
+        {/* The TRUE fate, not the vision. The truth is already out by the time
+            this renders, and the raid board names the same thing — the tent
+            showing the bluff instead was the two screens disagreeing about
+            what the player knows. */}
+        {slot.threat && (
+          <p data-testid={`fate-threat-${index}`}>
+            Coming: <strong>{slot.threat.title}</strong>
+            {slot.threat.effect?.length > 0 && ` — ${slot.threat.effect.join(', ')}`}
           </p>
         )}
         <p className="fate-deferred" data-testid="fate-deferred">
