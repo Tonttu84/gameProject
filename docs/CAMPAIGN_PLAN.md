@@ -57,6 +57,34 @@ replacement. S4's supply system is a gauge plus an attrition rate with no agency
 `services/enemyAi.js` was renamed `enemyHost.js` in 2026-08-09 because the old name was a
 standing invitation to build the thing this principle forbids.
 
+### 2. Units declare their roles; every player unit is buyable
+
+> *"anything that is meant for player use should also have a recruit event … and the others
+> should be marked that they are summons or enemy etc so the units are easier to upkeep and it
+> gets easier to add new units"* — user, 2026-08-10
+
+The engine catalog row for a unit type carries a **composable set of `UnitRole` flags** —
+`Player`, `Enemy`, `Summon`, `Mount` — naming every channel through which that type may
+legitimately enter play. This replaced the `placeable`/`spawnable` booleans, which stated the
+same fact twice and could express nonsense (`placeable && !spawnable`). Both are now derived:
+`placeable == Player`, `spawnable == Player | Enemy`.
+
+**Roles are composable and descriptive, not exclusive.** A type lists every role that applies.
+Scorpion is `Enemy | Mount` — a ridden mount that an enemy host may also field on its own legs;
+that case is *why* roles are a set rather than a single kind (user, 2026-08-10). Soldier, Archer
+and LightCavalry are `Player | Enemy` because `ENEMY_ARMY` really does field them.
+
+**The binding rule: a `Player` unit the player cannot buy is a bug.** Every `Player`-role type
+must have a `RECRUIT_POOL` row — no exemptions, casters included. Four tests in
+`campaign-server/tests/engine.integration.test.js` enforce role↔config agreement against the
+**real binary**; see `docs/ADDING_UNITS.md` §5.
+
+**Where the line falls.** Roles are battle-layer access control (who may stand on a
+battlefield) and belong to the engine. Recruit costs, the promotion ladder and army
+compositions are campaign design data and stay in `campaign-server`. The dependency runs
+**campaign → engine, never back** — the engine knows nothing about recruiting and must not.
+Tests spanning the two therefore live campaign-side, since only that layer can see both.
+
 ### Where the work stands (2026-08-10) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
@@ -69,7 +97,16 @@ with zero unique commits; it is harness leftover, not work.)
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
 about DESIGN is still expected and welcome; asking whether to merge finished work is not.
 
-**2026-08-10, in order.** Nine player-facing changes, each with its own section below:
+**2026-08-10, in order.** Nine player-facing changes, each with its own section below — plus a
+tenth, structural one:
+- **Unit roles + Pikeman is recruitable** — the catalog's `placeable`/`spawnable` booleans became
+  a composable `UnitRole` set (see standing principle 2 above), and **Pikeman** — player-placeable
+  since forever but in neither `RECRUIT_POOL` nor `STARTING_ROSTER`, i.e. unobtainable — gained a
+  recruit row: 15 for 50 food / 20 materials, trained from Militia. It is deliberately still
+  absent from the starting roster, so it must be built toward. Accepted balance consequence: the
+  Militia tier is now three options wide (Soldier/Archer/Pikeman) against a 2-slot daily draw, so
+  each is rarer. Widening the draw was considered and rejected — the draw width is a global knob,
+  and turning it to fix one unit's visibility changes every future unit's economics too.
 - **The tent names the fate a raid can still unmake** (`4d885e1`) — a deferred fate showed its
   PREDICTED card, which may be the bluff, while the raid board's counter card read `trueEvent`: the
   two screens disagreed about what the player knew while they chose a raid between them. The tent

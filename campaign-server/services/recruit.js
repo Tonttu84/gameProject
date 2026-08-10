@@ -36,6 +36,14 @@ export const RECRUIT_POOL = [
   { id: 'militia', unit: 'Militia', lane: 'troop', count: 20, cost: { food: 40, materials: 20, workers: 20 } },
   { id: 'soldier', unit: 'Soldier', lane: 'troop', count: 15, cost: { food: 60, materials: 30 }, from: 'Militia', requires: { hasUnit: 'Militia' } },
   { id: 'archer', unit: 'Archer', lane: 'troop', count: 15, cost: { food: 50, materials: 25 }, from: 'Militia', requires: { hasUnit: 'Militia' } },
+  // Third Militia promotion (2026-08-10). Cheapest of the three in materials —
+  // a pike is a shaft and a head, against Archer's bow and Soldier's sword,
+  // shield and heavy armour. Accepted consequence: the Militia tier is now
+  // three options wide against a 2-slot daily draw, so each is rarer. That
+  // dilution is the honest cost of a bigger roster and was chosen over
+  // widening the draw, which would have made every future unit cheaper to see
+  // as well (see docs/CAMPAIGN_PLAN.md).
+  { id: 'pikeman', unit: 'Pikeman', lane: 'troop', count: 15, cost: { food: 50, materials: 20 }, from: 'Militia', requires: { hasUnit: 'Militia' } },
   { id: 'cavalry', unit: 'Cavalry', lane: 'troop', count: 5, cost: { food: 40, materials: 20, horses: 5 }, from: 'Soldier', requires: { hasUnit: 'Soldier' } },
   { id: 'light_cavalry', unit: 'LightCavalry', lane: 'troop', count: 5, cost: { food: 35, materials: 15, horses: 5 }, from: 'Soldier', requires: { hasUnit: 'Soldier' } },
   { id: 'mage', unit: 'Mage', lane: 'caster', count: 1, cost: { gold: 100 } },

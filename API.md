@@ -19,8 +19,9 @@ Started via `./game server <port>`. Binds `0.0.0.0:<port>`. CORS is wide open
 (`Access-Control-Allow-Origin: *`).
 
 ### `GET /api/info`
-Returns static metadata: grid dimensions, hex capacity, deployment zone row ranges, placeable
-unit types (with placement size, category, forbidden terrain), and terrain color table.
+Returns static metadata: grid dimensions, hex capacity, deployment zone row ranges, the unit
+types the player may deploy (the catalog's `Player`-role entries — with placement size,
+category, forbidden terrain), and terrain color table.
 No input. No errors (always 200).
 
 ### `GET /api/map?name=<mapName>`

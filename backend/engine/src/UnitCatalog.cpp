@@ -33,32 +33,58 @@ static std::unique_ptr<AUnit> makeT(int team) { return std::make_unique<T>(team)
 
 const std::vector<UnitCatalogEntry>& unitCatalog()
 {
-    // typeName          placeable spawnable factory
+    using R = UnitRole;
+    // Roles are DESCRIPTIVE and composable — list every channel that applies.
+    // `Enemy` on Soldier/Archer/LightCavalry is not a mistake: the campaign's
+    // ENEMY_ARMY fields them, and the campaign-server tripwire checks that
+    // list against these flags.
+    // typeName          roles                      factory
     static const std::vector<UnitCatalogEntry> catalog = {
-        {"Soldier",     true,  true,  makeT<Soldier>},
-        {"Pikeman",     true,  true,  makeT<Pikeman>},
-        {"Militia",     true,  true,  makeT<Militia>},
-        {"Archer",      true,  true,  makeT<Archer>},
-        {"Mage",        true,  true,  makeT<Mage>},
-        {"Priest",      true,  true,  makeT<Priest>},
-        {"Cavalry",     true,  true,  makeT<Cavalry>},
-        {"LightCavalry", true, true,  makeT<LightCavalry>},
-        {"Necromancer", false, true,  makeT<Necromancer>},
-        {"Zombie",      false, false, makeT<Zombie>},
-        {"Skeleton",    false, false, makeT<Skeleton>},
-        {"Scorpion",    false, false, makeT<Scorpion>},
-        {"Horse",       false, false, makeT<Horse>},    // before Warhorse: shared 'h' resolves to Horse
-        {"Warhorse",    false, false, makeT<Warhorse>},
+        {"Soldier",      R::Player | R::Enemy,      makeT<Soldier>},
+        {"Pikeman",      R::Player,                 makeT<Pikeman>},
+        {"Militia",      R::Player,                 makeT<Militia>},
+        {"Archer",       R::Player | R::Enemy,      makeT<Archer>},
+        {"Mage",         R::Player,                 makeT<Mage>},
+        {"Priest",       R::Player,                 makeT<Priest>},
+        {"Cavalry",      R::Player,                 makeT<Cavalry>},
+        {"LightCavalry", R::Player | R::Enemy,      makeT<LightCavalry>},
+        {"Necromancer",  R::Enemy,                  makeT<Necromancer>},
+        {"Zombie",       R::Summon,                 makeT<Zombie>},
+        {"Skeleton",     R::Summon,                 makeT<Skeleton>},
+        // A ridden mount that an enemy host may also field on its own.
+        {"Scorpion",     R::Enemy | R::Mount,       makeT<Scorpion>},
+        {"Horse",        R::Mount,                  makeT<Horse>}, // before Warhorse: shared 'h' resolves to Horse
+        {"Warhorse",     R::Mount,                  makeT<Warhorse>},
     };
     return catalog;
 }
 
 std::unique_ptr<AUnit> makeUnitByName(const std::string& typeName, int team)
 {
+    // The API trust boundary: only types some army may legitimately field can
+    // be built from request JSON. Summon-only and mount-only types are
+    // unreachable here by construction — see SECURITY_NOTES.md.
     for (const auto& entry : unitCatalog())
-        if (entry.spawnable && typeName == entry.typeName)
+        if ((hasRole(entry.roles, UnitRole::Player) || hasRole(entry.roles, UnitRole::Enemy))
+            && typeName == entry.typeName)
             return entry.make(team);
     return nullptr;
+}
+
+std::vector<std::string> roleNames(UnitRole roles)
+{
+    // Stable order, so the exported array is deterministic and tests can
+    // compare it directly.
+    static const std::pair<UnitRole, const char*> ALL[] = {
+        {UnitRole::Player, "Player"},
+        {UnitRole::Enemy,  "Enemy"},
+        {UnitRole::Summon, "Summon"},
+        {UnitRole::Mount,  "Mount"},
+    };
+    std::vector<std::string> out;
+    for (const auto& [flag, name] : ALL)
+        if (hasRole(roles, flag)) out.push_back(name);
+    return out;
 }
 
 std::string unitNameForSymbol(char symbol)
@@ -102,8 +128,7 @@ std::string unitCatalogJson()
             {"size",             static_cast<int>(u->getSize())},
             {"category",         categoryName(u->getCategory())},
             {"forbiddenTerrain", forbidden},
-            {"placeable",        entry.placeable},
-            {"spawnable",        entry.spawnable},
+            {"roles",            roleNames(entry.roles)},
             {"stats", {
                 {"maxHP",          u->getmaxHP()},
                 {"attack",         u->getAttackPWR()},

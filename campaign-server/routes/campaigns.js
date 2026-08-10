@@ -383,8 +383,11 @@ router.post('/:id/battles', async (req, res) => {
     }
     placed.set(entry.unit_type, (placed.get(entry.unit_type) ?? 0) + 1)
   }
+  // Types the player may deploy = the engine's Player role (Mongo matches a
+  // scalar against an array element, so this is the same one-liner the
+  // `placeable: true` query was).
   const placeableTypes = new Set(
-    (await UnitType.find({ placeable: true })).map((t) => t.name),
+    (await UnitType.find({ roles: 'Player' })).map((t) => t.name),
   )
   for (const [type, count] of placed) {
     if (!placeableTypes.has(type))
@@ -587,7 +590,7 @@ router.post('/:id/raids/launch', async (req, res) => {
       for (const [type, n] of squad.composition) {
         if (n <= 0) continue
         const unitType = catalog.get(type)
-        if (!unitType?.placeable)
+        if (!unitType?.roles?.includes('Player'))
           return res.status(400).json({ error: `not a placeable unit type: ${type}` })
         cleaned[type] = (cleaned[type] ?? 0) + n
         cost += n * raidCapacityCost(unitType.stats, unitType.size)

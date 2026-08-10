@@ -32,8 +32,26 @@ const unitTypeSchema = new mongoose.Schema({
     enum: ['Foot', 'Mounted', 'Flyer', 'Beast', 'Skirmisher'],
   },
   forbiddenTerrain: { type: [String], default: [] },
-  placeable: { type: Boolean, required: true },
-  spawnable: { type: Boolean, required: true },
+  // How this type may legitimately enter play (engine UnitRole, see
+  // backend/engine/include/UnitCatalog.hpp). Composable and descriptive: a
+  // type carries every channel that applies, so Scorpion is ['Enemy','Mount']
+  // and Soldier is ['Player','Enemy'] (the enemy host fields Soldiers too).
+  //
+  // Replaced the old placeable/spawnable booleans, which said this twice:
+  //   placeable → roles includes 'Player'
+  //   spawnable → roles includes 'Player' or 'Enemy'
+  // `validate` rather than `required`, because [] passes a required array
+  // check — and a type reachable through no channel at all is exactly the
+  // drift this field exists to catch.
+  roles: {
+    type: [String],
+    required: true,
+    enum: ['Player', 'Enemy', 'Summon', 'Mount'],
+    validate: {
+      validator: (v) => Array.isArray(v) && v.length > 0,
+      message: 'unit type must carry at least one role',
+    },
+  },
   stats: { type: statsSchema, required: true },
 })
 

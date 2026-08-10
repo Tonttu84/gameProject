@@ -57,8 +57,11 @@ TEST_CASE("unit catalog: every entry has the full field set") {
         REQUIRE(u["category"].is_string());
         REQUIRE(u.contains("forbiddenTerrain"));
         REQUIRE(u["forbiddenTerrain"].is_array());
-        REQUIRE(u.contains("placeable"));
-        REQUIRE(u["placeable"].is_boolean());
+        REQUIRE(u.contains("roles"));
+        REQUIRE(u["roles"].is_array());
+        // Every type enters play through at least one channel — a roleless
+        // entry is unreachable by any code path and is always a mistake.
+        REQUIRE(!u["roles"].empty());
         REQUIRE(u.contains("stats"));
         const auto& s = u["stats"];
         for (const char* k : {"maxHP", "attack", "defence", "armour",
@@ -107,14 +110,58 @@ TEST_CASE("unit catalog: exported values match a live instance of each type") {
     }
 }
 
-TEST_CASE("unit catalog: placeable flags mark exactly the player-placeable eight") {
-    auto j = json::parse(unitCatalogJson());
-    std::set<std::string> placeable;
+// Exact per-role membership. This is the tripwire a new unit type trips: adding
+// one without deciding its roles fails here, and the campaign-server side then
+// checks these roles against RECRUIT_POOL/ENEMY_ARMY (see
+// campaign-server/tests/engine.integration.test.js). Roles are composable, so a
+// type appears in every set that applies to it.
+static std::set<std::string> namesWithRole(const json& j, const char* role) {
+    std::set<std::string> out;
     for (const auto& u : j["units"])
-        if (u["placeable"].get<bool>())
-            placeable.insert(u["name"].get<std::string>());
-    REQUIRE(placeable == std::set<std::string>{
+        for (const auto& r : u["roles"])
+            if (r == role) out.insert(u["name"].get<std::string>());
+    return out;
+}
+
+TEST_CASE("unit catalog: roles mark exactly the intended types") {
+    auto j = json::parse(unitCatalogJson());
+
+    // The player recruits, owns and deploys these — and every one of them
+    // must be buyable in the campaign's Recruit phase.
+    REQUIRE(namesWithRole(j, "Player") == std::set<std::string>{
         "Soldier", "Pikeman", "Militia", "Archer", "Mage", "Priest", "Cavalry", "LightCavalry"});
+
+    // Descriptive, not exclusive: the first three are player types the enemy
+    // host also fields (campaign-server's ENEMY_ARMY).
+    REQUIRE(namesWithRole(j, "Enemy") == std::set<std::string>{
+        "Soldier", "Archer", "LightCavalry", "Necromancer", "Scorpion"});
+
+    REQUIRE(namesWithRole(j, "Summon") == std::set<std::string>{"Zombie", "Skeleton"});
+
+    // Scorpion is both ridden and independently fieldable — the case that made
+    // roles a composable set rather than a single kind.
+    REQUIRE(namesWithRole(j, "Mount") == std::set<std::string>{"Horse", "Warhorse", "Scorpion"});
+}
+
+// The two booleans roles replaced are still the rules the API enforces; pin
+// the derivation so the gate can't loosen unnoticed.
+TEST_CASE("unit catalog: placement API accepts exactly the Player and Enemy types") {
+    for (const auto& entry : unitCatalog()) {
+        const bool fieldable = hasRole(entry.roles, UnitRole::Player)
+                            || hasRole(entry.roles, UnitRole::Enemy);
+        INFO("unit: " << entry.typeName);
+        REQUIRE((makeUnitByName(entry.typeName, BLUETEAM) != nullptr) == fieldable);
+    }
+}
+
+TEST_CASE("roleNames: stable order, and None yields nothing") {
+    REQUIRE(roleNames(UnitRole::Player) == std::vector<std::string>{"Player"});
+    // Declaration order must not matter — both spellings give the export order.
+    REQUIRE(roleNames(UnitRole::Mount | UnitRole::Enemy)
+            == std::vector<std::string>{"Enemy", "Mount"});
+    REQUIRE(roleNames(UnitRole::Enemy | UnitRole::Mount)
+            == std::vector<std::string>{"Enemy", "Mount"});
+    REQUIRE(roleNames(UnitRole::None).empty());
 }
 
 // Campaign-relevant stats: the campaign layer derives scouting/foraging value
@@ -176,19 +223,23 @@ TEST_CASE("unit catalog: mounted units export Forest and Marsh as forbidden") {
 
 // ── Factory / lookups ─────────────────────────────────────────────────────────
 
-TEST_CASE("makeUnitByName: builds spawnable types, rejects the rest") {
+TEST_CASE("makeUnitByName: builds Player/Enemy types, rejects the rest") {
     auto soldier = makeUnitByName("Soldier", BLUETEAM);
     REQUIRE(soldier != nullptr);
     REQUIRE(soldier->getPrintSymbol() == 'X');
     REQUIRE(soldier->getTeam() == BLUETEAM);
 
-    // Necromancer is API-spawnable (enemy armies use it) but not player-placeable.
+    // Enemy-role types are API-fieldable (enemy armies use them) but never
+    // offered to the player. Scorpion is Enemy|Mount: fieldable on its own
+    // legs as well as ridden.
     REQUIRE(makeUnitByName("Necromancer", REDTEAM) != nullptr);
+    REQUIRE(makeUnitByName("Scorpion",    REDTEAM) != nullptr);
 
-    // Summon-only / mount types must not be creatable through the placement API.
+    // Summon-only / mount-only types must not be creatable through the API.
     REQUIRE(makeUnitByName("Zombie",   BLUETEAM) == nullptr);
     REQUIRE(makeUnitByName("Skeleton", BLUETEAM) == nullptr);
     REQUIRE(makeUnitByName("Horse",    BLUETEAM) == nullptr);
+    REQUIRE(makeUnitByName("Warhorse", BLUETEAM) == nullptr);
 
     REQUIRE(makeUnitByName("Dragon",   BLUETEAM) == nullptr);
     REQUIRE(makeUnitByName("",         BLUETEAM) == nullptr);

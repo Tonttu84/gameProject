@@ -15,26 +15,62 @@
 // to every consumer (placement factory, /api/info, survivor counting, the
 // dump-units JSON export and the campaign DB built from it) with no other edit.
 //
-// Flags:
-//   placeable — offered to the player in /api/info and placeable via the
-//               placement API.
-//   spawnable — accepted by the placement API at all (superset of placeable:
-//               Necromancer is enemy-placeable but not offered to the player).
-//   Neither   — battle-internal types (summons, loose mounts): they can appear
-//               in battles and replays but can never enter through the API.
+// ── Roles — how a type may legitimately enter play ───────────────────────────
+//
+// A composable flag set, not an exclusive kind: a type carries EVERY channel
+// that applies to it. Scorpion is the reason (user, 2026-08-10) — it is a
+// ridden mount AND a creature an enemy host may field on its own, so it is
+// `Enemy | Mount` rather than being forced to pick one.
+//
+// These replace the old `placeable`/`spawnable` booleans, which said the same
+// thing twice and could express nonsense (placeable && !spawnable). Both are
+// now derived:
+//     placeable (offered to the player in /api/info) == Player
+//     spawnable (accepted by the placement API)      == Player | Enemy
+//
+// `Enemy` is DESCRIPTIVE, not exclusive: Soldier/Archer/LightCavalry carry it
+// because the campaign's enemy host actually fields them, even though the
+// player recruits them too. That is what lets the campaign layer check its
+// ENEMY_ARMY against the catalog instead of drifting from it.
+//
+// This is battle-layer access control — who may legally stand on a
+// battlefield — NOT campaign knowledge. Recruit costs, ladders and army
+// compositions stay in campaign-server; the dependency points campaign →
+// engine, never back. See docs/ADDING_UNITS.md.
+enum class UnitRole : unsigned {
+    None   = 0,
+    Player = 1u << 0, // the player recruits, owns and deploys it
+    Enemy  = 1u << 1, // enemy hosts may field it
+    Summon = 1u << 2, // conjured mid-battle by a spell; never enters via the API
+    Mount  = 1u << 3, // exists under a rider; never a standalone army entry
+};
+
+inline UnitRole operator|(UnitRole a, UnitRole b) {
+    return static_cast<UnitRole>(static_cast<unsigned>(a) | static_cast<unsigned>(b));
+}
+
+// Does `set` include `role`? Single-bit queries only — that is all any caller
+// needs, and it keeps the intent readable at the call site.
+inline bool hasRole(UnitRole set, UnitRole role) {
+    return (static_cast<unsigned>(set) & static_cast<unsigned>(role)) != 0;
+}
+
 struct UnitCatalogEntry {
     const char* typeName;
-    bool placeable;
-    bool spawnable;
+    UnitRole    roles;
     std::function<std::unique_ptr<AUnit>(int team)> make;
 };
 
-// The catalog itself, in stable export order (placeable types first).
+// The catalog itself, in stable export order (Player types first).
 const std::vector<UnitCatalogEntry>& unitCatalog();
 
 // Factory for the placement API: returns nullptr for unknown types and for
-// types that are not spawnable (summon-only / mount types).
+// types no army may field through the API (summon-only / mount-only types).
 std::unique_ptr<AUnit> makeUnitByName(const std::string& typeName, int team);
+
+// The role names of `roles`, in stable order (Player, Enemy, Summon, Mount).
+// Empty only for UnitRole::None, which no catalog entry may carry.
+std::vector<std::string> roleNames(UnitRole roles);
 
 // Reverse lookup from a unit's construction-time printSymbol to its type name.
 // Returns "" for symbols no catalog type constructs with (e.g. the runtime
@@ -46,7 +82,7 @@ std::string unitNameForSymbol(char symbol);
 const char* categoryName(UnitCategory cat);
 
 // Full catalog as JSON: {"units":[{name, symbol, size, category,
-// forbiddenTerrain, placeable, spawnable, stats{maxHP, attack, defence,
+// forbiddenTerrain, roles, stats{maxHP, attack, defence,
 // armour, speed, ballisticSkill, preferredRange, reconTag}}, ...]}.
 // Printed by `./game dump-units`;
 // the campaign server imports it into the DB at startup.

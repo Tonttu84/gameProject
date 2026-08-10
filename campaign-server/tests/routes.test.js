@@ -38,7 +38,7 @@ describe('GET /api/units', () => {
     expect(soldier).toMatchObject({
       symbol: 'X',
       size: 10,
-      placeable: true,
+      roles: ['Player', 'Enemy'],
       forbiddenTerrain: [],
     })
     expect(soldier.stats.maxHP).toBe(10)

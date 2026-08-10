@@ -6,6 +6,8 @@ import { syncCatalog } from '../services/catalogSync.js'
 import UnitType from '../models/unitType.js'
 import { startTestDb, stopTestDb } from './helpers/db.js'
 import { engineStatsFixture } from './fixtures/engineStats.js'
+import { RECRUIT_POOL, FALLBACK_HIRE } from '../services/recruit.js'
+import { ENEMY_ARMY, STARTING_ROSTER, STARTING_SQUADS } from '../utils/campaignConfig.js'
 
 // Contract test against the real C++ binary: what dump-units emits must pass
 // the Mongoose schema unchanged, so the DB can never silently drift from the
@@ -44,11 +46,14 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
   test('info output has the grid/units shape the frontend relies on', async () => {
     const info = await getInfo()
     expect(info.grid.width).toBeGreaterThan(0)
-    // info.units is exactly the placeable subset of the catalog — pin it to
+    // info.units is exactly the Player-role subset of the catalog — pin it to
     // dump-units instead of a count so adding a unit type can't silently
     // desync the two engine exports.
     const catalog = await dumpUnits()
-    const placeable = catalog.units.filter((u) => u.placeable).map((u) => u.name).sort()
+    const placeable = catalog.units
+      .filter((u) => u.roles.includes('Player'))
+      .map((u) => u.name)
+      .sort()
     expect(info.units.map((u) => u.type).sort()).toEqual(placeable)
     for (const u of info.units)
       expect(u).toMatchObject({ type: expect.any(String), placementSize: expect.any(Number) })
@@ -71,5 +76,67 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
       )
       expect({ [name]: actual }).toEqual({ [name]: pinned })
     }
+  }, 30000)
+
+  // ── Role coverage: the campaign's unit lists vs the engine catalog ─────────
+  //
+  // The engine owns unit facts (including roles); campaign-server owns what
+  // units COST and who fields them. Nothing can see both at once except a test
+  // against the real binary — which is why these live here and not in
+  // recruit.test.js, where catalogFixture is hand-written and would stay green
+  // through exactly the mistake being guarded against.
+  //
+  // Direction is always catalog → config: the engine is the source of truth,
+  // so every assertion reads "the config covers what the engine offers".
+  const namesWithRole = (catalog, role) =>
+    catalog.units.filter((u) => u.roles.includes(role)).map((u) => u.name).sort()
+
+  test('every Player-role unit is recruitable in the Recruit phase', async () => {
+    const catalog = await dumpUnits()
+    const recruitable = new Set(RECRUIT_POOL.map((e) => e.unit))
+    const playerTypes = namesWithRole(catalog, 'Player')
+
+    expect(playerTypes.length).toBeGreaterThan(0)
+    // No exemptions, deliberately: a rule with a carve-out list is a second
+    // thing to maintain. Adding a Player-role unit to the C++ catalog without
+    // a RECRUIT_POOL row fails here, naming the unit.
+    const unrecruitable = playerTypes.filter((n) => !recruitable.has(n))
+    expect(unrecruitable, 'Player-role units with no RECRUIT_POOL entry').toEqual([])
+  }, 30000)
+
+  test('RECRUIT_POOL only sells units the engine gives the player', async () => {
+    const catalog = await dumpUnits()
+    const playerTypes = new Set(namesWithRole(catalog, 'Player'))
+    // The converse guard: catches a typo'd or renamed `unit` in a pool row,
+    // which would otherwise sell a type no battle could ever deploy. Covers
+    // FALLBACK_HIRE too — it hands out Militia and is not a pool row.
+    const sold = [...new Set([...RECRUIT_POOL, FALLBACK_HIRE].map((e) => e.unit))].sort()
+    expect(sold.filter((n) => !playerTypes.has(n)), 'sold but not a Player unit').toEqual([])
+  }, 30000)
+
+  test('ENEMY_ARMY fields only Enemy-role units', async () => {
+    const catalog = await dumpUnits()
+    const enemyTypes = new Set(namesWithRole(catalog, 'Enemy'))
+    const fielded = Object.keys(ENEMY_ARMY).sort()
+    expect(fielded.length).toBeGreaterThan(0)
+    // Adding a type to ENEMY_ARMY without giving it the Enemy role in C++
+    // fails here — mild, deliberate friction that keeps the roles honest.
+    expect(fielded.filter((n) => !enemyTypes.has(n)), 'in ENEMY_ARMY without the Enemy role')
+      .toEqual([])
+  }, 30000)
+
+  test('the starting army is made only of Player-role units', async () => {
+    const catalog = await dumpUnits()
+    const playerTypes = new Set(namesWithRole(catalog, 'Player'))
+    const startingTypes = new Set([
+      ...Object.keys(STARTING_ROSTER),
+      ...STARTING_SQUADS.flatMap((s) => Object.keys(s.composition)),
+    ])
+    // Closes the last way to hand the player a unit they could never
+    // legitimately own — a summon, a mount, or an enemy-only type.
+    expect(
+      [...startingTypes].sort().filter((n) => !playerTypes.has(n)),
+      'in the starting army without the Player role',
+    ).toEqual([])
   }, 30000)
 })

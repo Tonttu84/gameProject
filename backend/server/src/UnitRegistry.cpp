@@ -43,12 +43,12 @@ static std::string jsonTerrainEntry(int idx)
 
 std::string buildInfoJson()
 {
-    // Unit types available for player placement — the catalog's placeable
+    // Unit types available for player placement — the catalog's Player-role
     // entries, with every value read off a live instance so this can never
     // drift from the unit constructors (see UnitCatalog.hpp).
     json unitsJson = json::array();
     for (const auto& entry : unitCatalog()) {
-        if (!entry.placeable) continue;
+        if (!hasRole(entry.roles, UnitRole::Player)) continue;
         auto u = entry.make(BLUETEAM);
         json forbidden = json::array();
         for (TerrainType t : forbiddenTerrainForCategory(u->getCategory()))

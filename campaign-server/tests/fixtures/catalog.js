@@ -1,6 +1,8 @@
 // Shaped exactly like `./game dump-units` output (see backend UnitCatalog.hpp).
-// Covers every type in STARTING_ROSTER + ENEMY_ARMY so campaign math (food
-// needs, forage values, clash strengths) has real sizes/speeds to work with.
+// Covers every type in STARTING_ROSTER + ENEMY_ARMY, plus the two the Recruit
+// phase can add that neither starts with (Militia, Pikeman), so campaign math
+// (food needs, forage values, clash strengths) has real sizes/speeds to work
+// with for anything a campaign can actually come to own.
 // Speeds, ballistic skills, recon tags and sizes match the engine-pinned
 // values in backend/engine/tests/test_unit_catalog.cpp; the rest is
 // shape-realistic.
@@ -12,9 +14,26 @@ export const catalogFixture = {
       size: 10,
       category: 'Foot',
       forbiddenTerrain: [],
-      placeable: true,
-      spawnable: true,
+      roles: ['Player', 'Enemy'],
       stats: { maxHP: 10, attack: 11, defence: 12, armour: 2, speed: 10, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
+    },
+    {
+      name: 'Militia',
+      symbol: 'm',
+      size: 10,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      roles: ['Player'],
+      stats: { maxHP: 10, attack: 10, defence: 11, armour: 2, speed: 10, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
+    },
+    {
+      name: 'Pikeman',
+      symbol: 'p',
+      size: 10,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      roles: ['Player'],
+      stats: { maxHP: 10, attack: 10, defence: 11, armour: 2, speed: 10, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
     },
     {
       name: 'Archer',
@@ -22,8 +41,7 @@ export const catalogFixture = {
       size: 10,
       category: 'Foot',
       forbiddenTerrain: [],
-      placeable: true,
-      spawnable: true,
+      roles: ['Player', 'Enemy'],
       stats: { maxHP: 10, attack: 10, defence: 12, armour: 2, speed: 10, ballisticSkill: 10, preferredRange: 8, reconTag: 0 },
     },
     {
@@ -32,8 +50,7 @@ export const catalogFixture = {
       size: 10,
       category: 'Foot',
       forbiddenTerrain: [],
-      placeable: true,
-      spawnable: true,
+      roles: ['Player'],
       stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 10, ballisticSkill: 12, preferredRange: 6, reconTag: 0 },
     },
     {
@@ -42,8 +59,7 @@ export const catalogFixture = {
       size: 10,
       category: 'Foot',
       forbiddenTerrain: [],
-      placeable: true,
-      spawnable: true,
+      roles: ['Player'],
       stats: { maxHP: 8, attack: 8, defence: 10, armour: 0, speed: 10, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
     },
     {
@@ -52,8 +68,7 @@ export const catalogFixture = {
       size: 20,
       category: 'Mounted',
       forbiddenTerrain: ['Forest', 'Marsh'],
-      placeable: true,
-      spawnable: true,
+      roles: ['Player'],
       stats: { maxHP: 18, attack: 11, defence: 12, armour: 5, speed: 28, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
     },
     {
@@ -62,8 +77,7 @@ export const catalogFixture = {
       size: 20,
       category: 'Mounted',
       forbiddenTerrain: ['Forest', 'Marsh'],
-      placeable: true,
-      spawnable: true,
+      roles: ['Player', 'Enemy'],
       stats: { maxHP: 16, attack: 10, defence: 11, armour: 2, speed: 28, ballisticSkill: 8, preferredRange: 0, reconTag: 4 },
     },
     {
@@ -72,8 +86,7 @@ export const catalogFixture = {
       size: 10,
       category: 'Foot',
       forbiddenTerrain: [],
-      placeable: false,
-      spawnable: true,
+      roles: ['Enemy'],
       stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 10, ballisticSkill: 3, preferredRange: 6, reconTag: 0 },
     },
     {
@@ -82,8 +95,7 @@ export const catalogFixture = {
       size: 10,
       category: 'Foot',
       forbiddenTerrain: [],
-      placeable: false,
-      spawnable: false,
+      roles: ['Summon'],
       stats: { maxHP: 20, attack: 8, defence: 6, armour: 0, speed: 10, ballisticSkill: 1, preferredRange: 0, reconTag: 0 },
     },
   ],
