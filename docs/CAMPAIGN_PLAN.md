@@ -88,17 +88,19 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-08-13) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **34**.
-**Slices 1, 2 and 3 of the squad overhaul are SHIPPED — the next slice is the UPGRADE CATALOG
-(decision 8), then characters, then banners, then the squad screen (decision 13, still last).**
+**Slices 1, 2 and 3 of the squad overhaul are SHIPPED. The UPGRADE CATALOG (decision 8) is now
+INTERVIEWED AND SPEC'D — see "SLICE 4 — THE UPGRADE CATALOG" below; start with 4a, which needs no
+engine change.** Then characters, then banners, then the squad screen (decision 13, still last).
 
 Squads can now take replacements: the caps have teeth, the intake meters them, the hex is fenced,
 and the Recruit screen has the button. What the next slice needs to know before it starts:
 
 - **Prestige is EARNED and READ but still gates nothing.** The upgrade catalog is the first thing
   that will read `squadRank` for gating — the numbers and the ladder are already settled (slice 1).
-- **The upgrade catalog is NOT designed yet.** Decision 8 names the shape (a shared pool gated by
-  archetype, plus signature per-squad ones) and six candidate upgrades, but no costs, no tiers and
-  no unlock thresholds exist. That is a DESIGN interview, not a build — grill before building.
+- ~~**The upgrade catalog is NOT designed yet.**~~ **DESIGNED 2026-08-13** — the interview happened;
+  eight decisions are recorded in the slice-4 spec below. Upgrades turned out to cost NO resources
+  and no prestige (rank + a free slot is the price), to arrive as a random 3-row DRAFT at each
+  slot-granting rank, and to be permanent once taken.
 - **Two upgrade candidates now have live seams to hook into:** bigger caps and faster intake are
   `SQUAD_ARCHETYPES` values today, resolved into `campaignView` per squad, so a per-squad modifier
   layer would sit between the archetype row and `squadCaps()`/`squadIntake()` in
@@ -108,6 +110,67 @@ and the Recruit screen has the button. What the next slice needs to know before 
 - **The hex budget is the invariant to respect.** A cap-raising upgrade must not be able to push a
   squad past `SQUAD_TROOP_BUDGET`; `engine.integration.test.js` enforces that for archetypes, and an
   upgrade layer needs the same guard (the config invariant only sees the base rows).
+
+**SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; ready to build 4a).** The design
+interview the handoff above asked for is DONE. Eight decisions, all the user's. Build TDD.
+
+**Standing principle the user restated during it, worth applying beyond this slice: this is a
+ROGUELITE — "not super balanced everything."** Asymmetry and luck are features. That is the reason
+there is no pity timer and no guarantee below; do not add one to make a draw "fair".
+
+**1. Rank gates BOTH which upgrades a squad may take and HOW MANY it may hold.** Slots are
+cumulative over the slice-1 ladder: `Untested 0 · Blooded 1 · Seasoned 1 · Renowned 2 · Legendary 3`.
+Picks therefore land at **Blooded, Renowned and Legendary** — three in a campaign.
+
+**2. Seasoned grants the BANNER instead of a pick** — free, consuming no slot, which is what makes
+it "a bit better than the others". It does its structural job (it opens the item slot) and carries
+**no bonus and no kind choice**. **Decision 16 stays deferred exactly as written.** The user's idea
+that a banner will later have "options to what kind it is" is RECORDED AS A LATER PASS, not built —
+and when it comes, it is the thing that un-defers 16. Do not invent it now.
+
+**3. Each pick is a DRAFT: 3 random eligible rows, keep 1.** No duplicates — a row already taken
+never reappears. If fewer than 3 remain eligible, offer what is left rather than padding the draw.
+
+**4. Upgrades cost NOTHING to take, and PRESTIGE IS NOT SPENT (decision 5 holds).** Reaching the
+rank and having a free slot IS the price. Existing troops are upgraded FREE. The interview
+explicitly considered spending prestige and rejected it, so the currency model stays dead.
+
+**5. The ongoing cost is REINFORCEMENT, not purchase.** Some rows — gear changes, and any row that
+switches the squad's unit type — permanently raise that squad's per-body reinforcement cost
+(`SQUAD_REINFORCE_POOL` rows, slice 3). That is where an upgrade's price is actually paid.
+
+**6. Every pick is PERMANENT.** No swapping, at any price. With upgrades free, permanence is the
+entire cost — it is what makes 5-pick-3 an identity choice rather than a shopping list.
+
+**7. Royal Guard is just another row in the draw — luck decides.** Considered and rejected: a
+guaranteed Legendary offer, and an automatic grant like the banner. A campaign may end never having
+been offered it. That is the roguelite principle above, deliberately applied.
+
+**8. Sequencing is the assistant's call (user: "whichever you think is easier") — CATALOG FIRST,
+engine rows after**, so each step ships green instead of one long red branch.
+
+**Assistant's calls, flagged as overturnable:**
+- **Royal Guard sits in the `line` ARCHETYPE pool**, not bespoke one-squad machinery. Only 1st
+  Cohort is `line` today, so it lands where the user wanted it, and a line charter acquired later
+  can draw it too — no special-casing to write or delete.
+- **Pools: `line` 6 rows (the 5 general + Royal Guard), `skirmish` and `vanguard` 5 each**, drawing
+  3. The user's "access to 5 for now, then increase as we get cool upgrades" is the sizing rule.
+
+**Build order:**
+- **4a — playable:** draft machinery + slots + rank gating + the free Seasoned banner + the three
+  CAMPAIGN-SIDE rows (bigger caps, faster intake, cheaper raiding). No engine change. The draw needs
+  persistence of its own (the offer must survive a reload — `recruit.dailyOptions` is the precedent).
+- **4b — +1 stat bumps:** engine work, `squad_mods` on the placement entry applied in
+  `buildArmyFromPlacement`.
+- **4c — formation fighters:** engine work, and THE AWKWARD ONE — it needs the real-vs-adjusted
+  size split that does not exist yet (see SQUAD_TROOP_BUDGET's comment: the budget counts the
+  ADJUSTED size, everything priced off a body keeps the REAL one, and the adjustment runs BOTH WAYS).
+- **4d — Royal Guard:** a NEW UNIT TYPE. Its stats are a design question in their own right and the
+  user will want a say — do not invent them silently.
+
+**The invariant to respect throughout:** a cap-raising row must not push a squad past
+`SQUAD_TROOP_BUDGET`. `engine.integration.test.js` enforces that for archetypes; the upgrade layer
+needs the same guard, because the config invariant only ever sees the base rows.
 
 **▶ THE ACTIVE FRONT IS "NEXT UP — THE SQUAD OVERHAUL", immediately below. It is fully designed;
 slices 1-3 are built and the rest is ready to BUILD.** Nineteen decisions, all interviewed and
