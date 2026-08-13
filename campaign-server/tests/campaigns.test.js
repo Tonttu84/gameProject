@@ -1299,6 +1299,20 @@ describe('POST /api/campaigns/:id/battles', () => {
       ])
     })
 
+    // Slice 2 (docs/CAMPAIGN_PLAN.md, decisions 2-4): every charter carries an
+    // archetype id naming its permitted types, per-type caps and intake rate.
+    // The id is PERSISTED but deliberately not on the wire yet — nothing reads
+    // it until reinforcement (slice 3), so the view shape above is unchanged.
+    test('a fresh campaign stamps each squad with its archetype', async () => {
+      const { body: c } = await createCampaign()
+      const doc = await Campaign.findById(c.id)
+      expect(doc.squads.map((s) => [s.id, s.archetype])).toEqual([
+        [1, 'line'],
+        [2, 'skirmish'],
+        [3, 'vanguard'],
+      ])
+    })
+
     test('fielding a squad regroups its battle survivors', async () => {
       const squad = { id: 1, name: '1st Cohort', composition: { Soldier: 2 } }
       const result = structuredClone(battleResultFixture)

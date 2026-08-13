@@ -29,10 +29,66 @@ export const STARTING_ROSTER = {
 // int, not an ObjectId — it flows straight into the engine's placement JSON
 // as squad_id. The remainder of STARTING_ROSTER stays loose (unassigned).
 export const STARTING_SQUADS = [
-  { id: 1, name: '1st Cohort',      composition: { Soldier: 40 } },
-  { id: 2, name: 'Skirmishers',     composition: { Archer: 30 } },
-  { id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 } },
+  { id: 1, name: '1st Cohort',      archetype: 'line',     composition: { Soldier: 40 } },
+  { id: 2, name: 'Skirmishers',     archetype: 'skirmish', composition: { Archer: 30 } },
+  { id: 3, name: 'Vanguard Riders', archetype: 'vanguard', composition: { Cavalry: 6, LightCavalry: 6 } },
 ]
+
+// ── Squad archetypes (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL",
+// decisions 2-4) ─────────────────────────────────────────────────────────────
+// An archetype is the charter's innate character: which troop types may stand
+// in it, how many of each, and how fast it absorbs replacements. There is no
+// global size rule — "elite-and-small" vs "large-and-mediocre" is a real trade
+// the player picks between, and acquisition (decision 11) is what hands one
+// out. Squads point at a row by id; the row is never copied onto the document,
+// so a rebalance here reaches live campaigns.
+//
+// PERMITTED TYPES ARE THE KEYS OF `caps` — deliberately not a second list
+// beside them. A separate `permitted: []` could disagree with `caps` and
+// express nonsense (a permitted type with no cap, a capped type not
+// permitted); that is exactly the `placeable`/`spawnable` mistake `UnitRole`
+// fixed on 2026-08-10. A type absent from `caps` may not join, full stop.
+//
+// Caps are PER TYPE with no total (decision 3), so the inspect screen reads
+// "5/6 Cavalry · 6/6 LightCavalry". Characters sit OUTSIDE the caps entirely.
+export const SQUAD_ARCHETYPES = {
+  // Heavy foot that holds a line. The big, ordinary one.
+  line:     { caps: { Soldier: 40, Pikeman: 10 },    intake: 10 },
+  // Missile foot, lighter and fewer, with militia bodies to screen it.
+  skirmish: { caps: { Archer: 30, Militia: 10 },     intake: 6 },
+  // Mounted, mixed by design (it is the standing mixed-type case). Small AND
+  // slow to refill: the elite end of decision 4's trade, where a wipe hurts
+  // longest. Its caps are the numbers decision 3 states verbatim.
+  vanguard: { caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2 },
+}
+
+// The hex budget a squad's TROOPS may occupy, in engine SIZE POINTS — not a
+// headcount, and it must never be rewritten as one. A squad is always ONE
+// formation on ONE hex (services/enemyPlacement.js addBlock; the engine groups
+// formations by hex + squad_id), so Hex::CAPACITY = 640 is the hard ceiling,
+// and 40 of it is reserved for attached characters — who sit outside the CAPS
+// (decision 3) but emphatically not outside the hex.
+//
+// Points rather than bodies because the conversion is not fixed and is already
+// promised to move: troop types smaller than a human are expected later, and
+// the formation-fighters upgrade (decision 8) changes how much room a unit
+// takes without changing the unit. 600 is therefore 60 size-10 foot TODAY and
+// a different number of bodies tomorrow. Base caps sit well under it on
+// purpose; the headroom is what size upgrades sell.
+//
+// WHICH size, once formation-fighters lands: a unit will carry TWO figures —
+// its REAL size and its ADJUSTED (packing) size — and this budget counts the
+// ADJUSTED one, because packing a hex is exactly what it measures. Everything
+// priced off a body rather than a footprint keeps using the REAL size: a
+// tighter formation does not make a man eat less or need less armour (user,
+// 2026-08-13). Food upkeep (size² × FOOD_KG_PER_SIZE_SQ_PER_DAY) is the live
+// example — it must not follow the adjusted figure.
+//
+// The adjustment runs BOTH WAYS (user, 2026-08-13): a long weapon can make a
+// man occupy MORE room just as drill can make him occupy less. So never assume
+// adjusted ≤ real — a cap derived from that inequality would silently overfill
+// a hex the first time a unit packs looser than its real size.
+export const SQUAD_TROOP_BUDGET = 600
 // ~4 turns for the starting army (which needs 12,432 kg per turn).
 export const STARTING_FOOD = 50000
 // Playtest aid: seed enough to build the full fort progression from turn 1

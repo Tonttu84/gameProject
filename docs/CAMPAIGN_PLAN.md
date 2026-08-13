@@ -85,23 +85,74 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-10) — START HERE
+### Where the work stands (2026-08-13) — START HERE
 
-Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **31**. **Everything through `1486e62` is merged to `main`** — nothing is in flight,
-so a new session starts from a clean `main`. (A stale `claude/…` branch may exist on the remote
-with zero unique commits; it is harness leftover, not work.)
+Everything below this block is history; this is the live front. Schema version **33**.
+**Slices 1 and 2 of the squad overhaul are SHIPPED — start with SLICE 3: reinforcement.**
 
-**▶ THE ACTIVE FRONT IS "NEXT UP — THE SQUAD OVERHAUL", immediately below. It is fully designed and
-ready to BUILD — the 2026-08-10 session that specified it never wrote a line of it.** Nineteen
-decisions, all interviewed and recorded, nothing open. Two things are deliberately deferred and
-must NOT be invented to fill the gap: the basic banner's bonus, and the plain banner's spell-cost
-role.
+Slice 3 is the first slice with TEETH: slice 2 stored the archetype and its caps but enforces
+nothing, deliberately (see "SLICE 2" below), because nothing adds troops to a squad until
+reinforcement exists. `canSquadAccept`-style validation, the once-per-turn intake, the
+conversion cost and the Recruit-phase wiring all land together in slice 3 — and that is where
+a starting composition exceeding its own caps would first bite, since slice 2 shipped without
+an invariant test guarding it (a chosen trade, not an oversight).
 
-**Slice 1 is SHIPPED (2026-08-13, schema v32) — start with SLICE 2: archetypes and per-type caps.**
-Squads now earn and keep prestige, survive a wipe as a zero-troop charter, and refuse to be sent
-empty. Slice 2 is the next prerequisite: an archetype per charter carrying its permitted types, its
-per-type caps and its intake stat (decisions 2-4), which everything after it reads.
+**▶ THE ACTIVE FRONT IS "NEXT UP — THE SQUAD OVERHAUL", immediately below. It is fully designed;
+slices 1-2 are built and the rest is ready to BUILD.** Nineteen decisions, all interviewed and
+recorded, nothing open. Two things are deliberately deferred and must NOT be invented to fill the
+gap: the basic banner's bonus, and the plain banner's spell-cost role.
+
+**SLICE 2 — archetypes and per-type caps — ✅ SHIPPED 2026-08-13 (schema v33).** Interviewed
+before building (the numbers are the user's, not assumed); campaign-server 654/654. What landed
+is **data only, by explicit choice**: the catalog and the field, nothing that reads them.
+
+- **`SQUAD_ARCHETYPES`** in `utils/campaignConfig.js`, three rows matching the three starting
+  squads: `line {Soldier: 40, Pikeman: 10} intake 10` · `skirmish {Archer: 30, Militia: 10}
+  intake 6` · `vanguard {Cavalry: 6, LightCavalry: 6} intake 2`. Vanguard's caps are decision 3's
+  stated numbers verbatim. All three starting squads sit exactly AT their caps, so a squad only
+  reinforces after taking losses — a full formation having no room reads correctly.
+- **Permitted types are the KEYS of `caps`**, not a second list beside them. A separate
+  `permitted: []` could disagree with `caps` and express nonsense; that is the
+  `placeable`/`spawnable` mistake `UnitRole` fixed on 2026-08-10, and it is written into the
+  config comment so it is not "helpfully" split later.
+- **`squads[].archetype`** (schema **32 → 33**), the id only — the row is looked up, never copied
+  onto the document, so a rebalance reaches campaigns already in flight. A plain String, not an
+  enum: acquisition (decision 11) must be able to add a row without a schema change.
+- **`SQUAD_TROOP_BUDGET = 600`** — of `Hex::CAPACITY` 640, with **40 reserved for attached
+  characters**, who sit outside the CAPS (decision 3) but emphatically not outside the hex. New
+  constraint from the interview, and the reason base caps sit well under the ceiling: the
+  headroom is what size upgrades sell.
+
+**Deliberately NOT in slice 2** (user chose the bare minimum): no validation helper, no
+`campaignView` exposure, no cap enforcement anywhere, no config-invariant test. Caps have nothing
+to enforce against yet — `squad.composition` is only ever *written* by battle/raid reconciliation,
+which only shrinks a squad to its survivors. Slice 3 is the first caller with teeth.
+
+**Two sizes, once formation-fighters lands (user, 2026-08-13) — decided now so it is not
+re-litigated.** A unit will carry its **real size** and an **adjusted (packing) size**. The split
+is by what the number measures, not by convenience:
+- **Adjusted size** drives packing only — hex capacity, side frontage, and `SQUAD_TROOP_BUDGET`.
+  Tighter drill is the whole point of the upgrade, so the same 600 admits more bodies.
+- **Real size** drives everything priced off a body: food upkeep (`size²  ×
+  FOOD_KG_PER_SIZE_SQ_PER_DAY`), armour and kit costs. *"Armor etc will still take as much
+  resources as for other humans, the formation is just tighter."* Upkeep must not follow the
+  adjusted figure.
+
+  **The adjustment runs BOTH WAYS (user, 2026-08-13).** It is not a discount: a weapon that needs
+  room — a long polearm — makes a man occupy MORE space, exactly as drill makes him occupy less.
+  So **never assume `adjusted ≤ real`**. Anything that treats the packing figure as a reduction
+  (a cap derived from real size "with headroom", a frontage check that only guards the tight
+  case) silently overfills a hex the first time a unit packs looser, which is the one direction
+  the engine drops units for.
+
+This is also why the budget is stored in **size points and never as a headcount**: troop types
+smaller than a human are expected later, so "600 = 60 bodies" is true of size-10 foot today and
+of nothing in particular tomorrow.
+
+**One squad, one hex** is settled and load-bearing (user, 2026-08-13): a squad never splits
+across hexes, which is why an archetype's caps are bounded by the hex at all. Special-rule
+archetypes (skirmish-style loose order) may revisit it later; nothing today should assume
+otherwise.
 
 **Superseded, kept because it explains WHY slice 1 came first:**
 
