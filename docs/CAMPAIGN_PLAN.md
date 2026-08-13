@@ -319,6 +319,17 @@ won item lands in storage first; from there the player assigns it.
   draft of this entry got that backwards and demanded the page account for it; corrected
   2026-08-10.)
 
+  **And it is where an unassigned item RETURNS to.** For kinds that allow it, unassigning sends the
+  item back to the store — so the store is not merely the entry point but the home of every item
+  that is not currently on something. Banners are the exception and cannot be unassigned at all
+  (10): bound is bound, and a bound banner never comes back. Later kinds like character armour are
+  expected to move freely, which is exactly what the per-item permanence flag exists to express.
+
+  That makes the store the single hub of the whole flow — won → store → assigned → (if reversible)
+  store again — rather than a one-way inbox. Worth building it that way from the start: a store
+  that only ever receives new items is the wrong shape for the first reversible kind, and that kind
+  is already promised.
+
   So: **do not collapse acquisition and assignment into one action**, and do not add an
   "unassignable" state. An item sits in the store until the player moves it, however long that is. Storage will hold more than
 banners later, so **build it for items in general and never for banners specifically** — the item
