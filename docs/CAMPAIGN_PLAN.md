@@ -336,10 +336,17 @@ carries them.
   whether assignment is permanent or reversible, rather than the code inferring either from its
   kind. Get this wrong and the first re-assignable item means rewriting the assignment path.
 
-  Note the wording drift worth resolving before building: the ask says items are assigned to "a
-  unit", but banners bind to a SQUAD (a charter, not a body) and future equipment attaches to a
-  CHARACTER. There is no case yet for attaching an item to an individual rank-and-file troop, and
-  adding one would need a per-troop identity the game does not have.
+  **There are exactly TWO attachment targets, and an item names which it wants (confirmed
+  2026-08-10).** A banner binds to a **squad** — the charter, not a body. **Magical armour and its
+  like attach to a CHARACTER**, not to the squad around them, and are the reason the target has to
+  be a property of the item instead of a global rule. Nothing attaches to an individual
+  rank-and-file troop, and nothing should: that would need a per-troop identity the game does not
+  have and has no reason to grow.
+
+  So the assignment path is written once against `{target: 'squad' | 'character'}` and asks the
+  item where it goes. Two kinds are already known to differ on BOTH axes — a squad-bound permanent
+  banner and a character-worn re-assignable armour — so a path that hardcodes either axis is known
+  to be wrong before it is written, not merely at risk of it.
 
   Storage is campaign state and wants a schema field of its own; `campaign.character` is a
   `Mixed`-typed placeholder and is NOT the right home for it.
