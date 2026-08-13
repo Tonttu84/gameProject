@@ -156,6 +156,15 @@ was built and the two traps it had to avoid.
   `GAME_RNG_SEED=<seed> ./run_tests`. If CI reddens on an engine test with no obvious cause, this is
   the likely culprit and the seed will be in the job log. Unknown whether it predates `ef98380`;
   nobody has compared against `main` at `6ed43ca`.
+
+  **Hunt it with `make test-fast`, not `make test-serial`.** The sanitized suite is ~155s a run,
+  which makes chasing a rare seed impractical; `test-fast` is the same tests at -O2 with the
+  sanitizers off and runs in **~5s** — 31× more samples for the same wall clock. The RNG stream is
+  identical between the two builds (same `mt19937`, same call order), so a seed caught in one
+  replays in the other. Confirm any fix under the sanitized build, which is what CI gates on.
+  Searched so far without a reproduction: 150 fast runs of the whole suite, 150 runs of the
+  summon-related subset, and 4 sanitized runs. So it is rarer than roughly 1 in 300, or it depends
+  on something the hunts have not varied.
 - **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
   words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
   `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number. **Note this is

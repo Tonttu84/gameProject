@@ -82,6 +82,54 @@ UNIT_SRCS     = $(wildcard $(TEST_DIR)/*.cpp)
 UNIT_OBJS     = $(patsubst $(TEST_DIR)/%.cpp,$(TEST_OBJ_DIR)/%.o,$(UNIT_SRCS))
 UNIT_DEPS     = $(UNIT_OBJS:.o=.d)
 
+# ── Fast test build (flake hunting) ──────────────────────────────────────────
+# The same test binary WITHOUT the sanitizers and at -O2. The instrumented build
+# is what CI and `make test-serial` use and must stay the default — it is what
+# catches the UB and leaks this project cares about. But it costs ~155s a run,
+# which makes hunting a rare RNG flake impractical: finding a 1-in-50 failure
+# means hours.
+#
+# This target exists for exactly that job. It is roughly an order of magnitude
+# faster, so a hunt becomes minutes, and the flake it is looking for is an
+# ASSERTION failure — a Catch2 CHECK going red on an unlucky seed — which needs
+# no instrumentation to reproduce.
+#
+# NOT a substitute for `test-serial`: it cannot see a use-after-free or an
+# overflow, so a green run here says nothing about memory safety. Hunt with
+# this, then confirm the fix under the sanitized build.
+#
+# Separate object dir, so optimized objects never mix with the instrumented
+# ones (they are ABI-compatible but that is not a trap worth leaving open).
+FAST_NAME     = run_tests_fast
+FAST_OBJ_DIR  = BUILD/fast
+# -Wnull-dereference is deliberately absent: at -O2 GCC 13's deeper analysis
+# fires it inside libstdc++'s own <streambuf>, and -Werror makes that fatal.
+# It is a false positive in system headers, not our code, and the sanitized
+# build — which is the one that gates CI — still carries the flag.
+FAST_FLAGS    = -std=c++20 -Wall -Wextra -Werror -O2 -fPIE $(INC_FLAGS) \
+                -Wshadow -Wformat=2
+FAST_OBJS     = $(patsubst $(BACKEND_DIR)/%.cpp,$(FAST_OBJ_DIR)/%.o,$(TEST_SRCS))
+FAST_UNIT_OBJS = $(patsubst $(TEST_DIR)/%.cpp,$(FAST_OBJ_DIR)/%.o,$(UNIT_SRCS))
+FAST_DEPS     = $(FAST_OBJS:.o=.d) $(FAST_UNIT_OBJS:.o=.d)
+
+$(FAST_OBJ_DIR)/%.o: $(BACKEND_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) $(FAST_FLAGS) -DTESTING -MMD -MP -c $< -o $@
+
+$(FAST_OBJ_DIR)/%.o: $(TEST_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) $(FAST_FLAGS) -DTESTING -I$(TEST_DIR) -MMD -MP -c $< -o $@
+
+$(FAST_NAME): $(FAST_OBJS) $(FAST_UNIT_OBJS)
+	$(CC) $(FAST_FLAGS) -DTESTING -o $@ $^
+
+# Build and run once. Replay a caught seed with:
+#   GAME_RNG_SEED=<seed> ./run_tests_fast
+test-fast: $(FAST_NAME)
+	./$(FAST_NAME)
+
+-include $(FAST_DEPS)
+
 # ── Clang cross-check ────────────────────────────────────────────────────────
 # Compile with clang++ into a separate object directory so GCC and Clang
 # objects never mix. Use the same CFLAGS minus GCC-only sanitizer flags.
@@ -105,7 +153,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial clang serve server-node frontend frontend-test \
+.PHONY: all clean fclean re test test-serial test-fast clang serve server-node frontend frontend-test \
         db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
@@ -157,7 +205,7 @@ DB_DIR = $(HOME)/.gameproject/db
 
 clean:
 	rm -f $(OBJS) $(DEPS) $(TEST_OBJS) $(TEST_DEPS) $(UNIT_OBJS) $(UNIT_DEPS) \
-	      $(CLANG_OBJS) $(CLANG_DEPS)
+	      $(CLANG_OBJS) $(CLANG_DEPS) $(FAST_OBJS) $(FAST_UNIT_OBJS) $(FAST_DEPS)
 
 # Wipe the campaign DB (battles, replays, unit catalog). The catalog re-syncs
 # on the next campaign-server start; battles/replays are gone for good.
@@ -166,7 +214,7 @@ db-clean:
 	rm -rf $(DB_DIR) campaign-server/data
 
 fclean: clean db-clean
-	rm -f $(NAME) $(TEST_NAME) $(CLANG_NAME)
+	rm -f $(NAME) $(TEST_NAME) $(CLANG_NAME) $(FAST_NAME)
 
 re:
 	$(MAKE) fclean

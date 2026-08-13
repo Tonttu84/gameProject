@@ -3,6 +3,7 @@ backend/SFML-2.6.0/
 BUILD/
 game
 run_tests
+run_tests_fast
 .claude/*
 !.claude/settings.json
 !.claude/skills/
