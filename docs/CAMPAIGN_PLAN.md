@@ -310,19 +310,17 @@ surrounding systems can be played. The plain banner already ships inert for the 
 **17. A magic-item STORAGE, generic from the start, with its own UI page (user, 2026-08-10).** A
 won item lands in storage first; from there the player assigns it.
 
-  **Storage is a two-step for a MECHANICAL reason, not for tidiness — do not collapse it into
-  assign-on-acquisition.** An item banner can only go to a squad that has unlocked the *basic*
-  banner (10), and nothing guarantees any squad has. Win one early and there may be no legal target
-  at all. The store is what absorbs that: the item is safely held until a squad qualifies, instead
-  of being lost, refused, or forced onto an ineligible squad. The same reasoning generalises to
-  every later item kind whose target needs unlocking first, which is another reason the store is
-  built for items rather than banners.
+  **Storage is the FIRST STEP of item handling, not a fallback.** Every won item goes there,
+  always — acquisition puts it in the store, and assignment is a separate action the player takes
+  afterwards. It is not a safety net for the case where no squad qualifies yet, and it should not
+  be described as one: an unassigned item is not a problem being absorbed, it is simply an item at
+  the stage every item starts in. It follows that nothing needs to explain why a given item has not
+  been assigned — there is no refusal to justify, only a step the player has not taken. (An earlier
+  draft of this entry got that backwards and demanded the page account for it; corrected
+  2026-08-10.)
 
-  Two consequences follow. **Storage must tolerate an item with no valid target** — indefinitely,
-  without erroring, and without pruning it. And the page should **say WHY** an item cannot be
-  assigned yet ("no squad has an open banner slot"), because an item that simply refuses to move
-  with no explanation reads as a bug and is the vagueness "no card shows flavour alone" exists to
-  prevent. Storage will hold more than
+  So: **do not collapse acquisition and assignment into one action**, and do not add an
+  "unassignable" state. An item sits in the store until the player moves it, however long that is. Storage will hold more than
 banners later, so **build it for items in general and never for banners specifically** — the item
 declares its own kind and rules, and the storage stays ignorant of what kinds exist. This is the
 `placeable`/`spawnable` lesson again: a `banners: []` field would have to be joined by
