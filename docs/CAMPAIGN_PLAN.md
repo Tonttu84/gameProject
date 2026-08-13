@@ -307,6 +307,34 @@ an unanswered question — do not invent a benefit to fill the gap. Build the ba
 structural job (it is the tier that OPENS THE ITEM SLOT) and leave the bonus unspecified until the
 surrounding systems can be played. The plain banner already ships inert for the same reason.
 
+**17. A magic-item STORAGE, generic from the start, with its own UI page (user, 2026-08-10).** A
+won item lands in storage first; from there the player assigns it. Storage will hold more than
+banners later, so **build it for items in general and never for banners specifically** — the item
+declares its own kind and rules, and the storage stays ignorant of what kinds exist. This is the
+`placeable`/`spawnable` lesson again: a `banners: []` field would have to be joined by
+`weapons: []`, `relics: []` and so on, each with its own branch, instead of one list that already
+carries them.
+
+  **Flexibility here has a precise meaning, because two rules already decided pull apart.** A
+  banner **binds permanently** to a squad once assigned (10) — it leaves storage and never returns.
+  Character equipment, promised for later (9), is the obvious candidate for being re-assignable
+  between characters. So an item must DECLARE both what it may attach to (squad / character) and
+  whether assignment is permanent or reversible, rather than the code inferring either from its
+  kind. Get this wrong and the first re-assignable item means rewriting the assignment path.
+
+  Note the wording drift worth resolving before building: the ask says items are assigned to "a
+  unit", but banners bind to a SQUAD (a charter, not a body) and future equipment attaches to a
+  CHARACTER. There is no case yet for attaching an item to an individual rank-and-file troop, and
+  adding one would need a per-troop identity the game does not have.
+
+  Storage is campaign state and wants a schema field of its own; `campaign.character` is a
+  `Mixed`-typed placeholder and is NOT the right home for it.
+
+  **Its own page** — a third screen alongside the squad screen (13), showing what is held, what
+  each item does (via `describeEffect`, per 15), and where it can go. Sequencing: the page renders
+  storage, storage holds items, items are won from raids and events — so it comes after those, and
+  before or beside the squad screen that shows the assigned end of the same relationship.
+
 **Nothing in this section is now blocking.** Both former open questions are settled — item banners
 are event/raid loot, and the basic banner's bonus is postponed on purpose. What remains is
 sequencing, and the first slice is prestige persistence.
