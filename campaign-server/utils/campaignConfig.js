@@ -105,6 +105,75 @@ export const SQUAD_TROOP_BUDGET = 600
 // thing that has to arithmetic with it.
 export const SQUAD_CHARACTER_RESERVE = 40
 
+// ── Squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE CATALOG") ───
+// What prestige is FOR. Slice 1 made the rank permanent and never spent; this
+// is the first thing that reads it for gating.
+//
+// Slots are CUMULATIVE and keyed by the RANK WORD, not by a prestige number:
+// SQUAD_RANKS owns the thresholds, this owns what each rung is worth, so
+// retuning one never silently moves the other. Seasoned deliberately grants NO
+// pick — it hands over the banner instead (SQUAD_BANNER_RANK below), which is
+// what makes the banner "a bit better than the others" (user, 2026-08-13).
+// Three picks in a campaign, at Blooded, Renowned and Legendary.
+export const SQUAD_UPGRADE_SLOTS_BY_RANK = {
+  Untested: 0,
+  Blooded: 1,
+  Seasoned: 1,
+  Renowned: 2,
+  Legendary: 3,
+}
+
+// The rung that grants the banner free, consuming no slot. The banner opens the
+// item slot and carries NO bonus and NO kind choice — decision 16's deferral is
+// deliberate and must not be filled in by invention (see the slice-4 spec).
+export const SQUAD_BANNER_RANK = 'Seasoned'
+
+// Rows offered at each pick; the player keeps ONE, permanently. Fewer are
+// offered when fewer remain eligible — the draw never pads itself.
+export const SQUAD_UPGRADE_DRAW = 3
+
+// The catalog. `archetypes` is the eligibility fence (the shared-pool-gated-by-
+// archetype half of decision 8); a row naming several is shared, a row naming
+// one is that archetype's signature. Effects are a small tagged union rather
+// than free-form numbers on the row, so a reader can enumerate what an upgrade
+// is ABLE to do — every consumer switches on `kind` and an unknown kind is
+// inert rather than silently mis-applied.
+//
+// 4a ships the three CAMPAIGN-SIDE rows only. With three rows and a draw of
+// three the draft is degenerate today (every eligible row is offered every
+// time) — that is expected, not a bug: the randomness starts to bite as 4b-4d
+// land their engine-side rows into the same table.
+//
+// SIZING IS FENCED BY THE HEX, not by taste. `line` is the tight archetype —
+// 40 Soldier + 10 Pikeman is 500 of the 600 budget once the 40-point character
+// reserve is counted, leaving 6 bodies of headroom — so a caps row adds a FLAT
+// small number per type rather than a percentage (+20% would put line at 640
+// and overfill the hex). engine.integration.test.js enforces this against the
+// real engine catalog for every archetype × every caps row.
+export const SQUAD_UPGRADE_POOL = [
+  {
+    id: 'deeper_ranks',
+    name: 'Deeper Ranks',
+    blurb: 'The charter is written for a fuller muster: +2 to every type this squad may field.',
+    archetypes: ['line', 'skirmish', 'vanguard'],
+    effect: { kind: 'caps', bonus: 2 },
+  },
+  {
+    id: 'standing_drafts',
+    name: 'Standing Drafts',
+    blurb: 'Recruiters ride ahead of the column: +2 replacements may join each turn.',
+    archetypes: ['line', 'skirmish', 'vanguard'],
+    effect: { kind: 'intake', bonus: 2 },
+  },
+  {
+    id: 'light_baggage',
+    name: 'Light Baggage',
+    blurb: 'Nothing carried that cannot be fought with: this squad costs a quarter less raid capacity.',
+    archetypes: ['line', 'skirmish', 'vanguard'],
+    effect: { kind: 'raidCost', factor: 0.75 },
+  },
+]
+
 // ── Squad reinforcement recipes (docs/CAMPAIGN_PLAN.md "SLICE 3 —
 // reinforcement", decisions A/B/D) ───────────────────────────────────────────
 // ONE GLOBAL table, a sibling of services/recruit.js's RECRUIT_POOL and looked

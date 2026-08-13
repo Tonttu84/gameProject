@@ -1,0 +1,147 @@
+import { getRandom } from '../utils/dice.js'
+import { squadRank } from '../utils/capabilities.js'
+import {
+  SQUAD_RANKS,
+  SQUAD_UPGRADE_POOL,
+  SQUAD_UPGRADE_SLOTS_BY_RANK,
+  SQUAD_UPGRADE_DRAW,
+  SQUAD_BANNER_RANK,
+} from '../utils/campaignConfig.js'
+
+// Squad upgrades — the squad overhaul's slice 4a (docs/CAMPAIGN_PLAN.md
+// "SLICE 4 — THE UPGRADE CATALOG"). Slice 1 made prestige a permanent rank and
+// deliberately gated nothing with it; this is what it was for.
+//
+// The shape the interview settled (2026-08-13), because it is unusual enough
+// that a later reader will otherwise "fix" it:
+//   - Rank gates BOTH which rows a squad may draw and HOW MANY it may hold.
+//   - A pick is a DRAFT: three random eligible rows, keep one, PERMANENTLY.
+//     There is no swap at any price — with upgrades free, permanence IS the
+//     cost, and it is what makes the choice an identity rather than a shopping
+//     list.
+//   - Taking one costs NO resources and NO prestige. Reaching the rank and
+//     having a free slot is the whole price (decision 5 stands: prestige is
+//     never spent). The ongoing cost lands on REINFORCEMENT instead, for the
+//     rows that change gear or unit type.
+//   - Luck decides, and that is deliberate: "we are also meant to have
+//     roguelite, not super balanced everything" (user). Do NOT add a pity
+//     timer, a reroll or a guarantee to make a draw feel fairer.
+//
+// Slots and the banner are DERIVED from prestige, never stored — the rank
+// ladder is the single source and a document cannot drift out of step with it.
+// Only two things need persisting: what a squad has TAKEN, and the offer it is
+// currently looking at.
+
+export const findUpgrade = (id) => SQUAD_UPGRADE_POOL.find((row) => row.id === id) ?? null
+
+// Mongoose arrays are array-likes, plain tests pass arrays; one reader covers
+// both, and a charter written before the field existed reads as empty.
+const takenIds = (squad) => [...(squad?.upgrades ?? [])]
+
+// The rows a squad HAS, resolved. An id whose row has left the catalog degrades
+// to nothing rather than throwing — the archetypeOf convention, for the same
+// reason: a campaign in flight must still load after a catalog edit.
+export const squadUpgrades = (squad) => takenIds(squad).map(findUpgrade).filter(Boolean)
+
+export const slotsFor = (squad) => SQUAD_UPGRADE_SLOTS_BY_RANK[squadRank(squad?.prestige)] ?? 0
+
+// Unfilled slots. Floored at 0 so a squad holding more than its rank allows —
+// only reachable if the ladder is retuned downward under a live campaign — is
+// simply full rather than negative, and never loses what it already earned.
+export const picksAvailable = (squad) => Math.max(0, slotsFor(squad) - takenIds(squad).length)
+
+// The banner is a rank fact, not an inventory one: at or above the banner rung,
+// a squad has it. Compared on PRESTIGE against that rung's threshold rather
+// than on the rank word, so it stays true for every rank above it too.
+const BANNER_MIN = SQUAD_RANKS.find((r) => r.label === SQUAD_BANNER_RANK)?.min ?? Infinity
+export const hasBanner = (squad) => (squad?.prestige ?? 0) >= BANNER_MIN
+
+// What this charter could still draw: its archetype's rows, minus what it
+// already holds. A squad with no archetype is eligible for nothing.
+export const eligibleUpgrades = (squad) => {
+  const taken = new Set(takenIds(squad))
+  return SQUAD_UPGRADE_POOL.filter(
+    (row) => row.archetypes.includes(squad?.archetype) && !taken.has(row.id),
+  )
+}
+
+// Draw an offer, or null when there is nothing to offer (no free slot, or no
+// eligible row left). Ids only on the document — the sealed-pool-lookup
+// convention recruit.dailyOptions uses, so a blurb edit reaches an offer that
+// is already on a player's screen.
+//
+// Fewer than SQUAD_UPGRADE_DRAW rows means a SHORTER offer, never a padded one:
+// there is no filler row to pad with, and inventing one would put a choice in
+// front of the player that the catalog does not contain.
+export const drawUpgradeOffer = (squad) => {
+  if (picksAvailable(squad) === 0) return null
+  const remaining = eligibleUpgrades(squad)
+  if (remaining.length === 0) return null
+
+  const options = []
+  const n = Math.min(SQUAD_UPGRADE_DRAW, remaining.length)
+  for (let i = 0; i < n; i++) {
+    const idx = getRandom(0, remaining.length - 1)
+    options.push(remaining.splice(idx, 1)[0].id)
+  }
+  // Stamped with the rank that paid for it, so a draw cannot outlive the reason
+  // it was made: if a squad somehow reaches its next rung before spending this
+  // offer, the stamp is what tells the two apart.
+  return { rank: squadRank(squad?.prestige), options }
+}
+
+// Pure: decides, never mutates — planReinforcement's split, for the same reason
+// (the route's rejection must have spent nothing).
+export const planUpgrade = (squad, id) => {
+  if (picksAvailable(squad) === 0)
+    return { error: `${squad?.name ?? 'that squad'} has no upgrade slot free` }
+
+  const offer = squad?.upgradeOffer
+  const options = [...(offer?.options ?? [])]
+  if (options.length === 0) return { error: `${squad?.name ?? 'that squad'} has no upgrades on offer` }
+  if (!options.includes(id)) return { error: `${id} is not one of the upgrades on offer` }
+
+  // Belt and braces against a document that already holds the row: the offer is
+  // built from eligibleUpgrades and so cannot contain one, but a replayed
+  // request against a stale offer could.
+  if (takenIds(squad).includes(id)) return { error: `${squad.name} already has that upgrade` }
+
+  const row = findUpgrade(id)
+  if (!row) return { error: `there is no such upgrade: ${id}` }
+  if (!row.archetypes.includes(squad?.archetype))
+    return { error: `${squad.name} cannot train for ${row.name}` }
+
+  return { row }
+}
+
+// Mutates in place; the caller saves. Returns log lines, the applyReinforcement
+// contract. The offer is CONSUMED whether or not more slots remain — the next
+// one is drawn fresh at newDay, so a pick can never be re-taken from a stale
+// list.
+export function applyUpgrade(campaign, squad, plan) {
+  squad.upgrades = [...takenIds(squad), plan.row.id]
+  squad.upgradeOffer = undefined
+  return [`${squad.name} takes up ${plan.row.name}.`]
+}
+
+// ── What the upgrades DO ─────────────────────────────────────────────────────
+// One reader per effect kind, each folding over the squad's rows. Consumers
+// call these instead of reading `effect` themselves, so a new kind is added in
+// one place and an unknown kind stays inert.
+
+// Per-type caps with every caps row applied. Only the types the ARCHETYPE names
+// are raised — a caps row widens the muster, it never admits a type the charter
+// was not written for (that is what an archetype is).
+export const capsBonus = (squad) =>
+  squadUpgrades(squad).reduce((sum, row) => (row.effect.kind === 'caps' ? sum + row.effect.bonus : sum), 0)
+
+export const intakeBonus = (squad) =>
+  squadUpgrades(squad).reduce((sum, row) => (row.effect.kind === 'intake' ? sum + row.effect.bonus : sum), 0)
+
+// Multiplicative so two discounts compose without ever reaching free; 1 = no
+// discount. Applied per squad to its own contribution to a party's cost.
+export const raidCostFactor = (squad) =>
+  squadUpgrades(squad).reduce(
+    (factor, row) => (row.effect.kind === 'raidCost' ? factor * row.effect.factor : factor),
+    1,
+  )

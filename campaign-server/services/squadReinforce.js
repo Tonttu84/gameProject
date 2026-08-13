@@ -4,6 +4,7 @@ import {
   SQUAD_TROOP_BUDGET,
   SQUAD_CHARACTER_RESERVE,
 } from '../utils/campaignConfig.js'
+import { capsBonus, intakeBonus } from './squadUpgrades.js'
 
 // Squad reinforcement — the squad overhaul's slice 3 (docs/CAMPAIGN_PLAN.md
 // "SLICE 3 — reinforcement"). Slice 2 stored the archetype and its caps and
@@ -40,8 +41,27 @@ export const archetypeOf = (squad) => SQUAD_ARCHETYPES[squad?.archetype] ?? null
 // Permitted types are the KEYS of `caps` — never a second list beside them
 // (see the config comment: that is the placeable/spawnable mistake UnitRole
 // fixed). No archetype ⇒ nothing is permitted and nothing is reinforceable.
-export const squadCaps = (squad) => archetypeOf(squad)?.caps ?? {}
-export const squadIntake = (squad) => archetypeOf(squad)?.intake ?? 0
+//
+// UPGRADES SIT BETWEEN THE ARCHETYPE ROW AND HERE (slice 4a): the archetype is
+// the base, a caps row widens it. Only the types the archetype already NAMES
+// are raised — an upgrade widens the muster, it never admits a type the charter
+// was not written for, so the keys are untouched and a squad with no archetype
+// still gets nothing. Every caller reads caps through this function, so the
+// bonus reaches the reinforcement gates, campaignView and the panel at once.
+export const squadCaps = (squad) => {
+  const base = archetypeOf(squad)?.caps ?? {}
+  const bonus = capsBonus(squad)
+  if (bonus === 0) return base
+  return Object.fromEntries(Object.entries(base).map(([type, cap]) => [type, cap + bonus]))
+}
+
+// Same shape: no archetype ⇒ 0 and no upgrade can lift it off the floor, since
+// a charter with nothing to reinforce into cannot take replacements at all.
+export const squadIntake = (squad) => {
+  const archetype = archetypeOf(squad)
+  if (!archetype) return 0
+  return archetype.intake + intakeBonus(squad)
+}
 
 // Guarded lookup by OUTPUT type, the findRecruitEntry convention: a type whose
 // row has left the pool comes back undefined and degrades to a 400 rather than

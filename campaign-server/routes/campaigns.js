@@ -17,6 +17,7 @@ import {
 } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planReinforcement, applyReinforcement, looseRoster } from '../services/squadReinforce.js'
+import { planUpgrade, applyUpgrade, raidCostFactor } from '../services/squadUpgrades.js'
 import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
 } from '../services/raid.js'
@@ -593,13 +594,18 @@ router.post('/:id/raids/launch', async (req, res) => {
       if (![...squad.composition.values()].some((n) => n > 0))
         return res.status(400).json({ error: `squad ${sid} has no troops to send` })
       squads.push(squad)
+      // A squad's own upgrades discount its own contribution (slice 4a's
+      // `light_baggage`), so a party of two squads pays each one's rate rather
+      // than one blended figure — which is why the factor is read here, inside
+      // the per-squad loop, and not applied to the party total.
+      const costFactor = raidCostFactor(squad)
       for (const [type, n] of squad.composition) {
         if (n <= 0) continue
         const unitType = catalog.get(type)
         if (!unitType?.roles?.includes('Player'))
           return res.status(400).json({ error: `not a placeable unit type: ${type}` })
         cleaned[type] = (cleaned[type] ?? 0) + n
-        cost += n * raidCapacityCost(unitType.stats, unitType.size)
+        cost += n * raidCapacityCost(unitType.stats, unitType.size) * costFactor
       }
     }
     if (Object.keys(cleaned).length === 0)
@@ -952,6 +958,38 @@ router.post('/:id/squads/:squadId/reinforce', async (req, res) => {
   if (plan.error) return res.status(400).json({ error: plan.error })
 
   const entries = applyReinforcement(campaign, squad, plan)
+  campaign.log.push({ day: campaign.day, entries })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// Take ONE upgrade off a squad's draft (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE
+// UPGRADE CATALOG"). Body: `{ upgrade: 'deeper_ranks' }` — an id from the offer
+// the server drew at newDay, never a row the client names freely.
+//
+// PERMANENT, and there is no route to undo it: the interview settled that
+// upgrades cost no resources and no prestige, so permanence is the entire cost.
+// Do not add a swap endpoint without the user reopening that decision.
+//
+// Not gated on `recruit.drawnDay`, unlike reinforcement: this is a rank reward
+// rather than a Recruit-phase purchase, so it is open from the top of the turn
+// until the recruit phase closes behind it. It spends nothing, so there is
+// nothing for the phase order to protect beyond that.
+router.post('/:id/squads/:squadId/upgrades', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'recruit')) return
+
+  const squadId = Number(req.params.squadId)
+  const squad = campaign.squads.find((s) => s.id === squadId)
+  if (!squad) return res.status(400).json({ error: `not one of your squads: squad_id ${req.params.squadId}` })
+
+  const plan = planUpgrade(squad, req.body?.upgrade)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  const entries = applyUpgrade(campaign, squad, plan)
   campaign.log.push({ day: campaign.day, entries })
   await campaign.save()
   res.json(await campaignView(campaign))

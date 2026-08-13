@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
 import SquadReinforcePanel from './SquadReinforcePanel'
+import SquadUpgradePanel from './SquadUpgradePanel'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
 
@@ -24,7 +25,7 @@ const costLabel = (cost) =>
 
 // recruit/resources/workers come straight from the campaign store; onHire and
 // onReinforce are still props (guarded actions).
-const RecruitPanel = ({ onHire, onReinforce }) => {
+const RecruitPanel = ({ onHire, onReinforce, onTakeUpgrade }) => {
   const recruit = useCampaignStore((s) => s.campaign?.recruit)
   const resources = useCampaignStore((s) => s.campaign?.resources)
   const workers = useCampaignStore((s) => s.campaign?.workers)
@@ -119,6 +120,10 @@ const RecruitPanel = ({ onHire, onReinforce }) => {
           the mandatory exit, replacements are optional. Neither gates the
           other server-side (docs/CAMPAIGN_PLAN.md "SLICE 3", decision I), so
           this section stays live once the day's hire is resolved. */}
+      {/* Honours sit ABOVE replacements: an upgrade can raise the caps and
+          intake the panel below prices against, so choosing one first means
+          the replacement arithmetic on screen is already the upgraded one. */}
+      <SquadUpgradePanel onTakeUpgrade={onTakeUpgrade} />
       <SquadReinforcePanel onReinforce={onReinforce} />
     </div>
   )

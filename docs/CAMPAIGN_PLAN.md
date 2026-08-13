@@ -88,15 +88,16 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-08-13) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **34**.
-**Slices 1, 2 and 3 of the squad overhaul are SHIPPED. The UPGRADE CATALOG (decision 8) is now
-INTERVIEWED AND SPEC'D — see "SLICE 4 — THE UPGRADE CATALOG" below; start with 4a, which needs no
-engine change.** Then characters, then banners, then the squad screen (decision 13, still last).
+**Slices 1, 2, 3 and 4a of the squad overhaul are SHIPPED. The next step is 4b (+1 stat bumps,
+the first ENGINE-side upgrade row) — see "SLICE 4 — THE UPGRADE CATALOG" below.** Then 4c formation
+fighters, 4d Royal Guard, then characters, then banners, then the squad screen (decision 13, last).
 
 Squads can now take replacements: the caps have teeth, the intake meters them, the hex is fenced,
 and the Recruit screen has the button. What the next slice needs to know before it starts:
 
-- **Prestige is EARNED and READ but still gates nothing.** The upgrade catalog is the first thing
-  that will read `squadRank` for gating — the numbers and the ladder are already settled (slice 1).
+- ~~**Prestige is EARNED and READ but still gates nothing.**~~ **As of 4a it gates the upgrade
+  draft** — `slotsFor`/`hasBanner` in services/squadUpgrades.js are the only readers, and both derive
+  from the rank ladder rather than storing anything.
 - ~~**The upgrade catalog is NOT designed yet.**~~ **DESIGNED 2026-08-13** — the interview happened;
   eight decisions are recorded in the slice-4 spec below. Upgrades turned out to cost NO resources
   and no prestige (rank + a free slot is the price), to arrive as a random 3-row DRAFT at each
@@ -157,9 +158,23 @@ engine rows after**, so each step ships green instead of one long red branch.
   3. The user's "access to 5 for now, then increase as we get cool upgrades" is the sizing rule.
 
 **Build order:**
-- **4a — playable:** draft machinery + slots + rank gating + the free Seasoned banner + the three
-  CAMPAIGN-SIDE rows (bigger caps, faster intake, cheaper raiding). No engine change. The draw needs
-  persistence of its own (the offer must survive a reload — `recruit.dailyOptions` is the precedent).
+- **4a — ✅ SHIPPED 2026-08-13 (schema v35).** Draft machinery, slots, rank gating, the free
+  Seasoned banner and the three campaign-side rows, built TDD off the spec above. What landed, and
+  what a later slice must not undo:
+  - `services/squadUpgrades.js` is the whole pure layer. Slots and the banner are DERIVED from
+    prestige (`slotsFor`, `hasBanner`) — only `squads[].upgrades` (taken) and `squads[].upgradeOffer`
+    (the pending draft) are stored, so a retuned ladder cannot leave a document stale.
+  - The offer is drawn ONCE at newDay and sealed on the document. That is load-bearing: the draw is
+    random, so a lazily-redrawn offer would let a reload reshuffle until the player liked it. An
+    unspent offer is left alone — a squad with two free slots fills them one turn at a time.
+  - Upgrades reach the world through `squadCaps`/`squadIntake` (upgrades sit BETWEEN the archetype
+    row and the readers, and only raise types the archetype already names) and `raidCostFactor`,
+    read per squad inside the party-cost loop so each squad pays its own rate.
+  - `deeper_ranks` is a FLAT +2 per type, not a percentage: `line` has only 6 bodies of headroom
+    under the hex budget, and +20% would put it at 640. Both the pure suite and
+    engine.integration.test.js check every archetype × every caps row against the real catalog.
+  - The draft is DEGENERATE today (3 rows, draw of 3 — every eligible row is always offered). That
+    is expected; the randomness starts to bite when 4b-4d add rows to the same table.
 - **4b — +1 stat bumps:** engine work, `squad_mods` on the placement entry applied in
   `buildArmyFromPlacement`.
 - **4c — formation fighters:** engine work, and THE AWKWARD ONE — it needs the real-vs-adjusted

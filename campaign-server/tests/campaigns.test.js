@@ -19,6 +19,8 @@ import {
   GARRISON_SALLY_UNIT,
   FORAGE_RINGS,
   ENEMY_DRAIN_KG_PER_TURN,
+  SQUAD_RANKS,
+  SQUAD_UPGRADE_POOL,
 } from '../utils/campaignConfig.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
@@ -1298,19 +1300,26 @@ describe('POST /api/campaigns/:id/battles', () => {
       // prestige/rank joined the wire shape in slice 1 — a fresh squad starts
       // at 0 and reads as the lowest rank. Slice 3 added the archetype and its
       // RESOLVED caps/intake (the document stores only the id), plus the
-      // once-per-turn reinforcement stamp read against today.
+      // once-per-turn reinforcement stamp read against today. Slice 4a added
+      // the upgrade fields: a fresh squad is Untested, so it has no slot, no
+      // pick, no banner and no draft — every one of them derived from prestige
+      // rather than stored, which is why they read as zero rather than absent.
+      const fresh = {
+        prestige: 0, rank: 'Untested', reinforcedToday: false,
+        upgrades: [], upgradeSlots: 0, upgradePicks: 0, banner: false, upgradeOffer: null,
+      }
       expect(c.squads).toEqual([
         {
-          id: 1, name: '1st Cohort', composition: { Soldier: 40 }, prestige: 0, rank: 'Untested',
-          archetype: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10, reinforcedToday: false,
+          id: 1, name: '1st Cohort', composition: { Soldier: 40 }, ...fresh,
+          archetype: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10,
         },
         {
-          id: 2, name: 'Skirmishers', composition: { Archer: 30 }, prestige: 0, rank: 'Untested',
-          archetype: 'skirmish', caps: { Archer: 30, Militia: 10 }, intake: 6, reinforcedToday: false,
+          id: 2, name: 'Skirmishers', composition: { Archer: 30 }, ...fresh,
+          archetype: 'skirmish', caps: { Archer: 30, Militia: 10 }, intake: 6,
         },
         {
-          id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 }, prestige: 0, rank: 'Untested',
-          archetype: 'vanguard', caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2, reinforcedToday: false,
+          id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 }, ...fresh,
+          archetype: 'vanguard', caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2,
         },
       ])
     })
@@ -2885,5 +2894,133 @@ describe('siege spine (S8): scripted guaranteed beats', () => {
         { eventId: 'breach_threatens', day: 5 },
         { eventId: 'wardens_van', day: 8 },
       ])
+  })
+})
+
+// Squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE CATALOG"), the
+// route's contract. The pure layer — the slot ladder, the draft, permanence and
+// the effect readers — is covered in squadUpgrades.test.js; what matters here
+// is that the offer is SEALED server-side (a reload must not reshuffle it), that
+// only an offered row can be taken, and that taking one spends nothing.
+describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
+  const takeUpgrade = (id, squadId, upgrade) =>
+    auth(api.post(`/api/campaigns/${id}/squads/${squadId}/upgrades`)).send({ upgrade })
+
+  // Rank up a charter directly: the raid path that normally pays prestige is
+  // covered in prestige.test.js, and going through it here would make these
+  // tests about raids rather than about upgrades.
+  const promote = (id, squadId, prestige) =>
+    Campaign.updateOne({ _id: id, 'squads.id': squadId }, { $set: { 'squads.$.prestige': prestige } })
+
+  const blooded = SQUAD_RANKS.find((r) => r.label === 'Blooded').min
+  const seasoned = SQUAD_RANKS.find((r) => r.label === 'Seasoned').min
+
+  // An offer is drawn at newDay, so a promoted squad needs a turn to roll over
+  // before its draft is waiting.
+  const promoteAndTurn = async (squadId = 1, prestige = blooded) => {
+    const { body: c } = await createCampaign()
+    await promote(c.id, squadId, prestige)
+    await endTurn(c.id)
+    // The rollover draws the next turn's fates, and a choice-fate owes a
+    // decision that blocks every other mutating route (rejectIfChoicePending)
+    // — unrelated noise for these tests, and the reason a read-only assertion
+    // passes here where a POST would 409. Cleared rather than danced around so
+    // each test below is about the upgrade route and nothing else.
+    await Campaign.findByIdAndUpdate(c.id, { pendingChoices: [] })
+    return c
+  }
+
+  test('an Untested squad is offered nothing — prestige is the gate', async () => {
+    const { body: c } = await createCampaign()
+    await endTurn(c.id)
+    const view = await getView(c.id)
+    for (const squad of view.squads) {
+      expect(squad.upgradeSlots).toBe(0)
+      expect(squad.upgradeOffer).toBeNull()
+      expect(squad.banner).toBe(false)
+    }
+  })
+
+  test('a squad that ranked up finds a draft waiting at the top of the turn', async () => {
+    const c = await promoteAndTurn()
+    const cohort = (await getView(c.id)).squads.find((s) => s.id === 1)
+    expect(cohort.upgradeSlots).toBe(1)
+    expect(cohort.upgradePicks).toBe(1)
+    expect(cohort.upgradeOffer.rank).toBe('Blooded')
+    expect(cohort.upgradeOffer.options.length).toBeGreaterThan(0)
+    // Rows arrive RESOLVED — the client has no copy of the catalog.
+    for (const option of cohort.upgradeOffer.options)
+      expect(option).toMatchObject({ id: expect.any(String), name: expect.any(String), blurb: expect.any(String) })
+  })
+
+  // The draw is random, so it must happen exactly once and be sealed on the
+  // document — otherwise a reload reshuffles until the player likes the offer.
+  test('the offer is sealed: reading it again returns the same rows', async () => {
+    const c = await promoteAndTurn()
+    const first = (await getView(c.id)).squads.find((s) => s.id === 1).upgradeOffer
+    const second = (await getView(c.id)).squads.find((s) => s.id === 1).upgradeOffer
+    expect(second.options.map((o) => o.id)).toEqual(first.options.map((o) => o.id))
+  })
+
+  test('taking an offered row keeps it, consumes the draft, and spends nothing', async () => {
+    const c = await promoteAndTurn()
+    const before = await getView(c.id)
+    const offered = before.squads.find((s) => s.id === 1).upgradeOffer.options[0].id
+
+    const { body: after } = await takeUpgrade(c.id, 1, offered).expect(200)
+    const cohort = after.squads.find((s) => s.id === 1)
+    expect(cohort.upgrades.map((u) => u.id)).toEqual([offered])
+    expect(cohort.upgradeOffer).toBeNull()
+    expect(cohort.upgradePicks).toBe(0)
+    // Free by design: reaching the rank and having a slot IS the price
+    // (decision 5 — prestige is never spent either).
+    expect(after.resources).toEqual(before.resources)
+    expect(cohort.prestige).toBe(before.squads.find((s) => s.id === 1).prestige)
+  })
+
+  test('a row that was not offered is refused', async () => {
+    const c = await promoteAndTurn()
+    const view = await getView(c.id)
+    const offered = new Set(view.squads.find((s) => s.id === 1).upgradeOffer.options.map((o) => o.id))
+    const notOffered = SQUAD_UPGRADE_POOL.map((r) => r.id).find((id) => !offered.has(id))
+    // With three rows and a draw of three every eligible row is offered today,
+    // so this only bites once 4b-4d widen the pool — assert the guard with a
+    // row that certainly is not on the list either way.
+    const { body } = await takeUpgrade(c.id, 1, notOffered ?? 'no_such_upgrade').expect(400)
+    expect(body.error).toBeDefined()
+  })
+
+  test('a second pick is refused while the rank pays for only one', async () => {
+    const c = await promoteAndTurn()
+    const offered = (await getView(c.id)).squads.find((s) => s.id === 1).upgradeOffer.options[0].id
+    await takeUpgrade(c.id, 1, offered).expect(200)
+    const { body } = await takeUpgrade(c.id, 1, offered).expect(400)
+    expect(body.error).toBeDefined()
+  })
+
+  test('an unknown squad is a 400, not a crash', async () => {
+    const { body: c } = await createCampaign()
+    await takeUpgrade(c.id, 99, 'deeper_ranks').expect(400)
+  })
+
+  // Seasoned's rung pays for the banner instead of a pick — the one place the
+  // ladder deliberately does not grow. The banner carries NO bonus: decision
+  // 16 is deferred on purpose (see the slice-4 spec).
+  test('Seasoned grants the banner and still only one pick', async () => {
+    const c = await promoteAndTurn(1, seasoned)
+    const cohort = (await getView(c.id)).squads.find((s) => s.id === 1)
+    expect(cohort.banner).toBe(true)
+    expect(cohort.upgradeSlots).toBe(1)
+  })
+
+  test('an upgrade reaches the numbers the reinforcement gates use', async () => {
+    const c = await promoteAndTurn()
+    const before = (await getView(c.id)).squads.find((s) => s.id === 1)
+    const offer = before.upgradeOffer.options.map((o) => o.id)
+    if (!offer.includes('deeper_ranks')) return
+    const { body: after } = await takeUpgrade(c.id, 1, 'deeper_ranks').expect(200)
+    const cohort = after.squads.find((s) => s.id === 1)
+    const bonus = SQUAD_UPGRADE_POOL.find((r) => r.id === 'deeper_ranks').effect.bonus
+    for (const [type, cap] of Object.entries(before.caps)) expect(cohort.caps[type]).toBe(cap + bonus)
   })
 })

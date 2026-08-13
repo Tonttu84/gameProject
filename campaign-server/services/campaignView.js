@@ -20,6 +20,13 @@ import {
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
 import { squadCaps, squadIntake, looseRoster } from './squadReinforce.js'
+import {
+  squadUpgrades,
+  slotsFor,
+  picksAvailable,
+  hasBanner,
+  findUpgrade,
+} from './squadUpgrades.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
@@ -341,9 +348,33 @@ export async function campaignView(campaign) {
       prestige: squad.prestige ?? 0,
       rank: squadRank(squad.prestige),
       archetype: squad.archetype ?? null,
+      // Caps and intake already carry the squad's upgrades (squadReinforce
+      // resolves the archetype row THROUGH them), so the panel prices a
+      // reinforcement against the same numbers the route will check.
       caps: squadCaps(squad),
       intake: squadIntake(squad),
       reinforcedToday: squad.reinforcedDay === campaign.day,
+      // Slice 4a. Rows are sent RESOLVED (name + blurb) because the client has
+      // no copy of the catalog and a blurb is display text, not a rule — the
+      // same reason reinforceRecipes is projected rather than referenced. What
+      // the client sends BACK is always the id.
+      upgrades: squadUpgrades(squad).map(({ id, name, blurb }) => ({ id, name, blurb })),
+      // Own info, all derived from prestige: how many slots the rank is worth,
+      // how many are still unfilled, and whether the banner has been reached.
+      upgradeSlots: slotsFor(squad),
+      upgradePicks: picksAvailable(squad),
+      banner: hasBanner(squad),
+      // The pending draft, or null. Resolved the same way; `rank` is the rung
+      // that paid for it, which is what the panel headlines the choice with.
+      upgradeOffer: squad.upgradeOffer
+        ? {
+            rank: squad.upgradeOffer.rank,
+            options: [...squad.upgradeOffer.options]
+              .map(findUpgrade)
+              .filter(Boolean)
+              .map(({ id, name, blurb }) => ({ id, name, blurb })),
+          }
+        : null,
     })),
     // The unassigned remainder per type — roster minus every charter's
     // composition. Derived server-side because reinforcement now SPENDS it

@@ -104,6 +104,13 @@ export const hireRecruit = (id, body) =>
 // directions. Returns the refreshed view directly, like hireRecruit.
 export const reinforceSquad = (id, squadId, body) =>
   axios.post(`/api/campaigns/${id}/squads/${squadId}/reinforce`, body, authed()).then(r => r.data)
+// Take one upgrade off a squad's draft (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE
+// UPGRADE CATALOG"). The body names an id the SERVER offered — the draw is
+// sealed server-side, so the client never picks from the whole catalog. The
+// choice is PERMANENT and there is deliberately no undo endpoint to pair with
+// this one. Returns the refreshed view directly, like reinforceSquad.
+export const takeSquadUpgrade = (id, squadId, upgrade) =>
+  axios.post(`/api/campaigns/${id}/squads/${squadId}/upgrades`, { upgrade }, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

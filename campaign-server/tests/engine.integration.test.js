@@ -13,6 +13,7 @@ import {
   STARTING_SQUADS,
   SQUAD_ARCHETYPES,
   SQUAD_TROOP_BUDGET,
+  SQUAD_UPGRADE_POOL,
   SQUAD_CHARACTER_RESERVE,
 } from '../utils/campaignConfig.js'
 
@@ -170,6 +171,32 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
       expect(
         points + SQUAD_CHARACTER_RESERVE,
         `archetype ${id} at full strength does not fit SQUAD_TROOP_BUDGET`,
+      ).toBeLessThanOrEqual(SQUAD_TROOP_BUDGET)
+    }
+  }, 30000)
+
+  // The same fence, with slice 4a's caps upgrades applied. The base check above
+  // only ever sees an archetype's PRINTED caps, so a caps row is exactly the
+  // way a squad could be handed more bodies than its hex holds without anything
+  // noticing — the slice-4 spec calls this out as the invariant to respect.
+  // Summed over every caps row an archetype may draw, since upgrades stack and
+  // nothing stops a squad taking all of them it is eligible for.
+  test('no archetype outgrows the hex budget once its caps upgrades are taken', async () => {
+    const catalog = await dumpUnits()
+    const sizeOf = new Map(catalog.units.map((u) => [u.name, u.size]))
+    const capsRows = SQUAD_UPGRADE_POOL.filter((row) => row.effect.kind === 'caps')
+    for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES)) {
+      const bonus = capsRows
+        .filter((row) => row.archetypes.includes(id))
+        .reduce((sum, row) => sum + row.effect.bonus, 0)
+      const points = Object.entries(archetype.caps).reduce((sum, [type, cap]) => {
+        const size = sizeOf.get(type)
+        expect(size, `${id} caps ${type}, which the engine catalog does not know`).toBeDefined()
+        return sum + size * (cap + bonus)
+      }, 0)
+      expect(
+        points + SQUAD_CHARACTER_RESERVE,
+        `archetype ${id} with every caps upgrade does not fit SQUAD_TROOP_BUDGET`,
       ).toBeLessThanOrEqual(SQUAD_TROOP_BUDGET)
     }
   }, 30000)

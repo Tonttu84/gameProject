@@ -16,6 +16,7 @@ import {
   hireRecruit,
   openRecruit,
   reinforceSquad,
+  takeSquadUpgrade,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -91,6 +92,10 @@ const useCampaignStore = create((set, get) => ({
   // sinks neither gate nor consume each other.
   reinforceSquad: async (squadId, body) => {
     set({ campaign: await reinforceSquad(get().campaign.id, squadId, body) })
+  },
+
+  takeSquadUpgrade: async (squadId, upgrade) => {
+    set({ campaign: await takeSquadUpgrade(get().campaign.id, squadId, upgrade) })
   },
 
   fight: async (playerPlacement) => {

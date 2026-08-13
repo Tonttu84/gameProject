@@ -13,6 +13,7 @@ import {
   fieldPointsFor,
 } from '../utils/capabilities.js'
 import { bracketOnLevelUp } from './recon.js'
+import { drawUpgradeOffer } from './squadUpgrades.js'
 import {
   applyEffect,
   firedRung,
@@ -349,6 +350,19 @@ export async function endDay(campaign) {
     campaign.phase = 'prepare'
     campaign.raid.assignment = new Map()
     campaign.raid.squadAssignment = []
+    // Slice 4a: a charter that ranked up on this turn's raids finds its draft
+    // waiting at the top of the next one. Drawn HERE, after the prestige those
+    // raids paid has already landed, rather than lazily when the panel is
+    // read — the draw is random, so it must happen exactly once and be sealed
+    // on the document, or a reload would reshuffle the offer until the player
+    // liked it. An UNSPENT offer is left alone: it is a decision still owed,
+    // not stale state. A squad with two slots free therefore fills them one
+    // turn at a time, which is the intended cadence.
+    for (const squad of campaign.squads ?? []) {
+      if (squad.upgradeOffer) continue
+      const offer = drawUpgradeOffer(squad)
+      if (offer) squad.upgradeOffer = offer
+    }
     // Standing forage pressures age out here (S3) — AFTER the day they were in
     // force has resolved. Runs BEFORE the raid redeal below, so an expired
     // modifier's persistent card is dropped with it rather than carried for a

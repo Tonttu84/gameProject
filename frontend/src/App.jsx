@@ -59,7 +59,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, reinforceSquad, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, reinforceSquad, takeSquadUpgrade, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -551,6 +551,7 @@ const App = () => {
             key={`recruit-${campaign.day}`}
             onHire={guarded(hireRecruit)}
             onReinforce={guarded(reinforceSquad)}
+            onTakeUpgrade={guarded(takeSquadUpgrade)}
           />
           <div className="raids-bar">
             <button
