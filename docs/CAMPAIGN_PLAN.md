@@ -173,8 +173,15 @@ has nothing to hang off. Schema bump (currently v31).
 
 Prestige comes from SEVERAL sources (user, 2026-08-10):
 - **Raids are the main earner** — participating earns, winning earns more.
-- **Events** award it too.
+- **Events** award it too, and **especially an event that REQUIRES a squad**. Commitment is what
+  pays: an event a squad is actually sent on is worth more than one that merely happens to the camp.
 - **Turns survived** grant a small trickle, deliberately minor so it does not reward hiding.
+
+**The three sources are one economy, not a list.** Prestige is the price paid for RISK and for
+being unavailable. A raid stakes the squad in a real battle; an event that requires a squad takes it
+off the board for a while (see the tie-up mechanic below); sitting in camp earns the trickle and
+nothing more. Whoever tunes the numbers should keep that ordering intact — if idling ever
+out-earns raiding per turn, the whole ladder inverts and the safe play becomes the optimal one.
 
 **Stage 2 — the banner ladder, in the user's own three states.** Note these are three distinct
 things, not two; an earlier draft of this plan wrongly collapsed the first two:
@@ -201,11 +208,21 @@ squads, and they surface only inside `RaidPanel` as pickable rows for a raid par
 somewhere to inspect one and read its composition, prestige/level, banner tier and what that banner
 grants. Last, because it renders what the first two stages create.
 
-**Related decision, previously UNRECORDED (user, 2026-08-10): events should later be able to tie a
-unit up for some turns.** This was decided earlier and was written down nowhere — not in this file,
-not in any commit message — so it survived only in the user's memory. It bears on Stage 1: a squad
-tied up by an event is a squad not raiding, which is the main prestige source, so the two systems
-meet. Not scheduled yet; recorded so it is not lost again.
+**The tie-up mechanic: an event can take a squad away for X turns.** Previously UNRECORDED — decided
+earlier, written down nowhere (not this file, not any commit message), so it survived only in the
+user's memory until 2026-08-10. Recorded now so it cannot be lost again.
+
+It is **not a separate feature bolted next to prestige — it is the other half of it.** An event that
+takes a squad away is exactly an event that REQUIRES a squad, which is the case the bullet above
+says should pay the most. So the mechanic supplies both sides of a trade the player can read: the
+squad is off the board for X turns and cannot raid, and the prestige is what buys that back. Build
+it and the prestige weighting together, or the cost lands with no compensation and no event will
+ever be worth taking.
+
+It also sets the shape of the availability question Stage 1 must answer anyway: a squad is either
+free, raiding, or tied up, and the squad screen (Stage 3) has to show which. `raid.squadAssignment`
+already tracks "spent on a raid today" — the tie-up is the same idea over a span of turns rather
+than one, and should reuse that thinking rather than inventing a parallel notion of busy.
 
 **What is actually open:**
 - ~~**An unidentified C++ flake.**~~ **CAUGHT AND FIXED 2026-08-10 — seed `446545517`.**
