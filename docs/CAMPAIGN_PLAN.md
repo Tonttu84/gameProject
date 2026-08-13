@@ -308,7 +308,21 @@ structural job (it is the tier that OPENS THE ITEM SLOT) and leave the bonus uns
 surrounding systems can be played. The plain banner already ships inert for the same reason.
 
 **17. A magic-item STORAGE, generic from the start, with its own UI page (user, 2026-08-10).** A
-won item lands in storage first; from there the player assigns it. Storage will hold more than
+won item lands in storage first; from there the player assigns it.
+
+  **Storage is a two-step for a MECHANICAL reason, not for tidiness — do not collapse it into
+  assign-on-acquisition.** An item banner can only go to a squad that has unlocked the *basic*
+  banner (10), and nothing guarantees any squad has. Win one early and there may be no legal target
+  at all. The store is what absorbs that: the item is safely held until a squad qualifies, instead
+  of being lost, refused, or forced onto an ineligible squad. The same reasoning generalises to
+  every later item kind whose target needs unlocking first, which is another reason the store is
+  built for items rather than banners.
+
+  Two consequences follow. **Storage must tolerate an item with no valid target** — indefinitely,
+  without erroring, and without pruning it. And the page should **say WHY** an item cannot be
+  assigned yet ("no squad has an open banner slot"), because an item that simply refuses to move
+  with no explanation reads as a bug and is the vagueness "no card shows flavour alone" exists to
+  prevent. Storage will hold more than
 banners later, so **build it for items in general and never for banners specifically** — the item
 declares its own kind and rules, and the storage stays ignorant of what kinds exist. This is the
 `placeable`/`spawnable` lesson again: a `banners: []` field would have to be joined by
