@@ -101,10 +101,25 @@ TEST_CASE("garrison sally: reinforcements do not cross back as survivors") {
     bf.setMaxTicks(1);
 
     bf.tick(); // fires the wave, then the day ends
-    CHECK(bf.getTeam(BLUETEAM).size() == 4); // present on the field...
+
+    // Present on the field — but NOT an exact headcount. The wave lands in
+    // Red's rear band with Red standing in it and combat runs in this same
+    // tick, so whether all three are still breathing at the end is a dice
+    // roll. This read 3 == 4 under seed 446545517 (found 2026-08-10 by a
+    // seeded hunt); the summon was placed and then killed, not lost to
+    // placement — the suite prints exactly one "zone is full" either way, from
+    // the deliberate overfill case.
+    size_t summons = 0;
+    for (auto& u : bf.getTeam(BLUETEAM))
+        if (u && u->getBattleSummon()) ++summons;
+    CHECK(summons >= 1);                                        // the wave arrived
+    CHECK(bf.getTeam(BLUETEAM).size() == 1u + summons);         // and nothing else did
 
     BattleResult res = bf.extractResult();
-    CHECK(res.blueSurvivors.size() == 1);    // ...but battleSummon units are filtered out
+    // The case's actual claim, and it stays EXACT: however many summons stood
+    // on the field, none of them cross back. The original sits at PLAYER_HEX,
+    // far from Red and unreachable in one tick, so precisely it survives.
+    CHECK(res.blueSurvivors.size() == 1);
 }
 
 TEST_CASE("garrison sally: a wave fires exactly once") {

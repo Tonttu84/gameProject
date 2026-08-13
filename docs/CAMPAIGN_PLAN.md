@@ -148,23 +148,30 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
 was built and the two traps it had to avoid.
 
 **What is actually open:**
-- **An unidentified C++ flake was SEEN on 2026-08-10 and not caught.** One run of `make test-serial`
-  at `ef98380` came back 350/351; the next four runs passed, so it is rare. **The seed that would
-  have reproduced it was lost** — the run was piped through `tail -4`, which threw away the
-  `[rng] seed=…` line the suite prints for exactly this. Do not filter that line. When a C++ run
-  fails, capture the whole log first (`./run_tests > log 2>&1`), then replay with
-  `GAME_RNG_SEED=<seed> ./run_tests`. If CI reddens on an engine test with no obvious cause, this is
-  the likely culprit and the seed will be in the job log. Unknown whether it predates `ef98380`;
-  nobody has compared against `main` at `6ed43ca`.
+- ~~**An unidentified C++ flake.**~~ **CAUGHT AND FIXED 2026-08-10 — seed `446545517`.**
+  `test_garrison_sally.cpp`, "reinforcements do not cross back as survivors", reading `3 == 4` on
+  `getTeam(BLUETEAM).size()`. The THIRD sally case to fail the same way, after the two fixed on
+  2026-08-09: an assertion that names one thing and measures survival. The wave lands in Red's rear
+  band with Red standing in it and combat runs in that same tick, so "all three summons are still
+  alive" was never an invariant — it was a dice roll dressed as scaffolding above the line that
+  carried the case's actual claim.
 
-  **Hunt it with `make test-fast`, not `make test-serial`.** The sanitized suite is ~155s a run,
-  which makes chasing a rare seed impractical; `test-fast` is the same tests at -O2 with the
-  sanitizers off and runs in **~5s** — 31× more samples for the same wall clock. The RNG stream is
-  identical between the two builds (same `mt19937`, same call order), so a seed caught in one
-  replays in the other. Confirm any fix under the sanitized build, which is what CI gates on.
-  Searched so far without a reproduction: 150 fast runs of the whole suite, 150 runs of the
-  summon-related subset, and 4 sanitized runs. So it is rarer than roughly 1 in 300, or it depends
-  on something the hunts have not varied.
+  Fixed structurally, not statistically: the on-field count is now self-consistent (`1 + summons`,
+  with at least one summon present) while the real assertion — that NO summon crosses back into
+  `blueSurvivors` — stays exact, because the original sits far from Red and cannot be reached in one
+  tick. Verified by replaying `GAME_RNG_SEED=446545517` green under BOTH builds.
+
+  **How it was found, because the method is the reusable part.** `make test-fast` (added the same
+  day) cut a run from 155s to ~5s, making a 1-in-~250 seed reachable: 164 fast runs caught it where
+  150 earlier ones and 150 of a hand-picked summon subset had not. Two things mattered — the user's
+  hunch that summoning had caused trouble before, which turned out to be exactly right, and the
+  `[rng] seed=` line, WITHOUT which this would have been another sighting. An earlier occurrence
+  that day was lost precisely by piping a run through `tail -4`. **Never filter that line.**
+
+  A seeded run only reproduces IN FULL-SUITE CONTEXT: the same seed passes when the test runs
+  alone, because preceding tests consume draws and shift the stream. Replay the whole suite with the
+  seed, not the single case.
+
 - **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
   words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
   `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number. **Note this is
