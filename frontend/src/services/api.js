@@ -96,6 +96,14 @@ export const openRecruit = (id) =>
 // postCampaignRaids/endCampaignDay).
 export const hireRecruit = (id, body) =>
   axios.post(`/api/campaigns/${id}/recruit/hire`, body, authed()).then(r => r.data)
+// Recruit phase, the OTHER sink: top one squad up from the loose pool. The body
+// is a map of output type → bodies, `{reinforce: {Cavalry: 1, LightCavalry: 1}}`,
+// applied atomically — an over-request is refused whole rather than clamped, so
+// the panel's arithmetic and the server's can never quietly disagree. Once per
+// turn per squad, and entirely independent of the day's hire in both
+// directions. Returns the refreshed view directly, like hireRecruit.
+export const reinforceSquad = (id, squadId, body) =>
+  axios.post(`/api/campaigns/${id}/squads/${squadId}/reinforce`, body, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

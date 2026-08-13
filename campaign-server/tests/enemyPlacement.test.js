@@ -146,38 +146,58 @@ describe('makeZonePlacer.addBlock', () => {
     expectNoOverstack(placement, zone.hexCapacity)
   })
 
-  test('a squad bigger than one hex packs into as few hexes as it can', () => {
-    // 10 Soldiers (100 points) into 30-capacity hexes: no single hex can hold
-    // the squad, so it fills 3 per hex — 4 hexes, the minimum — rather than
-    // scattering one per hex.
+  // ── The three fallbacks that became failures (slice 3, decision H) ────────
+  //
+  // These three cases used to assert a DEGRADATION and now assert a throw. The
+  // old behaviour was worse than a crash because nothing reported it: a squad
+  // one body too fat for a hex was quietly packed across several, which the
+  // engine reads as N one-member squads — no cohesion, no shared morale, no
+  // squad movement — so a raid party fought as loners with no error anywhere.
+  // The raid route gains a failure mode it did not have; that is what "loud
+  // failures while the design is early" buys, accepted knowingly.
+
+  test('a squad bigger than one hex THROWS rather than splitting across hexes', () => {
+    // 10 Soldiers (100 points) into 30-capacity hexes. "One squad, one hex" is
+    // settled and load-bearing, so there is no placement that can honour it —
+    // and the reinforcement route's size-budget gate is what stops a squad
+    // reaching this size in the first place.
     const zone = { rowMin: 0, rowMax: 1, width: 4, hexCapacity: 30 }
-    for (let run = 0; run < RUNS; run++) {
-      const placer = makeZonePlacer(zone, sizeOf)
-      placer.addBlock({ Soldier: 10 }, { squad_id: 7 })
-      const placement = placer.result()
-      expect(placement).toHaveLength(10)
-      expect(hexesOf(placement).size).toBe(4)
-      expectNoOverstack(placement, zone.hexCapacity)
-    }
+    const placer = makeZonePlacer(zone, sizeOf)
+    expect(() => placer.addBlock({ Soldier: 10 }, { squad_id: 7 })).toThrow(/one squad, one hex/)
+    expect(placer.result()).toEqual([]) // and nothing half-placed is left behind
   })
 
-  test('a block that outgrows the zone leaves the remainder off the field', () => {
+  test('a block that outgrows the ZONE throws instead of dropping its remainder', () => {
     const zone = { rowMin: 0, rowMax: 0, width: 2, hexCapacity: 15 }
     const placer = makeZonePlacer(zone, sizeOf)
-    placer.addBlock({ Soldier: 5 }, { squad_id: 1 })
-    const placement = placer.result()
-    expect(placement).toHaveLength(2)
-    expectNoOverstack(placement, zone.hexCapacity)
+    expect(() => placer.addBlock({ Soldier: 5 }, { squad_id: 1 })).toThrow(/one squad, one hex/)
+
+    // …and the same squad fitting a hex, but with no hex left free for it.
+    const full = makeZonePlacer({ rowMin: 0, rowMax: 0, width: 1, hexCapacity: 15 }, sizeOf)
+    full.addBlock({ Soldier: 1 }, { squad_id: 1 })
+    expect(() => full.addBlock({ Soldier: 1 }, { squad_id: 2 })).toThrow(/no hex in the zone/)
   })
 
-  test('unknown types are skipped; an all-unknown block places nothing', () => {
+  test('an unknown type in a squad throws — that is a data bug, not a degradation', () => {
     const zone = { rowMin: 0, rowMax: 0, width: 4, hexCapacity: 640 }
     const placer = makeZonePlacer(zone, sizeOf)
-    placer.addBlock({ Dragon: 3, Soldier: 2 }, { squad_id: 1 })
-    placer.addBlock({ Dragon: 2 }, { squad_id: 2 })
-    const placement = placer.result()
-    expect(placement).toHaveLength(2)
-    expect(placement.every((p) => p.unit_type === 'Soldier' && p.squad_id === 1)).toBe(true)
+    expect(() => placer.addBlock({ Dragon: 3, Soldier: 2 }, { squad_id: 1 })).toThrow(/Dragon/)
+    expect(placer.result()).toEqual([])
+  })
+
+  // The loose spread keeps its drop (the enemy host grows across a campaign and
+  // the zone is bounded, so a full zone must not hard-fail a battle) — but it
+  // stops swallowing it.
+  test('add REPORTS what it left off the field instead of swallowing it', () => {
+    const zone = { rowMin: 0, rowMax: 0, width: 2, hexCapacity: 15 }
+    const placer = makeZonePlacer(zone, sizeOf)
+    expect(placer.add({ Soldier: 5 })).toBe(3) // 2 fit, 3 guard the camp
+    expect(placer.result()).toHaveLength(2)
+
+    const roomy = makeZonePlacer({ rowMin: 0, rowMax: 0, width: 4, hexCapacity: 640 }, sizeOf)
+    expect(roomy.add({ Soldier: 2 })).toBe(0)
+    // An unknown type is placed by nobody, so it counts as left off too.
+    expect(roomy.add({ Dragon: 3 })).toBe(3)
   })
 
   test('add and addBlock share the pool without overstacking', () => {

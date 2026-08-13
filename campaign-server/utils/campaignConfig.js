@@ -2,6 +2,12 @@
 // live. Unit STATS stay in the C++ constructors (SSOT); these are the
 // campaign-layer rules built on top of them.
 //
+// PRICING SOMETHING NEW? Read docs/ECONOMY.md first — a rough reading of what a
+// unit of food/materials/gold/horses/workers is worth against the prices here,
+// so an invented number has something to be consistent with. (The generated
+// docs/BALANCE_SHEET.md is its companion: every fate and raid reward priced
+// side by side.) Neither is a balance target; both are references.
+//
 // TIME SCALE: one campaign turn (the model's `day` counter, one end-day
 // resolution) represents TWO WEEKS of campaigning. Food is in kilograms and
 // everything below is per-turn: a unit eats size² × FOOD_KG_PER_SIZE_SQ_PER_DAY
@@ -66,8 +72,8 @@ export const SQUAD_ARCHETYPES = {
 // headcount, and it must never be rewritten as one. A squad is always ONE
 // formation on ONE hex (services/enemyPlacement.js addBlock; the engine groups
 // formations by hex + squad_id), so Hex::CAPACITY = 640 is the hard ceiling,
-// and 40 of it is reserved for attached characters — who sit outside the CAPS
-// (decision 3) but emphatically not outside the hex.
+// and SQUAD_CHARACTER_RESERVE of it is reserved for attached characters — who
+// sit outside the CAPS (decision 3) but emphatically not outside the hex.
 //
 // Points rather than bodies because the conversion is not fixed and is already
 // promised to move: troop types smaller than a human are expected later, and
@@ -89,6 +95,57 @@ export const SQUAD_ARCHETYPES = {
 // adjusted ≤ real — a cap derived from that inequality would silently overfill
 // a hex the first time a unit packs looser than its real size.
 export const SQUAD_TROOP_BUDGET = 600
+
+// The slice of the hex held back for the characters a squad may carry
+// (decision 9's Mage/Priest, one per squad today). Characters sit outside the
+// per-type CAPS but inside the hex, so the budget check adds this to the
+// troops' points rather than leaving it as spare room beside them — otherwise
+// attaching a character is what overfills the hex. A named constant rather
+// than the comment it used to be, because slice 3's budget gate is the first
+// thing that has to arithmetic with it.
+export const SQUAD_CHARACTER_RESERVE = 40
+
+// ── Squad reinforcement recipes (docs/CAMPAIGN_PLAN.md "SLICE 3 —
+// reinforcement", decisions A/B/D) ───────────────────────────────────────────
+// ONE GLOBAL table, a sibling of services/recruit.js's RECRUIT_POOL and looked
+// up by OUTPUT type. The archetype owns the FENCE (which types may stand in a
+// charter and how many); a recipe owns the TRANSFORMATION. Keeping the two
+// orthogonal means a new troop type is one row here rather than an edit to
+// every archetype that admits it. Per-archetype overrides are deliberately not
+// built.
+//
+// INPUTS AND OUTPUTS ARE UNCONNECTED (decision A). Reinforcement is NOT a
+// transformation of particular bodies: one application DESTROYS everything in
+// `inputs` and CREATES output.count of output.type. Nothing carries over,
+// because a roster body has no identity to carry. Both sides are collections
+// and neither constrains the other — many-to-one (a scorpion plus a rider make
+// one ridden monster) and one-to-many (splitting something) are both intended,
+// and NO code path may assume today's uniform 1:1 rows.
+//   *"There is no reason why they must match … There is no need to limit
+//   creativity."* — user, 2026-08-13
+// Revisit the destroy/create model if troops ever gain experience or wounds:
+// at that point a body has something worth preserving and "destroy and create"
+// stops being a faithful description (the user's own caveat).
+//
+// THE NUMBERS: gold and materials, deliberately NO food. A 1:1 recipe destroys
+// a body and creates one, so the army gains no new mouth — recruiting
+// PROVISIONS a new body, reinforcement RE-EQUIPS an existing one. (A
+// one-to-many recipe would break that symmetry; none exists yet.) Costs are
+// anchored on each type's RECRUIT_POOL materials-per-body with gold as the
+// type's worth, and a rider costs exactly the hire rate of 1 horse with no
+// discount for the destroyed input having been mounted. Sized against real
+// income (a won raid pays ~20–40 gold), a full line refill is about one raid's
+// coin. Explicitly a FIRST PASS — see docs/ECONOMY.md for what a unit of each
+// resource is worth, and balance later.
+export const SQUAD_REINFORCE_POOL = [
+  { id: 'reinforce_militia',       output: { type: 'Militia',      count: 1 }, inputs: { Militia: 1 },      cost: { gold: 1, materials: 1 } },
+  { id: 'reinforce_soldier',       output: { type: 'Soldier',      count: 1 }, inputs: { Soldier: 1 },      cost: { gold: 2, materials: 2 } },
+  { id: 'reinforce_archer',        output: { type: 'Archer',       count: 1 }, inputs: { Archer: 1 },       cost: { gold: 2, materials: 2 } },
+  { id: 'reinforce_pikeman',       output: { type: 'Pikeman',      count: 1 }, inputs: { Pikeman: 1 },      cost: { gold: 2, materials: 1 } },
+  { id: 'reinforce_light_cavalry', output: { type: 'LightCavalry', count: 1 }, inputs: { LightCavalry: 1 }, cost: { gold: 4, materials: 3, horses: 1 } },
+  { id: 'reinforce_cavalry',       output: { type: 'Cavalry',      count: 1 }, inputs: { Cavalry: 1 },      cost: { gold: 5, materials: 4, horses: 1 } },
+]
+
 // ~4 turns for the starting army (which needs 12,432 kg per turn).
 export const STARTING_FOOD = 50000
 // Playtest aid: seed enough to build the full fort progression from turn 1

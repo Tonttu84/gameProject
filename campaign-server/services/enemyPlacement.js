@@ -35,11 +35,21 @@ export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
 
   const placement = []
   let cursor = 0
+  // Spread a LOOSE army unit by unit. It keeps its drop — the zone is bounded
+  // and the enemy host grows across a campaign, so a full zone must mean "the
+  // rear ranks camp this battle", not a hard-failed battle mid-campaign — but
+  // it no longer SWALLOWS it: the count left off the field is returned.
+  // (addBlock, below, is the opposite case and throws; the difference is that a
+  // squad has an invariant to protect and a loose army does not.)
   const add = (army, extra = {}) => {
     const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
+    let unplaced = 0
     for (const [type, count] of entries) {
       const size = sizeOf.get(type)
-      if (!size) continue // unknown type — engine would reject it anyway
+      if (!size) { // unknown type — engine would reject it anyway
+        unplaced += count
+        continue
+      }
       for (let i = 0; i < count; i++) {
         // Advance past full hexes; wrap once. If the zone is truly full the
         // remaining units are left off the field (they guard the camp).
@@ -49,48 +59,57 @@ export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
           tries++
         }
         const cell = shuffled[cursor % shuffled.length]
-        if (cell.used + size > hexCapacity) break
+        if (cell.used + size > hexCapacity) {
+          unplaced += count - i
+          break
+        }
         cell.used += size
         placement.push({ unit_type: type, q: cell.q, r: cell.r, ...extra })
         cursor++
       }
     }
+    return unplaced
   }
 
   // Place one whole group (a campaign squad) on a SINGLE hex, so the engine
   // builds it as one formation. Prefers an untouched hex — two squads sharing a
   // hex would still be two formations, but they'd be drawn stacked on top of
-  // each other — then any hex with room for the whole block. A group too big for
-  // one hex (Σ size > hexCapacity) can't be kept whole by any placement: it is
-  // packed hex-by-hex, filling each to capacity so it splits into as few
-  // formations as possible instead of scattering. Units that find no room are
-  // left off the field, same as `add`.
+  // each other — then any hex with room for the whole block.
+  //
+  // EVERY FAILURE HERE THROWS (docs/CAMPAIGN_PLAN.md "SLICE 3", decision H:
+  // no silent fallbacks while the design is early). This used to degrade three
+  // ways, and each degradation was worse than a crash because nothing reported
+  // it: a block too big for one hex was packed across several (which the engine
+  // reads as N one-member squads — no cohesion, no shared morale, no squad
+  // movement, i.e. a squad one body too fat silently fights as loners); a full
+  // zone dropped the remainder; an unknown type was skipped. The first violates
+  // "one squad, one hex", which is settled and load-bearing; the last is a data
+  // bug, not a degradation. The reinforcement route's size-budget gate
+  // (services/squadReinforce.js) is what keeps the first from happening — this
+  // is the assertion that the gate holds.
   const addBlock = (army, extra = {}) => {
     const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
     const units = []
     for (const [type, count] of entries) {
       const size = sizeOf.get(type)
-      if (!size) continue // unknown type — engine would reject it anyway
+      if (!size) throw new Error(`cannot place ${type}: no such unit type in the catalog`)
       for (let i = 0; i < count; i++) units.push({ type, size })
     }
     if (units.length === 0) return
 
-    const put = (cell, unit) => {
-      cell.used += unit.size
-      placement.push({ unit_type: unit.type, q: cell.q, r: cell.r, ...extra })
-    }
-
     const total = units.reduce((sum, u) => sum + u.size, 0)
-    const whole = shuffled.find((c) => c.used === 0 && total <= hexCapacity)
-      ?? shuffled.find((c) => c.used + total <= hexCapacity)
-    if (whole) {
-      for (const unit of units) put(whole, unit)
-      return
-    }
+    if (total > hexCapacity)
+      throw new Error(
+        `a squad of ${total} size points cannot stand on one hex (capacity ${hexCapacity}) — one squad, one hex`,
+      )
+
+    // An untouched hex is guaranteed to hold the block (total ≤ hexCapacity is
+    // checked above), so the fallback only matters once the zone is part-full.
+    const whole = shuffled.find((c) => c.used === 0) ?? shuffled.find((c) => c.used + total <= hexCapacity)
+    if (!whole) throw new Error(`no hex in the zone has room for a squad of ${total} size points`)
     for (const unit of units) {
-      const cell = shuffled.find((c) => c.used + unit.size <= hexCapacity)
-      if (!cell) break // zone full — the remainder guards the camp
-      put(cell, unit)
+      whole.used += unit.size
+      placement.push({ unit_type: unit.type, q: whole.q, r: whole.r, ...extra })
     }
   }
 

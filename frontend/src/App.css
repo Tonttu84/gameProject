@@ -213,6 +213,22 @@ body {
 .recruit-boosted { color: var(--gold); }
 .recruit-empty { font-size: 0.85rem; color: #8888aa; margin: 0; }
 
+/* Squad reinforcement (2026-08-13): the Recruit screen's other sink, sharing
+   the raid-card treatment — one card per charter, a row per permitted troop
+   type. Sits inside .recruit-panel, so it inherits its width and spacing. */
+.reinforce-panel { display: flex; flex-direction: column; gap: 0.5rem; }
+.reinforce-panel h3 { color: var(--gold); font-size: 0.95rem; margin-bottom: 0; }
+.reinforce-intro { font-size: 0.8rem; color: #8888aa; margin: 0; }
+.reinforce-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.reinforce-row input { width: 4.5rem; }
+.reinforce-loose { color: #8888aa; }
+
 .camp-workers-readout {
   display: flex;
   flex-direction: column;

@@ -15,6 +15,7 @@ import {
   postAcceptFates,
   hireRecruit,
   openRecruit,
+  reinforceSquad,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -83,6 +84,13 @@ const useCampaignStore = create((set, get) => ({
   // body is {entryId} — the day's one hire. There is no skip.
   hireRecruit: async (body) => {
     set({ campaign: await hireRecruit(get().campaign.id, body) })
+  },
+
+  // Top one squad up from the loose pool: {reinforce: {type: bodies}}, all of
+  // it or none. Separate from hireRecruit on purpose — the two Recruit-phase
+  // sinks neither gate nor consume each other.
+  reinforceSquad: async (squadId, body) => {
+    set({ campaign: await reinforceSquad(get().campaign.id, squadId, body) })
   },
 
   fight: async (playerPlacement) => {

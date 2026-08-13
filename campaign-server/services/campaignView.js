@@ -15,9 +15,11 @@ import {
   ENEMY_SUPPLY_BANDS,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
+  SQUAD_REINFORCE_POOL,
   bandLabel,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
+import { squadCaps, squadIntake, looseRoster } from './squadReinforce.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
@@ -326,13 +328,36 @@ export async function campaignView(campaign) {
     // squad at composition {} is a WIPED charter, still on the rolls and still
     // carrying its record, which the client should render as rebuilding rather
     // than as an error.
-    squads: campaign.squads.map(({ id, name, composition, prestige }) => ({
-      id,
-      name,
-      composition: Object.fromEntries(composition),
-      prestige: prestige ?? 0,
-      rank: squadRank(prestige),
+    // `archetype` is the stored id; `caps` and `intake` are RESOLVED from it
+    // here rather than shipped as an id for the client to look up, which is
+    // what keeps SQUAD_ARCHETYPES single-sourced (and is why the document
+    // stores the bare id). `reinforcedToday` reads the reinforcedDay stamp
+    // against today the same way recruit.drawn reads drawnDay — the client
+    // needs the answer, not the ledger.
+    squads: campaign.squads.map((squad) => ({
+      id: squad.id,
+      name: squad.name,
+      composition: Object.fromEntries(squad.composition),
+      prestige: squad.prestige ?? 0,
+      rank: squadRank(squad.prestige),
+      archetype: squad.archetype ?? null,
+      caps: squadCaps(squad),
+      intake: squadIntake(squad),
+      reinforcedToday: squad.reinforcedDay === campaign.day,
     })),
+    // The unassigned remainder per type — roster minus every charter's
+    // composition. Derived server-side because reinforcement now SPENDS it
+    // (services/squadReinforce.js), and the number the panel prices a
+    // reinforcement against must be the one the route will check.
+    loose: looseRoster(campaign),
+    // What a replacement costs, by OUTPUT type: the recipe table projected onto
+    // the wire so the panel can preview a price without a second copy of the
+    // numbers. Shipped ONCE for the army rather than per squad — recipes are
+    // global and the archetype only decides which of them a charter may use
+    // (its `caps` keys), so per-squad copies would be the same rows repeated.
+    reinforceRecipes: Object.fromEntries(
+      SQUAD_REINFORCE_POOL.map((r) => [r.output.type, { count: r.output.count, inputs: r.inputs, cost: r.cost }]),
+    ),
     // Civilian labour pool (own info): available = total − used. Forts and
     // Recruit hires both spend it; the client gates their buttons on
     // `available`.

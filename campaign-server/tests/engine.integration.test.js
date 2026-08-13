@@ -7,7 +7,14 @@ import UnitType from '../models/unitType.js'
 import { startTestDb, stopTestDb } from './helpers/db.js'
 import { engineStatsFixture } from './fixtures/engineStats.js'
 import { RECRUIT_POOL, FALLBACK_HIRE } from '../services/recruit.js'
-import { ENEMY_ARMY, STARTING_ROSTER, STARTING_SQUADS } from '../utils/campaignConfig.js'
+import {
+  ENEMY_ARMY,
+  STARTING_ROSTER,
+  STARTING_SQUADS,
+  SQUAD_ARCHETYPES,
+  SQUAD_TROOP_BUDGET,
+  SQUAD_CHARACTER_RESERVE,
+} from '../utils/campaignConfig.js'
 
 // Contract test against the real C++ binary: what dump-units emits must pass
 // the Mongoose schema unchanged, so the DB can never silently drift from the
@@ -138,5 +145,41 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
       [...startingTypes].sort().filter((n) => !playerTypes.has(n)),
       'in the starting army without the Player role',
     ).toEqual([])
+  }, 30000)
+
+  // ── The hex budget: a bug fence, not a design knob ────────────────────────
+  //
+  // A squad is always ONE formation on ONE hex, so an archetype whose caps
+  // outgrow the hex would field a squad that cannot be placed whole — and the
+  // raid route's addBlock now THROWS rather than scattering it (decisions G
+  // and H). The check needs both halves of the fact and only a run against the
+  // real binary can see them: the caps are campaign config, what a body
+  // occupies is engine data.
+  test('no archetype at full strength outgrows the hex budget', async () => {
+    const catalog = await dumpUnits()
+    const sizeOf = new Map(catalog.units.map((u) => [u.name, u.size]))
+    for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES)) {
+      const points = Object.entries(archetype.caps).reduce((sum, [type, cap]) => {
+        const size = sizeOf.get(type)
+        expect(size, `${id} caps ${type}, which the engine catalog does not know`).toBeDefined()
+        return sum + size * cap
+      }, 0)
+      // Characters sit outside the CAPS but inside the HEX, so their reserve
+      // counts against the same budget — a cap raise that only fits by
+      // borrowing the character's room is exactly the case this catches.
+      expect(
+        points + SQUAD_CHARACTER_RESERVE,
+        `archetype ${id} at full strength does not fit SQUAD_TROOP_BUDGET`,
+      ).toBeLessThanOrEqual(SQUAD_TROOP_BUDGET)
+    }
+  }, 30000)
+
+  // The budget itself must fit the hex it is a budget FOR: 600 + 40 against
+  // Hex::CAPACITY. Pinned to the live grid rather than the 640 in the comments,
+  // so an engine capacity change fails here instead of silently un-fencing the
+  // gate that protects it.
+  test('the squad budget plus its character reserve fits one engine hex', async () => {
+    const info = await getInfo()
+    expect(SQUAD_TROOP_BUDGET + SQUAD_CHARACTER_RESERVE).toBeLessThanOrEqual(info.grid.hexCapacity)
   }, 30000)
 })

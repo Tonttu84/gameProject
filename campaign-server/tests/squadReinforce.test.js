@@ -1,0 +1,320 @@
+import { describe, expect, test } from 'vitest'
+import {
+  archetypeOf,
+  canSquadAccept,
+  findReinforceRecipe,
+  looseRoster,
+  planReinforcement,
+  applyReinforcement,
+  squadSizePoints,
+} from '../services/squadReinforce.js'
+import { catalogFixture } from './fixtures/catalog.js'
+import {
+  SQUAD_ARCHETYPES,
+  SQUAD_REINFORCE_POOL,
+  SQUAD_TROOP_BUDGET,
+  SQUAD_CHARACTER_RESERVE,
+  STARTING_SQUADS,
+} from '../utils/campaignConfig.js'
+
+// Squad reinforcement — the squad overhaul's slice 3 (docs/CAMPAIGN_PLAN.md
+// "SLICE 3 — reinforcement"). This is the pure layer: the recipe table, the
+// per-type headroom, the pooled intake, the size-budget gate and the atomic
+// plan/apply pair. The route wiring is covered in campaigns.test.js.
+
+const sizeOf = new Map(catalogFixture.units.map((u) => [u.name, u.size]))
+
+// A plain-object stand-in for a squad subdocument. The service reads Maps and
+// plain objects alike (mongoose Maps ARE Maps) so the pure tests need no DB.
+const squad = (overrides = {}) => ({
+  id: 1,
+  name: 'Test Cohort',
+  archetype: 'line',
+  composition: { Soldier: 40 },
+  prestige: 0,
+  ...overrides,
+})
+
+const richEnough = { gold: 1000, materials: 1000, horses: 100, food: 1000 }
+const looseEnough = { Soldier: 100, Archer: 100, Militia: 100, Pikeman: 100, Cavalry: 100, LightCavalry: 100 }
+
+describe('the recipe table', () => {
+  // Inputs and outputs are UNCONNECTED (decision A): one application destroys
+  // everything in `inputs` and creates output.count of output.type. Today
+  // every row happens to be 1:1 and no code path may assume it.
+  test('every row names an output type, a count, inputs and a cost', () => {
+    for (const recipe of SQUAD_REINFORCE_POOL) {
+      expect(recipe.output.count).toBeGreaterThan(0)
+      expect(Object.keys(recipe.inputs).length).toBeGreaterThan(0)
+      expect(typeof recipe.id).toBe('string')
+      expect(Object.values(recipe.cost).every((n) => n > 0)).toBe(true)
+    }
+  })
+
+  test('lookup is by OUTPUT type, and an unknown type has no recipe', () => {
+    expect(findReinforceRecipe('Cavalry').output.type).toBe('Cavalry')
+    expect(findReinforceRecipe('Dragon')).toBeUndefined()
+  })
+
+  test('one recipe per output type — a second row would make the lookup a coin toss', () => {
+    const outputs = SQUAD_REINFORCE_POOL.map((r) => r.output.type)
+    expect(new Set(outputs).size).toBe(outputs.length)
+  })
+
+  // Config invariant (decision B): the archetype owns the FENCE, the recipe
+  // owns the TRANSFORMATION — but a capped type with no recipe is a type the
+  // charter may hold and can never replace, which reads as a silent bug rather
+  // than a design choice.
+  test('every type any archetype caps can actually be reinforced', () => {
+    const capped = new Set(Object.values(SQUAD_ARCHETYPES).flatMap((a) => Object.keys(a.caps)))
+    const missing = [...capped].filter((type) => !findReinforceRecipe(type))
+    expect(missing, 'capped types with no SQUAD_REINFORCE_POOL row').toEqual([])
+  })
+})
+
+describe('archetype invariants', () => {
+  // Slice 2 shipped the archetypes with no invariant test (a chosen trade —
+  // nothing could add troops yet). Slice 3 is where a starting composition
+  // over its own caps would first bite, so the guard lands with the teeth.
+  test('every starting squad names a real archetype and sits within its caps', () => {
+    for (const s of STARTING_SQUADS) {
+      const archetype = SQUAD_ARCHETYPES[s.archetype]
+      expect(archetype, `${s.name} has no archetype row`).toBeDefined()
+      for (const [type, count] of Object.entries(s.composition)) {
+        expect(archetype.caps[type], `${s.name} holds unpermitted ${type}`).toBeDefined()
+        expect(count).toBeLessThanOrEqual(archetype.caps[type])
+      }
+    }
+  })
+
+  // The size-budget invariant over the real engine sizes lives in
+  // engine.integration.test.js — only a run against the binary can see both
+  // the caps and what a body actually occupies.
+  test('every archetype admits at least one type and absorbs at least one body a turn', () => {
+    for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES)) {
+      expect(Object.keys(archetype.caps).length, `${id} permits nothing`).toBeGreaterThan(0)
+      expect(archetype.intake, `${id} can never refill`).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('canSquadAccept', () => {
+  test('headroom is the cap minus what is already there', () => {
+    expect(canSquadAccept(squad({ composition: { Soldier: 35 } }), 'Soldier')).toBe(5)
+    expect(canSquadAccept(squad({ composition: {} }), 'Soldier')).toBe(40)
+  })
+
+  // Over-CAP is INERT, never an error (decision F): the user is content for
+  // squads to run over-strength, so an over-full squad simply offers no room
+  // in that type and shrinks back under the cap through casualties.
+  test('an over-strength squad offers no room, rather than a negative one', () => {
+    expect(canSquadAccept(squad({ composition: { Soldier: 55 } }), 'Soldier')).toBe(0)
+  })
+
+  test('a type the archetype does not permit can never be reinforced', () => {
+    expect(canSquadAccept(squad(), 'Archer')).toBe(0)
+    // …and it keeps fighting: nothing here removes it, it just cannot grow.
+    expect(canSquadAccept(squad({ composition: { Soldier: 40, Archer: 3 } }), 'Archer')).toBe(0)
+  })
+
+  test('a squad with no archetype accepts nothing at all', () => {
+    expect(archetypeOf(squad({ archetype: undefined }))).toBeNull()
+    expect(canSquadAccept(squad({ archetype: undefined }), 'Soldier')).toBe(0)
+    expect(canSquadAccept(squad({ archetype: 'phalanx_of_atlantis' }), 'Soldier')).toBe(0)
+  })
+})
+
+describe('planReinforcement', () => {
+  const plan = (overrides = {}) =>
+    planReinforcement({
+      squad: squad({ composition: { Soldier: 30 } }),
+      request: { Soldier: 5 },
+      sizeOf,
+      loose: looseEnough,
+      resources: richEnough,
+      ...overrides,
+    })
+
+  test('prices the whole request: inputs destroyed, outputs created, cost summed', () => {
+    const soldier = findReinforceRecipe('Soldier')
+    const result = plan()
+    expect(result.error).toBeUndefined()
+    expect(result.outputs).toEqual({ Soldier: 5 })
+    expect(result.inputs).toEqual({ Soldier: 5 * soldier.inputs.Soldier })
+    expect(result.cost).toEqual({
+      gold: 5 * soldier.cost.gold,
+      materials: 5 * soldier.cost.materials,
+    })
+    expect(result.bodies).toBe(5)
+  })
+
+  // A MAP applied ATOMICALLY (decision I): "once per turn per squad" stays
+  // literally true while a mixed archetype still splits its intake across its
+  // types — which vanguard (intake 2, two permitted types) needs on day one.
+  test('a mixed request sums both sides across types', () => {
+    const result = plan({
+      squad: squad({ archetype: 'vanguard', composition: { Cavalry: 5, LightCavalry: 5 } }),
+      request: { Cavalry: 1, LightCavalry: 1 },
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.outputs).toEqual({ Cavalry: 1, LightCavalry: 1 })
+    expect(result.cost).toEqual({ gold: 9, materials: 7, horses: 2 })
+  })
+
+  test('a type with no recipe is refused, naming it', () => {
+    expect(plan({ request: { Dragon: 1 } }).error).toMatch(/Dragon/)
+  })
+
+  // At the ROUTE an over-request is a refusal with nothing spent, never a
+  // silent clamp — a clamp would leave the UI's arithmetic and the server's
+  // disagreeing with nobody noticing.
+  test('asking for more than fits is refused, not clamped', () => {
+    const result = plan({ squad: squad({ composition: { Soldier: 38 } }), request: { Soldier: 5 } })
+    expect(result.error).toMatch(/room for 2/)
+    expect(result.cost).toBeUndefined()
+  })
+
+  test('a type outside the archetype is refused even when the squad already holds some', () => {
+    expect(plan({ request: { Archer: 1 } }).error).toMatch(/Archer/)
+  })
+
+  // Intake is a POOLED per-squad budget metered on the OUTPUT side (decision
+  // C): vanguard's `intake: 2` means at most 2 bodies JOIN this turn, however
+  // many were destroyed to make them.
+  test('the pooled intake caps the bodies that may JOIN this turn', () => {
+    const vanguard = squad({ archetype: 'vanguard', composition: {} })
+    expect(plan({ squad: vanguard, request: { Cavalry: 2 } }).error).toBeUndefined()
+    expect(plan({ squad: vanguard, request: { Cavalry: 3 } }).error).toMatch(/2 replacements/)
+    // Pooled, not per type: 2 of each is 4 bodies and blows the same budget.
+    expect(plan({ squad: vanguard, request: { Cavalry: 2, LightCavalry: 2 } }).error).toMatch(/2 replacements/)
+  })
+
+  test('a full-intake line refill is within the allowance', () => {
+    const line = squad({ composition: { Soldier: 25 } })
+    expect(plan({ squad: line, request: { Soldier: SQUAD_ARCHETYPES.line.intake } }).error).toBeUndefined()
+  })
+
+  // The SIZE BUDGET is a second, INDEPENDENT gate (decision G): over-cap is a
+  // design knob, over-hex is a bug — the engine drops or scatters units that
+  // outgrow a hex, and a squad must always be one formation on one hex.
+  test('the hex budget refuses a reinforcement the cap alone would allow', () => {
+    // An over-strength squad — 60 Soldier where the cap is 40, which decision F
+    // allows an event to produce — still has Pikeman headroom, so the per-type
+    // cap would wave this through. The hex will not: 65 bodies × size 10 = 650,
+    // plus the 40 reserved for characters, against a 600-point budget.
+    const swollen = squad({ composition: { Soldier: 60 } })
+    expect(canSquadAccept(swollen, 'Pikeman')).toBe(10) // the cap is happy
+    const overBudget = plan({ squad: swollen, request: { Pikeman: 5 } })
+    expect(overBudget.error).toMatch(/hex|room|budget/i)
+    // …and the same squad at a size the hex can hold is fine.
+    expect(plan({ squad: squad({ composition: { Soldier: 30 } }), request: { Pikeman: 5 } }).error)
+      .toBeUndefined()
+  })
+
+  test('the character reserve is part of the budget, not spare room beside it', () => {
+    const bodies = (SQUAD_TROOP_BUDGET - SQUAD_CHARACTER_RESERVE) / 10
+    expect(squadSizePoints({ Soldier: bodies }, sizeOf)).toBe(SQUAD_TROOP_BUDGET - SQUAD_CHARACTER_RESERVE)
+    expect(squadSizePoints({ Cavalry: 6, LightCavalry: 6 }, sizeOf)).toBe(240)
+  })
+
+  test('a type the catalog does not know THROWS — a data bug, not a 400', () => {
+    expect(() =>
+      planReinforcement({
+        squad: squad({ composition: { Soldier: 30 } }),
+        request: { Soldier: 1 },
+        sizeOf: new Map(),
+        loose: looseEnough,
+        resources: richEnough,
+      }),
+    ).toThrow(/Soldier/)
+  })
+
+  test('the loose pool must actually hold the bodies being destroyed', () => {
+    const result = plan({ loose: { Soldier: 2 } })
+    expect(result.error).toMatch(/unassigned|loose/i)
+  })
+
+  test('the stores must cover the whole request, summed', () => {
+    expect(plan({ resources: { gold: 4, materials: 1000 } }).error).toMatch(/gold/)
+    expect(
+      plan({
+        squad: squad({ archetype: 'vanguard', composition: {} }),
+        request: { Cavalry: 1 },
+        resources: { gold: 100, materials: 100, horses: 0 },
+      }).error,
+    ).toMatch(/horses/)
+  })
+
+  test('an empty or malformed request is refused', () => {
+    expect(plan({ request: {} }).error).toBeTruthy()
+    expect(plan({ request: undefined }).error).toBeTruthy()
+    expect(plan({ request: { Soldier: 0 } }).error).toBeTruthy()
+    expect(plan({ request: { Soldier: -2 } }).error).toBeTruthy()
+    expect(plan({ request: { Soldier: 1.5 } }).error).toBeTruthy()
+  })
+})
+
+describe('looseRoster', () => {
+  // The invariant the whole campaign layer rests on: loose = roster − Σ
+  // squads.composition. Reinforcement is the first thing that moves a body
+  // ACROSS that line rather than adding to both sides.
+  test('is the roster minus every squad’s committed bodies', () => {
+    const campaign = {
+      roster: new Map([['Soldier', 100], ['Archer', 40], ['Militia', 5]]),
+      squads: [
+        { composition: new Map([['Soldier', 40]]) },
+        { composition: new Map([['Soldier', 10], ['Archer', 30]]) },
+      ],
+    }
+    expect(looseRoster(campaign)).toEqual({ Soldier: 50, Archer: 10, Militia: 5 })
+  })
+})
+
+describe('applyReinforcement', () => {
+  const campaignDoc = () => ({
+    day: 4,
+    resources: { gold: 100, materials: 100, horses: 10, food: 1000 },
+    roster: new Map([['Soldier', 100]]),
+    squads: [{ id: 1, name: '1st Cohort', archetype: 'line', composition: new Map([['Soldier', 30]]) }],
+  })
+
+  test('destroys the inputs, creates the outputs, charges the cost, stamps the day', () => {
+    const campaign = campaignDoc()
+    const target = campaign.squads[0]
+    const plan = planReinforcement({
+      squad: target,
+      request: { Soldier: 5 },
+      sizeOf,
+      loose: looseRoster(campaign),
+      resources: campaign.resources,
+    })
+    const log = applyReinforcement(campaign, target, plan)
+
+    // 1:1 today: five loose bodies destroyed, five created inside the charter,
+    // so the roster total is unchanged and only the LOOSE count moved.
+    expect(campaign.roster.get('Soldier')).toBe(100)
+    expect(target.composition.get('Soldier')).toBe(35)
+    expect(looseRoster(campaign).Soldier).toBe(65)
+    expect(campaign.resources.gold).toBe(100 - plan.cost.gold)
+    expect(campaign.resources.materials).toBe(100 - plan.cost.materials)
+    expect(target.reinforcedDay).toBe(campaign.day)
+    expect(log.join(' ')).toMatch(/1st Cohort/)
+  })
+
+  // Inputs and outputs are unconnected, so the roster is NOT conserved in
+  // general — a many-to-one recipe really does shrink the army. The apply step
+  // must move both sides independently rather than assuming a swap.
+  test('a many-to-one recipe destroys more bodies than it creates', () => {
+    const campaign = campaignDoc()
+    const target = campaign.squads[0]
+    applyReinforcement(campaign, target, {
+      inputs: { Soldier: 4 },
+      outputs: { Soldier: 1 },
+      cost: { gold: 2 },
+      bodies: 1,
+    })
+    expect(campaign.roster.get('Soldier')).toBe(97)
+    expect(target.composition.get('Soldier')).toBe(31)
+    expect(campaign.resources.gold).toBe(98)
+  })
+})

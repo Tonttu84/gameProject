@@ -87,29 +87,80 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-08-13) — START HERE
 
-Everything below this block is history; this is the live front. Schema version **33**.
-**Slices 1 and 2 of the squad overhaul are SHIPPED — start with SLICE 3: reinforcement.**
+Everything below this block is history; this is the live front. Schema version **34**.
+**Slices 1, 2 and 3 of the squad overhaul are SHIPPED — the next slice is the UPGRADE CATALOG
+(decision 8), then characters, then banners, then the squad screen (decision 13, still last).**
 
-Slice 3 is the first slice with TEETH: slice 2 stored the archetype and its caps but enforces
-nothing, deliberately (see "SLICE 2" below), because nothing adds troops to a squad until
-reinforcement exists. `canSquadAccept`-style validation, the once-per-turn intake, the
-conversion cost and the Recruit-phase wiring all land together in slice 3 — and that is where
-a starting composition exceeding its own caps would first bite, since slice 2 shipped without
-an invariant test guarding it (a chosen trade, not an oversight).
+Squads can now take replacements: the caps have teeth, the intake meters them, the hex is fenced,
+and the Recruit screen has the button. What the next slice needs to know before it starts:
 
-**▶ SLICE 3 IS NOW FULLY SPEC'D — interviewed 2026-08-13, eleven decisions, nothing open. Follow
-"SLICE 3 — reinforcement (SPEC'D 2026-08-13)" further down; do NOT re-derive it from the decision
-list.** Headlines a cold session should not get wrong: a recipe's **inputs and outputs are
-unconnected** (destroy inputs, create outputs — many-to-one and one-to-many are both intended);
-`intake` is a **pooled** budget metered on the **output** side; over-CAP is inert and fine, while
-over-**hex-budget** is fenced hard by a second gate plus a config invariant; and
-`enemyPlacement.addBlock` **throws** instead of silently splitting or dropping — the user's
-standing call is **loud failures, no silent fallbacks, while the design is early**.
+- **Prestige is EARNED and READ but still gates nothing.** The upgrade catalog is the first thing
+  that will read `squadRank` for gating — the numbers and the ladder are already settled (slice 1).
+- **The upgrade catalog is NOT designed yet.** Decision 8 names the shape (a shared pool gated by
+  archetype, plus signature per-squad ones) and six candidate upgrades, but no costs, no tiers and
+  no unlock thresholds exist. That is a DESIGN interview, not a build — grill before building.
+- **Two upgrade candidates now have live seams to hook into:** bigger caps and faster intake are
+  `SQUAD_ARCHETYPES` values today, resolved into `campaignView` per squad, so a per-squad modifier
+  layer would sit between the archetype row and `squadCaps()`/`squadIntake()` in
+  `services/squadReinforce.js`. Formation-fighters is the awkward one — it changes the packing size,
+  which is exactly the "two sizes" split written up under slice 2 and does not exist in the engine
+  yet.
+- **The hex budget is the invariant to respect.** A cap-raising upgrade must not be able to push a
+  squad past `SQUAD_TROOP_BUDGET`; `engine.integration.test.js` enforces that for archetypes, and an
+  upgrade layer needs the same guard (the config invariant only sees the base rows).
 
 **▶ THE ACTIVE FRONT IS "NEXT UP — THE SQUAD OVERHAUL", immediately below. It is fully designed;
-slices 1-2 are built and the rest is ready to BUILD.** Nineteen decisions, all interviewed and
+slices 1-3 are built and the rest is ready to BUILD.** Nineteen decisions, all interviewed and
 recorded, nothing open. Two things are deliberately deferred and must NOT be invented to fill the
 gap: the basic banner's bonus, and the plain banner's spell-cost role.
+
+**SLICE 3 — reinforcement — ✅ SHIPPED 2026-08-13 (schema v34).** Built TDD off the eleven-decision
+spec below (kept verbatim — it is still the reference for WHY, and nothing in it was overturned).
+campaign-server 697/697 across 27 files, frontend 283/283 across 37 files, oxlint clean, engine
+untouched. What landed:
+
+- **`SQUAD_REINFORCE_POOL`** in `campaignConfig.js` — one global table, looked up by OUTPUT type,
+  six rows at the spec's prices. **`SQUAD_CHARACTER_RESERVE = 40`** became a real constant (it was
+  a comment), because the budget gate has to do arithmetic with it.
+- **`services/squadReinforce.js`** — `archetypeOf`/`squadCaps`/`squadIntake`/`canSquadAccept`/
+  `squadSizePoints`/`looseRoster`, plus the plan-then-apply pair (`planReinforcement` decides and
+  prices, `applyReinforcement` is the only thing that writes). That split is what makes the route's
+  atomic contract cheap: a refusal has spent nothing because nothing ran.
+- **`POST /:id/squads/:squadId/reinforce`**, phase-guarded to Recruit exactly like the hire (the
+  draw stamp is the door in, `rejectIfPhasePassed` the door out), body `{reinforce: {type: n}}`,
+  ledgered by **`squads[].reinforcedDay`** (schema 33 → 34).
+- **`enemyPlacement.addBlock` now THROWS** on all three old fallbacks, and `add` returns the number
+  it left off the field instead of swallowing it. The three tests that asserted the fallbacks were
+  rewritten to assert the throws, with the reasoning kept in the test comments.
+- **The invariants slice 2 skipped**, in two places by necessity: the pure ones (every capped type
+  has a recipe, one recipe per output type, every starting composition inside its own caps) in
+  `tests/squadReinforce.test.js`; the SIZE ones in `tests/engine.integration.test.js`, because only
+  a run against the real binary can see both the caps and what a body occupies. The budget itself is
+  pinned against the live `Hex::CAPACITY` rather than the 640 in the comments.
+- **`docs/ECONOMY.md`** — the rough price reference, linked from the top of `campaignConfig.js`.
+- **UI**: `components/SquadReinforcePanel.jsx` inside `RecruitPanel` — per-type headroom
+  ("30/40 Soldier"), the pooled intake readout, a live cost preview and one submit per squad.
+
+**Three build-time calls worth not re-litigating:**
+
+1. **The wire carries `reinforcedToday` (a boolean), not `reinforcedDay`.** The spec said the stamp;
+   the view's standing convention is to answer the question instead (`recruit.drawn` is exactly
+   `drawnDay === day`). Shipping both would have been the `placeable`/`spawnable` mistake. The
+   DOCUMENT stores the day, which is what decision I actually needed.
+2. **`campaignView` also ships `reinforceRecipes`** (and a top-level `loose`), which decision K did
+   not list. The panel has to preview a cost, and the alternative was a second copy of the price
+   table client-side. Shipped ONCE for the army rather than per squad, since recipes are global and
+   the archetype only decides which of them a charter may use.
+3. **Reinforcing can make the day's SEALED hire offer unaffordable, and that is allowed.** The two
+   sinks share the purse even though neither gates the other (decision I), so spending the coin on
+   replacements really can put a 100-gold caster out of reach after the offer was drawn against it.
+   The phase cannot deadlock — the free Travellers card is always hireable — so this is a trade the
+   player makes, not a stranding. It is the one place the Recruit phase's "nothing can move
+   resources between draw and hire" property no longer holds, and it holds deliberately.
+
+**What is NOT in slice 3** (unchanged from the spec): the upgrade catalog, characters, banners, the
+item store, the squad inspection screen, per-archetype recipe overrides, and making the loose `add`
+path fatal.
 
 **SLICE 2 — archetypes and per-type caps — ✅ SHIPPED 2026-08-13 (schema v33).** Interviewed
 before building (the numbers are the user's, not assumed); campaign-server 654/654. What landed
@@ -455,6 +506,9 @@ carries them.
   before or beside the squad screen that shows the assigned end of the same relationship.
 
 **SLICE 3 — reinforcement (SPEC'D 2026-08-13, interviewed before building; schema v33 → v34).**
+**✅ BUILT 2026-08-13 exactly as written — see the shipped write-up under "Where the work stands"
+for the three build-time calls that went beyond it. Kept in full because it is still the record of
+WHY each rule is the way it is.**
 Eleven decisions, all the user's. This is the slice with TEETH: slice 2 stored the archetype and
 its caps and enforces nothing, because nothing added troops to a squad until now. Build it TDD.
 

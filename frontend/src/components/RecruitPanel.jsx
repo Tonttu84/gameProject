@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
+import SquadReinforcePanel from './SquadReinforcePanel'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
 
@@ -21,9 +22,9 @@ const costLabel = (cost) =>
     .map(([key, n]) => `${n} ${RESOURCE_LABELS[key] ?? key}`)
     .join(', ') || 'free'
 
-// recruit/resources/workers come straight from the campaign store; onHire is
-// still a prop (a guarded action).
-const RecruitPanel = ({ onHire }) => {
+// recruit/resources/workers come straight from the campaign store; onHire and
+// onReinforce are still props (guarded actions).
+const RecruitPanel = ({ onHire, onReinforce }) => {
   const recruit = useCampaignStore((s) => s.campaign?.recruit)
   const resources = useCampaignStore((s) => s.campaign?.resources)
   const workers = useCampaignStore((s) => s.campaign?.workers)
@@ -114,6 +115,11 @@ const RecruitPanel = ({ onHire }) => {
           })}
         </>
       )}
+      {/* The phase's OTHER sink, and deliberately below the hire: the hire is
+          the mandatory exit, replacements are optional. Neither gates the
+          other server-side (docs/CAMPAIGN_PLAN.md "SLICE 3", decision I), so
+          this section stays live once the day's hire is resolved. */}
+      <SquadReinforcePanel onReinforce={onReinforce} />
     </div>
   )
 }
