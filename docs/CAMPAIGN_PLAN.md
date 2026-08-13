@@ -275,9 +275,25 @@ round-trips and everything above is blocked on it. **Schema bump** (currently v3
 and caps, then reinforcement/conversion, then the upgrade catalog, then characters, then banners,
 then the screen.
 
-**Still open — ask, do not assume:** what benefit the *basic* banner carries; how *item* banners are
-acquired (rewards, purchase and prestige were all raised, none chosen); and the wipe/rebuild terms
-(what re-crewing a zeroed charter costs), which the interview never reached.
+**14. A wiped squad is ANSWERED — nothing special happens (user, 2026-08-10).** There are no
+re-buy terms, no rebuild cost, no special state. A charter at zero is simply a charter at zero: it
+refills through the ordinary per-turn intake (4), taking suitable troops from the loose pool until
+it is no longer empty. Resist adding a wipe mechanic — the charter model already covers it, and the
+question only looked open because it was asked in currency terms.
+
+  **The consequence to watch when tuning.** Recovery speed IS the intake stat, so a wipe punishes
+  the elite-small archetype twice: it was already the picky, slow-to-absorb one, and now it has the
+  furthest to climb. That is the intended shape of the trade, not a bug — but it is where an elite
+  charter could become dead weight for many turns, so it is the first thing to look at if elites
+  feel unplayable after a bad raid.
+
+  **Guard: an empty squad must not be sendable.** Committing a zero-troop charter to a raid or a
+  battle should be refused — server-side, since that is the trust boundary, with the UI greying it
+  out as a courtesy rather than as the enforcement.
+
+**Still open — ask, do not assume:** what benefit the *basic* banner carries, and how *item* banners
+are acquired (rewards, purchase and prestige were all raised, none chosen). Everything else in this
+section is decided.
 
 **What is actually open:**
 - ~~**An unidentified C++ flake.**~~ **CAUGHT AND FIXED 2026-08-10 — seed `446545517`.**
