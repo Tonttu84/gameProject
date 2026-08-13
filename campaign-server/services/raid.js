@@ -376,8 +376,12 @@ export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
     for (const [type, n] of entriesOf(redSurvivors))
       campaign.enemy.army.set(type, Math.max(0, (campaign.enemy.army.get(type) ?? 0) - n))
     entries.push('The detachment is wiped out — the enemy host is the thinner for it.')
-    // Prestige stub (Stage E, docs/CAMPAIGN_PLAN.md): no mechanic yet.
-    entries.push('A prestigious victory — word of it spreads (prestige not yet tracked).')
+    // The prestige STUB that used to sit here is gone (slice 1): prestige is
+    // real now and is awarded to the squads that went, by the raid route, for
+    // every raid rather than only this card. This line stays as flavour only —
+    // it must not read as if it were the award, or the player will look for a
+    // number that lands somewhere else.
+    entries.push('A prestigious victory — word of it spreads.')
     const { gold = 0 } = opportunity.reward ?? {}
     if (gold) {
       campaign.resources.gold += gold

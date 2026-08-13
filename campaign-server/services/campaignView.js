@@ -3,6 +3,7 @@ import {
   armyFoodPerTurn,
   reconBand,
   reconLevel,
+  squadRank,
   SCOUTING_BANDS,
 } from '../utils/capabilities.js'
 import {
@@ -319,10 +320,18 @@ export async function campaignView(campaign) {
     // reflected inside `roster` above; the client derives the loose
     // (unassigned) remainder the same way it already derives forage
     // availability — roster minus what's committed elsewhere.
-    squads: campaign.squads.map(({ id, name, composition }) => ({
+    // `prestige` is the raw permanent rank score and `rank` its word — both own
+    // info, nothing hidden. The word is derived here rather than client-side so
+    // the ladder's thresholds stay one server-side constant (SQUAD_RANKS); a
+    // squad at composition {} is a WIPED charter, still on the rolls and still
+    // carrying its record, which the client should render as rebuilding rather
+    // than as an error.
+    squads: campaign.squads.map(({ id, name, composition, prestige }) => ({
       id,
       name,
       composition: Object.fromEntries(composition),
+      prestige: prestige ?? 0,
+      rank: squadRank(prestige),
     })),
     // Civilian labour pool (own info): available = total − used. Forts and
     // Recruit hires both spend it; the client gates their buttons on

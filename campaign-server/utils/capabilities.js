@@ -5,6 +5,10 @@ import {
   RAID_CAPACITY_SPEED_SCALE,
   BASELINE_ACCURACY,
   ACCURACY_PER_BALLISTIC,
+  RAID_STRENGTH_BANDS,
+  RAID_PRESTIGE_JOIN_PER_BAND,
+  RAID_PRESTIGE_WIN_PER_BAND,
+  SQUAD_RANKS,
 } from './campaignConfig.js'
 
 // Campaign-layer unit capabilities, DERIVED from the engine-exported combat
@@ -107,4 +111,37 @@ export const armyFoodPerTurn = (army, catalog) => {
   for (const [type, count] of entries)
     total += count * foodPerTurn(catalog.get(type)?.size ?? 10)
   return Math.ceil(total)
+}
+
+// ── Squad prestige (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL") ────
+// A squad's prestige is a PERMANENT rank that gates its upgrades and is never
+// spent. These are the pure derivations; the award is applied in the raid
+// route, and nothing reads the rank for gating yet (slice 1 earns and keeps it).
+
+// How much a raid's strength band is worth, 1 (weakest) .. N (strongest).
+// RAID_STRENGTH_BANDS is ordered STRONGEST FIRST, so the weight is the reverse
+// index — derived rather than a second hardcoded table, so adding a band cannot
+// silently leave its weight behind. An unknown label is worth 0 rather than
+// throwing: a band that has left the table must not be able to 500 a raid that
+// otherwise resolved fine.
+export const raidBandWeight = (label) => {
+  const i = RAID_STRENGTH_BANDS.findIndex((b) => b.label === label)
+  return i < 0 ? 0 : RAID_STRENGTH_BANDS.length - i
+}
+
+// Prestige a squad earns for one raid. Winning REPLACES the participation
+// award — it does not stack on top of it — so the win rate is the whole payout
+// for a won raid.
+export const raidPrestige = (strengthBand, won) =>
+  raidBandWeight(strengthBand) *
+  (won ? RAID_PRESTIGE_WIN_PER_BAND : RAID_PRESTIGE_JOIN_PER_BAND)
+
+// The rank word for a cumulative prestige total. First match down a
+// strongest-first ladder, so the top rank absorbs everything above its
+// threshold (prestige is uncapped) and a missing/undefined value — a squad
+// document written before the field existed — reads as the lowest rank rather
+// than crashing the view.
+export const squadRank = (prestige) => {
+  const value = prestige ?? 0
+  return (SQUAD_RANKS.find((r) => value >= r.min) ?? SQUAD_RANKS.at(-1)).label
 }

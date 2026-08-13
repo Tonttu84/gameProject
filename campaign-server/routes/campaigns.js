@@ -23,7 +23,7 @@ import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '..
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
 import { getCatalog } from '../utils/catalog.js'
-import { raidCapacityCost, fieldPointsFor } from '../utils/capabilities.js'
+import { raidCapacityCost, fieldPointsFor, raidPrestige } from '../utils/capabilities.js'
 import config from '../utils/config.js'
 import {
   MAP_NAME,
@@ -480,17 +480,14 @@ router.post('/:id/battles', async (req, res) => {
   // folded into the flat roster reconciliation above as loose troops.
   // Squads left in camp (not in fieldedSquadIds) are untouched.
   const squadSurvivors = summary.blue_squads ?? {}
-  campaign.squads = campaign.squads
-    .filter((squad) => {
-      if (!fieldedSquadIds.has(squad.id)) return true
-      const result = squadSurvivors[String(squad.id)]
-      return Boolean(result) && !result.wiped
-    })
-    .map((squad) => {
-      if (fieldedSquadIds.has(squad.id))
-        squad.composition = squadSurvivors[String(squad.id)].survivors
-      return squad
-    })
+  campaign.squads = campaign.squads.map((squad) => {
+    if (!fieldedSquadIds.has(squad.id)) return squad
+    // Never disbanded — the charter outlives its troops and stays on the rolls
+    // at composition {} with its name and prestige intact (decision 14), the
+    // same rule the raid route applies.
+    squad.composition = squadSurvivors[String(squad.id)]?.survivors ?? {}
+    return squad
+  })
   campaign.battleFoughtToday = true
   campaign.battles.push(battle._id)
 
@@ -586,6 +583,14 @@ router.post('/:id/raids/launch', async (req, res) => {
       if (batchSquads.has(sid))
         return res.status(400).json({ error: `squad ${sid} is assigned to two raids at once` })
       batchSquads.add(sid)
+      // A charter survives a wipe at composition {} (docs/CAMPAIGN_PLAN.md
+      // decision 14), so an EMPTY squad is a normal state rather than an
+      // impossible one — and it must not be sendable. Checked per squad, not
+      // just on the party total below: otherwise an empty charter rides along
+      // on a real squad's coat-tails and "goes on a raid" it cannot fight,
+      // burning its once-per-turn raid slot for nothing.
+      if (![...squad.composition.values()].some((n) => n > 0))
+        return res.status(400).json({ error: `squad ${sid} has no troops to send` })
       squads.push(squad)
       for (const [type, n] of squad.composition) {
         if (n <= 0) continue
@@ -659,16 +664,16 @@ router.post('/:id/raids/launch', async (req, res) => {
     // invariant loose = roster − Σ squads.composition − forage intact.
     const squadSurvivors = summary.blue_squads ?? {}
     const raidedIds = new Set(squads.map((s) => s.id))
-    campaign.squads = campaign.squads
-      .filter((squad) => {
-        if (!raidedIds.has(squad.id)) return true
-        const result = squadSurvivors[String(squad.id)]
-        return Boolean(result) && !result.wiped
-      })
-      .map((squad) => {
-        if (raidedIds.has(squad.id)) squad.composition = squadSurvivors[String(squad.id)].survivors
-        return squad
-      })
+    campaign.squads = campaign.squads.map((squad) => {
+      if (!raidedIds.has(squad.id)) return squad
+      // The charter is NEVER disbanded — a wiped squad stays on the rolls at
+      // composition {} keeping its name and prestige, and refills from the
+      // loose pool later (docs/CAMPAIGN_PLAN.md decision 14: "nothing special
+      // happens"). This is load-bearing for prestige: disbanding here would
+      // destroy the very record slice 1 exists to persist.
+      squad.composition = squadSurvivors[String(squad.id)]?.survivors ?? {}
+      return squad
+    })
     campaign.raid.squadAssignment.push(...raidedIds)
 
     // destroy_detachment (and a thins-enemy garrison_sortie, slice 4) inflict
@@ -695,6 +700,23 @@ router.post('/:id/raids/launch', async (req, res) => {
           } after ${summary.tickCount} turns.`,
     ]
     if (won) entries.push(...applyRaidReward(campaign, opportunity, summary.red_survivors))
+
+    // Squad prestige (docs/CAMPAIGN_PLAN.md slice 1). Every squad that WENT
+    // earns, win or lose — a beaten squad has still been blooded — but a win
+    // pays the higher rate INSTEAD of the participation one, and both scale
+    // with the target's strength band so farming the easiest card on the board
+    // cannot rank a squad up. Awarded to the charter, which by now has survived
+    // the reconciliation above even if every one of its troops died.
+    const prestige = raidPrestige(opportunity.strengthBand, won)
+    if (prestige > 0) {
+      for (const squad of campaign.squads)
+        if (raidedIds.has(squad.id)) squad.prestige = (squad.prestige ?? 0) + prestige
+      const names = campaign.squads.filter((s) => raidedIds.has(s.id)).map((s) => s.name)
+      entries.push(
+        `${names.join(' and ')} ${names.length > 1 ? 'earn' : 'earns'} ${prestige} prestige.`,
+      )
+    }
+
     opportunity.resolved = true
     opportunity.outcome = { winner: summary.winner, battleId: battle.id }
     campaign.battles.push(battle._id)

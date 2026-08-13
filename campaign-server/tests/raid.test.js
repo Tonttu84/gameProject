@@ -28,7 +28,7 @@ const { default: UnitType } = await import('../models/unitType.js')
 const { generateRaidOpportunities, revealField, addScoutedTarget } = await import(
   '../services/raid.js'
 )
-const { raidCapacityCost } = await import('../utils/capabilities.js')
+const { raidCapacityCost, raidPrestige } = await import('../utils/capabilities.js')
 const {
   RAID_BASE_TARGETS,
   RAID_TARGET_FRACTION,
@@ -622,9 +622,15 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     expect(doc.enemy.army.get('Soldier')).toBe(540 - 10) // 30 sent − 20 survived
     expect(doc.enemy.army.get('Archer')).toBe(150 - 5)   // 10 sent − 5 survived
     expect(doc.raid.opportunities[0].resolved).toBe(true)
-    // A loss runs no reward path — no "wiped out"/"prestigious" lines.
+    // A loss runs no REWARD path — neither of applyRaidReward's two lines.
+    // Narrowed from a loose /prestig/ match by slice 1: a lost raid now DOES
+    // log a prestige award (participating earns, win or lose), so matching the
+    // word alone would fail on the very thing the design intends.
     const allEntries = doc.log.flatMap((l) => l.entries)
-    expect(allEntries.some((e) => /wiped out|prestig/i.test(e))).toBe(false)
+    expect(allEntries.some((e) => /wiped out/i.test(e))).toBe(false)
+    expect(allEntries.some((e) => /word of it spreads/i.test(e))).toBe(false)
+    // The participation award, on the other hand, IS expected on a loss.
+    expect(allEntries.some((e) => /earns \d+ prestige/i.test(e))).toBe(true)
   })
 
   test('destroy_detachment: a WIN with survivors pursues the remainder — whole slice gone, plus a prestige stub', async () => {
@@ -804,8 +810,12 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
     const res = await launch(c.id, 'd1-0', [1])
     expect(res.status).toBe(201)
     expect(res.body.campaign.roster.Soldier).toBe(300 - 40) // the whole party is lost
-    // The wiped 1st Cohort is disbanded.
-    expect(res.body.campaign.squads.find((s) => s.id === 1)).toBeUndefined()
+    // The 1st Cohort lost every man but is NOT disbanded — the charter stays on
+    // the rolls at zero and refills later (docs/CAMPAIGN_PLAN.md decision 14).
+    // Changed with slice 1; this used to assert the squad was gone.
+    const cohort = res.body.campaign.squads.find((s) => s.id === 1)
+    expect(cohort).toBeDefined()
+    expect(cohort.composition).toEqual({})
     expect(res.body.campaign.resources.food).toBe(50000) // no loot
     expect(res.body.campaign.resources.materials).toBe(200)
     const [opportunity] = res.body.campaign.raid.opportunities
@@ -866,6 +876,154 @@ describe('POST /api/campaigns/:id/raids/launch (batch)', () => {
 // the raid.assignment carve-out) — what differs is the reward: a WON sally feeds
 // the hidden resolve track (never a number in the log), and a thins-enemy
 // version books its real casualties on the host like destroy_detachment.
+// ── Squad prestige + charter survival (slice 1) ─────────────────────────────
+// docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL": prestige is a permanent
+// rank earned mainly from raids, and a wiped squad stays on the rolls at zero
+// rather than being disbanded — otherwise its prestige dies with it and the
+// persistence is a fiction.
+describe('POST .../raids/launch — squad prestige', () => {
+  const prestigeOf = (body, id) => body.campaign.squads.find((s) => s.id === id).prestige
+
+  test('a won raid pays the WIN rate, scaled by the target band', async () => {
+    engine.runBattle.mockResolvedValue(battleResult())
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ strengthBand: 'a handful' })])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    // 'a handful' is band weight 1 → a win pays 1 × RAID_PRESTIGE_WIN_PER_BAND.
+    expect(prestigeOf(res.body, 1)).toBe(raidPrestige('a handful', true))
+    expect(prestigeOf(res.body, 1)).toBe(2)
+  })
+
+  test('a stronger target pays more for the same win', async () => {
+    engine.runBattle.mockResolvedValue(battleResult())
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ strengthBand: 'a strong detachment' })])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(prestigeOf(res.body, 1)).toBe(raidPrestige('a strong detachment', true))
+    expect(prestigeOf(res.body, 1)).toBe(8)
+  })
+
+  test('a LOST raid still pays the participation rate', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ winner: 'red', blue_squads: { 1: { survivors: { Soldier: 5 }, wiped: false } } }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ strengthBand: 'a full company' })])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+    expect(prestigeOf(res.body, 1)).toBe(raidPrestige('a full company', false))
+    expect(prestigeOf(res.body, 1)).toBe(3)
+  })
+
+  test('prestige ACCUMULATES across turns and is never spent', async () => {
+    engine.runBattle.mockResolvedValue(battleResult())
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP()])
+    await launch(c.id, 'd1-0', [1])
+    // QUIET, like every other cross-turn test here: an unpinned augury can seal
+    // a CHOICE fate, whose pendingChoice 409s the next turn's raid launch.
+    await pinAugury(c.id, QUIET)
+    await endTurn(c.id)
+
+    await pinRaid(c.id, [OPP({ id: 'd2-0' })])
+    const res = await launch(c.id, 'd2-0', [1])
+    expect(prestigeOf(res.body, 1)).toBe(raidPrestige('a handful', true) * 2)
+
+    // And it survived the round-trip, not just the response.
+    const doc = await Campaign.findById(c.id)
+    expect(doc.squads.find((s) => s.id === 1).prestige).toBe(4)
+  })
+
+  test('only the squads that went earn it', async () => {
+    engine.runBattle.mockResolvedValue(battleResult())
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP()])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(prestigeOf(res.body, 1)).toBeGreaterThan(0)
+    // Squads 2 and 3 stayed in camp.
+    expect(prestigeOf(res.body, 2)).toBe(0)
+    expect(prestigeOf(res.body, 3)).toBe(0)
+  })
+
+  test('every squad in a stacked party earns, not just the first', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({
+        blue_squads: {
+          1: { survivors: { Soldier: 30 }, wiped: false },
+          2: { survivors: { Archer: 20 }, wiped: false },
+        },
+      }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ capacity: 5000 })])
+
+    const res = await launch(c.id, 'd1-0', [1, 2])
+    expect(res.status).toBe(201)
+    expect(prestigeOf(res.body, 1)).toBe(raidPrestige('a handful', true))
+    expect(prestigeOf(res.body, 2)).toBe(raidPrestige('a handful', true))
+  })
+})
+
+describe('POST .../raids/launch — a wiped charter survives', () => {
+  test('a wiped squad stays on the rolls at zero, keeping its name and prestige', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: {}, wiped: true } } }),
+    )
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP()])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+
+    // The charter is NOT disbanded — decision 14: nothing special happens, it
+    // is simply a charter at zero that refills later.
+    const squad = res.body.campaign.squads.find((s) => s.id === 1)
+    expect(squad).toBeDefined()
+    expect(squad.name).toBe('1st Cohort')
+    expect(squad.composition).toEqual({})
+    // And it still earned the raid's prestige — that is the whole point of the
+    // charter surviving.
+    expect(squad.prestige).toBe(raidPrestige('a handful', true))
+
+    const doc = await Campaign.findById(c.id)
+    expect(doc.squads.find((s) => s.id === 1)).toBeDefined()
+  })
+
+  test('an EMPTY squad cannot be sent on a raid', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP()])
+    // Empty the 1st Cohort without removing the charter.
+    const doc = await Campaign.findById(c.id)
+    doc.squads.find((s) => s.id === 1).composition = new Map()
+    await doc.save()
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/no troops/i)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('an empty squad cannot ride along in a party with a real one', async () => {
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ capacity: 5000 })])
+    const doc = await Campaign.findById(c.id)
+    doc.squads.find((s) => s.id === 2).composition = new Map()
+    await doc.save()
+
+    // Squad 1 is fine, squad 2 is empty — the party must still be refused,
+    // rather than the empty one slipping through on the other's coat-tails.
+    const res = await launch(c.id, 'd1-0', [1, 2])
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/no troops/i)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+})
+
 describe('POST .../raids/launch — garrison sortie', () => {
   const SORTIE = (over = {}) =>
     OPP({

@@ -1290,10 +1290,12 @@ describe('POST /api/campaigns/:id/battles', () => {
 
     test('a fresh campaign seeds STARTING_SQUADS', async () => {
       const { body: c } = await createCampaign()
+      // prestige/rank joined the wire shape in slice 1 — a fresh squad starts
+      // at 0 and reads as the lowest rank.
       expect(c.squads).toEqual([
-        { id: 1, name: '1st Cohort', composition: { Soldier: 40 } },
-        { id: 2, name: 'Skirmishers', composition: { Archer: 30 } },
-        { id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 } },
+        { id: 1, name: '1st Cohort', composition: { Soldier: 40 }, prestige: 0, rank: 'Untested' },
+        { id: 2, name: 'Skirmishers', composition: { Archer: 30 }, prestige: 0, rank: 'Untested' },
+        { id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 }, prestige: 0, rank: 'Untested' },
       ])
     })
 
@@ -1309,14 +1311,14 @@ describe('POST /api/campaigns/:id/battles', () => {
       const res = await fieldSquad(c.id, squad)
       expect(res.status).toBe(201)
       expect(res.body.campaign.squads).toEqual([
-        { id: 1, name: '1st Cohort', composition: { Soldier: 1 } },
+        { id: 1, name: '1st Cohort', composition: { Soldier: 1 }, prestige: 0, rank: 'Untested' },
       ])
     })
 
-    test('a wiped squad is disbanded after battle', async () => {
+    test('a broken squad keeps its charter and its stragglers rejoin it', async () => {
       const squad = { id: 1, name: '1st Cohort', composition: { Soldier: 2 } }
       const result = structuredClone(battleResultFixture)
-      // Both members broke and fled — stragglers, not a standing formation.
+      // Both members broke and fled — the FORMATION is gone, but the men lived.
       result.blue_survivors = { Soldier: 2 }
       result.blue_squads = { 1: { survivors: { Soldier: 2 }, wiped: true } }
       engine.runBattle.mockResolvedValue(result)
@@ -1326,9 +1328,13 @@ describe('POST /api/campaigns/:id/battles', () => {
 
       const res = await fieldSquad(c.id, squad)
       expect(res.status).toBe(201)
-      expect(res.body.campaign.squads).toEqual([])
-      // The stragglers still count toward the roster — only the squad's
-      // organized identity is lost, not the troops themselves.
+      // CHANGED by slice 1 — this used to assert the squad was disbanded and
+      // its stragglers scattered into the loose pool. The charter is permanent
+      // now (decision 14) and broken-but-surviving troops rejoin it after the
+      // battle (decision 7), which is what keeps squad-exclusive elite types
+      // from leaking out of the squad that owns them.
+      expect(res.body.campaign.squads).toHaveLength(1)
+      expect(res.body.campaign.squads[0].composition).toEqual({ Soldier: 2 })
       expect(res.body.campaign.roster.Soldier).toBe(2)
     })
 
@@ -1355,8 +1361,8 @@ describe('POST /api/campaigns/:id/battles', () => {
       })
       expect(res.status).toBe(201)
       expect(res.body.campaign.squads).toEqual([
-        { id: 1, name: '1st Cohort', composition: { Soldier: 2 } },
-        { id: 2, name: 'Skirmishers', composition: { Archer: 5 } },
+        { id: 1, name: '1st Cohort', composition: { Soldier: 2 }, prestige: 0, rank: 'Untested' },
+        { id: 2, name: 'Skirmishers', composition: { Archer: 5 }, prestige: 0, rank: 'Untested' },
       ])
     })
 

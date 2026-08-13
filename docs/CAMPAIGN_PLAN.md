@@ -98,6 +98,13 @@ decisions, all interviewed and recorded, nothing open. Two things are deliberate
 must NOT be invented to fill the gap: the basic banner's bonus, and the plain banner's spell-cost
 role.
 
+**Slice 1 is SHIPPED (2026-08-13, schema v32) — start with SLICE 2: archetypes and per-type caps.**
+Squads now earn and keep prestige, survive a wipe as a zero-troop charter, and refuse to be sent
+empty. Slice 2 is the next prerequisite: an archetype per charter carrying its permitted types, its
+per-type caps and its intake stat (decisions 2-4), which everything after it reads.
+
+**Superseded, kept because it explains WHY slice 1 came first:**
+
 **Start with slice 1 — prestige persistence — and note it is a PREREQUISITE, not a warm-up.**
 `campaign.squads` is `{id, name, composition}`: no rank. The engine's `Squad::_prestige` lives on an
 object rebuilt per battle, so nothing round-trips today. Every other slice is blocked on this one.
@@ -387,7 +394,40 @@ carries them.
   storage, storage holds items, items are won from raids and events — so it comes after those, and
   before or beside the squad screen that shows the assigned end of the same relationship.
 
-**SLICE 1 — prestige persistence (SPEC'D 2026-08-10, ready to build).** Everything above is blocked
+**SLICE 1 — prestige persistence — ✅ SHIPPED 2026-08-13 (schema v32).** Built TDD; campaign-server
+653/653, frontend 275/275, lint clean, engine untouched. What landed:
+- `campaign.squads[].prestige` (schema **31 → 32**), plus `raidBandWeight`/`raidPrestige`/`squadRank`
+  in `utils/capabilities.js` and their constants in `campaignConfig.js`. Band weight is DERIVED from
+  `RAID_STRENGTH_BANDS` (reverse index) rather than a second hardcoded table, so adding a band
+  cannot leave its weight behind; an unknown label is worth 0 rather than throwing.
+- Awards in the raid route: every squad that went earns, a win pays the higher rate INSTEAD of the
+  participation one, both scaled by the target's band. A log line names the squads and the number.
+- **Both reconciliations stopped disbanding squads** — the raid route AND the battle route. A wiped
+  charter stays on the rolls at `composition: {}` with its name and prestige.
+- The empty-squad guard, checked PER SQUAD rather than on the party total, so an empty charter
+  cannot ride along on a real squad's coat-tails and burn its once-per-turn raid slot.
+- `campaignView` exposes `prestige` + the derived `rank` word.
+- The old prestige STUB line in `applyRaidReward` is gone; the flavour line that remains no longer
+  claims prestige is untracked.
+
+**Decision 7 (broken-but-surviving troops REJOIN their squad) landed HERE, earlier than planned.**
+It was scoped to a later slice, but it is not separable: once reconciliation stops disbanding, a
+squad the engine reports `wiped: true` *with* survivors simply keeps them. The campaigns.test.js
+case that asserted those stragglers scattered into the loose pool now asserts they stay — the
+behaviour change is deliberate and is what stops squad-exclusive elite types leaking out later.
+
+**Two pre-existing tests changed MEANING** (not just shape), both asserting the disband rule this
+slice inverts: raid.test.js's lost-raid case and campaigns.test.js's wiped-squad case. A third
+assertion was narrowed: a lost raid's "no reward path" check matched `/prestig/` loosely, which now
+collides with the participation award a loss is SUPPOSED to pay.
+
+**Not in this slice** (unchanged): archetypes and per-type caps, reinforcement/conversion, the
+upgrade catalog, characters, banners, the item store, both UI screens. Nothing reads the rank for
+gating yet — it is earned and kept, and that is all.
+
+**Superseded spec, kept for context:**
+
+**SLICE 1 — prestige persistence (SPEC'D 2026-08-10).** Everything above is blocked
 on this: prestige has nowhere to live. Build it TDD — **write the failing test first**, one
 behaviour at a time; the campaign server's suites are the pattern to follow.
 

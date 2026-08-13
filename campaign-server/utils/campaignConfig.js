@@ -224,6 +224,34 @@ export const RAID_STRENGTH_BANDS = [
   { min: 0, label: 'a handful' },
 ]
 
+// ── Squad prestige (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL") ────
+// Prestige is a PERMANENT RANK that gates squad upgrades and is NEVER SPENT —
+// upgrades are paid for in resources. (This overturned the earlier "prestige is
+// a per-squad currency" sketch; see decision 5 and the struck bullet under
+// "Squad-centric overhaul".) It only ever climbs, so a famous squad stays
+// visibly famous instead of reading as 0 because it bought things.
+//
+// A raid pays the opportunity's strength band (weighted 1 weakest .. 4
+// strongest, see raidBandWeight) times one of these rates. Winning REPLACES the
+// participation award rather than stacking on it. Scaling by band is the whole
+// point: farming the easiest card on the board must not rank a squad up as fast
+// as beating something real.
+export const RAID_PRESTIGE_JOIN_PER_BAND = 1 // 1..4 for taking part, win or lose
+export const RAID_PRESTIGE_WIN_PER_BAND = 2 // 2..8 for winning it
+
+// Rank thresholds over CUMULATIVE prestige, strongest first (the same
+// descending shape as the bands above, read by the same first-match walk).
+// Tuned so a squad raiding most turns reaches Seasoned mid-campaign and
+// Legendary only by carrying the whole run (user, 2026-08-10 — deliberately the
+// modest end of the options offered).
+export const SQUAD_RANKS = [
+  { min: 70, label: 'Legendary' },
+  { min: 45, label: 'Renowned' },
+  { min: 25, label: 'Seasoned' },
+  { min: 10, label: 'Blooded' },
+  { min: 0, label: 'Untested' },
+]
+
 // S4 "starve the enemy": the host's supply state is a PER-TURN BALANCE, not a
 // stockpile — income ÷ consumption this turn, with no running total carried
 // between turns (user, 2026-08-09: "either they have too much, enough or not
