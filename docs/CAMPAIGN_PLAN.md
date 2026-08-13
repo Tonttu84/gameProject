@@ -291,9 +291,25 @@ question only looked open because it was asked in currency terms.
   battle should be refused — server-side, since that is the trust boundary, with the UI greying it
   out as a courtesy rather than as the enforcement.
 
-**Still open — ask, do not assume:** what benefit the *basic* banner carries, and how *item* banners
-are acquired (rewards, purchase and prestige were all raised, none chosen). Everything else in this
-section is decided.
+**15. Item banners are won, not bought (user, 2026-08-10): an event or a raid reward.** No purchase
+track and no prestige unlock — they arrive as loot. That puts them on machinery that already exists:
+`applyRaidReward` handles typed raid payoffs and `applyEffect` handles event effects, so a banner is
+a new payload on both rather than a new subsystem.
+
+  **It must render, or it breaks a standing rule.** "No card shows flavour alone" means a raid card
+  offering a banner has to SAY so on the board, and an event granting one has to state it — which
+  means `describeEffect` learns the new type. A banner that appears silently in an inventory is
+  exactly the vagueness that rule exists to stop.
+
+**16. The BASIC banner's benefit is deliberately DEFERRED (user, 2026-08-10):** "we will decide the
+basic benefits later when I see that other things are working." This is a decision to postpone, not
+an unanswered question — do not invent a benefit to fill the gap. Build the basic banner for its
+structural job (it is the tier that OPENS THE ITEM SLOT) and leave the bonus unspecified until the
+surrounding systems can be played. The plain banner already ships inert for the same reason.
+
+**Nothing in this section is now blocking.** Both former open questions are settled — item banners
+are event/raid loot, and the basic banner's bonus is postponed on purpose. What remains is
+sequencing, and the first slice is prestige persistence.
 
 **What is actually open:**
 - ~~**An unidentified C++ flake.**~~ **CAUGHT AND FIXED 2026-08-10 — seed `446545517`.**
