@@ -161,6 +161,33 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
 **The forage panel's meter readout ✅ SHIPPED 2026-08-10** — see "Turns-to-breach" below for what
 was built and the two traps it had to avoid.
 
+**NEXT UP — banners in three tiers, and a squad screen to see them on (decided 2026-08-10, not
+yet built).**
+
+*Banners* (user's design, verbatim intent): **every squad carries a BASIC banner**, and its only job
+is to **gate the more powerful spells** — no bonus of its own. **At specific levels** the basic
+banner **upgrades**, and the upgraded form carries a **bonus**. A squad that has unlocked a basic
+banner may then be assigned a **magical banner**, which **overrides** the basic one, is assigned
+**permanently**, and is **bound** to that squad from then on.
+
+So the ladder is: basic (spell gate) → upgraded basic (gate + bonus) → magical (overrides, bound).
+Acquisition of the magical ones is NOT settled — rewards, purchase or prestige were not decided, so
+ask before assuming.
+
+What exists today, and the gap: the engine's `Squad` carries a plain `bool hasBanner`
+(`backend/engine/include/Squad.hpp`) plus prestige, described there as the roguelite carry-over. A
+bool cannot express three tiers, so this wants a small banner TYPE on the squad rather than another
+flag beside the first — the same mistake `placeable`/`spawnable` made before `UnitRole` replaced
+them on 2026-08-10, and worth not repeating. The campaign side already persists `campaign.squads`
+with composition and prestige (`models/campaign.js`), so the tier belongs there too, which means a
+**schema bump** (currently v31).
+
+*The squad screen* (user, 2026-08-10): **there is no squad UI at all** — no component under
+`frontend/src/components` mentions squads; they surface only inside `RaidPanel` via the `useSquads`
+selector, as pickable rows for a raid party. The ask is a place to **inspect a squad and see its
+details**: composition, prestige, its banner tier, and whatever the banner grants. Build the screen
+against the banner work rather than before it, or it will be rewritten as soon as tiers land.
+
 **What is actually open:**
 - ~~**An unidentified C++ flake.**~~ **CAUGHT AND FIXED 2026-08-10 — seed `446545517`.**
   `test_garrison_sally.cpp`, "reinforcements do not cross back as survivors", reading `3 == 4` on
