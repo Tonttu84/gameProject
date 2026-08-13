@@ -154,7 +154,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 clang: $(CLANG_NAME)
 
 .PHONY: all clean fclean re test test-serial test-fast clang serve server-node frontend frontend-test \
-        db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
+        balance-sheet db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(NAME)
@@ -248,6 +248,12 @@ frontend: frontend/node_modules
 # Run React/Vitest tests. Uses whatever node/npm is on PATH (/usr/bin node v22 here).
 frontend-test: frontend/node_modules
 	npm --prefix frontend test
+
+# Regenerate docs/BALANCE_SHEET.md — every fate and raid reward priced side by
+# side, for the balancing pass. Pure (no DB, no engine binary), so it runs
+# anywhere; balanceSheet.test.js fails if a new event or effect type escapes it.
+balance-sheet: campaign-server/node_modules
+	npm --prefix campaign-server run balance-sheet
 
 # Launch campaign server (Node BFF) + Vite dev server side-by-side.
 #

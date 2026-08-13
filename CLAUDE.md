@@ -98,6 +98,10 @@ make frontend          # cd frontend && npm run dev — Vite dev server. Native 
 make serve             # server-node + frontend together (the full dev stack). Native on
                        # Linux/WSL; on Windows it redirects to docker-up.
 make frontend-test     # npm --prefix frontend test (vitest run), via the pinned nvm node
+make balance-sheet     # regenerate docs/BALANCE_SHEET.md — every fate and raid reward priced
+                        # side by side, for the balancing pass. Pure (no DB, no engine binary),
+                        # so it runs anywhere; campaign-server/tests/balanceSheet.test.js fails
+                        # if a new event or a new effect type escapes the sheet.
 
 make docker-up         # docker compose up --build: the WHOLE stack (engine + campaign
                         # server + built frontend + MongoDB) in containers on
