@@ -88,10 +88,23 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-08-10) — START HERE
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
-schema version **31** (unchanged — everything since has retuned constants and views, not the
-schema). **Everything through `3b99739` is merged to `main` and CI-green** — nothing is in flight,
+schema version **31**. **Everything through `1486e62` is merged to `main`** — nothing is in flight,
 so a new session starts from a clean `main`. (A stale `claude/…` branch may exist on the remote
 with zero unique commits; it is harness leftover, not work.)
+
+**▶ THE ACTIVE FRONT IS "NEXT UP — THE SQUAD OVERHAUL", immediately below. It is fully designed and
+ready to BUILD — the 2026-08-10 session that specified it never wrote a line of it.** Nineteen
+decisions, all interviewed and recorded, nothing open. Two things are deliberately deferred and
+must NOT be invented to fill the gap: the basic banner's bonus, and the plain banner's spell-cost
+role.
+
+**Start with slice 1 — prestige persistence — and note it is a PREREQUISITE, not a warm-up.**
+`campaign.squads` is `{id, name, composition}`: no rank, no archetype. The engine's
+`Squad::_prestige` lives on an object rebuilt per battle, so nothing round-trips today. Every other
+slice is blocked on this one. It needs: a **schema bump** (rank + archetype onto `campaign.squads`),
+prestige awarded from raids (scaled by the opportunity's `strengthBand` — a judgement call made by
+the assistant, not the user, so it is fair game to overturn), and the `BattleResult` → campaign
+round-trip that does not exist. It depends on neither deferred answer.
 
 **Read `CLAUDE.md`'s "Shipping" section first.** Standing instruction as of 2026-08-10: finish a
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
