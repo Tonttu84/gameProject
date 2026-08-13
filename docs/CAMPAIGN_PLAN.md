@@ -89,7 +89,7 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 Everything below this block is history; this is the live front. Branch **`main`**, tree clean,
 schema version **31** (unchanged — everything since has retuned constants and views, not the
-schema). **Everything through `4d885e1` is merged to `main` and CI-green** — nothing is in flight,
+schema). **Everything through `3b99739` is merged to `main` and CI-green** — nothing is in flight,
 so a new session starts from a clean `main`. (A stale `claude/…` branch may exist on the remote
 with zero unique commits; it is harness leftover, not work.)
 
@@ -104,8 +104,15 @@ in one table. See "The balance sheet" below, including four observations the fir
 — chief among them that **severity does not weight the augury draw**, so a sev-3 fate is exactly
 as frequent as a sev-1 one.
 
-**2026-08-10, in order.** Nine player-facing changes, each with its own section below — plus a
+**2026-08-10, in order.** Eleven player-facing changes, each with its own section below — plus a
 tenth, structural one:
+- **Every fate and raid reward priced in one table** (`3b99739`) — the last of the reward-clarity
+  thread; the enemy's opening size was settled alongside it (`3704f56`), so 721 is no longer an
+  open question.
+- **The third sally flake, caught and fixed** (`f76f400`, seed `446545517`) and **`make test-fast`**
+  (`37faef6`, ~155s → ~5s). The hunting method is the reusable part — see the flake entry under
+  "What is actually open" for how a 1-in-250 seed was reached, and why a seeded replay only
+  reproduces in FULL-SUITE context.
 - **Unit roles + Pikeman is recruitable** — the catalog's `placeable`/`spawnable` booleans became
   a composable `UnitRole` set (see standing principle 2 above), and **Pikeman** — player-placeable
   since forever but in neither `RECRUIT_POOL` nor `STARTING_ROSTER`, i.e. unobtainable — gained a
