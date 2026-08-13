@@ -99,12 +99,21 @@ must NOT be invented to fill the gap: the basic banner's bonus, and the plain ba
 role.
 
 **Start with slice 1 — prestige persistence — and note it is a PREREQUISITE, not a warm-up.**
-`campaign.squads` is `{id, name, composition}`: no rank, no archetype. The engine's
-`Squad::_prestige` lives on an object rebuilt per battle, so nothing round-trips today. Every other
-slice is blocked on this one. It needs: a **schema bump** (rank + archetype onto `campaign.squads`),
-prestige awarded from raids (scaled by the opportunity's `strengthBand` — a judgement call made by
-the assistant, not the user, so it is fair game to overturn), and the `BattleResult` → campaign
-round-trip that does not exist. It depends on neither deferred answer.
+`campaign.squads` is `{id, name, composition}`: no rank. The engine's `Squad::_prestige` lives on an
+object rebuilt per battle, so nothing round-trips today. Every other slice is blocked on this one.
+**Its full spec — award formula, rank ladder, and what is out of scope — is in "SLICE 1 — prestige
+persistence" further down; follow that, not this summary.** In short: a schema bump adding
+`prestige` (archetypes come LATER, not here), raid awards scaling with the opportunity's
+`strengthBand`, and the wipe-survival change that stops reconciliation deleting a zeroed charter —
+folded in deliberately, because without it prestige dies with the squad and the persistence is a
+fiction. It depends on neither deferred answer.
+
+**Build it TDD — failing test first, one behaviour at a time** (user, 2026-08-10). The campaign
+server's existing suites are the pattern.
+
+The award numbers and the rank ladder were CHOSEN BY THE USER on 2026-08-10, not assumed — earlier
+drafts of this handoff called the `strengthBand` scaling an open assistant judgement call, and that
+is now out of date. Treat them as settled.
 
 **Read `CLAUDE.md`'s "Shipping" section first.** Standing instruction as of 2026-08-10: finish a
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
@@ -377,6 +386,41 @@ carries them.
   each item does (via `describeEffect`, per 15), and where it can go. Sequencing: the page renders
   storage, storage holds items, items are won from raids and events — so it comes after those, and
   before or beside the squad screen that shows the assigned end of the same relationship.
+
+**SLICE 1 — prestige persistence (SPEC'D 2026-08-10, ready to build).** Everything above is blocked
+on this: prestige has nowhere to live. Build it TDD — **write the failing test first**, one
+behaviour at a time; the campaign server's suites are the pattern to follow.
+
+**Schema (bump from v31).** `campaign.squads[]` gains `prestige: {type: Number, default: 0}`. The
+archetype belongs to a later slice — this slice is the number and its persistence, nothing more.
+
+**Awards — raids only in this slice.** Scale with the opportunity's `strengthBand`, weighted by band
+index 1–4 over `RAID_STRENGTH_BANDS` (`a handful` 1 · `a small band` 2 · `a full company` 3 ·
+`a strong detachment` 4):
+- **participating: 1 × band** (1–4), paid to every squad in the party, win or lose;
+- **winning: 2 × band** (2–8), instead of the participation award, not on top of it.
+
+Chosen as the modest end of the options offered (user, 2026-08-10) so a squad that raids most turns
+reaches Seasoned mid-campaign and Legendary only by carrying the whole run.
+
+**Rank ladder** — thresholds over cumulative prestige, never spent (5):
+`0 Untested · 10 Blooded · 25 Seasoned · 45 Renowned · 70 Legendary`.
+
+**The stub to make real:** `services/raid.js` already pushes the log line *"A prestigious victory —
+word of it spreads (prestige not yet tracked)."* That parenthetical is the marker; award there and
+delete it.
+
+**A wiped charter must SURVIVE — folded into this slice deliberately (user, 2026-08-10).** Today a
+wiped squad is DELETED from `campaign.squads` by both the raid and the battle reconciliation, so its
+prestige would die with it and the persistence would be a fiction. Per decision 14 a charter at zero
+simply stays on the rolls with `composition: {}`. Two changes:
+- reconciliation keeps the squad instead of filtering it out;
+- **the empty-squad guard** (14): sending a zero-troop squad on a raid or into a battle is refused
+  server-side (400), since that is the trust boundary.
+
+**Not in this slice:** archetypes and per-type caps, reinforcement/conversion, the upgrade catalog,
+characters, banners, the item store, and both UI screens. Prestige is earned and kept; nothing
+spends or reads it yet beyond display.
 
 **Nothing in this section is now blocking.** Both former open questions are settled — item banners
 are event/raid loot, and the basic banner's bonus is postponed on purpose. What remains is
