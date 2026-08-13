@@ -97,6 +97,15 @@ conversion cost and the Recruit-phase wiring all land together in slice 3 — an
 a starting composition exceeding its own caps would first bite, since slice 2 shipped without
 an invariant test guarding it (a chosen trade, not an oversight).
 
+**▶ SLICE 3 IS NOW FULLY SPEC'D — interviewed 2026-08-13, eleven decisions, nothing open. Follow
+"SLICE 3 — reinforcement (SPEC'D 2026-08-13)" further down; do NOT re-derive it from the decision
+list.** Headlines a cold session should not get wrong: a recipe's **inputs and outputs are
+unconnected** (destroy inputs, create outputs — many-to-one and one-to-many are both intended);
+`intake` is a **pooled** budget metered on the **output** side; over-CAP is inert and fine, while
+over-**hex-budget** is fenced hard by a second gate plus a config invariant; and
+`enemyPlacement.addBlock` **throws** instead of silently splitting or dropping — the user's
+standing call is **loud failures, no silent fallbacks, while the design is early**.
+
 **▶ THE ACTIVE FRONT IS "NEXT UP — THE SQUAD OVERHAUL", immediately below. It is fully designed;
 slices 1-2 are built and the rest is ready to BUILD.** Nineteen decisions, all interviewed and
 recorded, nothing open. Two things are deliberately deferred and must NOT be invented to fill the
@@ -444,6 +453,159 @@ carries them.
   each item does (via `describeEffect`, per 15), and where it can go. Sequencing: the page renders
   storage, storage holds items, items are won from raids and events — so it comes after those, and
   before or beside the squad screen that shows the assigned end of the same relationship.
+
+**SLICE 3 — reinforcement (SPEC'D 2026-08-13, interviewed before building; schema v33 → v34).**
+Eleven decisions, all the user's. This is the slice with TEETH: slice 2 stored the archetype and
+its caps and enforces nothing, because nothing added troops to a squad until now. Build it TDD.
+
+**A. The recipe — inputs and outputs are UNCONNECTED (user, 2026-08-13).** Reinforcement is not a
+transformation and must not be modelled as one. **The inputs are DESTROYED; the outputs are
+CREATED.** Nothing carries over, because a body has no identity to carry — it is a roster count.
+
+> *"There is no reason why they must match. We might take scorpion as a monster and then a rider
+> and create some new unit. For some really funky stuff we might even split existing one. There is
+> no need to limit creativity."* — user, 2026-08-13
+
+So both sides are collections, and neither constrains the other:
+
+```js
+{ id, output: { type: 'Soldier', count: 1 },
+  inputs: { Soldier: 1 },          // many-to-one: { Scorpion: 1, Soldier: 1 } → a ridden monster
+  cost:   { gold: 2, materials: 2 } }
+```
+
+One *application* destroys everything in `inputs` and creates `output.count` of `output.type`.
+Today every row is `inputs: {X: 1} → output: {type: X, count: 1}`, and **no code path may assume
+that** — many-to-one and one-to-many are the stated reasons the shape is general. **Revisit the
+destroy/create model if troops ever gain experience or wounds** (user's own caveat): at that point
+a body has something worth preserving and "destroy and create" stops being a faithful description.
+
+**B. One GLOBAL recipe table** — `SQUAD_REINFORCE_POOL` in `campaignConfig.js`, a sibling of
+`RECRUIT_POOL`, keyed by output type. The archetype owns **the fence** (which types may stand in
+the charter, and how many); the recipe owns **the transformation**. Keeping them orthogonal means
+a new troop type is one row rather than an edit to every archetype admitting it. A per-archetype
+override is NOT built now. **Config invariant test:** every `caps` key across every archetype has
+a recipe — a capped type with no recipe is silently un-reinforceable otherwise.
+
+**C. `intake` is a POOLED per-squad budget, metered on the OUTPUT side.** Not per type: under a
+per-type allowance an archetype's real refill rate would scale with how many types it admits, so
+`vanguard` (2) would quietly beat `line` (10) per type — a bookkeeping accident undoing decision
+14's trade. **Output-side is the decision, and it is arbitrary but FIXED** (user: *"it really
+doesn't matter as unit design can account for how it was coded"*) — the reason to prefer it is that
+caps and `composition` are already denominated in output bodies, so every per-turn limit is one
+currency and the route's arithmetic is `min(capHeadroom, intakeRemaining)`. Guarding the input side
+would let a one-to-many recipe satisfy intake and overrun the cap unseen. **Vanguard's `intake: 2`
+means at most 2 bodies JOIN this turn, however many were destroyed to make them.**
+
+**D. The numbers — gold and materials, deliberately NO food.** A 1:1 recipe destroys a body and
+creates one, so the army gains no new mouth: recruiting *provisions* a new body, reinforcement
+*re-equips* an existing one. (A one-to-many recipe breaks that symmetry; none exists yet.) Anchored
+on each type's `RECRUIT_POOL` materials-per-body, with gold as the type's worth:
+
+| output | inputs | cost | a full intake costs |
+|---|---|---|---|
+| Militia | 1 Militia | 1 gold, 1 materials | — |
+| Soldier | 1 Soldier | 2 gold, 2 materials | line (10): 20g, 20m |
+| Archer | 1 Archer | 2 gold, 2 materials | skirmish (6): 12g, 12m |
+| Pikeman | 1 Pikeman | 2 gold, 1 materials | — |
+| LightCavalry | 1 LightCavalry | 4 gold, 3 materials, 1 horse | — |
+| Cavalry | 1 Cavalry | 5 gold, 4 materials, 1 horse | vanguard (2): 10g, 8m, 2 horses |
+
+Sized against real income: a won raid pays ~20–40 gold (`units × RAID_GOLD_PER_UNIT ×
+RAID_GOLD_VARIANCE` on a target ~5% of the host), `garrison_paychest` +75, and gold starts at 0. So
+a full line refill is about one raid's coin — a real claim on the purse the casters want, never
+unaffordable. Vanguard is the intended sting: 2 bodies a turn at 5 gold and a horse each is
+decision 14's "a wipe punishes the elite archetype twice" showing up in numbers, not just prose.
+**Explicitly a first pass — balance later** (user). 1 horse per reinforced rider is exactly the
+hire rate, with no discount for the destroyed input having been mounted.
+
+**E. `docs/ECONOMY.md` — a rough internal price reference (user's ask).** *"You might want to
+create some internal documentation for the value of gold or materials so it is easier for you to be
+consistent… just a very rough internal consistency."* Exchange rates between food / materials /
+gold / horses / workers and what a body of each type is worth, derived from prices already in
+`RECRUIT_POOL` and the raid rates, linked from `campaignConfig.js`. **Not a balance pass** — its
+job is to give the next invented price something to be consistent with.
+
+**F. `canSquadAccept` — over-CAP is inert, never an error.** Headroom is `max(0, cap − current)`.
+An over-strength squad (from a future event) simply offers no reinforcement in that type and
+shrinks back under the cap through casualties. A type absent from `caps` is likewise inert: it
+keeps fighting but can never be reinforced. No `archetype` ⇒ nothing is reinforceable. **The user
+is content for squads to run over-strength** — *"most squads will work fine even if overstrength,
+might even make some interesting events."* Add the invariant test slice 2 skipped: every
+`STARTING_SQUADS` composition is within its archetype's caps and names only permitted types.
+
+At the **route**, an over-request is a **400 with nothing spent, never a silent clamp** — ask for 5
+when 3 fit and it is refused. A clamp would leave the UI's arithmetic and the server's disagreeing
+with no one noticing.
+
+**G. The SIZE BUDGET is a second, INDEPENDENT gate — over-cap is a design knob, over-hex is a bug.**
+> *"However if we go accidentally over hex limit I suspect we might run into serious bugs."* — user
+
+A reinforcement must satisfy the per-type cap **and**
+`Σ composition[T] × size(T) + SQUAD_CHARACTER_RESERVE ≤ SQUAD_TROOP_BUDGET`. The 40 reserved for
+characters becomes a **named constant** (it is only a comment today). Plus a **config invariant
+test: no archetype's caps may sum past the budget at full strength**, so a rebalance raising `line`
+to 60 Soldier fails CI instead of splitting squads on raids.
+
+**Measured facts (2026-08-13):** `Hex::CAPACITY = 640`; all foot are size 10, **Cavalry and
+LightCavalry are size 20**. Caps at full strength: `line` 500 · `skirmish` 400 · `vanguard` 240 —
+all under `SQUAD_TROOP_BUDGET` 600, and 500 + 40 = 540 ≤ 640. **Per-type caps alone cannot overflow
+a hex today**; the danger arrives with cap upgrades (decision 8), a new archetype, or an event
+granting troops directly. The invariant is what keeps it that way.
+
+**H. NO SILENT FALLBACKS — loud failures while the design is early (user, 2026-08-13).** The
+failure mode being fenced is not a crash and is worse than one: on the battle route
+`findOverstackedHex` refuses an overstacked placement outright, but on the **raid** route
+`enemyPlacement.js`'s `addBlock` silently scatters an oversized squad across hexes — which the
+engine reads as N one-member squads with *no cohesion, no shared morale, no squad movement* — and
+drops the remainder if the zone is full. A squad one body too fat loses cohesion on raids with no
+error anywhere.
+
+- **`addBlock` THROWS** on all three of its current fallbacks: the multi-hex split (it violates
+  "one squad, one hex", which is settled and load-bearing), the zone-full drop, and an unknown unit
+  type (a squad holding a type the catalog doesn't know is a data bug, not a degradation).
+- **`add` keeps its drop but stops swallowing it** — it returns the number left unplaced. It
+  spreads a *loose* army over a bounded zone by design, and the enemy host grows across a campaign;
+  making it throw would convert "the rear ranks camp this battle" into a hard-failed battle
+  mid-campaign, on a path with no invariant to protect.
+- **Three existing tests change MEANING** (they currently assert the fallbacks):
+  `enemyPlacement.test.js` "a squad bigger than one hex packs into as few hexes as it can" (:149),
+  "a block that outgrows the zone leaves the remainder off the field" (:164), and "unknown types
+  are skipped" (:173) for the `addBlock` half. The raid route gains a failure mode it lacks today —
+  that is what "loud failures early" buys, accepted knowingly.
+
+**I. The route — `POST /:id/squads/:squadId/reinforce`, phase-guarded to `recruit`.**
+- **Fully independent of `hiredToday`, both directions.** Reinforcing does not consume the day's
+  hire and the hire does not gate reinforcing: they are different sinks (the hire spends
+  food/workers and adds bodies to the ARMY; reinforcement spends gold/materials and moves bodies
+  into a CHARTER). Coupling them would make the mandatory hire silently a mandatory reinforcement
+  decision too.
+- **The body is a MAP, applied ATOMICALLY:** `{ reinforce: { Cavalry: 1, LightCavalry: 1 } }` — all
+  of it or none. "Once per turn per squad" stays literally true while a mixed archetype still
+  splits its intake across its types, which vanguard (intake 2, two permitted types) needs on day
+  one. A single-type call would either break once-per-turn or leave vanguard unable to spend half
+  its allowance. Chosen over a drawn-down counter across repeated calls so a rejection leaves
+  nothing spent.
+- **The ledger is `squads[].reinforcedDay`** (schema **33 → 34**), a day stamp mirroring
+  `recruit.drawnDay`'s sealed-day convention — not a parallel array like `raid.squadAssignment`. It
+  survives a wipe with the charter and needs no end-of-day clearing.
+
+**J. The UI ships in this slice, minimally.** Slice 2 was rightly inert — it was data with no
+caller. Slice 3 has teeth, and a reinforcement route with no button cannot be playtested, on a
+system whose whole point (decision 14's elite-recovery trade) is only judgeable by playing it.
+Minimal means a reinforcement section in `RecruitPanel`: each squad with its per-type headroom
+("5/6 Cavalry"), its intake allowance, a cost preview and one submit. **NOT the squad inspection
+screen** — decision 13 puts that last, and it stays last.
+
+**K. `campaignView` exposes `archetype`, the RESOLVED `caps` and `intake`, `reinforcedDay`, and the
+derived loose-pool counts per type.** All own-info, same tier as `composition` — none of it is
+hidden enemy state. Resolving `caps`/`intake` server-side from the archetype id (rather than
+shipping the id for the client to look up) is what keeps the config single-sourced, which is why
+the id was stored bare in slice 2.
+
+**Not in this slice** (unchanged): the upgrade catalog, characters, banners, the item store, the
+squad inspection screen, `addBlock`'s loose-`add` counterpart being made fatal, per-archetype
+recipe overrides.
 
 **SLICE 1 — prestige persistence — ✅ SHIPPED 2026-08-13 (schema v32).** Built TDD; campaign-server
 653/653, frontend 275/275, lint clean, engine untouched. What landed:
