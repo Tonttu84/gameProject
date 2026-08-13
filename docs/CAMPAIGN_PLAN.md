@@ -172,12 +172,16 @@ was built and the two traps it had to avoid.
   alone, because preceding tests consume draws and shift the stream. Replay the whole suite with the
   seed, not the single case.
 
-- **The enemy host's opening size (721) is unbalanced** against the player's roster — the user's
-  words, and the per-turn swing that was retuned on 2026-08-09 was only half of that complaint.
-  `ENEMY_ARMY` is untouched and wants a playtest before anyone picks a new number. **Note this is
-  now entangled with the recruitment ladder:** promotions consume the rung below, so the player's
-  army grows more slowly than it did on 2026-08-09. Judge 721 against the NEW curve, not the old
-  one, and playtest the two together rather than retuning either alone.
+- ~~**The enemy host's opening size (721) is unbalanced.**~~ **DEFERRED 2026-08-13 (user's call) —
+  off the open list, not a gap.** *"We can get rid of the enemy size for now… I will first need to
+  balance everything else, events, raids etc before I can know what kind of army the player will
+  have at the end, and balancing the enemy will be done then."* The host's size is the LAST number
+  to set, because it is the only one whose right value is a function of every other one: the
+  player's army at the end of a campaign is an output of the event pool, the raid board, the
+  recruitment ladder and the forage economy, and until those are settled 721 has nothing to be
+  measured against. So `ENEMY_ARMY` stays untouched **on purpose** — do not retune it, do not
+  propose a number, and do not treat its imbalance as a bug found. It comes back as part of the
+  general balancing pass (see Follow-ups), fed by a playtest of the whole curve at once.
 - **Two counter-raid cards can still share a title.** Raid flavour is per TYPE, so a turn with two
   bad fates deals two cards both called "Riders Massing". They are now told apart by their `threat`
   line, so this is cosmetic — it wants per-instance flavour variants, which is content authoring
@@ -480,9 +484,9 @@ failed on the next". Two rules came out of chasing exactly that twice in one day
    because desertion is meant to be the easier lever. The three supply bands STAY — one grows the
    host, one shrinks it, and the middle is a deliberate no-op (asked and confirmed), which is what
    makes "which ring have you stripped them back to" the whole of the enemy's supply state. See the
-   S4 stage write-up below for the derivation. **Still open: the host's opening size** (721) is
-   unbalanced against the player's roster and wants a playtest of its own — the per-turn swing was
-   only half of that complaint.
+   S4 stage write-up below for the derivation. **The host's opening size** (721) was the other half
+   of that complaint and is now **deferred to the general balancing pass (2026-08-13, user's
+   call)** — see the live front above; it is not an open question.
 2. ~~**Should a reinforcement wave be able to MOVE on the tick it arrives?**~~ **ANSWERED
    2026-08-09 — yes, and the current order stays.** `tick()` runs `fireScheduledReinforcements()`
    before `triggerSpecialPhase()`/`moveUnits()`, so a garrison sally lands and immediately acts.
@@ -4407,6 +4411,14 @@ pattern) over new subclasses; the catalog+tripwire SSOT is the thing to preserve
 class count.
 
 ## Follow-ups (out of scope now)
+
+**The general balancing pass (deferred 2026-08-13, user's call).** One pass, in one order, not a
+series of one-off retunes: **events, raids and the rest of the economy first**, and **the enemy
+host's size (`ENEMY_ARMY`, opening 721) last** — the player's end-of-campaign army is an output of
+everything else, so the host has nothing to be balanced against until those are settled. Until this
+pass runs, an imbalanced-looking constant is a deferred decision rather than a bug: leave it, and
+don't offer a replacement number.
+
 Engine-backed skirmishes via `battleRunner` on a small map (`max_turns: 30`, watchable replays); tutorial content pass; region map; wood/metal split; flying scout/forager unit; enemy harass duty; character system; **enemy reinforcement schedule + its scouting detection** (prerequisite for the Stage 4 "reinforcement detection" mini-stage); richer event system (chains + prerequisites BOTH shipped 2026-07-20/21 — mechanism complete, only more authored chains remain; distinct from Stage 4's event *transforms*).
 
 **Playwright E2E harness — ✅ SHIPPED 2026-07-18.** First real end-to-end coverage: a browser
