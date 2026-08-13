@@ -161,68 +161,123 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
 **The forage panel's meter readout ✅ SHIPPED 2026-08-10** — see "Turns-to-breach" below for what
 was built and the two traps it had to avoid.
 
-**NEXT UP — squad progression, then banners, then a squad screen (designed 2026-08-10, not built).**
-Interviewed in that order because each one is the prerequisite for the next; building them in any
-other order means rewriting.
+**NEXT UP — THE SQUAD OVERHAUL (grilled 2026-08-10; nothing built yet).** Ten decisions, taken in
+dependency order. This SUPERSEDES parts of "Squad-centric overhaul — direction firmed up
+(2026-07-21)" further down; where they disagree, this section wins and says so.
 
-**Stage 1 — squads must persist a progression stat, because none exists.** `campaign.squads` holds
-`{id, name, composition}` and nothing else; the engine's `Squad::_prestige` is a documented
-placeholder, and engine squads are rebuilt per battle, so whatever it accumulates dies with the
-battle. Nothing round-trips. Until prestige persists on the campaign document, "upgrades at levels"
-has nothing to hang off. Schema bump (currently v31).
+Squads are meant to be **the central feature** — the thing the player forms an attachment to. They
+survive the death of every troop in them, carry a history, and are individually flavourful. Every
+decision below serves that.
 
-Prestige comes from SEVERAL sources (user, 2026-08-10):
-- **Raids are the main earner** — participating earns, winning earns more.
-- **Events** award it too, and **especially an event that REQUIRES a squad**. Commitment is what
-  pays: an event a squad is actually sent on is worth more than one that merely happens to the camp.
-- **Turns survived** grant a small trickle, deliberately minor so it does not reward hiding.
+**1. Identity — a squad is a permanent CHARTER, not its bodies.** It owns troops rather than being
+made of them: name, banner, prestige and upgrades live on the charter. A wiped squad stays on the
+rolls at zero troops and rebuilds. The `roster` remains the single source of truth for bodies. The
+scarce resource is the NUMBER of charters.
 
-**The three sources are one economy, not a list.** Prestige is the price paid for RISK and for
-being unavailable. A raid stakes the squad in a real battle; an event that requires a squad takes it
-off the board for a while (see the tie-up mechanic below); sitting in camp earns the trickle and
-nothing more. Whoever tunes the numbers should keep that ordering intact — if idling ever
-out-earns raiding per turn, the whole ladder inverts and the safe play becomes the optimal one.
+**2. Size — per-squad archetypes, and size is itself upgradeable.** No global rule: an archetype
+sets both the caps and the innate character, so *elite-and-small* versus *large-and-mediocre* is a
+real trade the player picks between. Archetypes are what acquisition hands out (see 8).
 
-**Stage 2 — the banner ladder, in the user's own three states.** Note these are three distinct
-things, not two; an earlier draft of this plan wrongly collapsed the first two:
-1. **Plain banner** — every squad has one. Its job is to power spells, but *spell cost does not
-   exist yet*, so **today it does nothing at all** and exists only so the later stage has its
-   prerequisite in place. Ship it inert and say so.
-2. **Basic banner** — reached by the level upgrade. Carries **some benefit** (NOT yet specified —
-   ask) and, crucially, **opens the item slot**.
-3. **Item banner** — magical, assigned to a squad, more powerful, and **overwrites** the basic
-   banner. Bound once assigned. **How item banners are acquired is NOT decided** — rewards,
-   purchase and prestige were all raised and none chosen. Ask before assuming.
+**3. The cap is PER TROOP TYPE, with no total.** An archetype fences which types may be present and
+caps each one — Vanguard Riders is `{Cavalry: 6, LightCavalry: 6}`, not "12 mounted". There is no
+global weight table and no separate total budget to allocate; the numbers live on the squad, not on
+the unit type. Characters sit OUTSIDE the caps entirely. The inspect screen therefore reads
+"5/6 Cavalry · 6/6 LightCavalry".
 
-**Explicitly deferred: no banner-bearer tracking.** If a banner falls, assume someone picks it up.
-The engine already has `_flagBearer` with succession wired into `Battlefield`, so the machinery is
-there if a reason appears later — but a droppable banner is NOT part of this design and should not
-be built into it.
+**4. Reinforcement — once per turn, per squad, bounded by an intake stat.** How many bodies a squad
+can absorb in a turn is an archetype stat (militia absorb fast, elites are picky) and is
+upgradeable, so it pulls against size on the same flavour axis: the elite-small squad is also the
+slow-to-heal one. It belongs to the **Recruit** phase — after Raids, so a squad mauled on a raid can
+be topped up the same turn, and before Deploy, so it is at strength for the pitched battle. It
+COSTS: gold and materials per body (sometimes horses; a magical resource later), fluffed as training
+and kit.
 
-`Squad::hasBanner` is DEAD CODE — a bool set in the constructor, read by a getter nobody calls,
-used by no logic. It should become the tier, not gain a second flag beside it; that is precisely
-the mistake `placeable`/`spawnable` made before `UnitRole` replaced them (2026-08-10).
+**5. Prestige is a PERMANENT RANK that GATES upgrades — it is never spent.** Upgrades are paid for
+in resources; the rank only ever climbs. **This overturns the 2026-07-21 line** that called prestige
+"a per-squad currency… spends it to buy squad upgrades, each upgrade level more expensive". That
+line is superseded — do not implement it.
 
-**Stage 3 — the squad inspection screen.** There is no squad UI at all: no component mentions
-squads, and they surface only inside `RaidPanel` as pickable rows for a raid party. The ask is
-somewhere to inspect one and read its composition, prestige/level, banner tier and what that banner
-grants. Last, because it renders what the first two stages create.
+**6. Prestige sources, weighted deliberately.** Raids are the main earner (participating earns,
+winning earns more). Events award it too, and **especially an event that REQUIRES a squad** —
+commitment is what pays, not proximity. Turns survived grant a small trickle, small on purpose so
+idling never competes. **One judgement call made in the interview, flag it if wrong:** raid prestige
+scales with the opportunity's `strengthBand` (already stored on every card) so farming the easiest
+target on the board cannot rank a squad up.
 
-**The tie-up mechanic: an event can take a squad away for X turns.** Previously UNRECORDED — decided
-earlier, written down nowhere (not this file, not any commit message), so it survived only in the
-user's memory until 2026-08-10. Recorded now so it cannot be lost again.
+**7. A squad's power IS the troop type it fields — no modifier layer.** Squads may hold
+**squad-exclusive elite types** (a Royal Guard that exists nowhere else in the army). Reinforcement
+is therefore a **conversion**: consume N of an input type from the loose pool — usually the same
+type, sometimes a lower one (Soldier in, Royal Guard out) — plus gold/materials, and produce N of
+the squad's own type. That is the same promotion shape `RECRUIT_POOL` already uses for the
+recruitment ladder, so reuse it rather than inventing a second one.
 
-It is **not a separate feature bolted next to prestige — it is the other half of it.** An event that
-takes a squad away is exactly an event that REQUIRES a squad, which is the case the bullet above
-says should pay the most. So the mechanic supplies both sides of a trade the player can read: the
-squad is off the board for X turns and cannot raid, and the prestige is what buys that back. Build
-it and the prestige weighting together, or the cost lands with no compensation and no event will
-ever be worth taking.
+  **This inverts a live engine rule.** Today a broken unit calls `leaveSquad()`, and the engine
+  reports a squad wiped once every tagged survivor has left. The new rule: **broken-but-surviving
+  troops REJOIN their squad after the battle**, which is what keeps elite types from leaking into
+  the loose pool, and "wiped" comes to mean everybody actually died. Changing this is part of the
+  work, not a side effect of it.
 
-It also sets the shape of the availability question Stage 1 must answer anyway: a squad is either
-free, raiding, or tied up, and the squad screen (Stage 3) has to show which. `raid.squadAssignment`
-already tracks "spent on a raid today" — the tie-up is the same idea over a span of turns rather
-than one, and should reuse that thinking rather than inventing a parallel notion of busy.
+**8. What prestige unlocks — a broad, flavourful catalog.** A shared pool of upgrades gated by
+archetype, plus signature ones locked to a single squad. Named so far: the elite conversion above,
+cheaper raiding (discounting the squad's `raidCapacityCost` contribution), bigger caps, faster
+intake, flat **+1 stat** bumps (small-looking and already strong), and **formation fighters** —
+reducing the size a unit occupies so the squad packs more frontage.
+
+  **Engine seams, all confirmed:** `AUnit::size` drives BOTH hex capacity and frontage
+  (`Battlefield.cpp` packs a hex side by summing `getSize()`), so formation-fighters is a stat
+  change and not new machinery. Stats come from the constexpr `UnitCatalog`, so a +1 upgrade wants a
+  small `squad_mods` field on the placement entry, applied in `buildArmyFromPlacement`. Attacks are
+  already `std::vector<Weapon>` with `addWeapon()`, so per-squad equipment has a clean seam if it
+  ever returns.
+
+**9. Characters — Mage and Priest become characters.** They stop being roster counts and become
+individual persistent entities (a `characters` array, not the `roster` Map), attachable to a squad
+now, with magical equipment and leadership bonuses later; this gives the existing
+`campaign.character` placeholder something real to grow into. **One per squad — explicitly a
+PROTOTYPING PLACEHOLDER**, so hold it in a named constant rather than baking 1 into the logic. An
+unattached character can still deploy alone, exactly as Mage/Priest do today (no-regression default;
+not explicitly confirmed). Survival needs no new machinery: the character is a unit on the field —
+survives and stays attached, dies and is dead. The charter surviving at zero troops already covers
+the rest. A caster also wants a **tag for whether it avoids melee**.
+
+**10. Banners, in three states — and where they are going.** *Plain*: every squad has one; its job
+is to power spells, but **spell cost does not exist yet**, so today it does nothing and ships inert
+so the later stage has its prerequisite. *Basic*: reached by a level upgrade, carries a benefit, and
+**opens the item slot**. *Item*: magical, assigned permanently, **overrides** the basic banner, bound
+to that squad. The destination: **banners limit how many powerful scripted spells a squad may cast —
+deliberately like gems in Dominions 6.**
+
+  **No banner-bearer tracking.** If a banner falls, assume someone picks it up. `_flagBearer` and
+  `onFlagBearerDeath()` exist and are wired into `Battlefield`, so the machinery is available if a
+  reason appears — but a droppable banner is NOT part of this design. And `Squad::hasBanner` is DEAD
+  CODE (constructor-set, getter never called, no logic reads it): it should BECOME the tier, not
+  gain a sibling flag — the `placeable`/`spawnable` mistake `UnitRole` fixed on 2026-08-10.
+
+**11. Acquiring squads.** Charter count is scarce and grows only through acquisition, most likely
+**events arriving on set turns**. An acquisition hands over an archetype (see 2), which is what
+makes each new squad interesting rather than another slot.
+
+**12. The tie-up mechanic — an event can take a squad away for X turns.** Not a separate feature: it
+is the other half of prestige. An event that takes a squad away IS the event that requires one, so
+it supplies both sides of a readable trade — off the board and unable to raid, paid for in prestige.
+Build them together or the cost lands uncompensated and no such event is ever worth taking.
+`raid.squadAssignment` already tracks "spent on a raid today"; a tie-up is that same idea across
+turns, so extend it rather than inventing a parallel notion of busy.
+
+**13. The squad inspection screen — LAST, because it renders everything above.** There is no squad
+UI today: no component mentions squads, and they surface only inside `RaidPanel` as pickable rows.
+It must show composition against the per-type caps, prestige rank, banner tier and what it grants,
+attached character, and availability (free / raiding / tied up).
+
+**Sequencing.** Prestige persistence first — `campaign.squads` is `{id, name, composition}` with no
+level or prestige, and the engine's `Squad::_prestige` dies with each per-battle object, so nothing
+round-trips and everything above is blocked on it. **Schema bump** (currently v31). Then archetypes
+and caps, then reinforcement/conversion, then the upgrade catalog, then characters, then banners,
+then the screen.
+
+**Still open — ask, do not assume:** what benefit the *basic* banner carries; how *item* banners are
+acquired (rewards, purchase and prestige were all raised, none chosen); and the wipe/rebuild terms
+(what re-crewing a zeroed charter costs), which the interview never reached.
 
 **What is actually open:**
 - ~~**An unidentified C++ flake.**~~ **CAUGHT AND FIXED 2026-08-10 — seed `446545517`.**
@@ -4338,9 +4393,11 @@ grilled and given a concrete shape. The end-state the game is heading toward:
 
 - **Squads are the primary managed unit.** Everything the player commits to an action is a
   squad, not a loose troop count.
-- **Prestige is a per-squad currency.** A squad earns prestige and spends it to buy **squad
+- ~~**Prestige is a per-squad currency.** A squad earns prestige and spends it to buy **squad
   upgrades**, each upgrade applying a bonus to *all* the troops in that squad. Upgrade levels
-  get **more expensive** each level.
+  get **more expensive** each level.~~ **SUPERSEDED 2026-08-10 — prestige is a PERMANENT RANK that
+  GATES upgrades and is never spent; upgrades are paid for in resources.** See "NEXT UP — THE SQUAD
+  OVERHAUL" at the top of this file, which is the live design. Do not implement the struck text.
 - **Prestige is earned, at first, from raids:** *participating* in a raid grants some prestige;
   a *successful* raid grants more. (Makes the long-standing "prestige stub" in
   `applyRaidReward`/`_prestige` real — see Stages C/D handoffs and the note above.) Other
