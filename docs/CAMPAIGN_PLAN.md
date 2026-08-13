@@ -161,32 +161,51 @@ calls the user made; one turned out to be a non-bug hiding a real bug next door.
 **The forage panel's meter readout ✅ SHIPPED 2026-08-10** — see "Turns-to-breach" below for what
 was built and the two traps it had to avoid.
 
-**NEXT UP — banners in three tiers, and a squad screen to see them on (decided 2026-08-10, not
-yet built).**
+**NEXT UP — squad progression, then banners, then a squad screen (designed 2026-08-10, not built).**
+Interviewed in that order because each one is the prerequisite for the next; building them in any
+other order means rewriting.
 
-*Banners* (user's design, verbatim intent): **every squad carries a BASIC banner**, and its only job
-is to **gate the more powerful spells** — no bonus of its own. **At specific levels** the basic
-banner **upgrades**, and the upgraded form carries a **bonus**. A squad that has unlocked a basic
-banner may then be assigned a **magical banner**, which **overrides** the basic one, is assigned
-**permanently**, and is **bound** to that squad from then on.
+**Stage 1 — squads must persist a progression stat, because none exists.** `campaign.squads` holds
+`{id, name, composition}` and nothing else; the engine's `Squad::_prestige` is a documented
+placeholder, and engine squads are rebuilt per battle, so whatever it accumulates dies with the
+battle. Nothing round-trips. Until prestige persists on the campaign document, "upgrades at levels"
+has nothing to hang off. Schema bump (currently v31).
 
-So the ladder is: basic (spell gate) → upgraded basic (gate + bonus) → magical (overrides, bound).
-Acquisition of the magical ones is NOT settled — rewards, purchase or prestige were not decided, so
-ask before assuming.
+Prestige comes from SEVERAL sources (user, 2026-08-10):
+- **Raids are the main earner** — participating earns, winning earns more.
+- **Events** award it too.
+- **Turns survived** grant a small trickle, deliberately minor so it does not reward hiding.
 
-What exists today, and the gap: the engine's `Squad` carries a plain `bool hasBanner`
-(`backend/engine/include/Squad.hpp`) plus prestige, described there as the roguelite carry-over. A
-bool cannot express three tiers, so this wants a small banner TYPE on the squad rather than another
-flag beside the first — the same mistake `placeable`/`spawnable` made before `UnitRole` replaced
-them on 2026-08-10, and worth not repeating. The campaign side already persists `campaign.squads`
-with composition and prestige (`models/campaign.js`), so the tier belongs there too, which means a
-**schema bump** (currently v31).
+**Stage 2 — the banner ladder, in the user's own three states.** Note these are three distinct
+things, not two; an earlier draft of this plan wrongly collapsed the first two:
+1. **Plain banner** — every squad has one. Its job is to power spells, but *spell cost does not
+   exist yet*, so **today it does nothing at all** and exists only so the later stage has its
+   prerequisite in place. Ship it inert and say so.
+2. **Basic banner** — reached by the level upgrade. Carries **some benefit** (NOT yet specified —
+   ask) and, crucially, **opens the item slot**.
+3. **Item banner** — magical, assigned to a squad, more powerful, and **overwrites** the basic
+   banner. Bound once assigned. **How item banners are acquired is NOT decided** — rewards,
+   purchase and prestige were all raised and none chosen. Ask before assuming.
 
-*The squad screen* (user, 2026-08-10): **there is no squad UI at all** — no component under
-`frontend/src/components` mentions squads; they surface only inside `RaidPanel` via the `useSquads`
-selector, as pickable rows for a raid party. The ask is a place to **inspect a squad and see its
-details**: composition, prestige, its banner tier, and whatever the banner grants. Build the screen
-against the banner work rather than before it, or it will be rewritten as soon as tiers land.
+**Explicitly deferred: no banner-bearer tracking.** If a banner falls, assume someone picks it up.
+The engine already has `_flagBearer` with succession wired into `Battlefield`, so the machinery is
+there if a reason appears later — but a droppable banner is NOT part of this design and should not
+be built into it.
+
+`Squad::hasBanner` is DEAD CODE — a bool set in the constructor, read by a getter nobody calls,
+used by no logic. It should become the tier, not gain a second flag beside it; that is precisely
+the mistake `placeable`/`spawnable` made before `UnitRole` replaced them (2026-08-10).
+
+**Stage 3 — the squad inspection screen.** There is no squad UI at all: no component mentions
+squads, and they surface only inside `RaidPanel` as pickable rows for a raid party. The ask is
+somewhere to inspect one and read its composition, prestige/level, banner tier and what that banner
+grants. Last, because it renders what the first two stages create.
+
+**Related decision, previously UNRECORDED (user, 2026-08-10): events should later be able to tie a
+unit up for some turns.** This was decided earlier and was written down nowhere — not in this file,
+not in any commit message — so it survived only in the user's memory. It bears on Stage 1: a squad
+tied up by an event is a squad not raiding, which is the main prestige source, so the two systems
+meet. Not scheduled yet; recorded so it is not lost again.
 
 **What is actually open:**
 - ~~**An unidentified C++ flake.**~~ **CAUGHT AND FIXED 2026-08-10 — seed `446545517`.**
