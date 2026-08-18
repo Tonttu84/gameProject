@@ -138,6 +138,11 @@ std::string unitCatalogJson()
                 {"ballisticSkill", u->getBallisticSkill()},
                 {"preferredRange", u->getPreferredRange()},
                 {"reconTag",       u->getReconTag()},
+                // How much less room than its real size this TYPE packs into
+                // (4c) — 0 for everything today. The squad upgrade adds to it
+                // per squad and is not visible here; `size` above stays the
+                // real body either way.
+                {"formationFighter", u->getFormationFighter()},
             }},
         });
     }

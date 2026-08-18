@@ -1304,8 +1304,11 @@ describe('POST /api/campaigns/:id/battles', () => {
       // the upgrade fields: a fresh squad is Untested, so it has no slot, no
       // pick, no banner and no draft — every one of them derived from prestige
       // rather than stored, which is why they read as zero rather than absent.
+      // Slice 4c added the per-squad reinforcement surcharge its upgrades
+      // impose — empty for a fresh charter, and shipped per squad because the
+      // recipe table the panel prices against is global and this is not.
       const fresh = {
-        prestige: 0, rank: 'Untested', reinforcedToday: false,
+        prestige: 0, rank: 'Untested', reinforcedToday: false, reinforceSurcharge: {},
         upgrades: [], upgradeSlots: 0, upgradePicks: 0, banner: false, upgradeOffer: null,
       }
       expect(c.squads).toEqual([
@@ -3016,6 +3019,26 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
 
     const input = engine.runBattle.mock.calls[0][0]
     expect(input.player_placement[0].squad_mods).toEqual({ attack: 1 })
+  })
+
+  // 4c rides the same transport even though it is not a `stat` row: it IS an
+  // engine stat, so giving it a private channel would mean a second thing to
+  // attach at both battle routes and a second thing to forget.
+  test('the packing row reaches the engine on the same squad_mods object', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne(
+      { _id: c.id, 'squads.id': 1 },
+      { $set: { 'squads.$.upgrades': ['formation_fighters', 'honed_edge'], 'squads.$.prestige': blooded } },
+    )
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }],
+    })
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].squad_mods).toEqual({ attack: 1, formationFighter: 2 })
   })
 
   test('an unupgraded squad sends no squad_mods at all', async () => {

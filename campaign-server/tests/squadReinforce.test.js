@@ -318,3 +318,56 @@ describe('applyReinforcement', () => {
     expect(campaign.resources.gold).toBe(98)
   })
 })
+
+// ── Formation Fighters: the packing size and its price (slice 4c) ────────────
+//
+// The upgrade reaches this layer twice: the hex budget measures the room a
+// squad takes (which drill shrinks), and the reinforcement bill carries the
+// surcharge the ROW bundles with the ability.
+describe('a drilled squad packs tighter and pays more', () => {
+  const drilled = (overrides = {}) => squad({ upgrades: ['formation_fighters'], ...overrides })
+
+  test('the budget measures PACKING points, so drill leaves room behind it', () => {
+    // 40 size-10 Soldiers occupy 400 points; drilled, they pack at 8 → 320.
+    expect(squadSizePoints({ Soldier: 40 }, sizeOf)).toBe(400)
+    expect(squadSizePoints({ Soldier: 40 }, sizeOf, 2)).toBe(320)
+  })
+
+  // The engine floors a body's packing size at 1 (AUnit::getPackingSize). This
+  // layer must floor identically or the two disagree about what fits a hex —
+  // this one measures the same hex the engine will.
+  test('a body never packs below 1 point, however hard it is drilled', () => {
+    expect(squadSizePoints({ Soldier: 3 }, sizeOf, 100)).toBe(3)
+  })
+
+  // The payoff on the campaign side: the same request the hex refuses for an
+  // undrilled squad fits once the squad packs tighter.
+  test('the hex budget lets a drilled squad hold what it would otherwise refuse', () => {
+    const composition = { Soldier: 55 }
+    const request = { Pikeman: 5 }
+    const args = { request, sizeOf, loose: looseEnough, resources: richEnough }
+    // 60 bodies × 10 = 600, + 40 reserve = 640 > 600.
+    expect(planReinforcement({ squad: squad({ composition }), ...args }).error).toMatch(/hex/i)
+    // Drilled: 60 × 8 = 480, + 40 = 520, which fits.
+    expect(planReinforcement({ squad: drilled({ composition }), ...args }).error).toBeUndefined()
+  })
+
+  // The price rides the ROW, not the ability (user, 2026-08-18): +1 gold per
+  // BODY brought in, on top of whatever the recipe costs.
+  test('the surcharge is added per body, on top of the recipe', () => {
+    const composition = { Soldier: 30 }
+    const args = { request: { Soldier: 5 }, sizeOf, loose: looseEnough, resources: richEnough }
+    const plain = planReinforcement({ squad: squad({ composition }), ...args })
+    const paid = planReinforcement({ squad: drilled({ composition }), ...args })
+    expect(paid.cost.gold).toBe(plain.cost.gold + 5)
+    // Only the resources the row names — the rest of the bill is untouched.
+    expect(paid.cost.materials).toBe(plain.cost.materials)
+  })
+
+  test('a squad without the row pays exactly what it did before', () => {
+    const composition = { Soldier: 30 }
+    const args = { request: { Soldier: 5 }, sizeOf, loose: looseEnough, resources: richEnough }
+    const before = planReinforcement({ squad: squad({ composition }), ...args })
+    expect(before.cost).toEqual({ gold: 10, materials: 10 })
+  })
+})

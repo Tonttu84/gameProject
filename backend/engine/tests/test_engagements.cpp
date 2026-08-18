@@ -674,3 +674,47 @@ TEST_CASE("combat ranks: units beyond 3-rank capacity stay unseated", "[ranks]")
         }
     }
 }
+
+// ── formation fighters: what the packing size buys at the front (slice 4c) ───
+//
+// The payoff the campaign row is sold on. An Open side seats
+// effectiveFrontage = 40 size-points in rank 1, and the fit is STRICT
+// (`slot.frontage + size > cap` rejects), so four size-10 soldiers fill it
+// exactly and the fifth is turned away. At formation fighter 2 they pack at 8
+// and a fifth man reaches the fighting rank.
+//
+// This is also why the row's value is 2 rather than 1: at packing size 9 the
+// side still seats only four (45 > 40), so a -1 would buy nothing here at all.
+TEST_CASE("resolveEngagements: formation fighters seats a fifth man on an Open side") {
+    auto seatedInRank1 = [](int formationFighter) {
+        Battlefield bf;
+        Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+        REQUIRE(redHex != nullptr);
+        Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+        REQUIRE(enHex != nullptr);
+
+        // Squad declared first so it outlives its members (see the first test).
+        Squad alpha("Alpha", true);
+        Soldier s0(REDTEAM), s1(REDTEAM), s2(REDTEAM), s3(REDTEAM), s4(REDTEAM);
+        Soldier enemy(BLUETEAM);
+        std::vector<Soldier*> all = {&s0, &s1, &s2, &s3, &s4};
+        for (Soldier* u : all) {
+            // Before setHex: the hex's sizeUsed is charged the packing size at
+            // placement, so the value has to be set first.
+            if (formationFighter) u->applyStatMod("formationFighter", formationFighter);
+            alpha.addMember(u);
+            u->setHex(redHex);
+        }
+        enemy.setHex(enHex);
+
+        bf.resolveEngagements();
+
+        int rank1 = 0;
+        for (Soldier* u : all) if (u->getEngagedRank() == 1) ++rank1;
+        return rank1;
+    };
+
+    CHECK(seatedInRank1(0) == 4);
+    CHECK(seatedInRank1(1) == 4); // 5 × 9 = 45 > 40 — a -1 buys nothing
+    CHECK(seatedInRank1(2) == 5);
+}

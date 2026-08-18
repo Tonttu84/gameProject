@@ -126,25 +126,52 @@ export function applyUpgrade(campaign, squad, plan) {
 
 // ── What the upgrades DO ─────────────────────────────────────────────────────
 // One reader per effect kind, each folding over the squad's rows. Consumers
-// call these instead of reading `effect` themselves, so a new kind is added in
+// call these instead of reading `effects` themselves, so a new kind is added in
 // one place and an unknown kind stays inert.
+
+// A row is a BUNDLE of effects (4c), so every reader folds over the flattened
+// list rather than one `effect` per row: a single pick can raise a cost AND
+// grant an ability. `effects` is read defensively so a row that has lost its
+// list — or a campaign loading against an edited catalog — contributes nothing
+// instead of throwing.
+const effectsOf = (squad) => squadUpgrades(squad).flatMap((row) => row.effects ?? [])
+
+const sumOf = (squad, kind, field) =>
+  effectsOf(squad).reduce((sum, e) => (e.kind === kind ? sum + e[field] : sum), 0)
 
 // Per-type caps with every caps row applied. Only the types the ARCHETYPE names
 // are raised — a caps row widens the muster, it never admits a type the charter
 // was not written for (that is what an archetype is).
-export const capsBonus = (squad) =>
-  squadUpgrades(squad).reduce((sum, row) => (row.effect.kind === 'caps' ? sum + row.effect.bonus : sum), 0)
+export const capsBonus = (squad) => sumOf(squad, 'caps', 'bonus')
 
-export const intakeBonus = (squad) =>
-  squadUpgrades(squad).reduce((sum, row) => (row.effect.kind === 'intake' ? sum + row.effect.bonus : sum), 0)
+export const intakeBonus = (squad) => sumOf(squad, 'intake', 'bonus')
 
 // Multiplicative so two discounts compose without ever reaching free; 1 = no
 // discount. Applied per squad to its own contribution to a party's cost.
 export const raidCostFactor = (squad) =>
-  squadUpgrades(squad).reduce(
-    (factor, row) => (row.effect.kind === 'raidCost' ? factor * row.effect.factor : factor),
-    1,
-  )
+  effectsOf(squad).reduce((factor, e) => (e.kind === 'raidCost' ? factor * e.factor : factor), 1)
+
+// How much LESS room than its real size each body in this squad takes when
+// packed (4c). Summed, so two such rows would stack. The engine floors the
+// result at 1 per body (AUnit::getPackingSize) — this layer must apply the same
+// floor wherever it measures a squad against a hex, or the two disagree about
+// what fits.
+export const formationFighter = (squad) => sumOf(squad, 'formationFighter', 'value')
+
+// What this squad's upgrades ADD to the cost of every body it reinforces, as
+// `{ gold: 1 }`. The price rides the ROW, never the ability (user, 2026-08-18):
+// an upgrade that changes how a squad fights may or may not also make its
+// replacements dearer, and the two are set independently on the same row.
+// Additive per body and merged across rows, so a second such row stacks.
+export const reinforceSurcharge = (squad) => {
+  const add = {}
+  for (const e of effectsOf(squad)) {
+    if (e.kind !== 'reinforceCost') continue
+    for (const [resource, amount] of Object.entries(e.add ?? {}))
+      add[resource] = (add[resource] ?? 0) + amount
+  }
+  return add
+}
 
 // The squad's flat stat modifiers as `{ attack: 1, armour: 1 }` — 4b's engine
 // side. This is the ONE place a squad's rows become the `squad_mods` object the
@@ -153,15 +180,23 @@ export const raidCostFactor = (squad) =>
 // overwrites (and which AUnit::applyStatMod bounds regardless).
 //
 // Stat NAMES are the engine's, exactly as the unit catalog exports them
-// ("attack", "armour", "speed", "ballisticSkill") — an unknown one is inert at
-// the far end rather than mis-applied, so a typo here costs a dead upgrade
-// rather than a wrong battle. Returns an empty object when there is nothing to
-// say, which the callers use to leave the field off the entry entirely.
+// ("attack", "armour", "speed", "ballisticSkill", "formationFighter") — an
+// unknown one is inert at the far end rather than mis-applied, so a typo here
+// costs a dead upgrade rather than a wrong battle. Returns an empty object when
+// there is nothing to say, which the callers use to leave the field off the
+// entry entirely.
+//
+// formationFighter (4c) travels the same road even though it is not a `stat`
+// row: it IS an engine stat, applied by the same AUnit::applyStatMod, and
+// giving it a private transport would mean a second thing to attach at both
+// battle routes and a second thing to forget.
 export const statMods = (squad) => {
   const mods = {}
-  for (const row of squadUpgrades(squad)) {
-    if (row.effect.kind !== 'stat') continue
-    mods[row.effect.stat] = (mods[row.effect.stat] ?? 0) + row.effect.bonus
+  for (const e of effectsOf(squad)) {
+    if (e.kind !== 'stat') continue
+    mods[e.stat] = (mods[e.stat] ?? 0) + e.bonus
   }
+  const packing = formationFighter(squad)
+  if (packing !== 0) mods.formationFighter = (mods.formationFighter ?? 0) + packing
   return mods
 }

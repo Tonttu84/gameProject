@@ -85,13 +85,19 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-13) — START HERE
+### Where the work stands (2026-08-18) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **34**.
-**Slices 1, 2, 3, 4a and 4b of the squad overhaul are SHIPPED. The next step is 4c (formation
-fighters — THE AWKWARD ONE, needing the real-vs-adjusted size split) — see "SLICE 4 — THE UPGRADE
-CATALOG" below.** Then 4d Royal Guard, then characters, then banners, then the squad screen
+**Slices 1, 2, 3, 4a, 4b and 4c of the squad overhaul are SHIPPED. The next step is 4d (Royal
+Guard — a NEW UNIT TYPE whose stats are a design question the user will want a say in) — see
+"SLICE 4 — THE UPGRADE CATALOG" below.** Then characters, then banners, then the squad screen
 (decision 13, last).
+
+**The real-vs-adjusted size split now EXISTS** (4c), so the thing every earlier note called "the
+awkward one" is no longer blocking anything. `AUnit::getSize()` is the REAL body and
+`AUnit::getPackingSize()` is the room it takes; the rule for a new call site is *does it measure
+room on the ground, or the man?* Anything priced off a body — food, raid capacity, the drawn glyph,
+stray-shot target weight — keeps `getSize()`.
 
 Squads can now take replacements: the caps have teeth, the intake meters them, the hex is fenced,
 and the Recruit screen has the button. What the next slice needs to know before it starts:
@@ -106,9 +112,9 @@ and the Recruit screen has the button. What the next slice needs to know before 
 - **Two upgrade candidates now have live seams to hook into:** bigger caps and faster intake are
   `SQUAD_ARCHETYPES` values today, resolved into `campaignView` per squad, so a per-squad modifier
   layer would sit between the archetype row and `squadCaps()`/`squadIntake()` in
-  `services/squadReinforce.js`. Formation-fighters is the awkward one — it changes the packing size,
-  which is exactly the "two sizes" split written up under slice 2 and does not exist in the engine
-  yet.
+  `services/squadReinforce.js`. ~~Formation-fighters is the awkward one — it changes the packing
+  size, which is exactly the "two sizes" split written up under slice 2 and does not exist in the
+  engine yet.~~ **Built in 4c** — the split is real on both sides of the boundary.
 - **The hex budget is the invariant to respect.** A cap-raising upgrade must not be able to push a
   squad past `SQUAD_TROOP_BUDGET`; `engine.integration.test.js` enforces that for archetypes, and an
   upgrade layer needs the same guard (the config invariant only sees the base rows).
@@ -195,9 +201,54 @@ engine rows after**, so each step ships green instead of one long red branch.
     shorter-offer branch in `drawUpgradeOffer` is now defensive rather than reachable.
   - The FRONTEND needed no change — the pick panel renders whatever name/blurb the server sends, so
     every future row arrives on screen for free. That is the payoff of 4a shipping first.
-- **4c — formation fighters:** engine work, and THE AWKWARD ONE — it needs the real-vs-adjusted
-  size split that does not exist yet (see SQUAD_TROOP_BUDGET's comment: the budget counts the
-  ADJUSTED size, everything priced off a body keeps the REAL one, and the adjustment runs BOTH WAYS).
+- **4c — ✅ SHIPPED 2026-08-18 (no schema change).** Formation fighters, and with it the
+  real-vs-adjusted size split the earlier notes kept calling the awkward one. Interviewed first;
+  seven decisions, all the user's. What landed, and what a later slice must not undo:
+  - **`AUnit::getSize()` is the REAL body; `AUnit::getPackingSize()` is the room it takes.** The
+    rule for a new call site, in the user's words: *does it measure room on the ground, or the man?*
+    ADJUSTED — hex capacity, fighting frontage, rank-1 eviction, a squad's footprint moving into a
+    hex, the fatigue-weighted side allocation, the cramped-terrain penalty. REAL — food upkeep, raid
+    capacity cost, the drawn glyph radius, stray-shot target weight, and the `size` the unit catalog
+    exports. `getSize()` stayed the real one DELIBERATELY: a spatial call site nobody converted then
+    keeps today's behaviour instead of silently mis-pricing a body.
+  - **The value belongs to the ABILITY, not to a constant** (user): `formationFighter` is a unit
+    stat with a default of 0, so a goblin can carry 1, a human 2 and a giant 5 in the same battle.
+    Our roster needs one row at 2; nothing may re-hardcode it. It is SIGNED — a negative value packs
+    LOOSER (the long-weapon case), which is the "adjustment runs both ways" warning made real, so
+    **never assume packing ≤ real**.
+  - **The floor is 1, not something proportional**, and that is a considered call (user: "I don't
+    see why we would make it more than half for any real unit but let's not potentially limit
+    modders from doing crazy stuff"). It exists at all because a packing size of 0 is not "very
+    tight" but UNLIMITED — every gate is `used + size > cap`, which a zero always passes.
+    `MAX_STAT_MOD` is what bounds a value arriving over the wire. Do not "harden" this to half.
+  - **VALUE 2 is load-bearing arithmetic, not taste.** An Open side seats 40 size-points in rank 1
+    and the fit is STRICT, so four size-10 soldiers fill it exactly and a packing size of 9 still
+    seats four (45 > 40). A -1 would buy hex headroom and nothing at the front.
+    `test_engagements.cpp` pins 4/4/5 for 0/-1/-2 so a retune cannot quietly make the row a no-op.
+  - **LINE ONLY.** A vanguard body packs 20 → 18 and still seats two per side, so the row would
+    spend one of a campaign's three permanent picks on almost nothing — a trap, not a trade-off.
+    Pools are now line 8, skirmish 6, vanguard 6.
+  - **A ROW IS NOW A BUNDLE: `effect: {}` became `effects: []` across the catalog.** The user's
+    call, and the reason is worth keeping: the PRICE belongs to the CHOICE, not to the ability, so
+    Formation Fighters pairs `formationFighter` with `reinforceCost` on one row while the ability
+    itself knows nothing about money. A later row may grant the same ability at another price.
+    The surcharge is **+1 gold per body**, flat and explicitly a first pass ("the costs are
+    unbalanced for now, I just want to see that it works").
+  - **`formationFighter` rides the SAME `squad_mods` transport as 4b's stat rows**, because it IS an
+    engine stat — a private channel would be a second thing to attach at both battle routes and a
+    second thing to forget. `UnitRegistry` now parses `squad_mods` BEFORE charging the hex capacity;
+    that ordering is what makes the extra bodies actually fit, and it is easy to break by moving the
+    block. The request-size DoS budget deliberately still charges the REAL size, so a forged mod
+    cannot buy a bigger request.
+  - **Three layers measure the same hex and must agree**: `AUnit::getPackingSize`,
+    `squadReinforce.packedSize` and `enemyPlacement.packedSize` (which reads its adjustment out of
+    the `squad_mods` it already carries rather than being told twice). `engine.integration.test.js`
+    runs a drilled block through the REAL binary and checks every body the campaign packed reached
+    the field — that is the test that catches a floor or a sign drifting on one side only.
+  - **The FRONTEND needed one change after all**, unlike 4b: `SquadReinforcePanel` previews the bill
+    client-side, so `campaignView` now ships `reinforceSurcharge` per squad. Without it the preview
+    understates a drilled squad's cost and the player can submit what the route then refuses — the
+    one disagreement that panel exists to make impossible.
 - **4d — Royal Guard:** a NEW UNIT TYPE. Its stats are a design question in their own right and the
   user will want a say — do not invent them silently.
 

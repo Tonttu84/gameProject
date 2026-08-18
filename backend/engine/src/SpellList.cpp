@@ -101,7 +101,7 @@ static bool placeZombie(AUnit& caster, Hex* targetHex)
 {
     if (!targetHex) return false;
     std::unique_ptr<AUnit> Bob = std::make_unique<Zombie>(caster.getTeam());
-    if (targetHex->sizeUsed + static_cast<int>(Bob->getSize()) > Hex::CAPACITY) return false;
+    if (targetHex->sizeUsed + static_cast<int>(Bob->getPackingSize()) > Hex::CAPACITY) return false;
     for (AUnit* u : targetHex->units)
         if (u && u->getAlive() && u->getTeam() != caster.getTeam()) return false;
 
@@ -117,7 +117,7 @@ static bool placeSkeleton(AUnit& caster, Hex* targetHex)
 {
     if (!targetHex) return false;
     std::unique_ptr<AUnit> sk = std::make_unique<Skeleton>(caster.getTeam());
-    if (targetHex->sizeUsed + static_cast<int>(sk->getSize()) > Hex::CAPACITY) return false;
+    if (targetHex->sizeUsed + static_cast<int>(sk->getPackingSize()) > Hex::CAPACITY) return false;
     for (AUnit* u : targetHex->units)
         if (u && u->getAlive() && u->getTeam() != caster.getTeam()) return false;
     sk->setBattleSummon(true);

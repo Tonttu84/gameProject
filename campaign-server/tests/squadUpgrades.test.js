@@ -13,6 +13,8 @@ import {
   intakeBonus,
   raidCostFactor,
   statMods,
+  formationFighter,
+  reinforceSurcharge,
 } from '../services/squadUpgrades.js'
 import { squadCaps, squadIntake } from '../services/squadReinforce.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
@@ -45,6 +47,15 @@ const squad = (overrides = {}) => ({
 // The prestige that just reaches a rank word, read off the live ladder so a
 // retune moves the tests with it rather than stranding hardcoded numbers.
 const prestigeFor = (label) => SQUAD_RANKS.find((r) => r.label === label).min
+
+// A row is a BUNDLE of effects (4c), so a test that wants one asks by kind
+// rather than assuming a row carries exactly one thing.
+const effectOf = (id, kind) => findUpgrade(id).effects.find((e) => e.kind === kind)
+const allEffects = () => SQUAD_UPGRADE_POOL.flatMap((row) => row.effects)
+const capsBonusForArchetype = (archetype) =>
+  SQUAD_UPGRADE_POOL.filter((r) => r.archetypes.includes(archetype))
+    .flatMap((r) => r.effects)
+    .reduce((sum, e) => (e.kind === 'caps' ? sum + e.bonus : sum), 0)
 
 beforeEach(clearRolls)
 
@@ -238,7 +249,7 @@ describe('what the upgrades do', () => {
   })
 
   test('a caps row raises every type the archetype names, and admits no new one', () => {
-    const bonus = findUpgrade('deeper_ranks').effect.bonus
+    const bonus = effectOf('deeper_ranks', 'caps').bonus
     const upgraded = squadCaps(squad({ upgrades: ['deeper_ranks'] }))
     expect(Object.keys(upgraded)).toEqual(Object.keys(SQUAD_ARCHETYPES.line.caps))
     for (const [type, cap] of Object.entries(SQUAD_ARCHETYPES.line.caps))
@@ -246,12 +257,12 @@ describe('what the upgrades do', () => {
   })
 
   test('an intake row raises the pooled intake', () => {
-    const bonus = findUpgrade('standing_drafts').effect.bonus
+    const bonus = effectOf('standing_drafts', 'intake').bonus
     expect(squadIntake(squad({ upgrades: ['standing_drafts'] }))).toBe(SQUAD_ARCHETYPES.line.intake + bonus)
   })
 
   test('a raid-cost row discounts, and never reaches free', () => {
-    const factor = findUpgrade('light_baggage').effect.factor
+    const factor = effectOf('light_baggage', 'raidCost').factor
     expect(raidCostFactor(squad({ upgrades: ['light_baggage'] }))).toBeCloseTo(factor)
     expect(raidCostFactor(squad({ upgrades: ['light_baggage'] }))).toBeGreaterThan(0)
   })
@@ -292,8 +303,8 @@ describe('what the upgrades do', () => {
   // This pins every shipped row to a name the engine actually handles.
   test('every stat row names a stat the engine can apply', () => {
     const ENGINE_STATS = new Set(['attack', 'armour', 'speed', 'ballisticSkill'])
-    for (const row of SQUAD_UPGRADE_POOL.filter((r) => r.effect.kind === 'stat'))
-      expect(ENGINE_STATS, `${row.id} names ${row.effect.stat}`).toContain(row.effect.stat)
+    for (const e of allEffects().filter((x) => x.kind === 'stat'))
+      expect(ENGINE_STATS, `a stat row names ${e.stat}`).toContain(e.stat)
   })
 
   test('an id whose row has left the catalog is inert, not fatal', () => {
@@ -311,11 +322,8 @@ describe('what the upgrades do', () => {
 describe('the hex budget survives the catalog', () => {
   test('no archetype at full upgraded strength outgrows the budget', () => {
     const sizeOf = new Map(catalogFixture.units.map((u) => [u.name, u.size]))
-    const capsRows = SQUAD_UPGRADE_POOL.filter((r) => r.effect.kind === 'caps')
     for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES)) {
-      const bonus = capsRows
-        .filter((r) => r.archetypes.includes(id))
-        .reduce((sum, r) => sum + r.effect.bonus, 0)
+      const bonus = capsBonusForArchetype(id)
       const points = Object.entries(archetype.caps).reduce((sum, [type, cap]) => {
         const size = sizeOf.get(type)
         expect(size, `${id} caps ${type}, which the catalog does not know`).toBeDefined()
@@ -331,5 +339,71 @@ describe('the hex budget survives the catalog', () => {
   test('the slot ladder names every rank, so no rung silently grants zero', () => {
     for (const { label } of SQUAD_RANKS)
       expect(SQUAD_UPGRADE_SLOTS_BY_RANK[label], `${label} has no slot count`).toBeDefined()
+  })
+})
+
+// ── Formation Fighters — the first BUNDLED row (slice 4c) ────────────────────
+//
+// Two effects on one pick: the ability, and the price the CHOICE carries. The
+// point of the bundle is that the two are independent — a later row could grant
+// the same ability at another price, or none — so these pin that the readers
+// stay separate and that one pick really does reach both.
+describe('a row that does two things at once', () => {
+  const drilled = squad({ upgrades: ['formation_fighters'] })
+
+  test('one pick grants the ability AND raises the price', () => {
+    expect(formationFighter(drilled)).toBe(2)
+    expect(reinforceSurcharge(drilled)).toEqual({ gold: 1 })
+  })
+
+  test('a squad without the row has neither', () => {
+    expect(formationFighter(squad())).toBe(0)
+    expect(reinforceSurcharge(squad())).toEqual({})
+    expect(reinforceSurcharge(squad({ upgrades: ['honed_edge'] }))).toEqual({})
+  })
+
+  // formationFighter is an ENGINE stat, so it rides the same squad_mods
+  // transport as the 4b rows rather than getting a private channel — one thing
+  // to attach at each battle route instead of two.
+  test('the ability reaches the engine through squad_mods', () => {
+    expect(statMods(drilled)).toEqual({ formationFighter: 2 })
+    expect(statMods(squad({ upgrades: ['formation_fighters', 'honed_edge'] })))
+      .toEqual({ formationFighter: 2, attack: 1 })
+  })
+
+  // The value is 2 rather than 1 for a reason the engine settles: an Open hex
+  // side seats 40 size-points and the fit is STRICT, so four size-10 soldiers
+  // fill it exactly and a packing size of 9 still seats only four (45 > 40).
+  // test_engagements.cpp pins all three cases; this pins the number that makes
+  // the campaign row worth taking.
+  test('the value clears the frontage step it is sold on', () => {
+    const SOLDIER_SIZE = 10
+    const OPEN_FRONTAGE = 40
+    const packed = SOLDIER_SIZE - effectOf('formation_fighters', 'formationFighter').value
+    expect(Math.floor(OPEN_FRONTAGE / packed)).toBe(5)
+    expect(Math.floor(OPEN_FRONTAGE / SOLDIER_SIZE)).toBe(4)
+  })
+
+  // LINE ONLY, and deliberately: a vanguard body packs 20 → 18 and still seats
+  // two per side, so the row would spend one of a campaign's three permanent
+  // picks on almost nothing.
+  test('only a line charter may draw it', () => {
+    expect(findUpgrade('formation_fighters').archetypes).toEqual(['line'])
+    const vanguard = squad({ archetype: 'vanguard', prestige: prestigeFor('Blooded') })
+    expect(eligibleUpgrades(vanguard).map((r) => r.id)).not.toContain('formation_fighters')
+  })
+})
+
+// Every row in the catalog carries a LIST of effects, not one. A row that
+// slipped back to the old singular shape would read as inert in every reader
+// rather than failing loudly, so this is the check that keeps the bundle shape.
+describe('the catalog shape', () => {
+  test('every row carries a non-empty effects list, and no bare effect', () => {
+    for (const row of SQUAD_UPGRADE_POOL) {
+      expect(Array.isArray(row.effects), `${row.id} has an effects list`).toBe(true)
+      expect(row.effects.length, `${row.id} does something`).toBeGreaterThan(0)
+      expect(row.effect, `${row.id} does not carry a stale singular effect`).toBeUndefined()
+      for (const e of row.effects) expect(typeof e.kind).toBe('string')
+    }
   })
 })

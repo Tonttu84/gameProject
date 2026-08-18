@@ -19,7 +19,7 @@ bool randomPlaceArmy(Army& army, Battlefield& field, PlacementZone zone)
 
         auto canPlace = [&](Hex* hex) -> bool {
             if (!hex) return false;
-            if (hex->sizeUsed + static_cast<int>(unit->getSize()) > Hex::CAPACITY) return false;
+            if (hex->sizeUsed + static_cast<int>(unit->getPackingSize()) > Hex::CAPACITY) return false;
             for (AUnit* u : hex->units)
                 if (u && u->getAlive() && u->getTeam() != unit->getTeam()) return false;
             return true;

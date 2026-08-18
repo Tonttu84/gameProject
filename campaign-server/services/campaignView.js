@@ -26,6 +26,7 @@ import {
   picksAvailable,
   hasBanner,
   findUpgrade,
+  reinforceSurcharge,
 } from './squadUpgrades.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { garrisonLevel } from './garrison.js'
@@ -353,6 +354,12 @@ export async function campaignView(campaign) {
       // reinforcement against the same numbers the route will check.
       caps: squadCaps(squad),
       intake: squadIntake(squad),
+      // What this squad's upgrades ADD per body it takes on (4c), e.g.
+      // `{gold: 1}`. Shipped per squad because the recipe table is global and
+      // this is not: the panel prices a draft off both, and a preview that knew
+      // only the recipes would quietly understate a drilled squad's bill — the
+      // one disagreement with the server the panel is built to make impossible.
+      reinforceSurcharge: reinforceSurcharge(squad),
       reinforcedToday: squad.reinforcedDay === campaign.day,
       // Slice 4a. Rows are sent RESOLVED (name + blurb) because the client has
       // no copy of the catalog and a blurb is display text, not a rule — the

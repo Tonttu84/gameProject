@@ -216,3 +216,32 @@ describe('makeZonePlacer.addBlock', () => {
     }
   })
 })
+
+// The placer measures the same hex the engine will, so it has to pack a drilled
+// squad the way the engine packs it (slice 4c). Its adjustment comes from the
+// `squad_mods` it is already carrying — the very object the engine applies —
+// rather than from a second argument that could disagree with it.
+describe('makeZonePlacer and the packing size', () => {
+  test('a drilled squad fits a hex that would refuse it at real size', () => {
+    // 8 Soldiers = 80 real points into a 70-capacity hex: no placement honours
+    // "one squad, one hex"…
+    const zone = { rowMin: 0, rowMax: 0, width: 2, hexCapacity: 70 }
+    expect(() =>
+      makeZonePlacer(zone, sizeOf).addBlock({ Soldier: 8 }, { squad_id: 1 }),
+    ).toThrow(/one squad, one hex/)
+
+    // …until the squad packs at 8 apiece, which is 64.
+    const drilled = makeZonePlacer(zone, sizeOf)
+    drilled.addBlock({ Soldier: 8 }, { squad_id: 1, squad_mods: { formationFighter: 2 } })
+    const placement = drilled.result()
+    expect(placement).toHaveLength(8)
+    expect(new Set(placement.map((p) => `${p.q}|${p.r}`)).size).toBe(1)
+  })
+
+  test('a squad_mods with no packing row leaves placement exactly as it was', () => {
+    const zone = { rowMin: 0, rowMax: 0, width: 2, hexCapacity: 70 }
+    expect(() =>
+      makeZonePlacer(zone, sizeOf).addBlock({ Soldier: 8 }, { squad_id: 1, squad_mods: { attack: 1 } }),
+    ).toThrow(/one squad, one hex/)
+  })
+})

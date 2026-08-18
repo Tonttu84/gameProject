@@ -162,7 +162,31 @@ public:
 
 
      int getValue() const;
+
+    // TWO SIZES, and picking the wrong one is a silent balance bug. The rule
+    // (user, 2026-08-18): does the caller measure ROOM ON THE GROUND, or THE
+    // MAN?
+    //   getSize()        — the REAL body. Food upkeep (size²), raid capacity
+    //                      cost, the drawn glyph radius, stray-shot target
+    //                      weight, and the size the unit catalog exports.
+    //   getPackingSize() — the ROOM it occupies: hex capacity, fighting
+    //                      frontage, rank-1 eviction, a squad's footprint
+    //                      moving into a hex, the fatigue-weighted side
+    //                      allocation, and the cramped-terrain penalty.
+    // A tighter formation does not make a man eat less or need less armour.
+    //
+    // getSize() stays the REAL one so that a spatial call site nobody converted
+    // keeps today's behaviour instead of quietly mis-pricing a body.
      size_t getSize() const;
+    // real size - formationFighter, floored at 1. The floor exists because a
+    // packing size of 0 is not "very tight" but UNLIMITED — every capacity and
+    // frontage gate is `used + size > cap`, which a zero always passes. Floored
+    // at 1 rather than at something proportional deliberately (user,
+    // 2026-08-18): no real unit wants more than half, but a hard rule at half
+    // would fence off a modder doing something crazy. MAX_STAT_MOD is what
+    // bounds the value a squad can send over the wire.
+     size_t getPackingSize() const;
+     int getFormationFighter() const;
      bool getUndead() const;
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
@@ -282,9 +306,9 @@ public:
     // Campaign squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE
     // CATALOG", 4b): apply one FLAT modifier to a named stat, by the same
     // names the unit catalog exports ("attack", "armour", "speed",
-    // "ballisticSkill"). Returns false for a name it does not handle, so an
-    // unknown stat is INERT rather than silently mis-applied — the same
-    // contract the campaign layer's effect readers use.
+    // "ballisticSkill", "formationFighter"). Returns false for a name it does
+    // not handle, so an unknown stat is INERT rather than silently mis-applied
+    // — the same contract the campaign layer's effect readers use.
     //
     // Bounded deliberately: placement JSON is attacker-controlled at the
     // trust boundary (SECURITY_NOTES.md), so the delta is clamped to
@@ -388,7 +412,15 @@ protected:
     
     int resistance = 10;
     int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff
-    size_t size = 10;
+    size_t size = 10;   // the REAL size — the body itself. See getPackingSize().
+    // How much less room this unit takes than its real size when packed
+    // (docs/CAMPAIGN_PLAN.md "SLICE 4", 4c). 0 for everything today; the
+    // campaign's Formation Fighters upgrade sets it per squad, and a unit type
+    // may declare its own (a giant drilled to fight shoulder to shoulder wants
+    // a bigger number than a goblin). SIGNED on purpose: a negative value is a
+    // unit that packs LOOSER than it is — the long-weapon case — so never
+    // assume the packing size is the smaller of the two.
+    int formationFighter = 0;
     char printSymbol = '?';
 
     bool alive = true;

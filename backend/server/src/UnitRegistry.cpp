@@ -154,6 +154,10 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
         auto u = makeUnitByName(typeIt->get<std::string>(), team);
         if (!u) continue;
 
+        // REAL size for the request budget, deliberately: this is the DoS guard
+        // (SECURITY_NOTES.md #4), and charging it the PACKING size would let a
+        // forged formationFighter buy a bigger request. What a unit occupies on
+        // a hex is a separate question, asked below once the mods are applied.
         int unitSize = static_cast<int>(u->getSize());
         if (totalRequestedSize + static_cast<size_t>(unitSize) > sizeBudget) break;
         totalRequestedSize += static_cast<size_t>(unitSize);
@@ -185,10 +189,36 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             if (h->terrain == t) { forbidden = true; break; }
         if (forbidden) continue;
 
-        // Reject if placement would exceed hex capacity.
+        // Optional squad_mods (campaign squad upgrades, docs/CAMPAIGN_PLAN.md
+        // "SLICE 4", 4b): an object of stat name → flat integer modifier,
+        // e.g. {"attack": 1, "armour": 1}. Attached SERVER-SIDE by the campaign
+        // layer from the squad's taken upgrades — the browser never sends its
+        // own, and this parser is what makes a forged one harmless rather than
+        // what stops it.
+        //
+        // Same never-throw discipline as every other field here: a non-object,
+        // a non-integer value or a stat name the engine does not know is
+        // skipped rather than rejected, and applyStatMod bounds what a legal
+        // one can do (see AUnit::MAX_STAT_MOD).
+        //
+        // Applied BEFORE the capacity check below, because "formationFighter"
+        // changes how much room the unit takes (4c) — charging the hex the
+        // unadjusted size would mean a drilled squad never actually fits the
+        // extra bodies it just paid a permanent slot for.
+        auto modsIt = entry.find("squad_mods");
+        if (modsIt != entry.end() && modsIt->is_object()) {
+            for (const auto& mod : modsIt->items()) {
+                if (!mod.value().is_number_integer()) continue;
+                u->applyStatMod(mod.key(), mod.value().get<int>());
+            }
+        }
+
+        // Reject if placement would exceed hex capacity — in PACKING size, the
+        // room the body takes, which is what a hex measures.
+        int packedSize = static_cast<int>(u->getPackingSize());
         int& used = usedPerHex[coord];
-        if (used + unitSize > Hex::CAPACITY) continue;
-        used += unitSize;
+        if (used + packedSize > Hex::CAPACITY) continue;
+        used += packedSize;
 
         // Optional hold_turns: integer >= 0. Non-integer or negative → 0.
         auto holdIt = entry.find("hold_turns");
@@ -209,25 +239,6 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
                 auto squadNameIt = entry.find("squad_name");
                 if (squadNameIt != entry.end() && squadNameIt->is_string())
                     u->setSquadName(squadNameIt->get<std::string>());
-            }
-        }
-
-        // Optional squad_mods (campaign squad upgrades, docs/CAMPAIGN_PLAN.md
-        // "SLICE 4", 4b): an object of stat name → flat integer modifier,
-        // e.g. {"attack": 1, "armour": 1}. Attached SERVER-SIDE by the campaign
-        // layer from the squad's taken upgrades — the browser never sends its
-        // own, and this parser is what makes a forged one harmless rather than
-        // what stops it.
-        //
-        // Same never-throw discipline as every other field here: a non-object,
-        // a non-integer value or a stat name the engine does not know is
-        // skipped rather than rejected, and applyStatMod bounds what a legal
-        // one can do (see AUnit::MAX_STAT_MOD).
-        auto modsIt = entry.find("squad_mods");
-        if (modsIt != entry.end() && modsIt->is_object()) {
-            for (const auto& mod : modsIt->items()) {
-                if (!mod.value().is_number_integer()) continue;
-                u->applyStatMod(mod.key(), mod.value().get<int>());
             }
         }
 

@@ -110,6 +110,32 @@ describe('squad reinforcement panel', () => {
     expect(screen.getByTestId('reinforce-intake-1')).toHaveTextContent('4 of 10')
   })
 
+  // 4c: a squad's upgrades can raise what every body it takes on costs, and
+  // that surcharge is per SQUAD, not in the global recipe table. The preview has
+  // to add it or it understates a drilled squad's bill — and the panel's whole
+  // contract is that what it shows is what the route will charge.
+  it('adds the squad’s own reinforcement surcharge on top of the recipe', async () => {
+    await toRecruitScreen(
+      mauled({
+        squads: campaignFixture.squads.map((s) =>
+          s.id === 1
+            ? { ...s, composition: { Soldier: 30 }, reinforceSurcharge: { gold: 1 } }
+            : s,
+        ),
+      }),
+    )
+
+    fireEvent.change(screen.getByTestId('reinforce-input-1-Soldier'), { target: { value: '4' } })
+    // 4 × (2 gold, 2 materials) from the recipe, plus 4 × 1 gold from the row.
+    expect(screen.getByTestId('reinforce-cost-1')).toHaveTextContent('12 gold, 8 materials')
+  })
+
+  it('a squad with no surcharge pays exactly the recipe, with nothing added', async () => {
+    await toRecruitScreen(mauled())
+    fireEvent.change(screen.getByTestId('reinforce-input-1-Soldier'), { target: { value: '4' } })
+    expect(screen.getByTestId('reinforce-cost-1')).toHaveTextContent('8 gold, 8 materials')
+  })
+
   it('posts the whole map at once — one atomic request per squad', async () => {
     const campaign = mauled({
       squads: campaignFixture.squads.map((s) =>

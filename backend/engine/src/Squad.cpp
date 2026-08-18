@@ -170,7 +170,7 @@ int Squad::attemptRally() {
 size_t Squad::totalSizePoints() const {
     size_t total = 0;
     for (AUnit* m : _members)
-        if (m && m->getAlive()) total += m->getSize();
+        if (m && m->getAlive()) total += m->getPackingSize();
     return total;
 }
 
@@ -181,7 +181,7 @@ bool Squad::canFitInHex(const Hex* hex) const {
     for (AUnit* m : _members) {
         if (!m || !m->getAlive()) continue;
         if (m->getHex() != hex)
-            extra += static_cast<int>(m->getSize());
+            extra += static_cast<int>(m->getPackingSize());
     }
     return hex->sizeUsed + extra <= Hex::CAPACITY;
 }

@@ -846,6 +846,81 @@ TEST_CASE("buildArmyFromPlacement: unknown or malformed squad_mods are inert") {
     for (const auto& u : army) REQUIRE(u->getAttackPWR() == baseAttack);
 }
 
+// ── formationFighter: the real-vs-packing size split (slice 4c) ──────────────
+//
+// The rule the split encodes (user, 2026-08-18): does a caller measure ROOM ON
+// THE GROUND, or THE MAN? These pin the two halves apart, because a call site
+// that quietly picks the wrong one is a balance bug nothing else would catch.
+
+TEST_CASE("formationFighter: packing size shrinks, real size does not") {
+    Soldier s(BLUETEAM);
+    const size_t real = s.getSize();
+    REQUIRE(s.getPackingSize() == real);
+
+    REQUIRE(s.applyStatMod("formationFighter", 2));
+    REQUIRE(s.getSize() == real);          // the man is unchanged — food, raid
+                                            // cost and the drawn glyph follow this
+    REQUIRE(s.getPackingSize() == real - 2); // the room he takes is not
+}
+
+// The adjustment runs BOTH WAYS: a long weapon can make a man occupy more room
+// just as drill can make him occupy less, so nothing may assume packing ≤ real.
+TEST_CASE("formationFighter: a negative value packs LOOSER than real size") {
+    Soldier s(BLUETEAM);
+    const size_t real = s.getSize();
+    REQUIRE(s.applyStatMod("formationFighter", -3));
+    REQUIRE(s.getPackingSize() == real + 3);
+    REQUIRE(s.getSize() == real);
+}
+
+// A packing size of 0 is not "very tight" — it is UNLIMITED, because every
+// capacity and frontage gate is `used + size > cap`, which a zero always
+// passes. The floor is 1 rather than something proportional deliberately: no
+// real unit wants more than half, but a hard rule at half would fence off a
+// modder doing something crazy (user, 2026-08-18).
+TEST_CASE("formationFighter: packing size floors at 1, never 0") {
+    Soldier s(BLUETEAM);
+    REQUIRE(s.applyStatMod("formationFighter", AUnit::MAX_STAT_MOD));
+    REQUIRE(s.applyStatMod("formationFighter", AUnit::MAX_STAT_MOD));
+    REQUIRE(s.getPackingSize() >= 1);
+}
+
+TEST_CASE("buildArmyFromPlacement: a formationFighter mod packs more bodies into a hex") {
+    HexGrid g;
+    g.buildRect(16, 20);
+
+    // Fill one hex with plain Soldiers (size 10, capacity 640 → 64 fit), then
+    // the same request with formation fighter 2 (packing 8 → 80 fit).
+    auto fillHex = [&](int mod) {
+        json placement = json::array();
+        for (int i = 0; i < 100; ++i) {
+            json e{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}};
+            if (mod) e["squad_mods"] = json{{"formationFighter", mod}};
+            placement.push_back(e);
+        }
+        return buildArmyFromPlacement(placement.dump(), BLUETEAM, g).size();
+    };
+
+    REQUIRE(fillHex(0) == 64);
+    REQUIRE(fillHex(2) == 80);
+}
+
+// The ordering this depends on is easy to break: squad_mods must be parsed
+// BEFORE the per-hex capacity accounting, or a drilled squad never fits the
+// extra bodies it just paid a permanent slot for.
+TEST_CASE("buildArmyFromPlacement: a placed unit charges its hex the PACKING size") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"formationFighter", 2}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getHex() != nullptr);
+    REQUIRE(army[0]->getHex()->sizeUsed == 8);
+}
+
 // The trust boundary: placement JSON is attacker-controlled, so a forged mod
 // must be bounded rather than believed.
 TEST_CASE("buildArmyFromPlacement: a hostile squad_mods is clamped, not obeyed") {

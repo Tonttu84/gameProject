@@ -25,7 +25,7 @@ static void removeFromHex(Hex* hex, AUnit* unit) {
 	if (!hex) return;
 	auto& v = hex->units;
 	v.erase(std::remove(v.begin(), v.end(), unit), v.end());
-	hex->sizeUsed -= static_cast<int>(unit->getSize());
+	hex->sizeUsed -= static_cast<int>(unit->getPackingSize());
 	if (hex->sizeUsed < 0) hex->sizeUsed = 0;
 }
 
@@ -42,7 +42,12 @@ void AUnit::setHex(Hex* hex) {
 	currentHex = hex;
 	if (hex) {
 		hex->units.push_back(this);
-		hex->sizeUsed += static_cast<int>(size);
+		// PACKING size, and it must stay paired with removeFromHex's subtraction
+		// above: a unit whose formationFighter changed while it stood on a hex
+		// would be removed for a different number than it was added for, and
+		// leak capacity. Nothing does that today — the campaign sets the value
+		// at placement, before setHex — and nothing should start.
+		hex->sizeUsed += static_cast<int>(getPackingSize());
 	}
 }
 
@@ -57,6 +62,18 @@ void AUnit::reset()
 }
 
 size_t AUnit::getSize() const { return size; }
+
+// The room this body takes when packed, as opposed to the body itself — see
+// the header for which callers want which. Floored at 1: a packing size of 0
+// passes every `used + size > cap` gate for ever, which is unlimited stacking
+// rather than tight drill.
+size_t AUnit::getPackingSize() const
+{
+	int packed = static_cast<int>(size) - formationFighter;
+	return static_cast<size_t>(std::max(1, packed));
+}
+
+int AUnit::getFormationFighter() const { return formationFighter; }
 
 
 int AUnit::getTeam() const
@@ -135,7 +152,9 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 		int eff = effectiveFrontage(*engagedSide);
 		if (eff < HexSide::FRONTAGE) {
 			int threshold = eff * 2 / 3;
-			int remaining = static_cast<int>(size);
+			// PACKING size: this measures the room the unit needs on a narrow
+			// side, which is exactly what formation drill changes.
+			int remaining = static_cast<int>(getPackingSize());
 			while (remaining > threshold) {
 				crampedPenalty += CRAMPED_COMBAT_PENALTY;
 				remaining      -= threshold;
@@ -256,7 +275,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 					int eff = effectiveFrontage(*engagedSide);
 					if (eff < HexSide::FRONTAGE) {
 						int threshold = eff * 2 / 3;
-						int remaining = static_cast<int>(size);
+						int remaining = static_cast<int>(getPackingSize());
 						while (remaining > threshold) {
 							attackBonus -= CRAMPED_COMBAT_PENALTY;
 							remaining   -= threshold;
@@ -633,6 +652,15 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		}
 		if (stat == "ballisticSkill") {
 			setBallisticSkill(std::max(0, ballisticSkill + delta));
+			return true;
+		}
+		// No floor here: the floor belongs on the DERIVED figure, and
+		// getPackingSize() applies it. Clamping the modifier instead would make
+		// the cap depend on what the unit's real size happens to be, and would
+		// quietly forbid the negative (packs looser) direction the split exists
+		// to allow.
+		if (stat == "formationFighter") {
+			formationFighter += delta;
 			return true;
 		}
 		return false;

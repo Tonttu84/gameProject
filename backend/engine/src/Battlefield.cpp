@@ -80,7 +80,7 @@ static bool hexAcceptsUnit(const Hex* hex, const AUnit& unit) {
     if (!hex) return false;
     UnitCategory cat = unit.getCategory();
     if (hex->impassable && cat != UnitCategory::Flyer) return false;
-    if (hex->sizeUsed + static_cast<int>(unit.getSize()) > Hex::CAPACITY) return false;
+    if (hex->sizeUsed + static_cast<int>(unit.getPackingSize()) > Hex::CAPACITY) return false;
     for (AUnit* u : hex->units)
         if (u && u->getAlive() && u->getTeam() != unit.getTeam()) return false;
     // Mounted cannot enter Forest or Marsh
@@ -156,7 +156,7 @@ static int hexReserveSize(const Hex* hex) {
     int total = 0;
     for (AUnit* u : hex->units)
         if (u && u->getAlive() && !u->getBroken() && u->getEngagedRank() == 0)
-            total += static_cast<int>(u->getSize());
+            total += static_cast<int>(u->getPackingSize());
     return total;
 }
 
@@ -261,7 +261,7 @@ static bool trySquadEnter(Squad& squad, Hex* targetHex, Hex* fromHex, int squadS
     int squadFootprintInNext = 0;
     for (AUnit* m : squad.getMembers())
         if (m && m->getAlive() && !m->getBroken() && m->getHex() == targetHex)
-            squadFootprintInNext += static_cast<int>(m->getSize());
+            squadFootprintInNext += static_cast<int>(m->getPackingSize());
 
     int available = Hex::CAPACITY - targetHex->sizeUsed + squadFootprintInNext;
 
@@ -276,13 +276,13 @@ static bool trySquadEnter(Squad& squad, Hex* targetHex, Hex* fromHex, int squadS
             if (u && u->getAlive() && !u->getSquad())
                 candidates.push_back(u);
         std::sort(candidates.begin(), candidates.end(),
-                  [](AUnit* a, AUnit* b){ return a->getSize() < b->getSize(); });
+                  [](AUnit* a, AUnit* b){ return a->getPackingSize() < b->getPackingSize(); });
 
         int freed    = 0;
         int fromRoom = fromHex ? Hex::CAPACITY - static_cast<int>(fromHex->sizeUsed) : 0;
         for (AUnit* victim : candidates) {
             if (freed >= needed) break;
-            int vs = static_cast<int>(victim->getSize());
+            int vs = static_cast<int>(victim->getPackingSize());
             if (freed + vs > maxDisplace) break; // sorted ascending — cap reached for all
             if (vs > fromRoom) continue;          // from-hex can't absorb this one
             toDisplace.push_back(victim);
@@ -685,7 +685,7 @@ int Battlefield::moveSquad(Squad& squad)
     int squadSize = 0;
     for (AUnit* m : squad.getMembers())
         if (m && m->getAlive() && !m->getBroken())
-            squadSize += static_cast<int>(m->getSize());
+            squadSize += static_cast<int>(m->getPackingSize());
 
     Hex* fromHex = ref->getHex();
     bool engaged = ref->getEngaged(*this);
@@ -982,7 +982,7 @@ static void allocateSidesToGroups(Hex* hex, const std::vector<HexSide*>& sides,
             if (!m || !m->getAlive() || m->getBroken() || m->getHex() != hex) continue;
             int f = m->getFatigue();
             if (f >= FATIGUE_MAX) continue;
-            sz += static_cast<int>(m->getSize()) * fatigueWeight(f);
+            sz += static_cast<int>(m->getPackingSize()) * fatigueWeight(f);
         }
         if (sz > 0) groups.push_back({sq, sz, {}});
     }
@@ -992,7 +992,7 @@ static void allocateSidesToGroups(Hex* hex, const std::vector<HexSide*>& sides,
             if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
             int f = u->getFatigue();
             if (f >= FATIGUE_MAX) continue;
-            lonerSz += static_cast<int>(u->getSize()) * fatigueWeight(f);
+            lonerSz += static_cast<int>(u->getPackingSize()) * fatigueWeight(f);
         }
         if (lonerSz > 0) groups.push_back({nullptr, lonerSz, {}});
     }
@@ -1088,23 +1088,23 @@ static bool tryAssignToRankSlot(AUnit* u, size_t si, int ri,
 
     if (ri == 0) {
         // Eviction within rank 1: push the smallest displaced unit to rank 2 (if space).
-        while (slot.frontage + static_cast<int>(u->getSize()) > cap && !slot.units.empty()) {
+        while (slot.frontage + static_cast<int>(u->getPackingSize()) > cap && !slot.units.empty()) {
             size_t smallestIdx = 0;
             for (size_t i = 1; i < slot.units.size(); ++i)
-                if (slot.units[i]->getSize() < slot.units[smallestIdx]->getSize())
+                if (slot.units[i]->getPackingSize() < slot.units[smallestIdx]->getPackingSize())
                     smallestIdx = i;
             AUnit* smallest = slot.units[smallestIdx];
-            if (smallest->getSize() >= u->getSize())
+            if (smallest->getPackingSize() >= u->getPackingSize())
                 return false; // nothing strictly smaller — unit can't push its way in
 
-            slot.frontage -= static_cast<int>(smallest->getSize());
+            slot.frontage -= static_cast<int>(smallest->getPackingSize());
             slot.units.erase(slot.units.begin() + static_cast<long>(smallestIdx));
             smallest->setCohesionBonus(0); // was set by squad pass; clear since demoted
 
             // Demote evicted unit to rank 2 if there is room, otherwise unseat it.
             RankSlots& rank2 = ranks[si][1];
-            if (rank2.frontage + static_cast<int>(smallest->getSize()) <= cap) {
-                rank2.frontage += static_cast<int>(smallest->getSize());
+            if (rank2.frontage + static_cast<int>(smallest->getPackingSize()) <= cap) {
+                rank2.frontage += static_cast<int>(smallest->getPackingSize());
                 rank2.units.push_back(smallest);
                 smallest->setEngagedRank(2);
             } else {
@@ -1113,8 +1113,8 @@ static bool tryAssignToRankSlot(AUnit* u, size_t si, int ri,
         }
     }
 
-    if (slot.frontage + static_cast<int>(u->getSize()) > cap) return false;
-    slot.frontage += static_cast<int>(u->getSize());
+    if (slot.frontage + static_cast<int>(u->getPackingSize()) > cap) return false;
+    slot.frontage += static_cast<int>(u->getPackingSize());
     slot.units.push_back(u);
     u->setEngagedRank(ri + 1); // convert 0-indexed ri to 1-indexed rank
     // formationSide is applied in the final apply loop after all ranks are filled,

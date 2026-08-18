@@ -1,7 +1,10 @@
 import fs from 'node:fs'
 import { beforeAll, afterAll, describe, expect, test } from 'vitest'
 import config from '../utils/config.js'
-import { dumpUnits, getInfo } from '../services/engine.js'
+import { dumpUnits, getInfo, runBattle } from '../services/engine.js'
+import { makeZonePlacer } from '../services/enemyPlacement.js'
+import { formationFighter, statMods } from '../services/squadUpgrades.js'
+import { packedSize } from '../services/squadReinforce.js'
 import { syncCatalog } from '../services/catalogSync.js'
 import UnitType from '../models/unitType.js'
 import { startTestDb, stopTestDb } from './helpers/db.js'
@@ -184,11 +187,12 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
   test('no archetype outgrows the hex budget once its caps upgrades are taken', async () => {
     const catalog = await dumpUnits()
     const sizeOf = new Map(catalog.units.map((u) => [u.name, u.size]))
-    const capsRows = SQUAD_UPGRADE_POOL.filter((row) => row.effect.kind === 'caps')
+    // A row is a BUNDLE of effects (4c), so the caps bonus is summed over the
+    // flattened effects of every row this archetype may draw.
     for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES)) {
-      const bonus = capsRows
-        .filter((row) => row.archetypes.includes(id))
-        .reduce((sum, row) => sum + row.effect.bonus, 0)
+      const bonus = SQUAD_UPGRADE_POOL.filter((row) => row.archetypes.includes(id))
+        .flatMap((row) => row.effects)
+        .reduce((sum, e) => (e.kind === 'caps' ? sum + e.bonus : sum), 0)
       const points = Object.entries(archetype.caps).reduce((sum, [type, cap]) => {
         const size = sizeOf.get(type)
         expect(size, `${id} caps ${type}, which the engine catalog does not know`).toBeDefined()
@@ -199,6 +203,45 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
         `archetype ${id} with every caps upgrade does not fit SQUAD_TROOP_BUDGET`,
       ).toBeLessThanOrEqual(SQUAD_TROOP_BUDGET)
     }
+  }, 30000)
+
+  // ── The two sizes agree across the boundary (slice 4c) ────────────────────
+  //
+  // The campaign measures a squad against the hex with packedSize(); the engine
+  // seats it with AUnit::getPackingSize(). Two implementations of one rule, in
+  // two languages — so this runs a drilled block through the REAL binary and
+  // checks that every body the campaign said would fit actually reached the
+  // field. A floor or a sign that drifted on either side fails here.
+  test('a drilled squad packs into one hex exactly as the campaign layer predicts', async () => {
+    const info = await getInfo()
+    const catalog = await dumpUnits()
+    const soldier = catalog.units.find((u) => u.name === 'Soldier')
+    const packing = formationFighter({ archetype: 'line', upgrades: ['formation_fighters'] })
+    const perHex = Math.floor(info.grid.hexCapacity / packedSize(soldier.size, packing))
+    // The upgrade has to buy something, or this test would pass on a no-op.
+    expect(perHex).toBeGreaterThan(Math.floor(info.grid.hexCapacity / soldier.size))
+
+    const zone = { ...info.playerZone, width: info.grid.width, hexCapacity: info.grid.hexCapacity }
+    const placer = makeZonePlacer(zone, new Map([['Soldier', soldier.size]]))
+    placer.addBlock(
+      { Soldier: perHex },
+      { squad_id: 1, squad_name: 'Drilled', squad_mods: statMods({ archetype: 'line', upgrades: ['formation_fighters'] }) },
+    )
+    const placement = placer.result()
+    expect(placement).toHaveLength(perHex)
+    expect(new Set(placement.map((p) => `${p.q}|${p.r}`)).size).toBe(1)
+
+    const { replay } = await runBattle({
+      map: 'sample_battle',
+      player_placement: placement,
+      enemy_placement: [],
+      max_turns: 1,
+    })
+    // Every body the campaign packed onto that hex is on the field at tick 0.
+    // Without the packing size the engine would have dropped the overflow at
+    // the capacity gate and this would come back short.
+    const placed = replay.ticks[0].units.filter((u) => u.team === 'blue')
+    expect(placed).toHaveLength(perHex)
   }, 30000)
 
   // The budget itself must fit the hex it is a budget FOR: 600 + 40 against

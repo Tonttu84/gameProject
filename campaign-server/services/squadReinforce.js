@@ -4,7 +4,7 @@ import {
   SQUAD_TROOP_BUDGET,
   SQUAD_CHARACTER_RESERVE,
 } from '../utils/campaignConfig.js'
-import { capsBonus, intakeBonus } from './squadUpgrades.js'
+import { capsBonus, intakeBonus, formationFighter, reinforceSurcharge } from './squadUpgrades.js'
 
 // Squad reinforcement — the squad overhaul's slice 3 (docs/CAMPAIGN_PLAN.md
 // "SLICE 3 — reinforcement"). Slice 2 stored the archetype and its caps and
@@ -77,17 +77,27 @@ export const canSquadAccept = (squad, type) => {
   return Math.max(0, cap - readCount(squad?.composition, type))
 }
 
+// One body's PACKING size — the room it takes on a hex, as opposed to the body
+// itself (4c). The engine's AUnit::getPackingSize is the original and this must
+// stay its twin, floor included: the two measure the same hex, and a layer that
+// floors differently would let this gate pass a squad the engine then refuses
+// to seat. `packing` is the squad's formation-fighter value, 0 for a squad
+// without the upgrade.
+export const packedSize = (size, packing = 0) => Math.max(1, size - packing)
+
 // A composition's footprint in engine SIZE POINTS (troops only — the character
 // reserve is added by the gate below, not here, so this stays "what the bodies
-// occupy"). An unknown type THROWS: a squad holding a type the catalog does
-// not know is a data bug, and slice 3's standing call is loud failures while
-// the design is early — a size silently read as 0 would overfill a hex.
-export const squadSizePoints = (composition, sizeOf) => {
+// occupy"). PACKING points, because this measures the hex: a drilled squad
+// really does leave room behind it. An unknown type THROWS: a squad holding a
+// type the catalog does not know is a data bug, and slice 3's standing call is
+// loud failures while the design is early — a size silently read as 0 would
+// overfill a hex.
+export const squadSizePoints = (composition, sizeOf, packing = 0) => {
   let points = 0
   for (const [type, count] of entriesOf(composition)) {
     const size = sizeOf.get(type)
     if (!size) throw new Error(`no catalog size for ${type} — cannot measure the squad against the hex`)
-    points += size * count
+    points += packedSize(size, packing) * count
   }
   return points
 }
@@ -147,6 +157,13 @@ export const planReinforcement = ({ squad, request, sizeOf, loose, resources }) 
     bodies += count
   }
 
+  // The upgrade surcharge (4c): what a squad's taken ROWS add to every body it
+  // brings in, on top of the recipe. Per BODY rather than per application, so a
+  // one-to-many recipe pays for each body it produces — the recipe prices the
+  // transformation, this prices the standard the squad now has to meet.
+  for (const [resource, per] of Object.entries(reinforceSurcharge(squad)))
+    cost[resource] = (cost[resource] ?? 0) + per * bodies
+
   // Gate 2: the pooled intake, in bodies that JOIN — however many were
   // destroyed to make them. Pooled rather than per type on purpose: a per-type
   // allowance would let an archetype's real refill rate scale with how many
@@ -159,7 +176,7 @@ export const planReinforcement = ({ squad, request, sizeOf, loose, resources }) 
   // knob, over-hex is a bug (decision G).
   const after = Object.fromEntries(entriesOf(squad.composition))
   for (const [type, count] of asked) after[type] = (after[type] ?? 0) + count
-  const points = squadSizePoints(after, sizeOf) + SQUAD_CHARACTER_RESERVE
+  const points = squadSizePoints(after, sizeOf, formationFighter(squad)) + SQUAD_CHARACTER_RESERVE
   if (points > SQUAD_TROOP_BUDGET)
     return {
       error: `${squad.name} would not fit its own hex (${points} of ${SQUAD_TROOP_BUDGET} size points, characters included)`,

@@ -25,6 +25,17 @@ import UnitType from '../models/unitType.js'
 // The main battle route gets this right because the frontend drops a whole squad
 // on a single hex; `addBlock` is that same "one squad, one hex" placement done
 // server-side.
+
+// The room one body takes on a hex, which is not always the size of the body
+// (4c). A squad's Formation Fighters upgrade travels in `extra.squad_mods` —
+// the very object the engine will apply — so the placer reads the adjustment
+// from there rather than being told twice. Floored at 1, the same floor
+// AUnit::getPackingSize applies: this function and the engine measure the same
+// hex, and if they disagree the placer either overfills it or refuses a block
+// that would have fitted.
+const packedSize = (size, extra) =>
+  Math.max(1, size - (extra?.squad_mods?.formationFighter ?? 0))
+
 export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
   // Candidate hexes with remaining capacity, shuffled once for this placer.
   const cells = []
@@ -45,11 +56,12 @@ export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
     const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
     let unplaced = 0
     for (const [type, count] of entries) {
-      const size = sizeOf.get(type)
-      if (!size) { // unknown type — engine would reject it anyway
+      const catalogSize = sizeOf.get(type)
+      if (!catalogSize) { // unknown type — engine would reject it anyway
         unplaced += count
         continue
       }
+      const size = packedSize(catalogSize, extra)
       for (let i = 0; i < count; i++) {
         // Advance past full hexes; wrap once. If the zone is truly full the
         // remaining units are left off the field (they guard the camp).
@@ -91,8 +103,9 @@ export function makeZonePlacer({ rowMin, rowMax, width, hexCapacity }, sizeOf) {
     const entries = army instanceof Map ? [...army.entries()] : Object.entries(army)
     const units = []
     for (const [type, count] of entries) {
-      const size = sizeOf.get(type)
-      if (!size) throw new Error(`cannot place ${type}: no such unit type in the catalog`)
+      const catalogSize = sizeOf.get(type)
+      if (!catalogSize) throw new Error(`cannot place ${type}: no such unit type in the catalog`)
+      const size = packedSize(catalogSize, extra)
       for (let i = 0; i < count; i++) units.push({ type, size })
     }
     if (units.length === 0) return

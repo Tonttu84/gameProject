@@ -82,18 +82,21 @@ export const SQUAD_ARCHETYPES = {
 // a different number of bodies tomorrow. Base caps sit well under it on
 // purpose; the headroom is what size upgrades sell.
 //
-// WHICH size, once formation-fighters lands: a unit will carry TWO figures —
-// its REAL size and its ADJUSTED (packing) size — and this budget counts the
-// ADJUSTED one, because packing a hex is exactly what it measures. Everything
-// priced off a body rather than a footprint keeps using the REAL size: a
-// tighter formation does not make a man eat less or need less armour (user,
-// 2026-08-13). Food upkeep (size² × FOOD_KG_PER_SIZE_SQ_PER_DAY) is the live
-// example — it must not follow the adjusted figure.
+// WHICH size — SETTLED AND BUILT in 4c: a unit carries TWO figures, its REAL
+// size (AUnit::getSize) and its ADJUSTED/packing size (AUnit::getPackingSize),
+// and this budget counts the ADJUSTED one, because packing a hex is exactly
+// what it measures (squadSizePoints takes the squad's formation-fighter value
+// and applies the engine's floor). Everything priced off a body rather than a
+// footprint keeps using the REAL size: a tighter formation does not make a man
+// eat less or need less armour (user, 2026-08-13). Food upkeep
+// (size² × FOOD_KG_PER_SIZE_SQ_PER_DAY) is the live example — it must not
+// follow the adjusted figure.
 //
 // The adjustment runs BOTH WAYS (user, 2026-08-13): a long weapon can make a
 // man occupy MORE room just as drill can make him occupy less. So never assume
 // adjusted ≤ real — a cap derived from that inequality would silently overfill
-// a hex the first time a unit packs looser than its real size.
+// a hex the first time a unit packs looser than its real size. The engine's
+// formationFighter is signed for exactly this reason.
 export const SQUAD_TROOP_BUDGET = 600
 
 // The slice of the hex held back for the characters a squad may carry
@@ -139,6 +142,13 @@ export const SQUAD_UPGRADE_DRAW = 3
 // is ABLE to do — every consumer switches on `kind` and an unknown kind is
 // inert rather than silently mis-applied.
 //
+// A ROW IS A BUNDLE: `effects` is a LIST, so one pick can do several things at
+// once. That is 4c's shape, and the reason is the user's (2026-08-18): the
+// PRICE of an upgrade belongs to the CHOICE, not to the ability. Formation
+// Fighters pairs "packs tighter" with "costs more to reinforce" on one row,
+// while the ability itself knows nothing about money — so a later row can grant
+// the same ability at a different price, or none.
+//
 // 4a ships the three CAMPAIGN-SIDE rows only. With three rows and a draw of
 // three the draft is degenerate today (every eligible row is offered every
 // time) — that is expected, not a bug: the randomness starts to bite as 4b-4d
@@ -156,21 +166,21 @@ export const SQUAD_UPGRADE_POOL = [
     name: 'Deeper Ranks',
     blurb: 'The charter is written for a fuller muster: +2 to every type this squad may field.',
     archetypes: ['line', 'skirmish', 'vanguard'],
-    effect: { kind: 'caps', bonus: 2 },
+    effects: [{ kind: 'caps', bonus: 2 }],
   },
   {
     id: 'standing_drafts',
     name: 'Standing Drafts',
     blurb: 'Recruiters ride ahead of the column: +2 replacements may join each turn.',
     archetypes: ['line', 'skirmish', 'vanguard'],
-    effect: { kind: 'intake', bonus: 2 },
+    effects: [{ kind: 'intake', bonus: 2 }],
   },
   {
     id: 'light_baggage',
     name: 'Light Baggage',
     blurb: 'Nothing carried that cannot be fought with: this squad costs a quarter less raid capacity.',
     archetypes: ['line', 'skirmish', 'vanguard'],
-    effect: { kind: 'raidCost', factor: 0.75 },
+    effects: [{ kind: 'raidCost', factor: 0.75 }],
   },
   // 4b — the ENGINE-side rows. `stat` names a figure from the unit catalog and
   // is applied per body in the battle itself (AUnit::applyStatMod), not to any
@@ -187,28 +197,54 @@ export const SQUAD_UPGRADE_POOL = [
     name: 'Honed Edge',
     blurb: 'Drill with the weapons they already carry: +1 attack to every body in the squad.',
     archetypes: ['line', 'skirmish', 'vanguard'],
-    effect: { kind: 'stat', stat: 'attack', bonus: 1 },
+    effects: [{ kind: 'stat', stat: 'attack', bonus: 1 }],
   },
   {
     id: 'heavier_kit',
     name: 'Heavier Kit',
     blurb: 'Plate over mail, and the muscle to march in it: +1 armour to every body in the squad.',
     archetypes: ['line'],
-    effect: { kind: 'stat', stat: 'armour', bonus: 1 },
+    effects: [{ kind: 'stat', stat: 'armour', bonus: 1 }],
   },
   {
     id: 'marksmans_eye',
     name: "Marksman's Eye",
     blurb: 'Butts practice until the loose is thoughtless: +1 ballistic skill to every body in the squad.',
     archetypes: ['skirmish'],
-    effect: { kind: 'stat', stat: 'ballisticSkill', bonus: 1 },
+    effects: [{ kind: 'stat', stat: 'ballisticSkill', bonus: 1 }],
   },
   {
     id: 'fresh_remounts',
     name: 'Fresh Remounts',
     blurb: 'A led horse for every rider: +1 speed to every body in the squad.',
     archetypes: ['vanguard'],
-    effect: { kind: 'stat', stat: 'speed', bonus: 1 },
+    effects: [{ kind: 'stat', stat: 'speed', bonus: 1 }],
+  },
+  // 4c — the first BUNDLED row, and the first to touch how much room a body
+  // takes. `formationFighter` is an engine stat like the `stat` rows above
+  // (it rides the same squad_mods transport); `reinforceCost` is the price the
+  // CHOICE carries, which the ability itself knows nothing about.
+  //
+  // VALUE 2, not 1, and the number is load-bearing rather than a taste call:
+  // an Open hex side seats 40 size-points in its fighting rank and the fit is
+  // STRICT, so four size-10 soldiers fill it exactly. At packing size 9 it is
+  // still four (45 > 40); at 8 a fifth man reaches the front. A -1 would buy
+  // nothing but hex headroom. See test_engagements.cpp, which pins all three.
+  //
+  // LINE ONLY. A vanguard squad packs at 20 → 18 and still seats two per side,
+  // so the row would be a near-dead pick on an archetype that only gets three
+  // picks in a campaign — a trap, not a trade-off. Pools are now line 8,
+  // skirmish 6, vanguard 6, against a draw of 3.
+  {
+    id: 'formation_fighters',
+    name: 'Formation Fighters',
+    blurb:
+      'Drilled to fight shoulder to shoulder: every body takes 2 less room, so more of the squad reaches the fighting line — and replacements cost 1 more gold each to bring up to the standard.',
+    archetypes: ['line'],
+    effects: [
+      { kind: 'formationFighter', value: 2 },
+      { kind: 'reinforceCost', add: { gold: 1 } },
+    ],
   },
 ]
 

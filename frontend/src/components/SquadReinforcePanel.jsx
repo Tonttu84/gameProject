@@ -23,14 +23,24 @@ const applicationsFor = (recipe, bodies) => bodies / (recipe?.count ?? 1)
 
 // What one squad's whole draft costs, summed across types. Same shape the
 // server sums server-side; the numbers themselves come off the wire.
-const draftCost = (draft, recipes) => {
+//
+// TWO SOURCES, matching planReinforcement: the RECIPE prices the
+// transformation (global, per application), and the squad's own `surcharge`
+// prices the standard its upgrades hold it to (per body, 4c). A preview that
+// used only the first would understate a drilled squad's bill and let the
+// player submit a request the route then refuses for lack of gold.
+const draftCost = (draft, recipes, surcharge = {}) => {
   const cost = {}
-  for (const [type, bodies] of Object.entries(draft)) {
+  let bodies = 0
+  for (const [type, count] of Object.entries(draft)) {
     const recipe = recipes[type]
-    if (!recipe || !bodies) continue
+    if (!recipe || !count) continue
     for (const [resource, per] of Object.entries(recipe.cost))
-      cost[resource] = (cost[resource] ?? 0) + per * applicationsFor(recipe, bodies)
+      cost[resource] = (cost[resource] ?? 0) + per * applicationsFor(recipe, count)
+    bodies += count
   }
+  for (const [resource, per] of Object.entries(surcharge))
+    if (bodies > 0) cost[resource] = (cost[resource] ?? 0) + per * bodies
   return cost
 }
 
@@ -79,7 +89,7 @@ const SquadReinforcePanel = ({ onReinforce }) => {
         const draft = drafts[squad.id] ?? EMPTY_OBJECT
         const asked = Object.values(draft).reduce((a, b) => a + b, 0)
         const intakeLeft = (squad.intake ?? 0) - asked
-        const cost = draftCost(draft, recipes)
+        const cost = draftCost(draft, recipes, squad.reinforceSurcharge)
         const affordable = Object.entries(cost).every(([resource, n]) => (resources[resource] ?? 0) >= n)
         const types = Object.keys(caps)
 
