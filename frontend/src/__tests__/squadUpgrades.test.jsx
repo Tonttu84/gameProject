@@ -201,6 +201,24 @@ describe('squad upgrade panel', () => {
     expect(screen.getByTestId('upgrade-held-1-deeper_ranks')).toHaveTextContent('Deeper Ranks')
   })
 
+  // A row may cost more than one honour (4d: the Royal Guard costs two, the
+  // second borrowed from the next rank). The card has to SAY so — permanence is
+  // the whole cost of an upgrade, so spending a future draft unknowingly is the
+  // one thing this panel exists to prevent.
+  it('marks a row that costs more than one honour', async () => {
+    const dear = { id: 'royal_guard', name: 'Royal Guard', blurb: 'Halberds, and no ordinary soldier again.', slots: 2 }
+    const campaign = withOffer()
+    campaign.squads = campaign.squads.map((s) =>
+      s.id === 1 ? { ...s, upgradeOffer: { rank: 'Blooded', options: [...OFFER.options, dear] } } : s,
+    )
+    await toRecruitScreen(campaign)
+
+    expect(screen.getByTestId('upgrade-option-cost-1-royal_guard')).toHaveTextContent('Costs 2 honours')
+    // A one-slot row says nothing — the note is a warning, not a price tag on
+    // every card.
+    expect(screen.queryByTestId('upgrade-option-cost-1-deeper_ranks')).toBeNull()
+  })
+
   // The banner is granted free at Seasoned and carries NO bonus — decision 16
   // is deferred on purpose. The screen must say what it is and promise nothing.
   it('names the banner without promising a bonus', async () => {

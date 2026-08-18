@@ -23,6 +23,8 @@ import { squadCaps, squadIntake, looseRoster } from './squadReinforce.js'
 import {
   squadUpgrades,
   slotsFor,
+  slotsUsed,
+  upgradeSlotCost,
   picksAvailable,
   hasBanner,
   findUpgrade,
@@ -366,6 +368,11 @@ export async function campaignView(campaign) {
       // same reason reinforceRecipes is projected rather than referenced. What
       // the client sends BACK is always the id.
       upgrades: squadUpgrades(squad).map(({ id, name, blurb }) => ({ id, name, blurb })),
+      // How much of the ladder this squad has already spent (4d). Sent beside
+      // upgradeSlots/upgradePicks because a two-slot row makes "picks" and
+      // "slots held" different numbers for the first time: two rows taken can
+      // be three slots gone.
+      upgradeSlotsUsed: slotsUsed(squad),
       // Own info, all derived from prestige: how many slots the rank is worth,
       // how many are still unfilled, and whether the banner has been reached.
       upgradeSlots: slotsFor(squad),
@@ -373,13 +380,22 @@ export async function campaignView(campaign) {
       banner: hasBanner(squad),
       // The pending draft, or null. Resolved the same way; `rank` is the rung
       // that paid for it, which is what the panel headlines the choice with.
+      // `slots` rides along per option (4d): a row that costs two would
+      // otherwise look free on the card, and the player would spend a future
+      // draft without being told. Resolved from the row like name and blurb, so
+      // a re-priced row reaches an offer already on screen.
       upgradeOffer: squad.upgradeOffer
         ? {
             rank: squad.upgradeOffer.rank,
             options: [...squad.upgradeOffer.options]
               .map(findUpgrade)
               .filter(Boolean)
-              .map(({ id, name, blurb }) => ({ id, name, blurb })),
+              .map((row) => ({
+                id: row.id,
+                name: row.name,
+                blurb: row.blurb,
+                slots: upgradeSlotCost(row),
+              })),
           }
         : null,
     })),

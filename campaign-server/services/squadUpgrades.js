@@ -45,10 +45,40 @@ export const squadUpgrades = (squad) => takenIds(squad).map(findUpgrade).filter(
 
 export const slotsFor = (squad) => SQUAD_UPGRADE_SLOTS_BY_RANK[squadRank(squad?.prestige)] ?? 0
 
+// What one row costs in slots (4d). One unless the row says otherwise, so the
+// whole catalog before the Royal Guard needs no `slots` field and a new cheap
+// row still needs none.
+export const upgradeSlotCost = (row) => row?.slots ?? 1
+
+// The slots a squad has SPENT. Summed over the ID LIST rather than over
+// resolved rows: a row that has left the catalog still costs the slot it was
+// taken with, so a catalog edit cannot refund a pick into a campaign already in
+// flight. That is the archetypeOf degrade-don't-throw convention applied to
+// arithmetic — a missing row is worth its default 1, never 0.
+export const slotsUsed = (squad) =>
+  takenIds(squad).reduce((sum, id) => sum + upgradeSlotCost(findUpgrade(id)), 0)
+
+// The ladder's top rung — the slots a whole campaign is worth. DERIVED, never
+// the literal 3, so retuning SQUAD_UPGRADE_SLOTS_BY_RANK cannot strand the
+// borrowing rule below.
+const MAX_SLOTS = Math.max(...Object.values(SQUAD_UPGRADE_SLOTS_BY_RANK))
+
 // Unfilled slots. Floored at 0 so a squad holding more than its rank allows —
 // only reachable if the ladder is retuned downward under a live campaign — is
 // simply full rather than negative, and never loses what it already earned.
-export const picksAvailable = (squad) => Math.max(0, slotsFor(squad) - takenIds(squad).length)
+export const picksAvailable = (squad) => Math.max(0, slotsFor(squad) - slotsUsed(squad))
+
+// Can this squad still afford this row? A pick in hand is not enough for a row
+// that costs two: the second slot is BORROWED from a rung the squad has not
+// reached yet, so what must be free is the rest of its LADDER.
+//
+// Waiting for two FREE slots at once was considered and is unbuildable — trace
+// the cumulative ladder (Blooded 1 · Seasoned banner · Renowned 2 · Legendary 3)
+// and a squad never holds two free slots at any rung, so such a row could never
+// be offered at all. Borrowing also gives "never offered on the last pick" for
+// free: at Legendary there is no future rung left to book the second slot
+// against.
+const canAfford = (squad, row) => MAX_SLOTS - slotsUsed(squad) >= upgradeSlotCost(row)
 
 // The banner is a rank fact, not an inventory one: at or above the banner rung,
 // a squad has it. Compared on PRESTIGE against that rung's threshold rather
@@ -57,11 +87,13 @@ const BANNER_MIN = SQUAD_RANKS.find((r) => r.label === SQUAD_BANNER_RANK)?.min ?
 export const hasBanner = (squad) => (squad?.prestige ?? 0) >= BANNER_MIN
 
 // What this charter could still draw: its archetype's rows, minus what it
-// already holds. A squad with no archetype is eligible for nothing.
+// already holds, minus anything its remaining ladder cannot pay for. A squad
+// with no archetype is eligible for nothing.
 export const eligibleUpgrades = (squad) => {
   const taken = new Set(takenIds(squad))
   return SQUAD_UPGRADE_POOL.filter(
-    (row) => row.archetypes.includes(squad?.archetype) && !taken.has(row.id),
+    (row) =>
+      row.archetypes.includes(squad?.archetype) && !taken.has(row.id) && canAfford(squad, row),
   )
 }
 
@@ -111,7 +143,54 @@ export const planUpgrade = (squad, id) => {
   if (!row.archetypes.includes(squad?.archetype))
     return { error: `${squad.name} cannot train for ${row.name}` }
 
+  // Re-checked here rather than trusted from the offer: the draw applied this
+  // fence, but a replayed request against a stale offer would otherwise let a
+  // two-slot row through on a ladder that can no longer pay for it.
+  if (!canAfford(squad, row))
+    return {
+      error: `${row.name} costs ${upgradeSlotCost(row)} honours, and ${squad.name} has no room left on its ladder for that`,
+    }
+
   return { row }
+}
+
+// Composition and roster are mongoose Maps on a live document and plain objects
+// in the pure tests; mongoose Maps ARE Maps, so one reader and one writer cover
+// both (the readCount/bagGet convention this layer uses everywhere).
+const bagGet = (bag, key) => (bag instanceof Map ? bag.get(key) : bag?.[key]) ?? 0
+const bagSet = (bag, key, value) => {
+  if (bag instanceof Map) bag.set(key, value)
+  else if (bag) bag[key] = value
+}
+const bagDrop = (bag, key) => {
+  if (bag instanceof Map) bag.delete(key)
+  else if (bag) delete bag[key]
+}
+
+// A type-swap row CONVERTS the squad the moment it is taken (4d): every body of
+// the old type becomes the new one, free. Both sides of the ledger move
+// together — the squad's composition AND the campaign roster — because the
+// standing invariant is that a composition is always a subset already reflected
+// in the roster; converting one side alone sends looseRoster negative.
+//
+// The composition KEY is dropped rather than left at 0: the charter no longer
+// permits the old type at all, so a lingering `Soldier: 0` would be a type the
+// squad can neither field nor replace. The roster keeps its key at the reduced
+// count, which is the convention every other roster mutation follows.
+const applyTypeSwap = (campaign, squad, row) => {
+  const lines = []
+  for (const e of row.effects ?? []) {
+    if (e.kind !== 'typeSwap') continue
+    const moved = bagGet(squad.composition, e.from)
+    if (moved > 0) {
+      bagDrop(squad.composition, e.from)
+      bagSet(squad.composition, e.to, bagGet(squad.composition, e.to) + moved)
+      bagSet(campaign.roster, e.from, bagGet(campaign.roster, e.from) - moved)
+      bagSet(campaign.roster, e.to, bagGet(campaign.roster, e.to) + moved)
+      lines.push(`${moved} ${e.from} of ${squad.name} are made ${e.to}.`)
+    }
+  }
+  return lines
 }
 
 // Mutates in place; the caller saves. Returns log lines, the applyReinforcement
@@ -121,7 +200,10 @@ export const planUpgrade = (squad, id) => {
 export function applyUpgrade(campaign, squad, plan) {
   squad.upgrades = [...takenIds(squad), plan.row.id]
   squad.upgradeOffer = undefined
-  return [`${squad.name} takes up ${plan.row.name}.`]
+  // AFTER the row is recorded, so the conversion runs against the squad the
+  // pick has already made — and so a charter with no bodies to convert still
+  // ends up holding the row.
+  return [`${squad.name} takes up ${plan.row.name}.`, ...applyTypeSwap(campaign, squad, plan.row)]
 }
 
 // ── What the upgrades DO ─────────────────────────────────────────────────────
@@ -145,6 +227,21 @@ const sumOf = (squad, kind, field) =>
 export const capsBonus = (squad) => sumOf(squad, 'caps', 'bonus')
 
 export const intakeBonus = (squad) => sumOf(squad, 'intake', 'bonus')
+
+// Which troop types this squad's rows REPLACE, as `{ Soldier: 'RoyalGuard' }`
+// (4d). Read by squadCaps, which applies the swap BEFORE capsBonus so a caps
+// row raises the type the squad actually fields.
+//
+// This deliberately BENDS 4a's "an upgrade never admits a type the charter was
+// not written for": a type-swap row is exactly that, by design, and it is the
+// first one. The fence 4a was protecting still holds for `caps` rows — a caps
+// row may only raise types already named — because the two are separate,
+// explicit kinds rather than one blurred rule.
+export const typeSwaps = (squad) => {
+  const swaps = {}
+  for (const e of effectsOf(squad)) if (e.kind === 'typeSwap') swaps[e.from] = e.to
+  return swaps
+}
 
 // Multiplicative so two discounts compose without ever reaching free; 1 = no
 // discount. Applied per squad to its own contribution to a party's cost.

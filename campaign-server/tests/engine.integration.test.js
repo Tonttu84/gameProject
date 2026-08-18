@@ -4,7 +4,7 @@ import config from '../utils/config.js'
 import { dumpUnits, getInfo, runBattle } from '../services/engine.js'
 import { makeZonePlacer } from '../services/enemyPlacement.js'
 import { formationFighter, statMods } from '../services/squadUpgrades.js'
-import { packedSize } from '../services/squadReinforce.js'
+import { packedSize, squadCaps } from '../services/squadReinforce.js'
 import { syncCatalog } from '../services/catalogSync.js'
 import UnitType from '../models/unitType.js'
 import { startTestDb, stopTestDb } from './helpers/db.js'
@@ -17,6 +17,7 @@ import {
   SQUAD_ARCHETYPES,
   SQUAD_TROOP_BUDGET,
   SQUAD_UPGRADE_POOL,
+  SQUAD_REINFORCE_POOL,
   SQUAD_CHARACTER_RESERVE,
 } from '../utils/campaignConfig.js'
 
@@ -102,17 +103,39 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
   const namesWithRole = (catalog, role) =>
     catalog.units.filter((u) => u.roles.includes(role)).map((u) => u.name).sort()
 
-  test('every Player-role unit is recruitable in the Recruit phase', async () => {
+  // WIDENED in 4d, from "every Player type is in RECRUIT_POOL" to "…is in
+  // RECRUIT_POOL **or** SQUAD_REINFORCE_POOL". The rule's real intent has
+  // always been *no Player type is unobtainable*, and since slice 3 there are
+  // TWO honest acquisition channels: hire one, or train one up through a
+  // reinforcement recipe. RoyalGuard is the first type reachable only the
+  // second way — it must be a Player unit to be deployed, drawn and placed, and
+  // must never appear on the Recruit screen, or the royal_guard upgrade would
+  // grant a cap rather than the exclusive access it exists to sell.
+  //
+  // Still no carve-out list, which is the part worth keeping: a genuinely dead
+  // type — one no channel can produce — fails here naming itself.
+  test('every Player-role unit is obtainable, by hire or by training', async () => {
     const catalog = await dumpUnits()
-    const recruitable = new Set(RECRUIT_POOL.map((e) => e.unit))
+    const obtainable = new Set([
+      ...RECRUIT_POOL.map((e) => e.unit),
+      ...SQUAD_REINFORCE_POOL.map((r) => r.output.type),
+    ])
     const playerTypes = namesWithRole(catalog, 'Player')
 
     expect(playerTypes.length).toBeGreaterThan(0)
-    // No exemptions, deliberately: a rule with a carve-out list is a second
-    // thing to maintain. Adding a Player-role unit to the C++ catalog without
-    // a RECRUIT_POOL row fails here, naming the unit.
-    const unrecruitable = playerTypes.filter((n) => !recruitable.has(n))
-    expect(unrecruitable, 'Player-role units with no RECRUIT_POOL entry').toEqual([])
+    const unobtainable = playerTypes.filter((n) => !obtainable.has(n))
+    expect(unobtainable, 'Player-role units with no RECRUIT_POOL or SQUAD_REINFORCE_POOL entry')
+      .toEqual([])
+  }, 30000)
+
+  // The converse for the second channel, matching the RECRUIT_POOL guard below:
+  // a recipe that produced a type no battle could deploy would spend real gold
+  // on a body that vanishes at the placement boundary.
+  test('SQUAD_REINFORCE_POOL only trains units the engine gives the player', async () => {
+    const catalog = await dumpUnits()
+    const playerTypes = new Set(namesWithRole(catalog, 'Player'))
+    const trained = [...new Set(SQUAD_REINFORCE_POOL.map((r) => r.output.type))].sort()
+    expect(trained.filter((n) => !playerTypes.has(n)), 'trained but not a Player unit').toEqual([])
   }, 30000)
 
   test('RECRUIT_POOL only sells units the engine gives the player', async () => {
@@ -184,23 +207,26 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
   // noticing — the slice-4 spec calls this out as the invariant to respect.
   // Summed over every caps row an archetype may draw, since upgrades stack and
   // nothing stops a squad taking all of them it is eligible for.
-  test('no archetype outgrows the hex budget once its caps upgrades are taken', async () => {
+  // Priced through squadCaps — the reader the route itself uses — with every
+  // row the archetype may draw taken at once, rather than re-implementing the
+  // fold here. That is what makes it see 4d's TYPE SWAP as well as 4c's caps
+  // bonus: the guard replaces a Soldier body for body today, but a swap to a
+  // bigger body is exactly the way a squad could be handed more than its hex
+  // holds with nothing noticing.
+  test('no archetype outgrows the hex budget once its upgrades are taken', async () => {
     const catalog = await dumpUnits()
     const sizeOf = new Map(catalog.units.map((u) => [u.name, u.size]))
-    // A row is a BUNDLE of effects (4c), so the caps bonus is summed over the
-    // flattened effects of every row this archetype may draw.
-    for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES)) {
-      const bonus = SQUAD_UPGRADE_POOL.filter((row) => row.archetypes.includes(id))
-        .flatMap((row) => row.effects)
-        .reduce((sum, e) => (e.kind === 'caps' ? sum + e.bonus : sum), 0)
-      const points = Object.entries(archetype.caps).reduce((sum, [type, cap]) => {
+    for (const id of Object.keys(SQUAD_ARCHETYPES)) {
+      const everyRow = SQUAD_UPGRADE_POOL.filter((row) => row.archetypes.includes(id)).map((r) => r.id)
+      const caps = squadCaps({ archetype: id, upgrades: everyRow })
+      const points = Object.entries(caps).reduce((sum, [type, cap]) => {
         const size = sizeOf.get(type)
         expect(size, `${id} caps ${type}, which the engine catalog does not know`).toBeDefined()
-        return sum + size * (cap + bonus)
+        return sum + size * cap
       }, 0)
       expect(
         points + SQUAD_CHARACTER_RESERVE,
-        `archetype ${id} with every caps upgrade does not fit SQUAD_TROOP_BUDGET`,
+        `archetype ${id} with every upgrade does not fit SQUAD_TROOP_BUDGET`,
       ).toBeLessThanOrEqual(SQUAD_TROOP_BUDGET)
     }
   }, 30000)

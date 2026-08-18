@@ -21,6 +21,7 @@ import {
   ENEMY_DRAIN_KG_PER_TURN,
   SQUAD_RANKS,
   SQUAD_UPGRADE_POOL,
+  SQUAD_ARCHETYPES,
 } from '../utils/campaignConfig.js'
 
 // Stub the engine service — these tests cover the campaign layer, not the
@@ -1307,9 +1308,13 @@ describe('POST /api/campaigns/:id/battles', () => {
       // Slice 4c added the per-squad reinforcement surcharge its upgrades
       // impose — empty for a fresh charter, and shipped per squad because the
       // recipe table the panel prices against is global and this is not.
+      // Slice 4d added upgradeSlotsUsed: with a row that costs two slots,
+      // "honours held" and "slots spent" are different numbers for the first
+      // time, so the panel is told both rather than counting the list itself.
       const fresh = {
         prestige: 0, rank: 'Untested', reinforcedToday: false, reinforceSurcharge: {},
-        upgrades: [], upgradeSlots: 0, upgradePicks: 0, banner: false, upgradeOffer: null,
+        upgrades: [], upgradeSlots: 0, upgradeSlotsUsed: 0, upgradePicks: 0, banner: false,
+        upgradeOffer: null,
       }
       expect(c.squads).toEqual([
         {
@@ -2917,6 +2922,8 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
 
   const blooded = SQUAD_RANKS.find((r) => r.label === 'Blooded').min
   const seasoned = SQUAD_RANKS.find((r) => r.label === 'Seasoned').min
+  const renowned = SQUAD_RANKS.find((r) => r.label === 'Renowned').min
+  const legendary = SQUAD_RANKS.find((r) => r.label === 'Legendary').min
 
   // An offer is drawn at newDay, so a promoted squad needs a turn to roll over
   // before its draft is waiting.
@@ -2998,6 +3005,63 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
     const offered = (await getView(c.id)).squads.find((s) => s.id === 1).upgradeOffer.options[0].id
     await takeUpgrade(c.id, 1, offered).expect(200)
     const { body } = await takeUpgrade(c.id, 1, offered).expect(400)
+    expect(body.error).toBeDefined()
+  })
+
+  // 4d: the first row that changes WHAT a squad is. The conversion has to move
+  // both sides of the ledger — the squad's composition AND the campaign roster
+  // — or the standing invariant (a composition is always a subset already
+  // reflected in the roster) breaks and `loose` goes negative. Only a run
+  // against a real document exercises the mongoose-Map path.
+  //
+  // The offer is SEEDED, never hoped for. A test that returns early when the
+  // day's random draft happens not to contain the row is how a stale reader
+  // survived review in 4b — it ran on about half of all runs.
+  test('the Royal Guard converts the cohort on both sides of the ledger', async () => {
+    const c = await promoteAndTurn(1, renowned)
+    await Campaign.updateOne(
+      { _id: c.id, 'squads.id': 1 },
+      { $set: { 'squads.$.upgradeOffer': { rank: 'Renowned', options: ['royal_guard'] } } },
+    )
+    const before = await getView(c.id)
+    const soldiers = before.squads.find((s) => s.id === 1).composition.Soldier
+    expect(soldiers).toBeGreaterThan(0)
+
+    const { body: after } = await takeUpgrade(c.id, 1, 'royal_guard').expect(200)
+    const cohort = after.squads.find((s) => s.id === 1)
+
+    // Every body converted, free, at pick time — not through casualties.
+    expect(cohort.composition.RoyalGuard).toBe(soldiers)
+    expect(cohort.composition.Soldier).toBeUndefined()
+    // Soldier LEAVES the charter: the cap is swapped, not added alongside.
+    expect(cohort.caps.RoyalGuard).toBe(SQUAD_ARCHETYPES.line.caps.Soldier)
+    expect(cohort.caps.Soldier).toBeUndefined()
+    // The roster moved with it, so the unassigned pool is still honest.
+    expect(after.roster.RoyalGuard).toBe(soldiers)
+    expect(after.roster.Soldier).toBe(before.roster.Soldier - soldiers)
+    expect(after.loose.RoyalGuard).toBe(0)
+    expect(after.loose.Soldier).toBe(before.loose.Soldier)
+    // Two slots gone at once: the second is borrowed from the next rung, so a
+    // Renowned squad has nothing left to pick with.
+    expect(cohort.upgradeSlotsUsed).toBe(2)
+    expect(cohort.upgradePicks).toBe(0)
+    expect(after.resources).toEqual(before.resources)
+  })
+
+  test('the guard row is never offered when the ladder cannot pay for it', async () => {
+    // Legendary with two slots already spent: one pick in hand, but no future
+    // rung left to borrow the second slot against.
+    const c = await promoteAndTurn(1, legendary)
+    await Campaign.updateOne(
+      { _id: c.id, 'squads.id': 1 },
+      { $set: { 'squads.$.upgrades': ['deeper_ranks', 'standing_drafts'] } },
+    )
+    const cohort = (await getView(c.id)).squads.find((s) => s.id === 1)
+    expect(cohort.upgradePicks).toBe(1)
+
+    // Even naming it directly is refused — the route re-checks the ladder
+    // rather than trusting the offer it drew.
+    const { body } = await takeUpgrade(c.id, 1, 'royal_guard').expect(400)
     expect(body.error).toBeDefined()
   })
 

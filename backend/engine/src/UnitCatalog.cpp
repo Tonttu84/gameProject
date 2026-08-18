@@ -1,6 +1,7 @@
 #include "UnitCatalog.hpp"
 #include "hex/HexGrid.hpp"
 #include "units/Soldier.hpp"
+#include "units/RoyalGuard.hpp"
 #include "units/Pikeman.hpp"
 #include "units/Militia.hpp"
 #include "units/Archer.hpp"
@@ -41,6 +42,14 @@ const std::vector<UnitCatalogEntry>& unitCatalog()
     // typeName          roles                      factory
     static const std::vector<UnitCatalogEntry> catalog = {
         {"Soldier",      R::Player | R::Enemy,      makeT<Soldier>},
+        // Player ONLY, and deliberately: enemy hosts do not field royal guards.
+        // Whether they ever should is a balance question the user declined to
+        // bundle into 4d — adding R::Enemy here is the whole change if it is
+        // ever answered yes. Not buyable either: the campaign's royal_guard
+        // squad upgrade is the only channel through which one exists, so it is
+        // the first Player type obtainable through a reinforcement recipe
+        // rather than a recruit row (see docs/ADDING_UNITS.md §5).
+        {"RoyalGuard",   R::Player,                 makeT<RoyalGuard>},
         {"Pikeman",      R::Player,                 makeT<Pikeman>},
         {"Militia",      R::Player,                 makeT<Militia>},
         {"Archer",       R::Player | R::Enemy,      makeT<Archer>},

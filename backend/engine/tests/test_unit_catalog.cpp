@@ -33,8 +33,8 @@ TEST_CASE("unit catalog: lists every unit type in the engine") {
     for (const auto& u : j["units"])
         names.insert(u["name"].get<std::string>());
 
-    for (const char* expected : {"Soldier", "Pikeman", "Militia", "Archer", "Mage", "Priest",
-                                 "Necromancer", "Cavalry", "LightCavalry", "Zombie",
+    for (const char* expected : {"Soldier", "RoyalGuard", "Pikeman", "Militia", "Archer", "Mage",
+                                 "Priest", "Necromancer", "Cavalry", "LightCavalry", "Zombie",
                                  "Skeleton", "Scorpion", "Horse", "Warhorse"}) {
         INFO("missing type: " << expected);
         REQUIRE(names.count(expected) == 1);
@@ -126,10 +126,14 @@ static std::set<std::string> namesWithRole(const json& j, const char* role) {
 TEST_CASE("unit catalog: roles mark exactly the intended types") {
     auto j = json::parse(unitCatalogJson());
 
-    // The player recruits, owns and deploys these — and every one of them
-    // must be buyable in the campaign's Recruit phase.
+    // The player owns and deploys these, and every one of them must be
+    // OBTAINABLE in the campaign — hired from the Recruit phase, or trained
+    // through a reinforcement recipe. RoyalGuard is the first of the second
+    // kind: no recruit row sells one, and a line squad's royal_guard upgrade
+    // is what makes them exist at all.
     REQUIRE(namesWithRole(j, "Player") == std::set<std::string>{
-        "Soldier", "Pikeman", "Militia", "Archer", "Mage", "Priest", "Cavalry", "LightCavalry"});
+        "Soldier", "RoyalGuard", "Pikeman", "Militia", "Archer", "Mage", "Priest", "Cavalry",
+        "LightCavalry"});
 
     // Descriptive, not exclusive: the first three are player types the enemy
     // host also fields (campaign-server's ENEMY_ARMY).

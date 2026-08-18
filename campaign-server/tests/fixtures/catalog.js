@@ -18,6 +18,19 @@ export const catalogFixture = {
       stats: { maxHP: 10, attack: 11, defence: 12, armour: 2, speed: 10, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
     },
     {
+      // Never recruited and never loose by any other route: the only way a
+      // campaign comes to own one is the royal_guard squad upgrade (4d), which
+      // converts Soldiers. Same size as the Soldier it replaces, deliberately —
+      // a guard squad measures exactly what a line squad measures.
+      name: 'RoyalGuard',
+      symbol: 'G',
+      size: 10,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      roles: ['Player'],
+      stats: { maxHP: 14, attack: 13, defence: 14, armour: 5, speed: 10, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
+    },
+    {
       name: 'Militia',
       symbol: 'm',
       size: 10,

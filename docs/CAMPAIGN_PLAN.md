@@ -87,11 +87,27 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-08-18) — START HERE
 
-Everything below this block is history; this is the live front. Schema version **34**.
-**Slices 1, 2, 3, 4a, 4b and 4c of the squad overhaul are SHIPPED. 4d (Royal Guard) is
-INTERVIEWED AND SPEC'D as of 2026-08-18 and is ready to BUILD — seven decisions, all the
-user's, recorded under "4d — Royal Guard" in the build order below. Nothing about it is open.**
-Then characters, then banners, then the squad screen (decision 13, last).
+Everything below this block is history; this is the live front. Schema version **35**
+(this block read 34 until 2026-08-18; `CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
+authority, and 4a bumped it. 4b, 4c and 4d needed no bump — none of them changed the document
+shape).
+**Slice 4 IS DONE — 1, 2, 3, 4a, 4b, 4c and 4d of the squad overhaul are all SHIPPED**, 4d
+(Royal Guard) as of 2026-08-18. Next: characters, then banners, then the squad screen
+(decision 13, last).
+
+**What 4d leaves for the next slice to know:**
+- **A row may now cost more than one slot**, and `picksAvailable` is `slotsFor − slotsUsed`
+  where `slotsUsed` SUMS `row.slots ?? 1` over the taken ids. Anything that counts
+  `squad.upgrades.length` to mean "slots spent" is wrong from here on.
+- **`typeSwap` is a real effect kind**, and the first thing that changes WHICH types a charter
+  fields. `squadCaps` applies it BEFORE `capsBonus` — reversing that order silently strands a
+  caps row on a type that no longer exists.
+- **A `Player` unit no longer has to be for sale.** The engine.integration rule is now
+  "in `RECRUIT_POOL` **or** `SQUAD_REINFORCE_POOL`", and `docs/ADDING_UNITS.md` §2/§5 say so.
+  RoyalGuard is the first type obtainable only by training; it will not be the last.
+- **A live campaign server must be restarted** after this build, as after any engine unit
+  change: `squadSizePoints` throws on a type the DB catalog does not know, and the catalog is
+  synced from `dump-units` at boot.
 
 **The real-vs-adjusted size split now EXISTS** (4c), so the thing every earlier note called "the
 awkward one" is no longer blocking anything. `AUnit::getSize()` is the REAL body and
@@ -119,8 +135,8 @@ and the Recruit screen has the button. What the next slice needs to know before 
   squad past `SQUAD_TROOP_BUDGET`; `engine.integration.test.js` enforces that for archetypes, and an
   upgrade layer needs the same guard (the config invariant only sees the base rows).
 
-**SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; 4a/4b/4c SHIPPED, 4d is next).**
-The design interview the handoff above asked for is DONE. Eight decisions, all the user's. Build TDD.
+**SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; 4a/4b/4c/4d ALL SHIPPED).**
+The design interview the handoff above asked for is DONE. Eight decisions, all the user's. Built TDD.
 
 **The 4d interview HAPPENED (2026-08-18)** — the build pattern 4b and 4c settled into: interview
 first, record the decisions here, then build TDD against them. Its seven decisions are under
@@ -171,6 +187,8 @@ engine rows after**, so each step ships green instead of one long red branch.
 - **Pools sized by "access to 5 for now, then increase as we get cool upgrades"** (the user's
   sizing rule), drawing 3. Counts as actually built: **4a line 3 / skirmish 3 / vanguard 3;
   4b line 5 / skirmish 5 / vanguard 5; 4c line 6 / skirmish 5 / vanguard 5; 4d line 7.**
+  Since 4d that count is the pool, not necessarily the DRAW: eligibility also asks whether the
+  squad's remaining ladder can pay for the row, so a two-slot row drops out of a late offer.
   (An earlier revision of this block claimed "line 8, skirmish 6, vanguard 6" — that was wrong,
   and 8 was the TOTAL row count in `SQUAD_UPGRADE_POOL`, not any one archetype's eligible set.
   Count with `SQUAD_UPGRADE_POOL.filter(r => r.archetypes.includes(a))`, never by eyeballing the
@@ -263,9 +281,30 @@ engine rows after**, so each step ships green instead of one long red branch.
     client-side, so `campaignView` now ships `reinforceSurcharge` per squad. Without it the preview
     understates a drilled squad's cost and the player can submit what the route then refuses — the
     one disagreement that panel exists to make impossible.
-- **4d — Royal Guard: INTERVIEWED AND SPEC'D 2026-08-18, ready to BUILD.** Seven decisions, all
-  the user's, taken in a `grilling` interview. Two of them change machinery 4a built, so read
-  decisions 4d-3 and 4d-5 before touching `squadUpgrades.js`.
+- **4d — Royal Guard: ✅ SHIPPED 2026-08-18 (no schema change).** Seven decisions, all the
+  user's, taken in a `grilling` interview and then built TDD against them; the spec is kept
+  verbatim below because it is still the reference for WHY, and nothing in it was overturned
+  by the build. **What landed, beyond the decisions as written:**
+  - `slotsUsed`/`upgradeSlotCost` are the new arithmetic, and `canAfford` — one private
+    predicate — is the WHOLE of the borrowing rule. It is applied in two places on purpose:
+    `eligibleUpgrades` (so the row is never drawn when the ladder cannot pay) and `planUpgrade`
+    (so a replayed request against a stale offer cannot smuggle it past). Both of the user's
+    requirements and "never offered on the last pick" fall out of that one predicate; there is
+    no rule anywhere naming the Royal Guard.
+  - The conversion lives in `applyTypeSwap` and runs AFTER the row is recorded, so a wiped
+    charter still ends up holding it. It writes composition and roster together; the
+    composition KEY is dropped rather than left at 0 (the charter no longer permits the type
+    at all), while the roster keeps its key at the reduced count, as every other roster
+    mutation does.
+  - **The hex-budget fences now price through `squadCaps` itself** rather than re-implementing
+    the caps fold — in the pure suite and against the real binary both. That is what makes them
+    see a type swap at all: RoyalGuard replaces a Soldier body for body today, but a swap to a
+    bigger body is exactly how a squad could be handed more than its hex holds with nothing
+    noticing.
+  - `campaignView` ships `slots` per offered option and `upgradeSlotsUsed` per squad;
+    `SquadUpgradePanel` marks any row costing more than one honour. `upgradeSlots`/
+    `upgradePicks` keep their old meanings.
+  - C++ 361 cases, campaign-server 786, frontend 293, lint clean.
 
   **4d-1. The pick CONVERTS the squad, wholesale and free.** Taking the row swaps the line
   charter's `Soldier 40` for `RoyalGuard 40` — **Soldier leaves the charter entirely** — and every

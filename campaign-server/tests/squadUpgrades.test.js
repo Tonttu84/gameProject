@@ -3,6 +3,8 @@ import {
   findUpgrade,
   squadUpgrades,
   slotsFor,
+  slotsUsed,
+  upgradeSlotCost,
   picksAvailable,
   hasBanner,
   eligibleUpgrades,
@@ -15,6 +17,7 @@ import {
   statMods,
   formationFighter,
   reinforceSurcharge,
+  typeSwaps,
 } from '../services/squadUpgrades.js'
 import { squadCaps, squadIntake } from '../services/squadReinforce.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
@@ -52,10 +55,6 @@ const prestigeFor = (label) => SQUAD_RANKS.find((r) => r.label === label).min
 // rather than assuming a row carries exactly one thing.
 const effectOf = (id, kind) => findUpgrade(id).effects.find((e) => e.kind === kind)
 const allEffects = () => SQUAD_UPGRADE_POOL.flatMap((row) => row.effects)
-const capsBonusForArchetype = (archetype) =>
-  SQUAD_UPGRADE_POOL.filter((r) => r.archetypes.includes(archetype))
-    .flatMap((r) => r.effects)
-    .reduce((sum, e) => (e.kind === 'caps' ? sum + e.bonus : sum), 0)
 
 beforeEach(clearRolls)
 
@@ -232,9 +231,9 @@ describe('taking one', () => {
       prestige: prestigeFor('Blooded'),
       upgradeOffer: { rank: 'Blooded', options: ['royal_guard'] },
     })
-    // No such row today (4d adds it); the unknown-id guard covers it either
-    // way, so this asserts the refusal rather than the message.
-    expect(planUpgrade(wrong, 'royal_guard').error).toBeDefined()
+    // royal_guard is a LINE row (4d), so a vanguard charter holding a forged
+    // offer is refused by the archetype fence rather than by the id lookup.
+    expect(planUpgrade(wrong, 'royal_guard').error).toMatch(/cannot train for/)
   })
 })
 
@@ -320,18 +319,26 @@ describe('what the upgrades do', () => {
 // against the REAL engine catalog; this one runs on the fixture so it fails
 // fast in the pure suite too.
 describe('the hex budget survives the catalog', () => {
+  // Priced through the REAL reader with every row the archetype may draw taken
+  // at once, so a row that changes WHICH types a squad fields is measured too
+  // (4d's type swap, whose RoyalGuard could have been a bigger body than the
+  // Soldier it replaces). Summing every eligible row is deliberately the worst
+  // case: the slot ladder makes some of these combinations unreachable, and a
+  // fence that only checked reachable ones would have to be re-derived every
+  // time the ladder moves.
   test('no archetype at full upgraded strength outgrows the budget', () => {
     const sizeOf = new Map(catalogFixture.units.map((u) => [u.name, u.size]))
-    for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES)) {
-      const bonus = capsBonusForArchetype(id)
-      const points = Object.entries(archetype.caps).reduce((sum, [type, cap]) => {
+    for (const id of Object.keys(SQUAD_ARCHETYPES)) {
+      const everyRow = SQUAD_UPGRADE_POOL.filter((r) => r.archetypes.includes(id)).map((r) => r.id)
+      const caps = squadCaps(squad({ archetype: id, upgrades: everyRow }))
+      const points = Object.entries(caps).reduce((sum, [type, cap]) => {
         const size = sizeOf.get(type)
         expect(size, `${id} caps ${type}, which the catalog does not know`).toBeDefined()
-        return sum + size * (cap + bonus)
+        return sum + size * cap
       }, 0)
       expect(
         points + SQUAD_CHARACTER_RESERVE,
-        `archetype ${id} with every caps upgrade does not fit SQUAD_TROOP_BUDGET`,
+        `archetype ${id} with every upgrade does not fit SQUAD_TROOP_BUDGET`,
       ).toBeLessThanOrEqual(SQUAD_TROOP_BUDGET)
     }
   })
@@ -405,5 +412,209 @@ describe('the catalog shape', () => {
       expect(row.effect, `${row.id} does not carry a stale singular effect`).toBeUndefined()
       for (const e of row.effects) expect(typeof e.kind).toBe('string')
     }
+  })
+})
+
+// ── A row that costs TWO slots (slice 4d) ────────────────────────────────────
+//
+// The Royal Guard is a whole new unit type rather than "+1 to one stat", so the
+// user priced it at two of a campaign's three picks — one paid now, one BORROWED
+// from the next rung. Waiting for two FREE slots at once would make the row
+// unreachable for ever: trace the cumulative ladder (Blooded 1 · Seasoned banner
+// · Renowned 2 · Legendary 3) and a squad never holds two free slots at any rung.
+//
+// So the whole rule is: a squad needs a pick in hand AND enough of its LADDER
+// still unspent to cover the row. Both of the user's requirements fall out of
+// that one line, which is why there is no stored `skipNextDraft` flag — derived
+// state cannot drift out of step with a retuned ladder.
+describe('a row that costs two slots', () => {
+  const MAX_SLOTS = Math.max(...Object.values(SQUAD_UPGRADE_SLOTS_BY_RANK))
+
+  test('a row costs one slot unless it says otherwise', () => {
+    expect(upgradeSlotCost(findUpgrade('deeper_ranks'))).toBe(1)
+    expect(upgradeSlotCost(findUpgrade('royal_guard'))).toBe(2)
+    expect(findUpgrade('royal_guard').slots).toBe(2)
+  })
+
+  test('slots used is summed over the cost of what is held, not counted', () => {
+    expect(slotsUsed(squad({ upgrades: [] }))).toBe(0)
+    expect(slotsUsed(squad({ upgrades: ['deeper_ranks'] }))).toBe(1)
+    expect(slotsUsed(squad({ upgrades: ['royal_guard'] }))).toBe(2)
+    expect(slotsUsed(squad({ upgrades: ['royal_guard', 'deeper_ranks'] }))).toBe(3)
+  })
+
+  // Summed over the ID LIST rather than over resolved rows: a row that has left
+  // the catalog still costs the slot it was taken with, so a catalog edit cannot
+  // refund a pick into a campaign already in flight.
+  test('an id whose row has left the catalog still costs its slot', () => {
+    expect(slotsUsed(squad({ upgrades: ['a_row_that_was_deleted'] }))).toBe(1)
+    expect(picksAvailable(squad({ prestige: prestigeFor('Blooded'), upgrades: ['a_row_that_was_deleted'] })))
+      .toBe(0)
+  })
+
+  test('holding the guard spends two of the rank’s slots', () => {
+    expect(picksAvailable(squad({ prestige: prestigeFor('Renowned'), upgrades: ['royal_guard'] }))).toBe(0)
+    expect(picksAvailable(squad({ prestige: prestigeFor('Legendary'), upgrades: ['royal_guard'] }))).toBe(1)
+  })
+
+  // The fence is on the LADDER, not on free slots now: at Blooded a squad has
+  // one slot in hand and books the second against Renowned.
+  test('it is offered at Blooded, where only one slot is actually free', () => {
+    expect(eligibleUpgrades(squad({ prestige: prestigeFor('Blooded') })).map((r) => r.id))
+      .toContain('royal_guard')
+  })
+
+  // "It skips the next upgrade": take it at Blooded and Renowned deals nothing;
+  // take it at Renowned and Legendary is silent.
+  test('taking it consumes the next rung’s draft too', () => {
+    const atRenowned = squad({ prestige: prestigeFor('Renowned'), upgrades: ['royal_guard'] })
+    expect(drawUpgradeOffer(atRenowned)).toBeNull()
+    const atLegendary = squad({ prestige: prestigeFor('Legendary'), upgrades: ['royal_guard', 'deeper_ranks'] })
+    expect(drawUpgradeOffer(atLegendary)).toBeNull()
+  })
+
+  // And the same rule gives "never offered on the last pick" for free: at
+  // Legendary with two slots already spent there is no future rung left to
+  // borrow the second from.
+  test('it is never offered on the last pick, with no rule of its own', () => {
+    const lastPick = squad({
+      prestige: prestigeFor('Legendary'),
+      upgrades: ['deeper_ranks', 'standing_drafts'],
+    })
+    expect(picksAvailable(lastPick)).toBe(1)
+    expect(eligibleUpgrades(lastPick).map((r) => r.id)).not.toContain('royal_guard')
+    // A one-slot row is still perfectly drawable on that last pick.
+    expect(eligibleUpgrades(lastPick).length).toBeGreaterThan(0)
+  })
+
+  // The ceiling is DERIVED from the ladder rather than written as 3, so
+  // retuning SQUAD_UPGRADE_SLOTS_BY_RANK cannot strand the rule.
+  test('the ceiling is the ladder’s top rung, not a literal', () => {
+    expect(MAX_SLOTS).toBe(SQUAD_UPGRADE_SLOTS_BY_RANK.Legendary)
+    // Every row must be affordable within a whole campaign's ladder, or it is
+    // an unreachable entry in the catalog.
+    for (const row of SQUAD_UPGRADE_POOL)
+      expect(upgradeSlotCost(row), `${row.id} costs more slots than a campaign grants`)
+        .toBeLessThanOrEqual(MAX_SLOTS)
+  })
+
+  // A replayed request against a stale offer must not slip past the fence the
+  // draw applied — planUpgrade re-checks it rather than trusting the offer.
+  test('a stale offer cannot smuggle it past the ladder', () => {
+    const lastPick = squad({
+      prestige: prestigeFor('Legendary'),
+      upgrades: ['deeper_ranks', 'standing_drafts'],
+      upgradeOffer: { rank: 'Legendary', options: ['royal_guard'] },
+    })
+    expect(planUpgrade(lastPick, 'royal_guard').error).toMatch(/costs 2 honours/)
+  })
+})
+
+// ── The Royal Guard: the first row that changes WHAT a squad is (slice 4d) ───
+//
+// The pick CONVERTS the squad wholesale and free: the charter's Soldier cap
+// becomes a RoyalGuard cap — Soldier LEAVES the charter entirely — and every
+// Soldier body already in the ranks becomes a Royal Guard at pick time. Soldier
+// leaving is load-bearing rather than tidiness: it is what makes the dearer
+// replacement recipe unavoidable, and so what makes "the ongoing cost is
+// reinforcement" true here. Restoring Soldier to the guard charter hollows the
+// whole row out.
+describe('the Royal Guard converts the squad', () => {
+  const guard = (overrides = {}) => squad({ upgrades: ['royal_guard'], ...overrides })
+
+  test('only a line charter may draw it', () => {
+    expect(findUpgrade('royal_guard').archetypes).toEqual(['line'])
+    // Structurally forced, not a preference: the row swaps a Soldier cap, and
+    // neither skirmish nor vanguard has one to swap.
+    for (const [id, archetype] of Object.entries(SQUAD_ARCHETYPES))
+      if (id !== 'line') expect(Object.keys(archetype.caps)).not.toContain('Soldier')
+  })
+
+  test('the charter swaps Soldier for RoyalGuard, and leaves the rest alone', () => {
+    const caps = squadCaps(guard())
+    expect(caps.RoyalGuard).toBe(SQUAD_ARCHETYPES.line.caps.Soldier)
+    expect(caps.Soldier).toBeUndefined()
+    expect(caps.Pikeman).toBe(SQUAD_ARCHETYPES.line.caps.Pikeman)
+  })
+
+  test('the swap reads as a plain from→to map', () => {
+    expect(typeSwaps(guard())).toEqual({ Soldier: 'RoyalGuard' })
+    expect(typeSwaps(squad())).toEqual({})
+  })
+
+  // ORDER IS LOAD-BEARING: the swap applies BEFORE capsBonus, so a caps row
+  // raises the RoyalGuard cap and not a Soldier cap that no longer exists.
+  test('a caps row raises the guard cap, not the cap it replaced', () => {
+    const bonus = effectOf('deeper_ranks', 'caps').bonus
+    const caps = squadCaps(guard({ upgrades: ['royal_guard', 'deeper_ranks'] }))
+    expect(caps.RoyalGuard).toBe(SQUAD_ARCHETYPES.line.caps.Soldier + bonus)
+    expect(caps.Soldier).toBeUndefined()
+  })
+
+  test('the pick carries no reinforcement surcharge — the recipe is the price', () => {
+    // Unlike Formation Fighters, the dearer RECIPE is where this row is paid
+    // for; a surcharge on top would charge the same trade twice.
+    expect(reinforceSurcharge(guard())).toEqual({})
+    expect(statMods(guard())).toEqual({})
+  })
+
+  test('taking it converts every Soldier body, free, on both sides of the ledger', () => {
+    const s = squad({
+      prestige: prestigeFor('Blooded'),
+      composition: { Soldier: 38, Pikeman: 9 },
+      upgradeOffer: { rank: 'Blooded', options: ['royal_guard'] },
+    })
+    const campaign = { day: 4, roster: { Soldier: 50, Pikeman: 12, Archer: 20 } }
+    const plan = planUpgrade(s, 'royal_guard')
+    expect(plan.error).toBeUndefined()
+    const entries = applyUpgrade(campaign, s, plan)
+
+    // The squad: every Soldier is now a guard, and the rest is untouched.
+    expect(s.composition.RoyalGuard).toBe(38)
+    expect(s.composition.Soldier ?? 0).toBe(0)
+    expect(s.composition.Pikeman).toBe(9)
+    // The roster moves with it — the standing invariant is that a squad's
+    // composition is always a subset already reflected in the roster, so
+    // converting one side alone would send looseRoster negative.
+    expect(campaign.roster.RoyalGuard).toBe(38)
+    expect(campaign.roster.Soldier).toBe(12)
+    expect(campaign.roster.Archer).toBe(20)
+    expect(entries.join(' ')).toContain('38')
+  })
+
+  test('a wiped charter still swaps, with no bodies to carry over', () => {
+    const s = squad({
+      prestige: prestigeFor('Blooded'),
+      composition: {},
+      upgradeOffer: { rank: 'Blooded', options: ['royal_guard'] },
+    })
+    const campaign = { day: 4, roster: { Soldier: 5 } }
+    applyUpgrade(campaign, s, planUpgrade(s, 'royal_guard'))
+    expect([...s.upgrades]).toEqual(['royal_guard'])
+    expect(campaign.roster.Soldier).toBe(5)
+    expect(squadCaps(s).RoyalGuard).toBe(SQUAD_ARCHETYPES.line.caps.Soldier)
+  })
+
+  // The DB hands these in as mongoose Maps and the pure tests as plain objects;
+  // one writer covers both, as everywhere else in this layer.
+  test('the conversion writes Maps as readily as plain objects', () => {
+    const s = squad({
+      prestige: prestigeFor('Blooded'),
+      composition: new Map([['Soldier', 6]]),
+      upgradeOffer: { rank: 'Blooded', options: ['royal_guard'] },
+    })
+    const campaign = { day: 1, roster: new Map([['Soldier', 6]]) }
+    applyUpgrade(campaign, s, planUpgrade(s, 'royal_guard'))
+    expect(s.composition.get('RoyalGuard')).toBe(6)
+    expect(s.composition.get('Soldier') ?? 0).toBe(0)
+    expect(campaign.roster.get('RoyalGuard')).toBe(6)
+    expect(campaign.roster.get('Soldier')).toBe(0)
+  })
+
+  // The hex is untouched by design (4d-6): a guard is the same size as the
+  // soldier he replaces, so a converted squad measures exactly what it did.
+  test('conversion does not change what the squad occupies', () => {
+    const sizeOf = new Map(catalogFixture.units.map((u) => [u.name, u.size]))
+    expect(sizeOf.get('RoyalGuard')).toBe(sizeOf.get('Soldier'))
   })
 })

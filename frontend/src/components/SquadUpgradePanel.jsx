@@ -77,6 +77,18 @@ const SquadUpgradePanel = ({ onTakeUpgrade }) => {
                     onChange={() => setPicked((prev) => ({ ...prev, [squad.id]: option.id }))}
                   />
                   <span className="upgrade-option-name">{option.name}</span>
+                  {/* A row may cost more than one honour (the Royal Guard costs
+                      two, the second borrowed from the next rank). Saying so on
+                      the card is the whole point: permanence is the cost, and a
+                      player must never spend a future draft unknowingly. */}
+                  {(option.slots ?? 1) > 1 && (
+                    <span
+                      className="upgrade-option-cost"
+                      data-testid={`upgrade-option-cost-${squad.id}-${option.id}`}
+                    >
+                      Costs {option.slots} honours — this one and the next
+                    </span>
+                  )}
                   <span className="upgrade-option-blurb">{option.blurb}</span>
                 </label>
               ))}

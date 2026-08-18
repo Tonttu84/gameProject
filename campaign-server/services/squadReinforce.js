@@ -4,7 +4,13 @@ import {
   SQUAD_TROOP_BUDGET,
   SQUAD_CHARACTER_RESERVE,
 } from '../utils/campaignConfig.js'
-import { capsBonus, intakeBonus, formationFighter, reinforceSurcharge } from './squadUpgrades.js'
+import {
+  capsBonus,
+  intakeBonus,
+  formationFighter,
+  reinforceSurcharge,
+  typeSwaps,
+} from './squadUpgrades.js'
 
 // Squad reinforcement — the squad overhaul's slice 3 (docs/CAMPAIGN_PLAN.md
 // "SLICE 3 — reinforcement"). Slice 2 stored the archetype and its caps and
@@ -48,11 +54,18 @@ export const archetypeOf = (squad) => SQUAD_ARCHETYPES[squad?.archetype] ?? null
 // was not written for, so the keys are untouched and a squad with no archetype
 // still gets nothing. Every caller reads caps through this function, so the
 // bonus reaches the reinforcement gates, campaignView and the panel at once.
+// A TYPE-SWAP row (4d) is the one exception, and an explicit one: it rewrites
+// which type a cap is FOR, so the guard cap replaces the Soldier cap outright
+// and Soldier leaves the charter. It applies BEFORE the caps bonus, and that
+// ordering is load-bearing — the other way round, a caps row would raise a
+// Soldier cap that no longer exists and the guard cap would stay at its base.
 export const squadCaps = (squad) => {
   const base = archetypeOf(squad)?.caps ?? {}
+  const swaps = typeSwaps(squad)
   const bonus = capsBonus(squad)
-  if (bonus === 0) return base
-  return Object.fromEntries(Object.entries(base).map(([type, cap]) => [type, cap + bonus]))
+  return Object.fromEntries(
+    Object.entries(base).map(([type, cap]) => [swaps[type] ?? type, cap + bonus]),
+  )
 }
 
 // Same shape: no archetype ⇒ 0 and no upgrade can lift it off the floor, since

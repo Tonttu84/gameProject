@@ -246,6 +246,35 @@ export const SQUAD_UPGRADE_POOL = [
       { kind: 'reinforceCost', add: { gold: 1 } },
     ],
   },
+  // 4d — the first row that changes WHAT a squad is rather than how well it
+  // fights. Taking it CONVERTS the charter wholesale and free: the Soldier cap
+  // becomes a RoyalGuard cap and every Soldier already in the ranks is a Royal
+  // Guard from that moment. Pikeman rides along untouched.
+  //
+  // SOLDIER LEAVES THE CHARTER, and that is load-bearing rather than tidiness:
+  // it is what makes the dearer replacement recipe (SQUAD_REINFORCE_POOL's
+  // reinforce_royal_guard) unavoidable, and therefore what makes the slice-4
+  // decision "the ongoing cost is REINFORCEMENT" true here. Restoring Soldier
+  // to the guard charter would hollow the row out — the squad would simply
+  // refill with cheap bodies.
+  //
+  // TWO SLOTS, one paid now and one BORROWED from the next rung (user: "basic
+  // upgrade is modest increase to one stat", so a whole new unit type is worth
+  // two). It carries NO reinforceCost surcharge: unlike Formation Fighters the
+  // dearer RECIPE is the price, and stacking a surcharge would charge the same
+  // trade twice.
+  //
+  // LINE ONLY, and structurally so — neither skirmish (Archer/Militia) nor
+  // vanguard (Cavalry/LightCavalry) has a Soldier cap to swap.
+  {
+    id: 'royal_guard',
+    name: 'Royal Guard',
+    blurb:
+      'The whole cohort is taken into the king’s own: every soldier trades sword and shield for the halberd, and no ordinary soldier joins them again — replacements must be trained up to the standard.',
+    archetypes: ['line'],
+    slots: 2,
+    effects: [{ kind: 'typeSwap', from: 'Soldier', to: 'RoyalGuard' }],
+  },
 ]
 
 // ── Squad reinforcement recipes (docs/CAMPAIGN_PLAN.md "SLICE 3 —
@@ -287,6 +316,14 @@ export const SQUAD_REINFORCE_POOL = [
   { id: 'reinforce_pikeman',       output: { type: 'Pikeman',      count: 1 }, inputs: { Pikeman: 1 },      cost: { gold: 2, materials: 1 } },
   { id: 'reinforce_light_cavalry', output: { type: 'LightCavalry', count: 1 }, inputs: { LightCavalry: 1 }, cost: { gold: 4, materials: 3, horses: 1 } },
   { id: 'reinforce_cavalry',       output: { type: 'Cavalry',      count: 1 }, inputs: { Cavalry: 1 },      cost: { gold: 5, materials: 4, horses: 1 } },
+  // 4d. The INPUT is a Soldier, not a Royal Guard: there are never loose Royal
+  // Guards in the roster (no recruit row sells them — the squad upgrade is the
+  // only way any exist), so this is the whole acquisition channel for the type,
+  // and it keeps the Militia→Soldier pipeline load-bearing. Cavalry-dear on
+  // purpose, 2.5× a Soldier's row: refilling 15 dead runs 75 gold, two or three
+  // good raids, so losses hurt without a mauled guard squad becoming
+  // unrecoverable dead weight.
+  { id: 'reinforce_royal_guard',   output: { type: 'RoyalGuard',   count: 1 }, inputs: { Soldier: 1 },      cost: { gold: 5, materials: 4 } },
 ]
 
 // ~4 turns for the starting army (which needs 12,432 kg per turn).

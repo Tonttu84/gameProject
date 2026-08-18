@@ -12,6 +12,7 @@ import { catalogFixture } from './fixtures/catalog.js'
 import {
   SQUAD_ARCHETYPES,
   SQUAD_REINFORCE_POOL,
+  SQUAD_UPGRADE_POOL,
   SQUAD_TROOP_BUDGET,
   SQUAD_CHARACTER_RESERVE,
   STARTING_SQUADS,
@@ -65,8 +66,15 @@ describe('the recipe table', () => {
   // owns the TRANSFORMATION — but a capped type with no recipe is a type the
   // charter may hold and can never replace, which reads as a silent bug rather
   // than a design choice.
+  //
+  // A type an UPGRADE can put in a charter counts as capped: since 4d a
+  // type-swap row rewrites which type a cap is for, and the swapped-in type is
+  // exactly the one whose replacements must exist — it is the only channel by
+  // which the type is obtainable at all.
   test('every type any archetype caps can actually be reinforced', () => {
     const capped = new Set(Object.values(SQUAD_ARCHETYPES).flatMap((a) => Object.keys(a.caps)))
+    for (const row of SQUAD_UPGRADE_POOL)
+      for (const e of row.effects) if (e.kind === 'typeSwap') capped.add(e.to)
     const missing = [...capped].filter((type) => !findReinforceRecipe(type))
     expect(missing, 'capped types with no SQUAD_REINFORCE_POOL row').toEqual([])
   })
@@ -369,5 +377,84 @@ describe('a drilled squad packs tighter and pays more', () => {
     const args = { request: { Soldier: 5 }, sizeOf, loose: looseEnough, resources: richEnough }
     const before = planReinforcement({ squad: squad({ composition }), ...args })
     expect(before.cost).toEqual({ gold: 10, materials: 10 })
+  })
+})
+
+// ── A converted guard squad pays for its own standard (slice 4d) ────────────
+//
+// This is where the Royal Guard's price actually lands. The pick itself is free
+// — reaching the rank and spending two of a campaign's three slots is the whole
+// purchase — and the ONGOING cost is reinforcement: the charter no longer takes
+// Soldiers at all, so every replacement is trained up out of one at 2.5× a
+// soldier's rate.
+describe('the guard squad pays a dearer rate for its replacements', () => {
+  const guard = (overrides = {}) =>
+    squad({ upgrades: ['royal_guard'], composition: { RoyalGuard: 30 }, ...overrides })
+  const args = { sizeOf, loose: looseEnough, resources: richEnough }
+
+  test('a replacement is trained OUT of a loose Soldier, not out of a guard', () => {
+    const result = planReinforcement({ squad: guard(), request: { RoyalGuard: 4 }, ...args })
+    expect(result.error).toBeUndefined()
+    // There are never loose Royal Guards to draw on — the upgrade is the only
+    // thing that makes one — so the Soldier pipeline stays load-bearing.
+    expect(result.inputs).toEqual({ Soldier: 4 })
+    expect(result.outputs).toEqual({ RoyalGuard: 4 })
+  })
+
+  test('the rate is 2.5× a Soldier’s, and costs no food', () => {
+    const soldier = findReinforceRecipe('Soldier')
+    const royal = findReinforceRecipe('RoyalGuard')
+    expect(royal.cost).toEqual({ gold: 5, materials: 4 })
+    expect(royal.cost.gold / soldier.cost.gold).toBe(2.5)
+    // A 1:1 recipe destroys a body and creates one, so the army gains no new
+    // mouth — the rule every row in this table follows.
+    expect(royal.cost.food).toBeUndefined()
+  })
+
+  // No surcharge on top: unlike Formation Fighters, the dearer RECIPE is the
+  // price of this row, and stacking one would charge the same trade twice.
+  test('the recipe IS the price — no upgrade surcharge on top', () => {
+    const result = planReinforcement({ squad: guard(), request: { RoyalGuard: 2 }, ...args })
+    expect(result.cost).toEqual({ gold: 10, materials: 8 })
+  })
+
+  // The whole point of Soldier LEAVING the charter: a guard squad cannot quietly
+  // refill with the cheap bodies it used to hold.
+  test('the converted charter refuses ordinary Soldiers outright', () => {
+    const result = planReinforcement({ squad: guard(), request: { Soldier: 1 }, ...args })
+    expect(result.error).toMatch(/does not take Soldier/)
+  })
+
+  test('the loose pool must hold the Soldiers the training destroys', () => {
+    const result = planReinforcement({
+      squad: guard(),
+      request: { RoyalGuard: 3 },
+      sizeOf,
+      loose: { Soldier: 2 },
+      resources: richEnough,
+    })
+    expect(result.error).toMatch(/only 2 unassigned Soldier/)
+  })
+
+  test('a converted squad measures against the hex exactly as it did before', () => {
+    // Same size body, so the fence sees no change — 4d deliberately buys no hex
+    // headroom and risks no new invariant.
+    expect(squadSizePoints({ RoyalGuard: 40, Pikeman: 10 }, sizeOf))
+      .toBe(squadSizePoints({ Soldier: 40, Pikeman: 10 }, sizeOf))
+  })
+
+  test('applying it moves guards into the squad and destroys the Soldiers', () => {
+    const campaign = {
+      day: 6,
+      resources: { gold: 100, materials: 100 },
+      roster: new Map([['Soldier', 10], ['RoyalGuard', 30]]),
+    }
+    const s = { ...guard(), composition: new Map([['RoyalGuard', 30]]) }
+    const plan = planReinforcement({ squad: s, request: { RoyalGuard: 2 }, ...args })
+    applyReinforcement(campaign, s, plan)
+    expect(s.composition.get('RoyalGuard')).toBe(32)
+    expect(campaign.roster.get('RoyalGuard')).toBe(32)
+    expect(campaign.roster.get('Soldier')).toBe(8)
+    expect(campaign.resources).toEqual({ gold: 90, materials: 92 })
   })
 })

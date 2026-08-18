@@ -45,7 +45,7 @@ every role that applies.
 
 | role | meaning |
 | ------ | --------------------------------------------------------------------- |
-| `Player` | the player recruits, owns and deploys it; appears in `/api/info` and the placement UI |
+| `Player` | the player owns and deploys it; appears in `/api/info` and the placement UI. It must be **obtainable** — hired or trained (see below) — but not necessarily for sale |
 | `Enemy`  | enemy hosts may field it (campaign-server's `ENEMY_ARMY`)             |
 | `Summon` | conjured mid-battle by a spell; never enters through the API          |
 | `Mount`  | exists under a rider; never a standalone army entry                   |
@@ -69,12 +69,21 @@ on its own legs — the case that made roles a set rather than a single kind.
 
 Include the header at the top of `UnitCatalog.cpp`.
 
-### If your unit is a `Player` type, it needs a recruit row
+### If your unit is a `Player` type, it needs a way to be obtained
 
-A player unit the player cannot obtain is a dead entry. Add a row to `RECRUIT_POOL` in
-`campaign-server/services/recruit.js` — see §5 for the test that enforces this. That file
-is campaign design data (costs, the promotion ladder) and deliberately lives outside the
-engine: the dependency runs campaign → engine, never back.
+A player unit the player cannot obtain is a dead entry. There are **two** honest channels,
+and a `Player` type must be reachable through at least one of them (§5 has the test):
+
+1. **Hire it** — a row in `RECRUIT_POOL` (`campaign-server/services/recruit.js`). The
+   normal case; use this unless the type is deliberately not for sale.
+2. **Train it** — a row in `SQUAD_REINFORCE_POOL` (`campaign-server/utils/campaignConfig.js`),
+   which turns other bodies into this one. This is the channel for a type that should exist
+   only inside a squad that earned it: `RoyalGuard` is trained out of a Soldier and appears
+   on no recruit screen, because the squad upgrade that converts a cohort into guards would
+   otherwise be selling a cap rather than exclusive access.
+
+Both files are campaign design data (costs, the promotion ladder) and deliberately live
+outside the engine: the dependency runs campaign → engine, never back.
 
 ## 3. What is generated from those two places
 
@@ -113,10 +122,13 @@ generated file to add to the build graph.
   API-acceptance derivation) cover the new type automatically.
 - `campaign-server/tests/engine.integration.test.js` — nothing to edit, but be ready for it
   to fail: it runs the **real binary** and cross-checks the catalog's roles against the
-  campaign's unit lists. Four rules, each naming the offending unit when it trips:
-  - every `Player` type has a `RECRUIT_POOL` entry (§2) — **no exemptions, casters included**;
+  campaign's unit lists. Five rules, each naming the offending unit when it trips:
+  - every `Player` type is obtainable — a `RECRUIT_POOL` row **or** a `SQUAD_REINFORCE_POOL`
+    recipe that outputs it (§2). **No exemptions and no carve-out list**, casters included:
+    a type no channel can produce fails here naming itself;
   - `RECRUIT_POOL` (and the Travellers fallback) only sells `Player` types, so a typo'd
     `unit:` can't sell a unit no battle could deploy;
+  - `SQUAD_REINFORCE_POOL` likewise only trains `Player` types;
   - `ENEMY_ARMY` fields only `Enemy` types;
   - `STARTING_ROSTER`/`STARTING_SQUADS` contain only `Player` types.
 
