@@ -88,9 +88,10 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-08-13) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **34**.
-**Slices 1, 2, 3 and 4a of the squad overhaul are SHIPPED. The next step is 4b (+1 stat bumps,
-the first ENGINE-side upgrade row) — see "SLICE 4 — THE UPGRADE CATALOG" below.** Then 4c formation
-fighters, 4d Royal Guard, then characters, then banners, then the squad screen (decision 13, last).
+**Slices 1, 2, 3, 4a and 4b of the squad overhaul are SHIPPED. The next step is 4c (formation
+fighters — THE AWKWARD ONE, needing the real-vs-adjusted size split) — see "SLICE 4 — THE UPGRADE
+CATALOG" below.** Then 4d Royal Guard, then characters, then banners, then the squad screen
+(decision 13, last).
 
 Squads can now take replacements: the caps have teeth, the intake meters them, the hex is fenced,
 and the Recruit screen has the button. What the next slice needs to know before it starts:
@@ -175,8 +176,25 @@ engine rows after**, so each step ships green instead of one long red branch.
     engine.integration.test.js check every archetype × every caps row against the real catalog.
   - The draft is DEGENERATE today (3 rows, draw of 3 — every eligible row is always offered). That
     is expected; the randomness starts to bite when 4b-4d add rows to the same table.
-- **4b — +1 stat bumps:** engine work, `squad_mods` on the placement entry applied in
-  `buildArmyFromPlacement`.
+- **4b — ✅ SHIPPED 2026-08-18 (no schema change).** Four stat rows, and the first upgrades that
+  reach the ENGINE. Shape settled with the user: ONE shared row plus ONE per archetype —
+  `honed_edge` +1 attack (all), `heavier_kit` +1 armour (line), `marksmans_eye` +1 ballistic skill
+  (skirmish), `fresh_remounts` +1 speed (vanguard). What a later slice must not undo:
+  - `AUnit::applyStatMod(stat, delta)` is the only way a stat is bumped, and it is BOUNDED
+    (`MAX_STAT_MOD`) with floors — placement JSON is attacker-controlled, so the engine must not
+    believe a forged modifier. An unknown stat name is INERT, matching the campaign layer's
+    unknown-kind convention.
+  - `ballisticSkill` goes through `setBallisticSkill`, never the member, because `accuracy` is
+    derived from it (`accuracy = bs * 5`). There is a test pinning exactly that.
+  - `squad_mods` is attached SERVER-SIDE in both battle paths (pitched battle and raid party) from
+    the already-validated `squad_id`. A `squad_mods` in the request body is DISCARDED, not merged —
+    the client sends placements, never stat modifiers. Omitted entirely for an unupgraded squad, so
+    the JSON is unchanged for an army with no upgrades.
+  - This also un-degenerated 4a's draft: `line` now has 7 eligible rows and skirmish/vanguard 6,
+    against a draw of 3. A squad can no longer exhaust its pool (3 slots vs 6-7 rows), so the
+    shorter-offer branch in `drawUpgradeOffer` is now defensive rather than reachable.
+  - The FRONTEND needed no change — the pick panel renders whatever name/blurb the server sends, so
+    every future row arrives on screen for free. That is the payoff of 4a shipping first.
 - **4c — formation fighters:** engine work, and THE AWKWARD ONE — it needs the real-vs-adjusted
   size split that does not exist yet (see SQUAD_TROOP_BUDGET's comment: the budget counts the
   ADJUSTED size, everything priced off a body keeps the REAL one, and the adjustment runs BOTH WAYS).

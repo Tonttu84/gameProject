@@ -786,6 +786,91 @@ TEST_CASE("buildArmyFromPlacement: squad_id 0 or negative is treated as unassign
     REQUIRE(army[1]->getSquadId() == 0);
 }
 
+// ── squad_mods in placement JSON (campaign squad upgrades, slice 4b) ─────────
+//
+// The campaign layer attaches these server-side from a squad's taken upgrades.
+// The browser never sends its own, so these cases are as much about what a
+// FORGED one cannot do as about what a legitimate one does.
+
+TEST_CASE("buildArmyFromPlacement: squad_mods apply flat stat modifiers") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    REQUIRE(base.size() == 1);
+    const int baseAttack = base[0]->getAttackPWR();
+    const int baseArmour = base[0]->getArmour();
+
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"attack", 1}, {"armour", 1}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getAttackPWR() == baseAttack + 1);
+    REQUIRE(army[0]->getArmour() == baseArmour + 1);
+}
+
+// accuracy is DERIVED from ballisticSkill (accuracy = bs * 5). Writing the
+// member directly would leave the two disagreeing, so the mod must go through
+// setBallisticSkill — this is the test that catches that regression.
+TEST_CASE("buildArmyFromPlacement: a ballisticSkill mod carries accuracy with it") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Archer"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"ballisticSkill", 1}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getAccuracy() == army[0]->getBallisticSkill() * 5);
+}
+
+TEST_CASE("buildArmyFromPlacement: unknown or malformed squad_mods are inert") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    const int baseAttack = base[0]->getAttackPWR();
+
+    json placement = json::array({
+        // a stat the engine does not know, a non-integer value, and a
+        // squad_mods that is not an object at all
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"charisma", 5}, {"attack", "lots"}}}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}, {"squad_mods", "attack"}},
+        json{{"unit_type", "Soldier"}, {"q", 5}, {"r", 5}, {"squad_mods", json::array({1, 2})}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 3);
+    for (const auto& u : army) REQUIRE(u->getAttackPWR() == baseAttack);
+}
+
+// The trust boundary: placement JSON is attacker-controlled, so a forged mod
+// must be bounded rather than believed.
+TEST_CASE("buildArmyFromPlacement: a hostile squad_mods is clamped, not obeyed") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    const int baseAttack = base[0]->getAttackPWR();
+
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"attack", 1000000}}}},
+        // Driving a stat negative is the other half of the same attack: speed
+        // floors at 1 so a unit always advances, rather than freezing or
+        // walking backwards through the movement bank.
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5},
+             {"squad_mods", json{{"speed", -1000000}, {"attack", -1000000}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 2);
+    REQUIRE(army[0]->getAttackPWR() == baseAttack + AUnit::MAX_STAT_MOD);
+    REQUIRE(army[1]->getMovementSpeed() >= 1);
+    REQUIRE(army[1]->getAttackPWR() >= 0);
+}
+
 // ── buildSquadsFromArmy: explicit squad_id grouping ────────────────────────────
 
 // NOTE on declaration order below: `squads` (vector<unique_ptr<Squad>>) is

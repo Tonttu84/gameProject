@@ -601,6 +601,43 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return armour;
 	}
 
+	// One flat modifier onto one named stat — see the header for why this is
+	// bounded and why an unknown name is inert.
+	//
+	// ballisticSkill goes through setBallisticSkill rather than the member,
+	// because `accuracy` is DERIVED from it (accuracy = bs * 5) and writing the
+	// member directly would leave the two disagreeing — the exact bug the
+	// setter exists to prevent.
+	//
+	// Floors, not just clamps: a stat driven to or below zero by a hostile
+	// request would make a unit behave in ways no balance pass has ever seen
+	// (a speed of 0 never moves, a negative one moves backwards through the
+	// movement bank). Attack and ballistic skill floor at 0 — harmless, just
+	// useless — while speed floors at 1 so a unit always advances.
+	bool AUnit::applyStatMod(const std::string& stat, int delta)
+	{
+		if (delta > MAX_STAT_MOD)  delta = MAX_STAT_MOD;
+		if (delta < -MAX_STAT_MOD) delta = -MAX_STAT_MOD;
+
+		if (stat == "attack") {
+			attackPWR = std::max(0, attackPWR + delta);
+			return true;
+		}
+		if (stat == "armour") {
+			armour = std::max(0, armour + delta);
+			return true;
+		}
+		if (stat == "speed") {
+			movementSpeed = std::max(1, movementSpeed + delta);
+			return true;
+		}
+		if (stat == "ballisticSkill") {
+			setBallisticSkill(std::max(0, ballisticSkill + delta));
+			return true;
+		}
+		return false;
+	}
+
 	int AUnit::getValue() const{
 		return unitValue;
 	}

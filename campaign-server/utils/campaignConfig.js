@@ -172,6 +172,44 @@ export const SQUAD_UPGRADE_POOL = [
     archetypes: ['line', 'skirmish', 'vanguard'],
     effect: { kind: 'raidCost', factor: 0.75 },
   },
+  // 4b — the ENGINE-side rows. `stat` names a figure from the unit catalog and
+  // is applied per body in the battle itself (AUnit::applyStatMod), not to any
+  // campaign number: a flat +1, which decision 8 flags as "small-looking and
+  // already strong".
+  //
+  // ONE shared row plus ONE per archetype (user, 2026-08-18): the shared one
+  // keeps every squad in the running, and the signature ones are what start
+  // making a line squad feel unlike a vanguard. This is also what un-degenerates
+  // 4a's draft — line now has 7 eligible rows and the others 6, against a draw
+  // of 3.
+  {
+    id: 'honed_edge',
+    name: 'Honed Edge',
+    blurb: 'Drill with the weapons they already carry: +1 attack to every body in the squad.',
+    archetypes: ['line', 'skirmish', 'vanguard'],
+    effect: { kind: 'stat', stat: 'attack', bonus: 1 },
+  },
+  {
+    id: 'heavier_kit',
+    name: 'Heavier Kit',
+    blurb: 'Plate over mail, and the muscle to march in it: +1 armour to every body in the squad.',
+    archetypes: ['line'],
+    effect: { kind: 'stat', stat: 'armour', bonus: 1 },
+  },
+  {
+    id: 'marksmans_eye',
+    name: "Marksman's Eye",
+    blurb: 'Butts practice until the loose is thoughtless: +1 ballistic skill to every body in the squad.',
+    archetypes: ['skirmish'],
+    effect: { kind: 'stat', stat: 'ballisticSkill', bonus: 1 },
+  },
+  {
+    id: 'fresh_remounts',
+    name: 'Fresh Remounts',
+    blurb: 'A led horse for every rider: +1 speed to every body in the squad.',
+    archetypes: ['vanguard'],
+    effect: { kind: 'stat', stat: 'speed', bonus: 1 },
+  },
 ]
 
 // ── Squad reinforcement recipes (docs/CAMPAIGN_PLAN.md "SLICE 3 —

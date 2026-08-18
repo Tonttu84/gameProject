@@ -17,7 +17,7 @@ import {
 } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planReinforcement, applyReinforcement, looseRoster } from '../services/squadReinforce.js'
-import { planUpgrade, applyUpgrade, raidCostFactor } from '../services/squadUpgrades.js'
+import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
 import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
 } from '../services/raid.js'
@@ -454,9 +454,28 @@ router.post('/:id/battles', async (req, res) => {
       }]
     : []
 
+  // Squad upgrades reach the battle here (4b), attached SERVER-SIDE from each
+  // entry's already-validated squad_id. Deliberately NOT taken from the request:
+  // the client sends placements, never stat modifiers, so a forged `squad_mods`
+  // in the body is overwritten rather than trusted. (The engine bounds one
+  // anyway — AUnit::MAX_STAT_MOD — but this is the door it never gets through.)
+  // Entries with no squad, or a squad with no stat rows, are passed through
+  // untouched so the JSON is unchanged for an unupgraded army.
+  const modsBySquad = new Map(
+    campaign.squads.map((squad) => [squad.id, statMods(squad)]),
+  )
+  const moddedPlacement = placement.map((entry) => {
+    const mods = entry.squad_id == null ? null : modsBySquad.get(entry.squad_id)
+    if (!mods || Object.keys(mods).length === 0) {
+      const { squad_mods: _forged, ...clean } = entry
+      return clean
+    }
+    return { ...entry, squad_mods: mods }
+  })
+
   const input = {
     map: MAP_NAME,
-    player_placement: placement,
+    player_placement: moddedPlacement,
     enemy_placement: campaign.enemy.plannedPlacement ?? [],
     // The player's paid-for fortifications for this battle: the map file is
     // static, the level is dynamic, so the walled sides are injected here.
@@ -642,8 +661,18 @@ router.post('/:id/raids/launch', async (req, res) => {
     // members over the zone would field N one-member squads instead — the raid
     // party would fight as loners. squad_name matches the main battle route so
     // the replay names the formation.
-    for (const squad of squads)
-      placer.addBlock(squad.composition, { squad_id: squad.id, squad_name: squad.name })
+    // squad_mods carries the squad's taken upgrades into the raid battle (4b),
+    // so a squad fights upgraded wherever it fights rather than only in the
+    // pitched battle. Omitted entirely when the squad has none, keeping the
+    // placement JSON identical to before for an unupgraded charter.
+    for (const squad of squads) {
+      const mods = statMods(squad)
+      placer.addBlock(squad.composition, {
+        squad_id: squad.id,
+        squad_name: squad.name,
+        ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
+      })
+    }
     const input = {
       map: MAP_NAME,
       player_placement: placer.result(),

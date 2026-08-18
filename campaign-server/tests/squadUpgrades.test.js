@@ -12,6 +12,7 @@ import {
   capsBonus,
   intakeBonus,
   raidCostFactor,
+  statMods,
 } from '../services/squadUpgrades.js'
 import { squadCaps, squadIntake } from '../services/squadReinforce.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
@@ -128,18 +129,33 @@ describe('the draft', () => {
     expect(new Set(offer.options).size).toBe(offer.options.length)
   })
 
-  // The draw never pads: there is no filler row, and inventing one would put a
-  // choice in front of the player that the catalog does not contain.
-  test('fewer eligible rows than the draw size means a shorter offer', () => {
-    const all = SQUAD_UPGRADE_POOL.filter((r) => r.archetypes.includes('line')).map((r) => r.id)
-    const nearlyDone = squad({ prestige: prestigeFor('Legendary'), upgrades: all.slice(0, -1) })
-    const offer = drawUpgradeOffer(nearlyDone)
-    expect(offer.options).toEqual(all.slice(-1))
+  // The draw never pads and never repeats: a held row is gone from every later
+  // offer, and the draw shrinks to what is left rather than inventing filler.
+  //
+  // Since 4b widened the pool, a squad can no longer EXHAUST it through play —
+  // the ladder grants 3 slots against 6-7 eligible rows per archetype — so the
+  // shorter-offer branch is now defensive, for an archetype that ships with
+  // fewer than SQUAD_UPGRADE_DRAW rows. What is still reachable, and what this
+  // asserts, is that the remaining draw is drawn from the remainder.
+  test('a held row never reappears, and the draw shrinks to what is left', () => {
+    const lineRows = SQUAD_UPGRADE_POOL.filter((r) => r.archetypes.includes('line')).map((r) => r.id)
+    const held = lineRows.slice(0, 2)
+    const partway = squad({ prestige: prestigeFor('Legendary'), upgrades: held })
+    const offer = drawUpgradeOffer(partway)
+    const remaining = lineRows.filter((id) => !held.includes(id))
+    expect(offer.options).toHaveLength(Math.min(SQUAD_UPGRADE_DRAW, remaining.length))
+    for (const id of offer.options) {
+      expect(remaining).toContain(id)
+      expect(held).not.toContain(id)
+    }
   })
 
-  test('nothing left to offer reads as no offer at all', () => {
-    const all = SQUAD_UPGRADE_POOL.filter((r) => r.archetypes.includes('line')).map((r) => r.id)
-    expect(drawUpgradeOffer(squad({ prestige: prestigeFor('Legendary'), upgrades: all }))).toBeNull()
+  test('a squad with every slot filled is offered nothing', () => {
+    const lineRows = SQUAD_UPGRADE_POOL.filter((r) => r.archetypes.includes('line')).map((r) => r.id)
+    const slots = SQUAD_UPGRADE_SLOTS_BY_RANK.Legendary
+    const full = squad({ prestige: prestigeFor('Legendary'), upgrades: lineRows.slice(0, slots) })
+    expect(picksAvailable(full)).toBe(0)
+    expect(drawUpgradeOffer(full)).toBeNull()
   })
 
   // The dice queue makes the "random" draw deterministic, so this pins WHICH
@@ -246,6 +262,38 @@ describe('what the upgrades do', () => {
     const orphan = squad({ archetype: undefined, upgrades: ['deeper_ranks', 'standing_drafts'] })
     expect(squadCaps(orphan)).toEqual({})
     expect(squadIntake(orphan)).toBe(0)
+  })
+
+  // 4b: the engine-side rows. These become the `squad_mods` object on each
+  // placement entry, so the stat NAMES have to be the engine's own.
+  test('a stat row becomes a flat modifier under the engine’s stat name', () => {
+    expect(statMods(squad({ upgrades: ['honed_edge'] }))).toEqual({ attack: 1 })
+    expect(statMods(squad({ upgrades: ['heavier_kit'] }))).toEqual({ armour: 1 })
+    expect(statMods(squad({ archetype: 'skirmish', upgrades: ['marksmans_eye'] })))
+      .toEqual({ ballisticSkill: 1 })
+    expect(statMods(squad({ archetype: 'vanguard', upgrades: ['fresh_remounts'] })))
+      .toEqual({ speed: 1 })
+  })
+
+  test('a squad with no stat rows sends no modifiers at all', () => {
+    // An empty object is what the callers use to leave `squad_mods` off the
+    // placement entry entirely, so an unupgraded army's JSON is unchanged.
+    expect(statMods(squad())).toEqual({})
+    expect(statMods(squad({ upgrades: ['deeper_ranks'] }))).toEqual({})
+  })
+
+  test('stat rows stack per stat rather than overwriting', () => {
+    const both = squad({ upgrades: ['honed_edge', 'heavier_kit'] })
+    expect(statMods(both)).toEqual({ attack: 1, armour: 1 })
+  })
+
+  // The engine only knows attack/armour/speed/ballisticSkill; a name outside
+  // that set is inert at the far end, so a typo would cost a dead upgrade.
+  // This pins every shipped row to a name the engine actually handles.
+  test('every stat row names a stat the engine can apply', () => {
+    const ENGINE_STATS = new Set(['attack', 'armour', 'speed', 'ballisticSkill'])
+    for (const row of SQUAD_UPGRADE_POOL.filter((r) => r.effect.kind === 'stat'))
+      expect(ENGINE_STATS, `${row.id} names ${row.effect.stat}`).toContain(row.effect.stat)
   })
 
   test('an id whose row has left the catalog is inert, not fatal', () => {

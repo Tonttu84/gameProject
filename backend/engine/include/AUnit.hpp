@@ -278,6 +278,21 @@ public:
 
     int  getPreferredRange()  const  { return preferredRange; }
     void setPreferredRange(int r)    { preferredRange = r; }
+
+    // Campaign squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE
+    // CATALOG", 4b): apply one FLAT modifier to a named stat, by the same
+    // names the unit catalog exports ("attack", "armour", "speed",
+    // "ballisticSkill"). Returns false for a name it does not handle, so an
+    // unknown stat is INERT rather than silently mis-applied — the same
+    // contract the campaign layer's effect readers use.
+    //
+    // Bounded deliberately: placement JSON is attacker-controlled at the
+    // trust boundary (SECURITY_NOTES.md), so the delta is clamped to
+    // MAX_STAT_MOD either way and the result is floored, rather than trusting
+    // the caller to have been reasonable. A +1 upgrade is nowhere near these
+    // bounds; they exist for the request that is not a +1 upgrade.
+    static constexpr int MAX_STAT_MOD = 10;
+    bool applyStatMod(const std::string& stat, int delta);
     int  getMovementSpeed()  const  { return movementSpeed; }
     int  getBallisticSkill() const  { return ballisticSkill; }
     int  getReconTag()       const  { return reconTag; }

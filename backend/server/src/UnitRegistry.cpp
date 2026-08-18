@@ -212,6 +212,25 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             }
         }
 
+        // Optional squad_mods (campaign squad upgrades, docs/CAMPAIGN_PLAN.md
+        // "SLICE 4", 4b): an object of stat name → flat integer modifier,
+        // e.g. {"attack": 1, "armour": 1}. Attached SERVER-SIDE by the campaign
+        // layer from the squad's taken upgrades — the browser never sends its
+        // own, and this parser is what makes a forged one harmless rather than
+        // what stops it.
+        //
+        // Same never-throw discipline as every other field here: a non-object,
+        // a non-integer value or a stat name the engine does not know is
+        // skipped rather than rejected, and applyStatMod bounds what a legal
+        // one can do (see AUnit::MAX_STAT_MOD).
+        auto modsIt = entry.find("squad_mods");
+        if (modsIt != entry.end() && modsIt->is_object()) {
+            for (const auto& mod : modsIt->items()) {
+                if (!mod.value().is_number_integer()) continue;
+                u->applyStatMod(mod.key(), mod.value().get<int>());
+            }
+        }
+
         u->setHex(h);
         u->setPlaced(true);
         army.push_back(std::move(u));

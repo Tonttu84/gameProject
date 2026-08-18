@@ -2998,6 +2998,58 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
     expect(body.error).toBeDefined()
   })
 
+  // 4b: the stat rows are the first upgrades that reach the ENGINE. They travel
+  // as `squad_mods` on each placement entry, attached server-side — so these
+  // assert both that a real upgrade arrives and that a forged one cannot.
+  test('a squad’s stat rows reach the engine as squad_mods', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne(
+      { _id: c.id, 'squads.id': 1 },
+      { $set: { 'squads.$.upgrades': ['honed_edge'], 'squads.$.prestige': blooded } },
+    )
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }],
+    })
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].squad_mods).toEqual({ attack: 1 })
+  })
+
+  test('an unupgraded squad sends no squad_mods at all', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }],
+    })
+
+    const input = engine.runBattle.mock.calls[0][0]
+    // Absent, not empty: the JSON for an unupgraded army is unchanged by 4b.
+    expect(input.player_placement[0].squad_mods).toBeUndefined()
+  })
+
+  // The client sends placements, never stat modifiers. A forged one is
+  // OVERWRITTEN rather than trusted — the engine bounds one too
+  // (AUnit::MAX_STAT_MOD), but this is the door it never gets through.
+  test('a forged squad_mods in the request body is discarded', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, squad_id: 1, squad_mods: { attack: 9999 } },
+      ],
+    })
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].squad_mods).toBeUndefined()
+  })
+
   test('an unknown squad is a 400, not a crash', async () => {
     const { body: c } = await createCampaign()
     await takeUpgrade(c.id, 99, 'deeper_ranks').expect(400)

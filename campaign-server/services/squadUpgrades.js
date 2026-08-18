@@ -145,3 +145,23 @@ export const raidCostFactor = (squad) =>
     (factor, row) => (row.effect.kind === 'raidCost' ? factor * row.effect.factor : factor),
     1,
   )
+
+// The squad's flat stat modifiers as `{ attack: 1, armour: 1 }` — 4b's engine
+// side. This is the ONE place a squad's rows become the `squad_mods` object the
+// placement JSON carries, and it is attached SERVER-SIDE: the browser never
+// sends its own, so a forged one is a request the campaign layer simply
+// overwrites (and which AUnit::applyStatMod bounds regardless).
+//
+// Stat NAMES are the engine's, exactly as the unit catalog exports them
+// ("attack", "armour", "speed", "ballisticSkill") — an unknown one is inert at
+// the far end rather than mis-applied, so a typo here costs a dead upgrade
+// rather than a wrong battle. Returns an empty object when there is nothing to
+// say, which the callers use to leave the field off the entry entirely.
+export const statMods = (squad) => {
+  const mods = {}
+  for (const row of squadUpgrades(squad)) {
+    if (row.effect.kind !== 'stat') continue
+    mods[row.effect.stat] = (mods[row.effect.stat] ?? 0) + row.effect.bonus
+  }
+  return mods
+}
