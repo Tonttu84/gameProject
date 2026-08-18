@@ -119,8 +119,13 @@ and the Recruit screen has the button. What the next slice needs to know before 
   squad past `SQUAD_TROOP_BUDGET`; `engine.integration.test.js` enforces that for archetypes, and an
   upgrade layer needs the same guard (the config invariant only sees the base rows).
 
-**SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; ready to build 4a).** The design
-interview the handoff above asked for is DONE. Eight decisions, all the user's. Build TDD.
+**SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; 4a/4b/4c SHIPPED, 4d is next).**
+The design interview the handoff above asked for is DONE. Eight decisions, all the user's. Build TDD.
+
+**Before building 4d, INTERVIEW.** Royal Guard is a new unit type and its stats are a design
+question in their own right — the spec says so explicitly and the user will want a say. That is a
+`grilling` job, not an assistant guess. The build pattern 4b and 4c both settled into: interview
+first, record the decisions in this file, then build TDD against them.
 
 **Standing principle the user restated during it, worth applying beyond this slice: this is a
 ROGUELITE — "not super balanced everything."** Asymmetry and luck are features. That is the reason
