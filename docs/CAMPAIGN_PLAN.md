@@ -88,10 +88,10 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-08-18) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **34**.
-**Slices 1, 2, 3, 4a, 4b and 4c of the squad overhaul are SHIPPED. The next step is 4d (Royal
-Guard — a NEW UNIT TYPE whose stats are a design question the user will want a say in) — see
-"SLICE 4 — THE UPGRADE CATALOG" below.** Then characters, then banners, then the squad screen
-(decision 13, last).
+**Slices 1, 2, 3, 4a, 4b and 4c of the squad overhaul are SHIPPED. 4d (Royal Guard) is
+INTERVIEWED AND SPEC'D as of 2026-08-18 and is ready to BUILD — seven decisions, all the
+user's, recorded under "4d — Royal Guard" in the build order below. Nothing about it is open.**
+Then characters, then banners, then the squad screen (decision 13, last).
 
 **The real-vs-adjusted size split now EXISTS** (4c), so the thing every earlier note called "the
 awkward one" is no longer blocking anything. `AUnit::getSize()` is the REAL body and
@@ -122,10 +122,10 @@ and the Recruit screen has the button. What the next slice needs to know before 
 **SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; 4a/4b/4c SHIPPED, 4d is next).**
 The design interview the handoff above asked for is DONE. Eight decisions, all the user's. Build TDD.
 
-**Before building 4d, INTERVIEW.** Royal Guard is a new unit type and its stats are a design
-question in their own right — the spec says so explicitly and the user will want a say. That is a
-`grilling` job, not an assistant guess. The build pattern 4b and 4c both settled into: interview
-first, record the decisions in this file, then build TDD against them.
+**The 4d interview HAPPENED (2026-08-18)** — the build pattern 4b and 4c settled into: interview
+first, record the decisions here, then build TDD against them. Its seven decisions are under
+"4d — Royal Guard" in the build order below, and they OVERTURN two of the assistant's earlier
+calls (see the note beneath them). Do not re-derive them.
 
 **Standing principle the user restated during it, worth applying beyond this slice: this is a
 ROGUELITE — "not super balanced everything."** Asymmetry and luck are features. That is the reason
@@ -165,9 +165,16 @@ engine rows after**, so each step ships green instead of one long red branch.
 **Assistant's calls, flagged as overturnable:**
 - **Royal Guard sits in the `line` ARCHETYPE pool**, not bespoke one-squad machinery. Only 1st
   Cohort is `line` today, so it lands where the user wanted it, and a line charter acquired later
-  can draw it too — no special-casing to write or delete.
-- **Pools: `line` 6 rows (the 5 general + Royal Guard), `skirmish` and `vanguard` 5 each**, drawing
-  3. The user's "access to 5 for now, then increase as we get cool upgrades" is the sizing rule.
+  can draw it too — no special-casing to write or delete. **CONFIRMED by the 4d interview, and it
+  is now structurally forced**: the row swaps the Soldier cap for a RoyalGuard one, and neither
+  skirmish (Archer/Militia) nor vanguard (Cavalry/LightCavalry) has a Soldier cap to swap.
+- **Pools sized by "access to 5 for now, then increase as we get cool upgrades"** (the user's
+  sizing rule), drawing 3. Counts as actually built: **4a line 3 / skirmish 3 / vanguard 3;
+  4b line 5 / skirmish 5 / vanguard 5; 4c line 6 / skirmish 5 / vanguard 5; 4d line 7.**
+  (An earlier revision of this block claimed "line 8, skirmish 6, vanguard 6" — that was wrong,
+  and 8 was the TOTAL row count in `SQUAD_UPGRADE_POOL`, not any one archetype's eligible set.
+  Count with `SQUAD_UPGRADE_POOL.filter(r => r.archetypes.includes(a))`, never by eyeballing the
+  array length.)
 
 **Build order:**
 - **4a — ✅ SHIPPED 2026-08-13 (schema v35).** Draft machinery, slots, rank gating, the free
@@ -232,7 +239,9 @@ engine rows after**, so each step ships green instead of one long red branch.
     `test_engagements.cpp` pins 4/4/5 for 0/-1/-2 so a retune cannot quietly make the row a no-op.
   - **LINE ONLY.** A vanguard body packs 20 → 18 and still seats two per side, so the row would
     spend one of a campaign's three permanent picks on almost nothing — a trap, not a trade-off.
-    Pools are now line 8, skirmish 6, vanguard 6.
+    Pools after 4c are line 6, skirmish 5, vanguard 5 (this line originally read "line 8,
+    skirmish 6, vanguard 6", which counted the whole `SQUAD_UPGRADE_POOL` array rather than each
+    archetype's eligible subset — corrected 2026-08-18).
   - **A ROW IS NOW A BUNDLE: `effect: {}` became `effects: []` across the catalog.** The user's
     call, and the reason is worth keeping: the PRICE belongs to the CHOICE, not to the ability, so
     Formation Fighters pairs `formationFighter` with `reinforceCost` on one row while the ability
@@ -254,8 +263,120 @@ engine rows after**, so each step ships green instead of one long red branch.
     client-side, so `campaignView` now ships `reinforceSurcharge` per squad. Without it the preview
     understates a drilled squad's cost and the player can submit what the route then refuses — the
     one disagreement that panel exists to make impossible.
-- **4d — Royal Guard:** a NEW UNIT TYPE. Its stats are a design question in their own right and the
-  user will want a say — do not invent them silently.
+- **4d — Royal Guard: INTERVIEWED AND SPEC'D 2026-08-18, ready to BUILD.** Seven decisions, all
+  the user's, taken in a `grilling` interview. Two of them change machinery 4a built, so read
+  decisions 4d-3 and 4d-5 before touching `squadUpgrades.js`.
+
+  **4d-1. The pick CONVERTS the squad, wholesale and free.** Taking the row swaps the line
+  charter's `Soldier 40` for `RoyalGuard 40` — **Soldier leaves the charter entirely** — and every
+  Soldier body already in the composition becomes a Royal Guard at pick time, at no cost. Pikeman
+  10 rides along untouched. Considered and REJECTED: an elite cadre capped alongside the Soldiers
+  (grants nothing on the turn you take it), and grandfathering the bodies so the squad converts
+  through casualties (leaves it a mongrel for many turns). Wholesale is the only reading that
+  satisfies both decision 4 ("existing troops are upgraded FREE") and decision 5 ("any row that
+  switches the squad's unit type"), and it is what makes the pick an identity change rather than
+  a purchase. **Soldier leaving the charter is load-bearing, not tidiness**: it is what makes the
+  dearer replacement recipe unavoidable, and therefore what makes decision 5 true here. A later
+  reader who "restores" Soldier to the guard charter hollows the whole row out.
+
+  **4d-2. The unit — a Soldier with a halberd and no shield.** New `RoyalGuard : Human`,
+  symbol `'G'`, `Player` role ONLY (enemy hosts do not field them — a separate balance decision
+  the user declined to bundle in; adding the `Enemy` role later is a one-word catalog change).
+
+  | | Soldier | RoyalGuard |
+  |---|---|---|
+  | weapon | SwordAndShield (dmg 5, reach 1, shield 4) | **Halberd** (dmg 8, reach 2, two-handed, NO shield) |
+  | maxHP | 10 | **14** |
+  | attackPWR | 11 | **13** |
+  | defence | 12 | **14** |
+  | morale | 10 | **13** |
+  | unitValue | 10 | **15** |
+  | armour | HEAVYARMOUR 5 | HEAVYARMOUR 5 |
+  | fatigueCost | 5 | 5 |
+  | ballisticSkill / movementSpeed / size | 4 / 10 / 10 | 4 / 10 / **10** |
+
+  **WHY the defensive stats rise so much, and why it is not padding:** in MELEE, `armour` only
+  reduces damage from *Piercing* weapons (`AUnit::defend`, the `resultDMG -= armour / 2` branch) —
+  full armour applies only in `takeDamage`, i.e. arrows and spells. Against an ordinary sword the
+  SHIELD is the entire mitigation: a second save roll at `defence + shield`, and `SHIELDREDUCTION
+  + shield * 2` = 13 points off the blow when it lands. So dropping sword-and-shield for a halberd
+  costs a Royal Guard nearly all of his melee protection and none of his missile protection. The
+  +4 HP and +2 defence buy that back; without them these "elites" would die faster than the
+  Soldiers they replaced. **Do not trim them as though they were flat power creep.**
+
+  Downsides, chosen deliberately (the user rejected both "no downsides" and "+1 fatigue"):
+  fatigue stays 5 — *elite drill is exactly what bearing the halberd means* — and `unitValue` 15
+  makes them the obvious spell target, so a caster-heavy host is the counter to a guard squad
+  without weakening them in a fair melee.
+
+  **4d-3. The row COSTS TWO SLOTS — one now, one BORROWED from the next rung.** The user's
+  reasoning: "basic upgrade is modest increase to one stat", so a whole new unit type is worth
+  two. This is new machinery. **A two-free-slots-at-once rule would make the row unreachable
+  forever** — trace the ladder (`Blooded 1 · Seasoned banner · Renowned 2 · Legendary 3`,
+  cumulative) and a squad never holds two free slots at any rung. So:
+  - `picksAvailable` becomes `slotsFor(squad) − slotsUsed(squad)`, where **`slotsUsed` sums
+    `findUpgrade(id)?.slots ?? 1`** over the taken ids — summed over the ID list, NOT over
+    resolved rows, so a row that has left the catalog still costs its slot and cannot refund one
+    into a live campaign (the `archetypeOf` degrade-don't-throw convention, applied to arithmetic).
+  - A row of cost N is offered only when the squad has a pick in hand AND **`maxSlots − slotsUsed
+    ≥ N`**, where `maxSlots` is `Math.max(...Object.values(SQUAD_UPGRADE_SLOTS_BY_RANK))` — derived,
+    never the literal 3, so retuning the ladder cannot strand the rule.
+  - Both of the user's requirements fall out of that ONE rule: take it at Blooded and Renowned
+    grants no draft, take it at Renowned and Legendary is silent (it "skips the next upgrade"),
+    and at Legendary there is no future slot to book so **it is never offered on the last pick**.
+    A campaign ends with 2 picks instead of 3, one of them the Guard.
+  - Considered and REJECTED: a stored `skipNextDraft` flag on the document — mechanically
+    near-identical, but it is state that can drift out of step with the derived ladder, which is
+    exactly what 4a's "slots are DERIVED, never stored" note exists to prevent.
+
+  **4d-4. The replacement recipe — `Soldier 1 → RoyalGuard 1`, `gold 5 · materials 4`.** Input is
+  Soldier because there are never loose Royal Guards in the roster; this also keeps the
+  Militia→Soldier pipeline load-bearing. Cavalry-dear on purpose (2.5× a Soldier's `gold 2 ·
+  materials 2`): refilling 15 dead runs 75 gold, two or three good raids — losses hurt without a
+  mauled squad becoming unrecoverable dead weight. NO food, per the 1:1 rule (a replacement
+  destroys a body and creates one, so the army gains no new mouth). The row carries **no
+  `reinforceCost` surcharge effect** — unlike Formation Fighters, the dearer RECIPE *is* the
+  price, and stacking a surcharge on top would charge the same trade twice.
+
+  **4d-5. `engine.integration.test.js`'s recruit rule WIDENS: "every `Player` type appears in
+  `RECRUIT_POOL` **or** `SQUAD_REINFORCE_POOL`".** Royal Guard must be a `Player` unit (to be
+  deployed, drawn and placed) but must never be buyable on the Recruit screen, which collides
+  head-on with today's "no exemptions" rule. The rule's real intent is *no Player type is
+  unobtainable*, and since slice 3 there are TWO honest acquisition channels — hire, or train
+  through a reinforcement recipe. Widening keeps the tripwire's teeth (a genuinely dead type still
+  fails, naming itself) and stops the rule lying about the channels that exist. Royal Guard is the
+  first type obtainable only the second way; it will not be the last. Considered and REJECTED:
+  giving it a RECRUIT_POOL row anyway (kills the squad-exclusivity the row exists to deliver — the
+  upgrade would grant a cap, not access), and tagging it `Enemy`-only (works, and permanently
+  misleads every future reader about whose troops these are). Update `docs/ADDING_UNITS.md` §5 to
+  match, or the next person to add a unit reads the old rule.
+
+  **4d-6. The hex budget is UNTOUCHED — size stays 10.** A guard squad measures exactly what a
+  line squad measures today: 40×10 + 10×10 + the 40-point character reserve = 540 of 600, or 580
+  with `deeper_ranks` stacked on top (RoyalGuard's 2 slots + 1 leaves room for exactly one other
+  row). The user chose the halberd shape over "bigger men in heavier plate" partly for this: no
+  new invariant risk, and the packing/formation-fighters math behaves as it already does.
+
+  **4d-7. The FRONTEND needs one change**, like 4c and unlike 4b: `SquadUpgradePanel` renders each
+  offered option as `{id, name, blurb}` only, so a two-slot row would look free. Ship **`slots` on
+  the projected option** in `campaignView` and mark it on the card — a player must not spend a
+  future draft without being told. (`upgradeSlots`/`upgradePicks` keep their meaning: slots the
+  rank is worth, and picks makeable NOW.)
+
+  **Two orderings that are load-bearing rather than incidental:**
+  - **The type swap applies BEFORE `capsBonus`** in `squadCaps`, so `deeper_ranks` raises the
+    RoyalGuard cap and not a Soldier cap that no longer exists. Note this deliberately BENDS 4a's
+    "an upgrade never admits a type the charter was not written for" — a type-swap row is exactly
+    that, by design, and it is the first one. The fence 4a was protecting (a caps row must not
+    smuggle in a new type) still holds for `caps` rows; `typeSwap` is a separate, explicit kind.
+  - **Conversion writes BOTH sides**: `squad.composition` and `campaign.roster` move together,
+    since the standing invariant is that a squad's composition is always a subset already
+    reflected in the roster (`looseRoster` is the function that would go negative otherwise).
+
+  **Build order within 4d** (decision 8's "catalog first, engine rows after", which shipped 4a–4c
+  green each time): campaign layer + slot machinery first (the row can name a type the engine does
+  not have yet, since nothing places it until a squad holds it), then the `RoyalGuard` unit and
+  its catalog row, then the integration test's widened rule.
 
 **The invariant to respect throughout:** a cap-raising row must not push a squad past
 `SQUAD_TROOP_BUDGET`. `engine.integration.test.js` enforces that for archetypes; the upgrade layer
