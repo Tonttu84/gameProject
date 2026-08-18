@@ -81,11 +81,13 @@ make                 # builds ./game (fully headless — no SFML/X11)
 make clean / fclean   # remove objects / remove objects+binaries
 make re               # fclean + all
 
-make test             # builds run_tests, shards test cases across processes via
+make test-fast         # THE DEFAULT FOR LOCAL WORK (see "Which C++ test build" below).
+                       # -O2, no sanitizers, separate object dir: ~3s a run vs ~115s.
+make test             # builds run_tests (sanitized), shards test cases across processes via
                        # backend/engine/tests/run_parallel.sh (JOBS=N to override shard count)
-make test-serial       # builds run_tests, runs it as one process — this is what CI uses
-                       # (a sharding bug in run_parallel.sh must never be able to mask a
-                       # failure that test-serial would catch)
+make test-serial       # builds run_tests (sanitized), runs it as one process — this is what
+                       # CI uses (a sharding bug in run_parallel.sh must never be able to mask
+                       # a failure that test-serial would catch)
 make clang             # cross-compile with clang++ into a separate object dir (catches
                        # compiler-specific UB/warnings gcc doesn't)
 
@@ -139,6 +141,33 @@ make docker-build      # build just the image, start nothing
 
 Frontend-only commands (run from `frontend/`): `npm run dev`, `npm run build`, `npm run lint`
 (oxlint), `npm test` (vitest run), `npm run test:watch`.
+
+## Which C++ test build to run (user, 2026-08-18)
+
+**Locally, use `make test-fast`. The sanitized build is CI's job, not the working loop's.**
+Measured on the dev box: `./run_tests_fast` is ~3s against `./run_tests`'s ~115s, for the same
+361 cases. Paying 115s on every iteration bought nothing that CI does not already catch a few
+minutes later.
+
+**This is only safe because CI genuinely catches sanitizer findings — all three kinds.** It did
+not, until 2026-08-18. ASan and LeakSanitizer abort, so a use-after-free or a leak always exited
+non-zero and turned the job red; **UBSan recovers by default** — it printed `runtime error: …`
+to stderr, carried on, and exited 0, so undefined behaviour reached a CI log nobody reads while
+the job went green. `-fno-sanitize-recover=undefined` in `CFLAGS` is what fixed that. **Do not
+remove it**, and do not "simplify" it into a `UBSAN_OPTIONS` env var in `ci.yml`: compiled in, it
+also covers a bare `./run_tests`, and it keeps local and CI runs identical.
+
+What follows from the split, and matters more now that nothing sanitized runs locally:
+
+- A green `test-fast` says **nothing** about memory safety or UB. It is an assertion check.
+- So **CI's `test` job is the real gate — watch it, don't assume it.** The standing shipping rule
+  (finish the feature, then merge to `main` yourself) already requires CI green on the pushed
+  commit; with the fast/sanitized split that requirement is what stands between a UB bug and
+  `main`, rather than a nicety.
+- Run `make test-serial` locally when CI goes red on the engine, to iterate on the fix without a
+  push each time — and after a `CFLAGS` change, **rebuild clean first** (`rm -rf BUILD/test
+  run_tests`): make has no dependency on the flags, so an incremental build silently keeps the
+  old objects and "passes" without the new flag ever being applied.
 
 To run a single C++ test case, build `run_tests` (via `make test-serial` once, or directly) and
 invoke the Catch2 binary with a name filter, e.g. `./run_tests "[movement]"` or
