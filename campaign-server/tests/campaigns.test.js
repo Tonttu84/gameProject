@@ -3090,12 +3090,27 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
 
   test('an upgrade reaches the numbers the reinforcement gates use', async () => {
     const c = await promoteAndTurn()
+    // SEED the offer instead of hoping the draw deals this row. The draft is
+    // random, and the earlier version of this test skipped itself whenever
+    // `deeper_ranks` was not offered — which is precisely how a stale reader
+    // survived 4c's `effect` → `effects` rename: the assertion only ran on the
+    // runs where the row happened to come up, so CI went red at random on a
+    // commit that touched nothing. A test that can silently not run is worse
+    // than no test.
+    await Campaign.updateOne(
+      { _id: c.id, 'squads.id': 1 },
+      { $set: { 'squads.$.upgradeOffer': { rank: 'Blooded', options: ['deeper_ranks'] } } },
+    )
     const before = (await getView(c.id)).squads.find((s) => s.id === 1)
-    const offer = before.upgradeOffer.options.map((o) => o.id)
-    if (!offer.includes('deeper_ranks')) return
+
     const { body: after } = await takeUpgrade(c.id, 1, 'deeper_ranks').expect(200)
     const cohort = after.squads.find((s) => s.id === 1)
-    const bonus = SQUAD_UPGRADE_POOL.find((r) => r.id === 'deeper_ranks').effect.bonus
+    // Summed over the row's caps effects, the way the service reads them — a
+    // row carries a LIST of effects since 4c, and may carry more than one.
+    const bonus = SQUAD_UPGRADE_POOL.find((r) => r.id === 'deeper_ranks')
+      .effects.filter((e) => e.kind === 'caps')
+      .reduce((sum, e) => sum + e.bonus, 0)
+    expect(bonus).toBeGreaterThan(0)
     for (const [type, cap] of Object.entries(before.caps)) expect(cohort.caps[type]).toBe(cap + bonus)
   })
 })
