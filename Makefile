@@ -58,10 +58,23 @@ INC_FLAGS    = -I$(BACKEND_DIR)/engine/include \
                -I$(BACKEND_DIR)/server/include \
                -I$(BACKEND_DIR)/scenarios/include
 
+# -fno-sanitize-recover=undefined is what gives UBSan TEETH, and it is not
+# optional decoration (added 2026-08-18). ASan and LeakSanitizer abort on a
+# finding, so a use-after-free or a leak exits non-zero and turns CI red on its
+# own. UBSan does NOT: by default it prints "runtime error: …" to stderr and
+# CARRIES ON, leaving the exit code 0 — so undefined behaviour would land in a
+# CI log nobody reads while the job went green. Measured, not assumed: a signed
+# overflow compiled with these exact flags exited 0 without this flag and 1 with
+# it.
+#
+# It is compiled in rather than set as UBSAN_OPTIONS=halt_on_error=1 in the CI
+# workflow on purpose — baked into the binary it also covers a bare
+# `./run_tests`, which is how the suite is often actually invoked, and it keeps
+# local and CI runs identical instead of giving CI the stricter build.
 CFLAGS  = -std=c++20 -Wall -Wextra -Werror -g2 -fPIE $(INC_FLAGS) \
           -Wshadow -Wnull-dereference -Wformat=2 -fstack-protector-strong \
           -fsanitize=address -fsanitize=undefined -fsanitize=leak \
-          -fsanitize=float-divide-by-zero
+          -fsanitize=float-divide-by-zero -fno-sanitize-recover=undefined
 
 # Files — recursive discovery under backend/; subfolders included automatically.
 # patsubst strips backend/ prefix so objects mirror the source tree under BUILD/.
@@ -138,7 +151,8 @@ CLANG_OBJ_DIR = BUILD/clang
 CLANG_NAME    = game_clang
 CLANG_FLAGS   = -std=c++20 -Wall -Wextra -Werror -g2 -fPIE $(INC_FLAGS) \
                 -Wshadow -Wnull-dereference -fstack-protector-strong \
-                -fsanitize=address -fsanitize=undefined -fsanitize=leak
+                -fsanitize=address -fsanitize=undefined -fsanitize=leak \
+                -fno-sanitize-recover=undefined
 CLANG_OBJS    = $(patsubst $(BACKEND_DIR)/%.cpp,$(CLANG_OBJ_DIR)/%.o,$(SRCS))
 CLANG_DEPS    = $(CLANG_OBJS:.o=.d)
 
