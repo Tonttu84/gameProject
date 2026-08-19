@@ -220,19 +220,63 @@ describe('applyHire', () => {
     expect(campaign.workers.used).toBe(0) // hired troops leave the pool entirely, like militia purchase today
   })
 
-  test('a boosted caster hire adds both units to the roster and spends the combined gold', () => {
+  // Since slice 5 a caster hire mints a CHARACTER (5-1/5-12): the lane keeps its
+  // row and its price, but the gold buys a named individual rather than a
+  // roster count. The boosted caster hire still yields both types — it is where
+  // the second one lands that changed.
+  test('a boosted caster hire mints both casters as characters and spends the combined gold', () => {
     const mage = poolEntry('mage')
     const priest = poolEntry('priest')
     const campaign = {
       roster: new Map(),
+      characters: [],
       resources: { food: 0, materials: 0, gold: mage.cost.gold + priest.cost.gold, horses: 0 },
       workers: { total: 0, used: 0 },
       recruit: { fervor: 0 },
     }
     applyHire(campaign, 'mage', true)
-    expect(campaign.roster.get('Mage')).toBe(1)
-    expect(campaign.roster.get('Priest')).toBe(1)
+    expect(campaign.characters.map((c) => c.type)).toEqual(['Mage', 'Priest'])
+    // The roster never learns about them — that is the whole point of 5-1.
+    expect(campaign.roster.get('Mage')).toBeUndefined()
+    expect(campaign.roster.get('Priest')).toBeUndefined()
     expect(campaign.resources.gold).toBe(0)
+    // Each is an individual: distinct ids, and a name of their own.
+    expect(new Set(campaign.characters.map((c) => c.id)).size).toBe(2)
+    for (const c of campaign.characters) expect(c.name).toEqual(expect.any(String))
+  })
+
+  test('an unboosted caster hire mints exactly one, alive and unattached', () => {
+    const campaign = {
+      roster: new Map(),
+      characters: [],
+      resources: { food: 0, materials: 0, gold: 100, horses: 0 },
+      workers: { total: 0, used: 0 },
+      recruit: { fervor: 0 },
+    }
+    const log = applyHire(campaign, 'mage', false)
+    expect(campaign.characters).toHaveLength(1)
+    expect(campaign.characters[0]).toMatchObject({
+      type: 'Mage', alive: true, squadId: null, experience: 0,
+    })
+    // The seams the later slices fill are present and empty from day one (5-3).
+    expect(campaign.characters[0].items).toEqual([])
+    expect(campaign.characters[0].wounds).toEqual([])
+    // The log names them, since a character with no name on screen is just a
+    // roster count with extra steps.
+    expect(log.join(' ')).toContain(campaign.characters[0].name)
+  })
+
+  test('a troop hire is untouched by the character branch', () => {
+    const campaign = {
+      roster: new Map([['Militia', 50]]),
+      characters: [],
+      resources: { food: 500, materials: 500, gold: 0, horses: 0 },
+      workers: { total: 100, used: 0 },
+      recruit: { fervor: 0 },
+    }
+    applyHire(campaign, 'soldier', false)
+    expect(campaign.characters).toEqual([])
+    expect(campaign.roster.get('Soldier')).toBeGreaterThan(0)
   })
 
   test('a Cavalry hire spends horses too', () => {

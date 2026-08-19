@@ -55,7 +55,7 @@ export const catalogFixture = {
       category: 'Foot',
       forbiddenTerrain: [],
       roles: ['Player', 'Enemy'],
-      stats: { maxHP: 10, attack: 10, defence: 12, armour: 2, speed: 10, ballisticSkill: 10, preferredRange: 8, reconTag: 0 },
+      stats: { maxHP: 10, attack: 10, defence: 12, armour: 2, speed: 10, ballisticSkill: 10, preferredRange: 3, reconTag: 0 },
     },
     {
       name: 'Mage',
@@ -64,7 +64,7 @@ export const catalogFixture = {
       category: 'Foot',
       forbiddenTerrain: [],
       roles: ['Player'],
-      stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 10, ballisticSkill: 12, preferredRange: 6, reconTag: 0 },
+      stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 10, ballisticSkill: 12, preferredRange: 3, reconTag: 0 },
     },
     {
       name: 'Priest',
@@ -73,7 +73,7 @@ export const catalogFixture = {
       category: 'Foot',
       forbiddenTerrain: [],
       roles: ['Player'],
-      stats: { maxHP: 8, attack: 8, defence: 10, armour: 0, speed: 10, ballisticSkill: 4, preferredRange: 0, reconTag: 0 },
+      stats: { maxHP: 8, attack: 8, defence: 10, armour: 0, speed: 10, ballisticSkill: 4, preferredRange: 3, reconTag: 0 },
     },
     {
       name: 'Cavalry',
@@ -100,7 +100,7 @@ export const catalogFixture = {
       category: 'Foot',
       forbiddenTerrain: [],
       roles: ['Enemy'],
-      stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 10, ballisticSkill: 3, preferredRange: 6, reconTag: 0 },
+      stats: { maxHP: 8, attack: 6, defence: 10, armour: 0, speed: 10, ballisticSkill: 3, preferredRange: 3, reconTag: 0 },
     },
     {
       name: 'Zombie',

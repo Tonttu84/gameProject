@@ -1,4 +1,5 @@
 import { getRandom, chanceRoll } from '../utils/dice.js'
+import { isCharacterType, mintCharacter } from './characters.js'
 import { eventEligible } from './events.js'
 import {
   RECRUITING_FERVOR_START,
@@ -159,7 +160,7 @@ export const resolveHire = (entry, boosted, ctx) => {
 
 // Mutates the campaign in place; caller saves. Returns log lines, same
 // contract as events.js's applyEffect.
-export function applyHire(campaign, entryId, boosted = false) {
+export function applyHire(campaign, entryId, boosted = false, catalog = null) {
   const entry = findRecruitEntry(entryId)
   const workersFree = (campaign.workers?.total ?? 0) - (campaign.workers?.used ?? 0)
   const { count, cost, secondUnit } = resolveHire(entry, boosted, {
@@ -184,13 +185,43 @@ export function applyHire(campaign, entryId, boosted = false) {
   const trained = entry.from ? Math.min(count, available) : count
   if (entry.from) campaign.roster.set(entry.from, available - trained)
 
-  campaign.roster.set(entry.unit, (campaign.roster.get(entry.unit) ?? 0) + trained)
-  const log = entry.from
-    ? [`${trained} ${entry.from} are trained up as ${entry.unit}.`]
-    : [`${trained} ${entry.unit} join the roster.`]
+  // A caster is a CHARACTER, not a roster count (5-1): the lane keeps its row
+  // and its price, but what the gold buys is a named individual who can be
+  // attached, can hang back, and can die for good. Every other lane is
+  // unchanged — this is the ONE branch the migration adds to hiring.
+  const hire = (type, n) => {
+    if (!isCharacterType(type)) {
+      campaign.roster.set(type, (campaign.roster.get(type) ?? 0) + n)
+      return null
+    }
+    const names = []
+    // A live document always carries the array (schema default), but a plain
+    // test object or a partially-built campaign need not — and a hire the
+    // player has already paid for must never 500 on a missing field.
+    if (!campaign.characters) campaign.characters = []
+    for (let i = 0; i < n; i++) {
+      // Minted one at a time and pushed as we go, so each draws its id and its
+      // name against the rolls the previous one already joined.
+      const character = mintCharacter(campaign, type, catalog)
+      campaign.characters.push(character)
+      names.push(character.name)
+    }
+    return names
+  }
+
+  const names = hire(entry.unit, trained)
+  const log = names
+    ? [`${names.join(' and ')} ${names.length === 1 ? 'takes' : 'take'} service with the army.`]
+    : entry.from
+      ? [`${trained} ${entry.from} are trained up as ${entry.unit}.`]
+      : [`${trained} ${entry.unit} join the roster.`]
   if (secondUnit) {
-    campaign.roster.set(secondUnit, (campaign.roster.get(secondUnit) ?? 0) + 1)
-    log.push(`A second hire besides: 1 ${secondUnit}.`)
+    const secondNames = hire(secondUnit, 1)
+    log.push(
+      secondNames
+        ? `A second hire besides: ${secondNames[0]}.`
+        : `A second hire besides: 1 ${secondUnit}.`,
+    )
   }
   return log
 }

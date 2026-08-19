@@ -9,6 +9,7 @@ import { syncCatalog } from '../services/catalogSync.js'
 import UnitType from '../models/unitType.js'
 import { startTestDb, stopTestDb } from './helpers/db.js'
 import { engineStatsFixture } from './fixtures/engineStats.js'
+import { catalogFixture } from './fixtures/catalog.js'
 import { RECRUIT_POOL, FALLBACK_HIRE } from '../services/recruit.js'
 import {
   ENEMY_ARMY,
@@ -17,6 +18,7 @@ import {
   SQUAD_ARCHETYPES,
   SQUAD_TROOP_BUDGET,
   SQUAD_UPGRADE_POOL,
+  CHARACTER_TYPES,
   SQUAD_REINFORCE_POOL,
   SQUAD_CHARACTER_RESERVE,
 } from '../utils/campaignConfig.js'
@@ -87,6 +89,42 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
         Object.keys(pinned).map((field) => [field, unit.stats[field]]),
       )
       expect({ [name]: actual }).toEqual({ [name]: pinned })
+    }
+  }, 30000)
+
+  // `preferredRange` was, until slice 5, a field NO campaign capability read —
+  // which is why engineStatsFixture deliberately omits it and why the hand-written
+  // catalogFixture had drifted to invented values (Priest 0, Archer 8) without
+  // anything noticing. 5-8 makes it load-bearing: a character's hang-back DEFAULT
+  // is derived from it, so a stale copy silently flips a default the player sees
+  // on the screen. Pinned per type rather than wholesale, since the fixture names
+  // only a subset of the catalog.
+  test('the catalog fixture agrees with the engine about preferredRange', async () => {
+    const catalog = await dumpUnits()
+    for (const fixtureUnit of catalogFixture.units) {
+      const real = catalog.units.find((u) => u.name === fixtureUnit.name)
+      if (!real) continue
+      expect(
+        fixtureUnit.stats.preferredRange,
+        `catalogFixture ${fixtureUnit.name}.preferredRange has drifted from the engine`,
+      ).toBe(real.stats.preferredRange)
+    }
+  }, 30000)
+
+  // The hang-back default (5-8) is derived rather than stored, on the strength of
+  // a claim about the live catalog: that `preferredRange > 0` picks out exactly
+  // the ranged types and nothing else. If a retune ever makes a Mage a melee
+  // unit by that measure, the default silently inverts — so assert the claim
+  // itself against the real binary rather than trusting the comment.
+  test('every character type prefers range, so the hang-back default holds', async () => {
+    const catalog = await dumpUnits()
+    for (const type of CHARACTER_TYPES) {
+      const unit = catalog.units.find((u) => u.name === type)
+      expect(unit, `the engine has no unit named ${type}`).toBeDefined()
+      expect(
+        unit.stats.preferredRange,
+        `${type} is a character type but no longer prefers range — the hang-back default has flipped`,
+      ).toBeGreaterThan(0)
     }
   }, 30000)
 

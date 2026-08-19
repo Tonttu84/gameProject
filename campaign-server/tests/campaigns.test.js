@@ -3185,3 +3185,96 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
     for (const [type, cap] of Object.entries(before.caps)) expect(cohort.caps[type]).toBe(cap + bonus)
   })
 })
+
+// Characters (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS"). The pure layer —
+// minting, names, the living filter, planAttach — is covered in
+// characters.test.js; this is the route's contract.
+describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
+  const attach = (id, characterId, squadId) =>
+    auth(api.post(`/api/campaigns/${id}/characters/${characterId}/attach`)).send({ squadId })
+
+  test('a fresh campaign opens with six named casters, all unattached', async () => {
+    const { body: c } = await createCampaign()
+    expect(c.characters).toHaveLength(6)
+    expect(c.characters.filter((x) => x.type === 'Mage')).toHaveLength(3)
+    expect(c.characters.filter((x) => x.type === 'Priest')).toHaveLength(3)
+    for (const character of c.characters) {
+      expect(character.name).toEqual(expect.any(String))
+      // Unattached on purpose (5-12): attachment is the player's first
+      // character decision, and it keeps the deploys-alone path exercised.
+      expect(character.squadId).toBeNull()
+      expect(character.alive).toBe(true)
+    }
+    // Distinct people, not six copies of one.
+    expect(new Set(c.characters.map((x) => x.name)).size).toBe(6)
+    expect(new Set(c.characters.map((x) => x.id)).size).toBe(6)
+  })
+
+  // 5-1: the migration is TOTAL. A caster key surviving in the roster would be
+  // the placeable/spawnable mistake again — two systems stating one fact.
+  test('the roster holds no casters at all any more', async () => {
+    const { body: c } = await createCampaign()
+    expect(c.roster.Mage).toBeUndefined()
+    expect(c.roster.Priest).toBeUndefined()
+  })
+
+  test('the spellcasters default to hanging back', async () => {
+    const { body: c } = await createCampaign()
+    // Derived from preferredRange > 0, so it needs no new data (5-8).
+    for (const character of c.characters) expect(character.hangBack).toBe(true)
+  })
+
+  test('attaching puts a character with a squad, and detaching brings them home', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+
+    const { body: attached } = await attach(c.id, mage.id, 1).expect(200)
+    expect(attached.characters.find((x) => x.id === mage.id).squadId).toBe(1)
+
+    const { body: home } = await attach(c.id, mage.id, null).expect(200)
+    expect(home.characters.find((x) => x.id === mage.id).squadId).toBeNull()
+  })
+
+  // One per squad, held in a named constant because it is a prototyping
+  // placeholder (decision 9) — the rule is what is asserted, not the number.
+  test('a squad takes only MAX_CHARACTERS_PER_SQUAD of them', async () => {
+    const { body: c } = await createCampaign()
+    const [first, second] = c.characters
+    await attach(c.id, first.id, 1).expect(200)
+    const { body } = await attach(c.id, second.id, 1).expect(400)
+    expect(body.error).toMatch(/already has/)
+  })
+
+  test('re-attaching the same character to the same squad is not a conflict', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await attach(c.id, mage.id, 1).expect(200)
+    // Free and ungated (5-7): idempotent, not an error.
+    await attach(c.id, mage.id, 1).expect(200)
+  })
+
+  test('an unknown character or squad is a 400, not a crash', async () => {
+    const { body: c } = await createCampaign()
+    await attach(c.id, 999, 1).expect(400)
+    await attach(c.id, c.characters[0].id, 999).expect(400)
+  })
+
+  // 5-7 again: no phase gate. Every other mutating route here refuses once its
+  // phase is behind you; this one must not, so the test walks the turn on.
+  test('attachment stays open in a later phase', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.findByIdAndUpdate(c.id, { phase: 'recruit' })
+    await attach(c.id, c.characters[0].id, 1).expect(200)
+  })
+
+  test('a dead character cannot be attached to anything', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await Campaign.updateOne(
+      { _id: c.id, 'characters.id': mage.id },
+      { $set: { 'characters.$.alive': false, 'characters.$.diedDay': 2 } },
+    )
+    const { body } = await attach(c.id, mage.id, 1).expect(400)
+    expect(body.error).toMatch(/dead/)
+  })
+})

@@ -954,7 +954,9 @@ router.post('/:id/recruit/hire', async (req, res) => {
   if (!canAfford(cost, campaign.resources, workersFree))
     return res.status(400).json({ error: 'not enough stores to hire that' })
 
-  const entries = applyHire(campaign, entryId, campaign.recruit.boosted)
+  // The catalog is what a minted CHARACTER's hang-back default is derived from
+  // (5-8), so the caster lane needs it; every other lane ignores it.
+  const entries = applyHire(campaign, entryId, campaign.recruit.boosted, await getCatalog())
   campaign.recruit.hiredToday = true
   // Cleared, not left stale: hiredToday alone would still leave a resolveHire
   // preview computed against POST-hire resources in the view below — clearing
@@ -1046,6 +1048,44 @@ router.post('/:id/squads/:squadId/upgrades', async (req, res) => {
 
   const entries = applyUpgrade(campaign, squad, plan)
   campaign.log.push({ day: campaign.day, entries })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// Attach a character to a squad, or send them back to camp (docs/CAMPAIGN_PLAN.md
+// 5-7). Body: `{ squadId }`, where null/absent DETACHES.
+//
+// FREE AND UNGATED BY DESIGN — any phase, any number of times, no cost. That is
+// not an oversight to be tightened later: it is what makes riding along at full
+// risk (5-8) a fair deal, since leaving a character home is always one click
+// away. There is no mid-raid exploit to guard either, because /raids/launch
+// resolves the whole raid synchronously — there is no window in which a
+// character can be pulled off a squad that is losing.
+//
+// Deliberately NOT phase-guarded, unlike every other mutating route here. It
+// spends nothing and reveals nothing, so there is no decision for the one-way
+// march to protect.
+router.post('/:id/characters/:characterId/attach', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const plan = planAttach(campaign, req.params.characterId, req.body?.squadId ?? null)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  plan.character.squadId = plan.squadId
+  const squad = plan.squadId == null
+    ? null
+    : campaign.squads.find((s) => s.id === plan.squadId)
+  campaign.log.push({
+    day: campaign.day,
+    entries: [
+      squad
+        ? `${plan.character.name} takes the field with ${squad.name}.`
+        : `${plan.character.name} returns to camp.`,
+    ],
+  })
   await campaign.save()
   res.json(await campaignView(campaign))
 })
