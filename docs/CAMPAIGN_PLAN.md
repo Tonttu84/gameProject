@@ -85,15 +85,17 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-18) — START HERE
+### Where the work stands (2026-08-19) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **35**
 (this block read 34 until 2026-08-18; `CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
 authority, and 4a bumped it. 4b, 4c and 4d needed no bump — none of them changed the document
-shape).
+shape). **Slice 5a bumps it to 36** — `campaign.character` (singular, Mixed, a placeholder)
+becomes `campaign.characters` (an array of real entities).
 **Slice 4 IS DONE — 1, 2, 3, 4a, 4b, 4c and 4d of the squad overhaul are all SHIPPED**, 4d
-(Royal Guard) as of 2026-08-18. Next: characters, then banners, then the squad screen
-(decision 13, last).
+(Royal Guard) as of 2026-08-18. **SLICE 5 (characters) IS INTERVIEWED AND SPEC'D (2026-08-19)** —
+its twelve decisions are under "SLICE 5 — CHARACTERS" below, and they are the user's. Do not
+re-derive them. After it: banners, then the squad screen (decision 13, last).
 
 **What 4d leaves for the next slice to know:**
 - **A row may now cost more than one slot**, and `picksAvailable` is `slotsFor − slotsUsed`
@@ -134,6 +136,128 @@ and the Recruit screen has the button. What the next slice needs to know before 
 - **The hex budget is the invariant to respect.** A cap-raising upgrade must not be able to push a
   squad past `SQUAD_TROOP_BUDGET`; `engine.integration.test.js` enforces that for archetypes, and an
   upgrade layer needs the same guard (the config invariant only sees the base rows).
+
+**SLICE 5 — CHARACTERS (SPEC'D 2026-08-19, interviewed; 5a IN BUILD).** Decision 9 of the squad
+overhaul, taken through a `grilling` interview the same way 4b/4c/4d were: interview first, record
+the decisions here, then build TDD against them. Twelve decisions, all the user's.
+
+**5-0. THE STANDING RULE, and the one to reach for when this spec is silent: a character is a
+SPECIAL KIND OF TROOP, and follows every rule troops follow unless a decision here explicitly
+changes it** (user, 2026-08-19). It is the reason 5-10 is a short list rather than an argument:
+characters eat, fill the meter and cost raid capacity because *troops do*. The exceptions are
+few and all written down — they sit outside the per-type CAPS (decision 3 / `SQUAD_CHARACTER_RESERVE`),
+they have identity that survives death (5-9), and they can be told to hang back (5-8). A future
+question of the form "do characters do X?" is answered "yes, if troops do" unless it is on that list.
+
+**5-1. TOTAL migration — Mage and Priest leave the roster entirely.** Not a new layer beside the
+old one: after this slice `roster` has no caster key at all, `STARTING_ROSTER`'s `Mage: 3, Priest: 3`
+become six individual characters, and the caster `RECRUIT_POOL` lane hires a CHARACTER. Considered
+and rejected: keeping roster casters and making characters a rarer parallel thing, which is the
+`placeable`/`spawnable` mistake again — two systems stating the same fact, able to disagree.
+`campaign.character` (singular, `Mixed`, read only as `character?.auguryBonus ?? 0`) becomes
+`campaign.characters`. **Schema v35 → v36.** No data migration is written: a save from another
+build is deleted on listing already (`buildVersion`), and this is a shape change on top of that.
+
+**5-2. The base type is NEVER modified; everything rides a MODIFIER LAYER** (user: *"We don't
+modify the type base stats but can add items, experience, wounds… we can keep the base type and
+then add modifiers"*). A character is a catalog type plus modifiers, and the layer is built NOW
+even though nothing fills it — the user's explicit reason being that planning for it now is
+cheaper than refactoring into it later.
+
+**5-3. SOURCES are stored; the stat bag is DERIVED.** The document carries `items: []`,
+`experience: 0`, `wounds: []` — present and empty from 5a — and one pure `characterMods(character)`
+folds them into a `{stat: delta}` bag, returning `{}` today. This is 4a's rule applied again
+(store the taken ids, derive the slots): retuning a future item's numbers re-prices every existing
+character, and no save can go stale. Rejected: storing the accumulated bag (a retune leaves every
+save wrong, and healing a wound means correctly un-applying it) and caching it alongside the
+sources (two things that must agree).
+
+**5-4. Items go in TYPED SLOTS that belong to the creature** — head, torso, legs, hand, misc, with
+a per-creature COUNT of each and a cap of **10 per type** so the odd bodies fit (user: *"hydra could
+have 2 or more head slots. we might have 4 armed monsters"*). The cap is flexibility for modders,
+not a number our roster needs.
+
+**5-5. Equipped items are a SPARSE LIST: `{slot, index, itemId}`.** Only what is worn is stored, so
+any layout works with no document surgery, equipping validates `index < layout[slot]`, and a
+creature that gains or loses a limb changes the LAYOUT only — an item stranded in a vanished slot
+is a derivation-time filter, never a corrupted save. Rejected: fixed-length arrays per slot type
+(every layout change resizes arrays in every save) and a flat id list with the slot inferred from
+the item (nothing can say WHICH of four hands holds the brand).
+
+**5-6. The slot LAYOUT lives in the ENGINE unit catalog**, exported by `unitCatalogJson()` beside
+`size`/`category`/`roles` and synced into `UnitType` at boot. A body plan is a fact about the
+creature, like its size — so adding a hydra in C++ brings its anatomy along instead of needing a
+second table that `docs/ADDING_UNITS.md` exists to stop people forgetting. The dependency still
+runs campaign → engine: the engine DECLARES anatomy and never learns what an item is.
+**And it is declared down the inheritance chain with NO DEFAULT** (user: *"the CPP already has the
+inheritance system… no type is an error it doesn't default to anything. Better to be strict than
+vague"*) — a type that fails to declare a layout is an error, never a humanoid by omission.
+
+**5-7. Attach/detach is FREE and UNGATED — any phase, any number of times.** One character per
+squad, held in a named constant and still explicitly a prototyping placeholder (decision 9).
+Considered and rejected: sealing it at the end of `prepare`, and a bonded-until-death version with
+a price to reassign. There is no mid-raid exploit to guard: `POST /raids/launch` resolves the whole
+raid synchronously, so there is no window in which a character can be yanked off a losing squad.
+
+**5-8. Attached means EVERYWHERE, automatically — raids included, at full risk.** No per-fight
+opt-out and none needed: detaching is free (5-7), so leaving a character home is one click, and the
+risk is exactly what makes raiding with your only Mage a decision. **Paired with the HANG-BACK
+TOGGLE** (the "tag for whether it avoids melee" decision 9 asked for, raised again by the user
+mid-interview): a per-character boolean on EVERY character regardless of type (user: *"I will have
+to re-evaluate later so let's just have a toggle for now, type doesn't matter"*), which makes the
+engine pass that unit over for rank 1 and seat it there only once nobody else can fill the line —
+*hang back unless we run out of troops*. **Its DEFAULT is type-derived**: on for spellcasters and
+archers, off for melee. `preferredRange > 0` picks out exactly Archer, Mage, Priest and Necromancer
+from the live catalog and nothing else, so the default needs no new data to derive.
+
+**5-9. Death is permanent, but the RECORD AND ITS DATA SURVIVE.** The entry stays in `characters`
+marked dead with the day they fell, and **items, experience and wounds are preserved intact** —
+the user's requirement is explicit: *"make it so that there is option to recover with some means,
+special spells etc, mummification, we don't need them right now but don't lose data."* So nothing
+in 5a may prune a dead character or strip their gear; every live reader (augury, attachment,
+deployment, upkeep) filters on alive instead. This is one of the few places the troop rule (5-0)
+does NOT decide the answer — a troop has no identity to remember.
+
+**5-10. Characters keep counting toward food upkeep, the boss-fight meter and raid capacity.**
+Straight from 5-0. The point is a negative one: if they stopped, migrating six casters out of the
+roster would silently REFUND their rations, shift the idle fraction the meter fills from, and make
+an attached character a free passenger on every raid — three balance changes nobody chose. Upkeep
+must be identical the day this ships.
+
+**5-11. Augury reads Mage CHARACTERS with the same formula**: `min(AUGURY_MAGE_BONUS_CAP,
+floor(sqrt(living Mage characters)))` plus their derived augury modifiers. Balance is unchanged on
+day one (3 Mages → +1), and it is what finally makes the `character?.auguryBonus` placeholder REAL
+rather than deleting it — a future scrying item adds through the modifier layer (5-3), not through
+a second formula. Rejected: flat +1 per Mage (silently jumps the day-one bonus to the +3 cap) and
+a single "court mage" reading (the count stops mattering at all).
+
+**5-12. Hiring keeps its rows and prices; names come from an AUTHORED POOL.** The caster lane stays
+`mage` 100 gold / `priest` 80 gold, `count: 1` — the hire now mints a character, drawing an unused
+name from a hand-written list in campaign config. Zero UI, immediate flavour, and a rename action
+can arrive later without changing anything structural. **The six starting casters all begin
+UNATTACHED**, which makes attachment the player's first character decision and keeps the
+deploys-alone path exercised from the very first battle rather than lying untested.
+
+**What 5a BUILDS, and what it only RECORDS.** The line, drawn by the user:
+- **BUILT** — the migration (5-1); hire, name, persist, attach, detach (5-7, 5-12); riding along
+  everywhere (5-8); permanent death with the record kept (5-9); food/meter/raid capacity (5-10);
+  augury off characters (5-11); a plain `CharacterPanel`; the hang-back toggle wired through the
+  engine's seating (5-8).
+- **SEAMS ONLY** — `items: []`, `experience: 0`, `wounds: []` present and empty, and
+  `characterMods()` returning `{}` (5-2, 5-3).
+- **RECORDED, NOT BUILT** — the item catalog, the C++ slot layouts, experience, wounds
+  (5-4, 5-5, 5-6). Each is its own later slice with its own interview.
+
+**Assistant's calls, flagged as overturnable:**
+- **Identity round-trips through the engine as `character_id`** on the placement entry, coming back
+  as a list of surviving ids — because `survivorJson` reports COUNTS BY TYPE, which cannot say
+  *which* Mage died, and 5-9 needs exactly that. It rides beside `squad_id`, which already proves
+  the pattern.
+- **An attached character is placed on its squad's hex automatically**, with no separate placement
+  step (the squad already places as one block); an unattached one is placed individually, like the
+  loner Mage/Priest of today. No-regression reading of decision 9, not separately confirmed.
+- **`CharacterPanel` is deliberately plain** — list, attachment picker, hang-back toggle, dead roll —
+  because decision 13's squad screen will absorb it. It should not grow a design of its own.
 
 **SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; 4a/4b/4c/4d ALL SHIPPED).**
 The design interview the handoff above asked for is DONE. Eight decisions, all the user's. Built TDD.
