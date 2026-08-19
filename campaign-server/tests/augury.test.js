@@ -61,9 +61,16 @@ const DECOY = { ...EVENT_POOL.find((e) => e.id === 'supply') }
 // All slots pinned to the same unread DOOMED/DECOY pair. With no mages and
 // no character, a queued [4,1] reading gives points 4+2+0+0+0 = 6 → odds 0.3
 // → d1000 vision threshold 300.
-const makeCampaign = ({ mages = 0, character = null } = {}) => ({
-  roster: new Map(mages > 0 ? [['Mage', mages]] : []),
-  character,
+// Mages are CHARACTERS since slice 5 (docs/CAMPAIGN_PLAN.md 5-1/5-11), so the
+// reading skill counts individuals on `characters` rather than a roster key.
+// `deadMages` exists because the dead are KEPT on the rolls (5-9) — the filter
+// that stops a fallen mage reading omens is the thing worth pinning.
+const makeCampaign = ({ mages = 0, deadMages = 0 } = {}) => ({
+  roster: new Map(),
+  characters: [
+    ...Array.from({ length: mages }, (_, i) => ({ id: i + 1, type: 'Mage', alive: true })),
+    ...Array.from({ length: deadMages }, (_, i) => ({ id: mages + i + 1, type: 'Mage', alive: false })),
+  ],
   augury: {
     slots: Array.from({ length: AUGURY_SLOTS }, () => ({
       trueEvent: { ...DOOMED },
@@ -77,11 +84,24 @@ const makeCampaign = ({ mages = 0, character = null } = {}) => ({
 })
 
 describe('mageBonus', () => {
-  test('floor(sqrt(mages)), capped at 3', () => {
-    expect(mageBonus(new Map())).toBe(0)
-    expect(mageBonus(new Map([['Mage', 3]]))).toBe(1)
-    expect(mageBonus(new Map([['Mage', 9]]))).toBe(3)
-    expect(mageBonus(new Map([['Mage', 100]]))).toBe(3) // capped
+  // Same formula as before slice 5, over a different source — which is exactly
+  // why day-one balance is unchanged: the starting three mages still read +1.
+  test('floor(sqrt(living mage characters)), capped at 3', () => {
+    expect(mageBonus(makeCampaign())).toBe(0)
+    expect(mageBonus(makeCampaign({ mages: 3 }))).toBe(1)
+    expect(mageBonus(makeCampaign({ mages: 9 }))).toBe(3)
+    expect(mageBonus(makeCampaign({ mages: 100 }))).toBe(3) // capped
+  })
+
+  test('the dead do not read omens, though they stay on the rolls', () => {
+    expect(mageBonus(makeCampaign({ mages: 0, deadMages: 9 }))).toBe(0)
+    // Three living among nine fallen reads as three, not twelve.
+    expect(mageBonus(makeCampaign({ mages: 3, deadMages: 9 }))).toBe(1)
+  })
+
+  test('only Mages read — a Priest is a character, not an augur', () => {
+    const priests = { roster: new Map(), characters: [{ id: 1, type: 'Priest', alive: true }] }
+    expect(mageBonus(priests)).toBe(0)
   })
 })
 
@@ -91,11 +111,14 @@ describe('rollAuguryOdds', () => {
     expect(rollAuguryOdds(makeCampaign(), DOOMED)).toBeCloseTo(0.45)
   })
 
-  test('pool legibility, mages and character all add points', () => {
-    // roll 4 + base 2 + mage 3 + character 2 + minor pool 2 = 13 → 0.65
-    const c = makeCampaign({ mages: 9, character: { auguryBonus: 2 } })
+  test('pool legibility and mages both add points', () => {
+    // roll 4 + base 2 + mage 3 + minor pool 2 = 11 → 0.55.
+    // The old separate `character.auguryBonus` term is GONE by design (5-11):
+    // a scrying item will add through the character MODIFIER layer instead of
+    // a second formula, so there is one place a reading bonus can come from.
+    const c = makeCampaign({ mages: 9 })
     pushRoll(4); pushRoll(1)
-    expect(rollAuguryOdds(c, { ...DOOMED, severity: 1 })).toBeCloseTo(0.65)
+    expect(rollAuguryOdds(c, { ...DOOMED, severity: 1 })).toBeCloseTo(0.55)
   })
 
   test('a monster roll is capped at the maximum', () => {

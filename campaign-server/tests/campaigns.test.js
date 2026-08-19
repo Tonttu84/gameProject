@@ -291,9 +291,16 @@ describe('POST /api/campaigns', () => {
 // campaignView stays the single gate. Armies are pinned straight on the doc to
 // force each band (fixture-catalog coverages; the default player roster sits
 // at 1494/4000 ≈ 0.374).
-const pinArmies = async (id, { roster, enemyArmy, enemySupplyState, rings } = {}) => {
+// Pinning the player's ARMY means both halves of it since slice 5: the roster
+// no longer holds the casters, and six living characters are six live bodies
+// for food, the meter and the annihilation check (5-10). A test that pins
+// `roster` to one Soldier and expects the army destroyed means exactly that, so
+// pinning a roster clears the characters unless the caller asks for some — the
+// alternative is every such test quietly measuring "one Soldier plus six mages".
+const pinArmies = async (id, { roster, characters, enemyArmy, enemySupplyState, rings } = {}) => {
   const doc = await Campaign.findById(id)
   if (roster) doc.roster = new Map(Object.entries(roster))
+  if (roster || characters) doc.characters = characters ?? []
   if (enemyArmy) doc.enemy.army = new Map(Object.entries(enemyArmy))
   // S4: the stockpile is gone — what the view reports is the stored per-turn
   // verdict, so pin the state itself rather than a kg figure.

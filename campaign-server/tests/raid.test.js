@@ -134,9 +134,15 @@ const pinAugury = async (id, trueEvent, falseEvent = trueEvent) => {
   await doc.save()
 }
 
-const shrinkRoster = async (id, roster) => {
+// Shrinking the army to an exact size means the CHARACTERS too since slice 5:
+// the six starting casters left the roster but not the army, and they still eat
+// (5-10). A test pinning a roster to make its food arithmetic exact would
+// otherwise be silently 168 kg out — six bodies at 28 kg — so the casters go
+// with the roster unless a caller wants them.
+const shrinkRoster = async (id, roster, characters = []) => {
   const doc = await Campaign.findById(id)
   doc.roster = roster
+  doc.characters = characters
   await doc.save()
 }
 

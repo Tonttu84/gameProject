@@ -29,6 +29,7 @@ import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.j
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging, ageForageModifiers } from './forage.js'
+import { allBodies } from './characters.js'
 
 // End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
 // later stages splice into it:
@@ -55,7 +56,10 @@ import { resolveForaging, ageForageModifiers } from './forage.js'
 // died too: with no army left there is nothing to claim the country with.
 export function checkAnnihilation(campaign) {
   const entries = []
-  if (rosterTotal(campaign.roster) === 0) {
+  // Characters count here too: an army of two surviving mages is still an
+  // army, and losing the campaign because the last body with a name is not a
+  // roster count would be the troop rule (5-0) failing at its loudest.
+  if (rosterTotal(allBodies(campaign)) === 0) {
     campaign.status = 'lost'
     entries.push('Your army is no more.')
   } else if (armyTotal(campaign.enemy.army) === 0) {
@@ -293,13 +297,23 @@ export async function endDay(campaign) {
   entries.push(...enemyTurn(campaign, catalog, foraging.forage.enemyIncomeKg))
 
   // 5. Player upkeep — size² × kg/day × days-per-turn, from live catalog sizes.
-  const units = rosterTotal(campaign.roster)
-  const foodNeed = armyFoodPerTurn(campaign.roster, catalog)
+  // Characters eat like anyone else (docs/CAMPAIGN_PLAN.md 5-0/5-10): they
+  // left the roster in slice 5, and if upkeep followed them out, migrating six
+  // casters into characters would silently refund their rations.
+  const bodies = allBodies(campaign)
+  const units = rosterTotal(bodies)
+  const foodNeed = armyFoodPerTurn(bodies, catalog)
   const foodConsumed = Math.min(campaign.resources.food, foodNeed)
   campaign.resources.food = Math.max(0, campaign.resources.food - foodNeed)
   let deserters = 0
   if (campaign.resources.food <= 0 && units > 0) {
-    // Empty stores: a tenth of every line slips away in the dark.
+    // Empty stores: a tenth of every line slips away in the dark. Characters
+    // are deliberately NOT in this loop even though they ate above: desertion
+    // takes a FRACTION of a line, which is meaningless for an individual, and
+    // "your named mage walks out in the night" is a mechanic nobody has
+    // designed. The troop rule (5-0) says characters follow troop rules unless
+    // a decision changes it — this is the change, and it is written down here
+    // rather than left as an oversight for a later reader to "fix".
     for (const [type, n] of campaign.roster) {
       const gone = Math.floor(n * DESERTION_FRACTION)
       if (gone > 0) {
@@ -387,7 +401,7 @@ export async function endDay(campaign) {
     // Effort slider S2: resnapshot tomorrow's pool from the roster as the
     // day's attrition left it, then split it by the STICKY forage.share the
     // player already has set (newDay never touches forage.share itself).
-    campaign.forage.pool = fieldPointsFor(campaign.roster, catalog)
+    campaign.forage.pool = fieldPointsFor(allBodies(campaign), catalog)
     campaign.raid.scoutingPoints = campaign.forage.pool * (1 - (campaign.forage.share ?? 0))
     // Recon R2: a level-up (re)sets the numeric estimate brackets ONCE, from the
     // truth as it now stands (enemy count = live host size AFTER this turn's

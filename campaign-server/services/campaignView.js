@@ -20,6 +20,7 @@ import {
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
 import { squadCaps, squadIntake, looseRoster } from './squadReinforce.js'
+import { allBodies } from './characters.js'
 import {
   squadUpgrades,
   slotsFor,
@@ -324,7 +325,7 @@ export async function campaignView(campaign) {
       gold: campaign.resources.gold,
       horses: campaign.resources.horses,
       // What the current roster will eat at the coming end-of-turn.
-      foodNeedPerTurn: armyFoodPerTurn(campaign.roster, catalog),
+      foodNeedPerTurn: armyFoodPerTurn(allBodies(campaign), catalog),
     },
     roster: Object.fromEntries(campaign.roster),
     // Persistent, player-facing squads (own info, not hidden — same tier as
@@ -344,6 +345,20 @@ export async function campaignView(campaign) {
     // stores the bare id). `reinforcedToday` reads the reinforcedDay stamp
     // against today the same way recruit.drawn reads drawnDay — the client
     // needs the answer, not the ledger.
+    // Characters (slice 5). All own info, so the whole list ships — including
+    // the DEAD, who stay on the rolls (5-9) and whom the panel shows as a roll
+    // of honour. `items`/`experience`/`wounds` are deliberately NOT projected:
+    // they are empty seams this slice, and shipping an empty array would invite
+    // a client to render a system that does not exist yet.
+    characters: (campaign.characters ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      type: c.type,
+      squadId: c.squadId ?? null,
+      hangBack: c.hangBack ?? false,
+      alive: c.alive,
+      diedDay: c.diedDay ?? null,
+    })),
     squads: campaign.squads.map((squad) => ({
       id: squad.id,
       name: squad.name,

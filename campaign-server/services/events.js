@@ -352,6 +352,13 @@ export const rosterTotal = (roster) =>
 // live doc but a plain object at creation-time draws and in tests — read both.
 const bagGet = (bag, key) => (bag instanceof Map ? bag.get(key) : bag?.[key]) ?? 0
 
+// Living characters of one type in the same duck-typed context. Deliberately
+// inlined rather than imported from services/characters.js: this file is the
+// event pool, and importing the character layer here would put a cycle between
+// them the moment a character effect wants to describe itself.
+const livingCharactersOfType = (ctx, type) =>
+  (ctx?.characters ?? []).filter((c) => c.alive && c.type === type).length
+
 // Prerequisites (R1): does this event's `requires` block hold against the
 // current campaign context {day, roster, eventFlags}? An event with no
 // `requires` is always eligible. Every clause is ANDed; the context is
@@ -368,7 +375,14 @@ export const eventEligible = (event, ctx = {}) => {
   if (req.maxDay != null && day > req.maxDay) return false
   if (req.flags && !req.flags.every((f) => bagGet(ctx.eventFlags, f) > 0)) return false
   if (req.notFlags && req.notFlags.some((f) => bagGet(ctx.eventFlags, f) > 0)) return false
-  if (req.hasUnit && bagGet(ctx.roster, req.hasUnit) <= 0) return false
+  // "Do you have any of these?" counts CHARACTERS as well as roster bodies —
+  // a character is a special kind of troop (docs/CAMPAIGN_PLAN.md 5-0), and a
+  // fate gated on owning a Mage must not stop firing merely because Mages
+  // stopped being a roster count in slice 5. Only Cavalry is gated today, so
+  // this changes nothing yet; it is here so the first caster-gated fate works
+  // the day someone writes it rather than failing silently.
+  if (req.hasUnit && bagGet(ctx.roster, req.hasUnit) + livingCharactersOfType(ctx, req.hasUnit) <= 0)
+    return false
   // Garrison Resolve gate: the standing track opens high-trust garrison fates
   // and closes them (or unlocks soured-relationship ones) as the relationship
   // shifts. Absent garrison context reads as the starting resolve, so a

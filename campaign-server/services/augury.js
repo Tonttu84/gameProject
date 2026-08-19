@@ -10,13 +10,14 @@ import {
   AUGURY_MAGE_BONUS_CAP,
 } from '../utils/campaignConfig.js'
 import { EVENT_POOL, POOL_LEGIBILITY, eligiblePool, describeEffect } from './events.js'
+import { livingCharacters, characterMods } from './characters.js'
 
 // The augur's visions. Each turn holds AUGURY_SLOTS independent fates; a slot
 // is a hidden {trueEvent, falseEvent} pair drawn from ONE pool (severity
 // tier). Every slot's TRUE event applies at end-of-turn no matter what was
 // shown. Consulting reads each slot:
 //
-//   points = throwDice() + base + mageBonus + characterBonus
+//   points = throwDice() + base + mageBonus   (the living Mage CHARACTERS)
 //          + POOL_LEGIBILITY[pool]   (the pool's modifier, never the event's)
 //   odds   = clamp(points × per-point, min, max)   ← SHOWN on the card
 //   vision = chanceRoll(odds) ? trueEvent : falseEvent
@@ -32,8 +33,21 @@ import { EVENT_POOL, POOL_LEGIBILITY, eligiblePool, describeEffect } from './eve
 // and nothing about which card is true; pools mix good and bad events, so
 // even the (visible) pool leaks magnitude, never direction.
 
-export const mageBonus = (roster) =>
-  Math.min(AUGURY_MAGE_BONUS_CAP, Math.floor(Math.sqrt(roster.get('Mage') ?? 0)))
+// The reading skill in camp. Mages used to be a roster count; since slice 5
+// they are CHARACTERS (docs/CAMPAIGN_PLAN.md 5-1), so this counts individuals
+// instead — the same formula over a different source, which is why the day-one
+// balance is unchanged (three mages still read +1).
+//
+// The DEAD do not read omens, so this counts the living only. Their derived
+// modifiers are added on top, which is what finally makes the old
+// `character?.auguryBonus` placeholder real: a future scrying item adds through
+// the modifier layer (5-3) rather than through a second formula bolted on here.
+export const mageBonus = (campaign) => {
+  const mages = livingCharacters(campaign).filter((c) => c.type === 'Mage')
+  const skill = Math.min(AUGURY_MAGE_BONUS_CAP, Math.floor(Math.sqrt(mages.length)))
+  const fromMods = mages.reduce((sum, c) => sum + (characterMods(c).auguryBonus ?? 0), 0)
+  return skill + fromMods
+}
 
 // One open-ended reading: exploding d6 + flat base + reading skill + the
 // POOL's legibility (identical for both pair members — the odds can never
@@ -43,8 +57,7 @@ export const rollAuguryOdds = (campaign, trueEvent) => {
   const points =
     throwDice() +
     AUGURY_BASE_POINTS +
-    mageBonus(campaign.roster) +
-    (campaign.character?.auguryBonus ?? 0) +
+    mageBonus(campaign) +
     (POOL_LEGIBILITY[trueEvent.severity] ?? 0)
   // Rounded to whole percent: the number IS the display, and chanceRoll's
   // d1000 threshold must match it exactly.

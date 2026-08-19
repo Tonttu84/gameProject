@@ -19,6 +19,16 @@ import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../service
 import { planReinforcement, applyReinforcement, looseRoster } from '../services/squadReinforce.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
 import {
+  mintCharacter,
+  planAttach,
+  allBodies,
+  livingCharacters,
+  charactersOfSquad,
+  looseCharacters,
+  characterMods,
+  reconcileCharacters,
+} from '../services/characters.js'
+import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
 } from '../services/raid.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
@@ -31,6 +41,8 @@ import {
   MAP_NAME,
   RAID_MAX_TURNS,
   STARTING_ROSTER,
+  STARTING_CHARACTERS,
+  CHARACTER_NAMES,
   STARTING_SQUADS,
   STARTING_FOOD,
   STARTING_MATERIALS,
@@ -148,16 +160,30 @@ router.post('/', async (req, res) => {
   // Day-1 draw, before the doc exists: hand drawAugury the starting context so
   // prerequisite-gated fates (events.js `requires`) are judged against the
   // opening army. No eventFlags yet — the first turn can't be a chain payoff.
-  const augury = drawAugury({ day: 1, roster: STARTING_ROSTER })
+  // The six starting casters (5-1/5-12): named from the pool IN ORDER so a
+  // fresh campaign is reproducible, and all unattached so attachment is the
+  // player's first character decision. Built before the augury draw because
+  // both the draw's prerequisites and the day-1 field pool must already be able
+  // to see these six bodies — they left the roster, they did not leave the army.
+  const characters = []
+  STARTING_CHARACTERS.forEach((spec, i) => {
+    characters.push(mintCharacter({ characters }, spec.type, catalog, { name: CHARACTER_NAMES[i] }))
+  })
+
+  const augury = drawAugury({ day: 1, roster: STARTING_ROSTER, characters })
   // Effort slider (S2): one field-points pool, split by DEFAULT_FORAGE_SHARE
   // (the schema default for forage.share) between the forage kg it seeds and
   // the raid board's day-1 scouting-points pool.
-  const pool = fieldPointsFor(STARTING_ROSTER, catalog)
+  // allBodies, not STARTING_ROSTER: characters forage like anyone else (5-10),
+  // and pricing the day-1 pool off the roster alone would quietly dock the
+  // army six bodies' worth of field points on turn one.
+  const pool = fieldPointsFor(allBodies({ characters }, STARTING_ROSTER), catalog)
   const campaign = await Campaign.create({
     user: req.user._id,
     resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
     workers: { total: STARTING_WORKERS, used: 0 },
     roster: STARTING_ROSTER,
+    characters,
     // No day-1 offer is drawn here, unlike the augury above: the Recruit phase
     // draws its own lazily when the player opens it, so the pool is judged
     // against the stores as they stand at that moment rather than before the

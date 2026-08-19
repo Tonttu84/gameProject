@@ -5,6 +5,7 @@ import {
   METER_BANDS,
 } from '../utils/campaignConfig.js'
 import { rosterTotal } from './events.js'
+import { allBodies } from './characters.js'
 
 // How much the boss-fight meter fills this end-of-day. S2 "effort slider"
 // (docs/CAMPAIGN_PLAN.md, decision 11): foraging no longer pulls named units
@@ -16,7 +17,10 @@ import { rosterTotal } from './events.js'
 // scouting-postured — raiding/foraging is faster meter growth traded for
 // readiness on the day it lands.
 export function meterFillAtShare(campaign, share) {
-  const total = rosterTotal(campaign.roster)
+  // Characters are bodies in camp like any other (docs/CAMPAIGN_PLAN.md
+  // 5-0/5-10) — if they stopped counting when they left the roster in slice 5,
+  // the idle fraction this reads would have shifted for free.
+  const total = rosterTotal(allBodies(campaign))
   if (total <= 0) return BOSS_FIGHT_METER_FLOOR
   const raiders = rosterTotal(campaign.raid.assignment)
   const inCamp = (total - raiders) * (1 - share)

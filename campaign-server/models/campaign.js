@@ -143,7 +143,7 @@ const ringSchema = new mongoose.Schema(
 // to the server — 'deploy' is the server's name for all of the battle ones.
 export const TURN_PHASES = ['prepare', 'omens', 'raids', 'recruit', 'deploy']
 
-export const CAMPAIGN_SCHEMA_VERSION = 35 // v35: squad overhaul slice 4a (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE CATALOG") — squads[].upgrades, the PERMANENT ids a charter has taken, and squads[].upgradeOffer, the three-row draft drawn at newDay for any charter with a free slot and consumed by the pick; slots and the Seasoned banner are DERIVED from prestige through the rank ladder and deliberately not stored, so this is the first slice where prestige gates anything; v34: squad overhaul slice 3 (docs/CAMPAIGN_PLAN.md "SLICE 3 — reinforcement") — squads[].reinforcedDay, the once-per-turn ledger for the new POST /:id/squads/:squadId/reinforce; the slice gives slice 2's caps their teeth (a pooled per-squad intake metered on the output side, a hex size-budget gate, and SQUAD_REINFORCE_POOL recipes whose inputs are DESTROYED and outputs CREATED, never matched); v33: squad overhaul slice 2 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL", decisions 2-4) — squads[].archetype, the id of a SQUAD_ARCHETYPES row carrying the charter's permitted troop types, its per-type caps and its intake rate; the row is looked up, never copied onto the document, and nothing reads it until reinforcement (slice 3); v32: squad overhaul slice 1 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL") — squads[].prestige, the PERMANENT rank that gates squad upgrades and is never spent, earned from raids scaled by the target's strength band; the same slice stops the raid/battle reconciliations DISBANDING a wiped squad (a charter now stays on the rolls at composition {} carrying its prestige, per decision 14) and refuses to send an empty one; v31: "starve the enemy" S1 (docs/CAMPAIGN_PLAN.md) — enemy.supplies (a stockpile seeded once, drained by upkeep forever, never replenished, with no consequence at zero) is REPLACED by enemy.supplyState, the per-turn verdict of income ÷ consumption; the host now feeds itself from the rings it drains, so stripping the inner rings starves it; v30: effort slider S3 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.modifiers (standing pressures on the player's capacity / the enemy's drain, granted by the new `forage_modifier` effect, permanent by default) plus raid.opportunities.persistent/modifierId, the carried-over card that lifts one by being beaten; v29: effort slider S2 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.assignment/enemyPlan are GONE, replaced by forage.pool (the day's field-points snapshot), forage.share (the player's slider split, sticky across turns) and forage.enemyDrainKg (a flat abstract number, no longer derived from the enemy's army); forager clashes and services/skirmish.js are deleted; v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 36 // v36: characters, slice 5a (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS") — the singular `character` Mixed placeholder becomes `characters`, an array of real entities, and Mage/Priest leave `roster` ENTIRELY (5-1): a caster is now an individual with a name, an attachment, a hang-back toggle, a permanent death that keeps its record, and an empty modifier layer (items/experience/wounds) for the later slices to fill; the same six bodies still eat, fill the meter and cost raid capacity, because a character is a special kind of troop (5-0); v35: squad overhaul slice 4a (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE CATALOG") — squads[].upgrades, the PERMANENT ids a charter has taken, and squads[].upgradeOffer, the three-row draft drawn at newDay for any charter with a free slot and consumed by the pick; slots and the Seasoned banner are DERIVED from prestige through the rank ladder and deliberately not stored, so this is the first slice where prestige gates anything; v34: squad overhaul slice 3 (docs/CAMPAIGN_PLAN.md "SLICE 3 — reinforcement") — squads[].reinforcedDay, the once-per-turn ledger for the new POST /:id/squads/:squadId/reinforce; the slice gives slice 2's caps their teeth (a pooled per-squad intake metered on the output side, a hex size-budget gate, and SQUAD_REINFORCE_POOL recipes whose inputs are DESTROYED and outputs CREATED, never matched); v33: squad overhaul slice 2 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL", decisions 2-4) — squads[].archetype, the id of a SQUAD_ARCHETYPES row carrying the charter's permitted troop types, its per-type caps and its intake rate; the row is looked up, never copied onto the document, and nothing reads it until reinforcement (slice 3); v32: squad overhaul slice 1 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL") — squads[].prestige, the PERMANENT rank that gates squad upgrades and is never spent, earned from raids scaled by the target's strength band; the same slice stops the raid/battle reconciliations DISBANDING a wiped squad (a charter now stays on the rolls at composition {} carrying its prestige, per decision 14) and refuses to send an empty one; v31: "starve the enemy" S1 (docs/CAMPAIGN_PLAN.md) — enemy.supplies (a stockpile seeded once, drained by upkeep forever, never replenished, with no consequence at zero) is REPLACED by enemy.supplyState, the per-turn verdict of income ÷ consumption; the host now feeds itself from the rings it drains, so stripping the inner rings starves it; v30: effort slider S3 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.modifiers (standing pressures on the player's capacity / the enemy's drain, granted by the new `forage_modifier` effect, permanent by default) plus raid.opportunities.persistent/modifierId, the carried-over card that lifts one by being beaten; v29: effort slider S2 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.assignment/enemyPlan are GONE, replaced by forage.pool (the day's field-points snapshot), forage.share (the player's slider split, sticky across turns) and forage.enemyDrainKg (a flat abstract number, no longer derived from the enemy's army); forager clashes and services/skirmish.js are deleted; v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -538,9 +538,70 @@ const campaignSchema = new mongoose.Schema({
     revealedUntilDay: { type: Number, default: 0 },
   },
 
-  // Placeholder for the character system: augury reads
-  // character?.auguryBonus ?? 0. TODO flesh out when characters land.
-  character: { type: mongoose.Schema.Types.Mixed, default: null },
+  // Characters (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS"). This REPLACES
+  // the singular `character` Mixed placeholder the augury bonus used to read.
+  //
+  // A character is a special kind of TROOP (5-0) that happens to have a name:
+  // it eats, fills the boss-fight meter and costs raid capacity like any body,
+  // and the exceptions are the few written into the slice — it sits outside a
+  // squad's per-type caps, its identity survives its death, and it can be told
+  // to hang back. The base unit type is NEVER modified (5-2): everything a
+  // character gains rides the modifier layer below.
+  characters: {
+    type: [
+      new mongoose.Schema(
+        {
+          // Small campaign-scoped int, like a squad's — it flows into the
+          // engine's placement JSON as character_id. Allocated as max+1 and
+          // NEVER reused, which dead characters staying on the rolls makes
+          // both possible and necessary.
+          id:      { type: Number, required: true },
+          name:    { type: String, required: true },
+          // A catalog unit type (CHARACTER_TYPES). The character IS one of
+          // these bodies on the field — that is why survival needs no
+          // machinery of its own.
+          type:    { type: String, required: true },
+          // The squad this character rides with, or null in camp. Free to
+          // change at any time, in any phase (5-7). Attached means the
+          // character goes wherever the squad goes, raids included (5-8).
+          squadId: { type: Number, default: null },
+          // "Hang back unless we run out of troops" (5-8). Every character
+          // carries the toggle whatever their type; only the DEFAULT is
+          // type-derived (ranged/casters on, melee off — see
+          // services/characters.js hangsBackByDefault).
+          hangBack: { type: Boolean, default: true },
+
+          // Death is permanent, but the record and its data are KEPT (5-9) so
+          // a later recovery — a spell, mummification — has something to work
+          // from. Nothing in this slice may prune a dead character or strip
+          // their gear; live readers filter on `alive` instead.
+          alive:   { type: Boolean, default: true },
+          diedDay: { type: Number, default: null },
+
+          // ── The modifier layer (5-2/5-3) ───────────────────────────────
+          // SOURCES are stored; the stat bag is DERIVED from them by
+          // services/characters.js characterMods(), which returns {} while
+          // these are empty. Storing the derived bag instead would leave every
+          // save wrong the first time an item's numbers are retuned — the same
+          // reason squad upgrades store taken ids and derive their slots.
+          //
+          // Nothing fills these yet. They exist now because planning for them
+          // is cheaper than refactoring into them later (the user's call), and
+          // an empty field costs a save nothing.
+          //
+          // items: a SPARSE list of {slot, index, itemId} — only what is
+          // actually worn. Slot layouts belong to the creature and live in the
+          // engine catalog (5-6), so a hydra's several heads or a four-armed
+          // monster's four hands need no document surgery here.
+          items:      { type: [mongoose.Schema.Types.Mixed], default: () => [] },
+          experience: { type: Number, default: 0 },
+          wounds:     { type: [mongoose.Schema.Types.Mixed], default: () => [] },
+        },
+        { _id: false },
+      ),
+    ],
+    default: () => [],
+  },
 
   battles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Battle' }],
   log: {

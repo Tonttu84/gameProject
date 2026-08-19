@@ -19,14 +19,58 @@ export const DAYS_PER_TURN = 14
 export const MAP_NAME = 'sample_battle'
 
 // Retires the frontend STARTING_ROSTER hardcode (docs/ADDING_UNITS.md §6).
+// Mage and Priest USED to sit here at 3 apiece; slice 5 moved them out of the
+// roster entirely and into STARTING_CHARACTERS below (docs/CAMPAIGN_PLAN.md
+// "SLICE 5 — CHARACTERS", 5-1). Nothing about the army got smaller — the same
+// six bodies eat, fill the meter and take the field — they are just individuals
+// now instead of a count.
 export const STARTING_ROSTER = {
   Soldier: 300,
   Archer: 50,
-  Mage: 3,
-  Priest: 3,
   Cavalry: 10,
   LightCavalry: 12,
 }
+
+// ── Characters (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS") ────────────────
+//
+// The unit types that are CHARACTERS rather than roster counts (5-1). A type
+// listed here may never appear in `campaign.roster`: it enters play as an
+// individual with a name, a modifier layer and a permanent death, or not at
+// all. A test pins this against RECRUIT_POOL's caster lane, so a new caster
+// row cannot quietly become a roster count again.
+export const CHARACTER_TYPES = ['Mage', 'Priest']
+
+// One character per squad — still explicitly a PROTOTYPING PLACEHOLDER
+// (decision 9), which is why it is a named constant rather than a `1` written
+// into the attach logic.
+export const MAX_CHARACTERS_PER_SQUAD = 1
+
+// Names are drawn from this pool at hire, never reused while their owner is on
+// the rolls — dead or alive, since a dead character is KEPT (5-9) and a
+// campaign that recycles a fallen name reads as a bug. Deliberately plain data:
+// a rename action can arrive later without touching anything structural. If the
+// pool ever empties, mintCharacter falls back to a numbered name rather than
+// refusing the hire — running out of names must never be able to block a
+// purchase the player has already paid for.
+export const CHARACTER_NAMES = [
+  'Isolde', 'Barnabas', 'Ceridwen', 'Dunstan', 'Elowen', 'Ferrant',
+  'Gwenllian', 'Hadrian', 'Ismene', 'Jorund', 'Katriona', 'Lucan',
+  'Morwenna', 'Nikander', 'Orsola', 'Peregrine', 'Quenilda', 'Rowan',
+  'Sabeline', 'Torquil', 'Ulric', 'Verity', 'Wystan', 'Ysolde',
+  'Alard', 'Bertrande', 'Casimir', 'Drusilla', 'Eadric', 'Fenella',
+  'Guthlac', 'Hilde', 'Ivo', 'Jocasta', 'Kester', 'Leofric',
+  'Melisande', 'Norbert', 'Oriel', 'Perrin',
+]
+
+// The six casters a campaign opens with — the old STARTING_ROSTER Mage 3 /
+// Priest 3, now named individuals. All start UNATTACHED (5-12): attachment is
+// the player's first character decision, and it keeps the deploys-alone path
+// exercised from the very first battle. Names are taken from the pool in order
+// rather than drawn, so a fresh campaign is reproducible.
+export const STARTING_CHARACTERS = [
+  { type: 'Mage' }, { type: 'Mage' }, { type: 'Mage' },
+  { type: 'Priest' }, { type: 'Priest' }, { type: 'Priest' },
+]
 // Persistent starting squads (playtest item 1): a subset of STARTING_ROSTER
 // organized into named, deployable formations so squads are testable from
 // turn 1. Sized to fit one hex (Hex::CAPACITY = 640 size-points; Soldier/
