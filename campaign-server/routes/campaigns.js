@@ -26,6 +26,7 @@ import {
   charactersOfSquad,
   looseCharacters,
   characterMods,
+  characterEntryFor,
   reconcileCharacters,
 } from '../services/characters.js'
 import {
@@ -401,6 +402,11 @@ router.post('/:id/battles', async (req, res) => {
   const ownSquadIds = new Set(campaign.squads.map((s) => s.id))
   const fieldedSquadIds = new Set()
   const placed = new Map()
+  // The characters the client is fielding INDIVIDUALLY — the loner casters of
+  // today, who are no longer roster counts (5-1) and so cannot be budgeted
+  // against it. They are budgeted against the character list instead: yours,
+  // living, and not already riding with a squad.
+  const sentCharacterIds = new Set()
   for (const entry of placement) {
     if (!entry || typeof entry.unit_type !== 'string')
       return res.status(400).json({ error: 'malformed placement entry' })
@@ -408,6 +414,24 @@ router.post('/:id/battles', async (req, res) => {
       if (!ownSquadIds.has(entry.squad_id))
         return res.status(400).json({ error: `not one of your squads: squad_id ${entry.squad_id}` })
       fieldedSquadIds.add(entry.squad_id)
+    }
+    if (entry.character_id != null) {
+      const character = livingCharacters(campaign).find((c) => c.id === entry.character_id)
+      if (!character)
+        return res.status(400).json({ error: `not one of your living characters: character_id ${entry.character_id}` })
+      if (character.type !== entry.unit_type)
+        return res.status(400).json({ error: `${character.name} is a ${character.type}, not a ${entry.unit_type}` })
+      if (sentCharacterIds.has(character.id))
+        return res.status(400).json({ error: `${character.name} cannot be in two places at once` })
+      // An attached character rides with their squad and is placed by the
+      // server below; letting the client also place them individually would
+      // field the same person twice.
+      if (character.squadId != null)
+        return res.status(400).json({ error: `${character.name} is already riding with a squad` })
+      sentCharacterIds.add(character.id)
+      // NOT counted into `placed`: the roster has no casters to budget against,
+      // and the character list above is the budget that replaced it.
+      continue
     }
     placed.set(entry.unit_type, (placed.get(entry.unit_type) ?? 0) + 1)
   }
@@ -492,12 +516,37 @@ router.post('/:id/battles', async (req, res) => {
   )
   const moddedPlacement = placement.map((entry) => {
     const mods = entry.squad_id == null ? null : modsBySquad.get(entry.squad_id)
-    if (!mods || Object.keys(mods).length === 0) {
-      const { squad_mods: _forged, ...clean } = entry
-      return clean
+    const base = !mods || Object.keys(mods).length === 0
+      ? (() => { const { squad_mods: _forged, ...clean } = entry; return clean })()
+      : { ...entry, squad_mods: mods }
+    // A character's own fields are stamped from the RECORD, never taken from
+    // the request — the same rule squad_mods follows. Otherwise a client could
+    // send avoids_melee for someone it does not own, or modifiers nobody earned.
+    if (entry.character_id == null) {
+      const { avoids_melee: _forgedFlag, ...noFlag } = base
+      return noFlag
     }
-    return { ...entry, squad_mods: mods }
+    const character = livingCharacters(campaign).find((c) => c.id === entry.character_id)
+    return characterEntryFor(character, { q: entry.q, r: entry.r })
   })
+
+  // Attached characters ride along AUTOMATICALLY (5-8) — no separate placement
+  // step, because the squad already places as one block. They land on a hex
+  // their squad actually occupies; a character whose squad stayed in camp stays
+  // in camp with it, which is what makes detaching the way to leave someone home.
+  for (const character of livingCharacters(campaign)) {
+    if (character.squadId == null) continue
+    if (!fieldedSquadIds.has(character.squadId)) continue
+    const hex = moddedPlacement.find((e) => e.squad_id === character.squadId)
+    if (!hex) continue
+    const squad = campaign.squads.find((s) => s.id === character.squadId)
+    moddedPlacement.push({
+      ...characterEntryFor(character, { q: hex.q, r: hex.r }),
+      squad_id: character.squadId,
+      ...(squad?.name ? { squad_name: squad.name } : {}),
+    })
+    sentCharacterIds.add(character.id)
+  }
 
   const input = {
     map: MAP_NAME,
@@ -519,6 +568,15 @@ router.post('/:id/battles', async (req, res) => {
     campaign.roster.set(type, inCamp + (summary.blue_survivors[type] ?? 0))
   }
   campaign.enemy.army = summary.red_survivors
+
+  // Who walked off the field (5-9). The engine reports SURVIVING character ids,
+  // so anyone we sent and did not get back is dead — permanently, though the
+  // record and everything on it survives for a later recovery to work with.
+  // Asking who we SENT is the load-bearing half: a character sitting in camp
+  // must never be killed by a battle they never joined.
+  const fallen = reconcileCharacters(campaign, [...sentCharacterIds], summary.blue_characters, campaign.day)
+  for (const character of fallen)
+    campaign.log.push({ day: campaign.day, entries: [`${character.name} fell in battle.`] })
 
   // Reconcile fielded squads: a squad regroups with its battle survivors
   // (including any stragglers who broke but lived — Stage A's persistent
@@ -699,9 +757,28 @@ router.post('/:id/raids/launch', async (req, res) => {
         ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
       })
     }
+    // Attached characters ride on the raid too, at full risk (5-8). No per-raid
+    // opt-out and none needed: detaching is free, so leaving your only Mage
+    // behind is one click — and the risk is exactly what makes taking them a
+    // decision. They land on their squad's block so the engine groups them into
+    // the same formation rather than fielding a one-body squad beside it.
+    const raidCharacterIds = []
+    const raidPlacement = placer.result()
+    for (const squad of squads) {
+      for (const character of charactersOfSquad(campaign, squad.id)) {
+        const hex = raidPlacement.find((e) => e.squad_id === squad.id)
+        if (!hex) continue
+        raidPlacement.push({
+          ...characterEntryFor(character, { q: hex.q, r: hex.r }),
+          squad_id: squad.id,
+          squad_name: squad.name,
+        })
+        raidCharacterIds.push(character.id)
+      }
+    }
     const input = {
       map: MAP_NAME,
-      player_placement: placer.result(),
+      player_placement: raidPlacement,
       enemy_placement: spreadPlacement(
         Object.fromEntries(opportunity.targetForce),
         zoneOf(info.enemyZone),
@@ -724,6 +801,15 @@ router.post('/:id/raids/launch', async (req, res) => {
     // the main battle route: composition = the squad's survivors, or the squad
     // is disbanded if the engine reports the formation wiped. This keeps the
     // invariant loose = roster − Σ squads.composition − forage intact.
+    // The same reckoning as the pitched battle (5-9): anyone sent who is not in
+    // the engine's surviving-id list fell, and the record stays with everything
+    // on it. A raid kills a character exactly as a battle does — that is the
+    // risk 5-8 is about. Resolved HERE, beside the squad reconciliation it
+    // belongs with, but reported further down once `entries` exists.
+    const fallenOnRaid = reconcileCharacters(
+      campaign, raidCharacterIds, summary.blue_characters, campaign.day,
+    )
+
     const squadSurvivors = summary.blue_squads ?? {}
     const raidedIds = new Set(squads.map((s) => s.id))
     campaign.squads = campaign.squads.map((squad) => {
@@ -762,6 +848,7 @@ router.post('/:id/raids/launch', async (req, res) => {
           } after ${summary.tickCount} turns.`,
     ]
     if (won) entries.push(...applyRaidReward(campaign, opportunity, summary.red_survivors))
+    for (const character of fallenOnRaid) entries.push(`${character.name} fell on the raid.`)
 
     // Squad prestige (docs/CAMPAIGN_PLAN.md slice 1). Every squad that WENT
     // earns, win or lose — a beaten squad has still been blooded — but a win

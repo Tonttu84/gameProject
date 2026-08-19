@@ -56,6 +56,14 @@ async function persistBattleResult(result, { input, userId }) {
       // squad concept in this campaign design, and exposing it would be a
       // hidden-info leak surface for no current use.
       blue_squads: result.blue_squads ?? {},
+      // The ids of the player's CHARACTERS who walked off the field (5-9).
+      // Passed through UNDEFINED-PRESERVING on purpose: `[]` means the engine
+      // looked and nobody survived, while a missing field means it never
+      // reported, and the reconciliation must be able to tell those apart —
+      // defaulting to `[]` here would turn a broken pipeline into a massacre,
+      // and a character's death is permanent. red_characters stays unsurfaced,
+      // like red_squads: the enemy has no characters in this design.
+      blue_characters: result.blue_characters,
       tickCount: replay.ticks.length,
     },
   }

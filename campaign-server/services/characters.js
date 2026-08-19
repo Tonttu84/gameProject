@@ -164,6 +164,31 @@ export const planAttach = (campaign, characterId, squadId) => {
   return { character, squadId: Number(squadId) }
 }
 
+// ── Taking the field ────────────────────────────────────────────────────────
+//
+// One placement entry for one character, built entirely from the RECORD. Both
+// battle paths (the pitched battle and a raid party) go through here, because a
+// second copy would be a second chance to forget `avoids_melee` — and a
+// character who silently stops hanging back is a bug the player pays for with a
+// dead mage.
+//
+// Nothing here is ever taken from the request. The client says WHERE a loose
+// character stands; it never says who they are, how they fight, or what
+// modifiers they carry. That is the same rule squad_mods follows (4b).
+export const characterEntryFor = (character, { q, r }) => {
+  const mods = characterMods(character)
+  return {
+    unit_type: character.type,
+    q,
+    r,
+    character_id: character.id,
+    // The engine's name for the toggle. Defaulted false rather than left
+    // undefined so the entry always states the intent explicitly.
+    avoids_melee: character.hangBack ?? false,
+    ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
+  }
+}
+
 // ── Coming home (5-9) ───────────────────────────────────────────────────────
 //
 // Reconcile the characters a battle was SENT with the ids that walked off it.
@@ -175,7 +200,13 @@ export const planAttach = (campaign, characterId, squadId) => {
 // Mutates in place (the caller is holding the document open) and returns the
 // characters that died, so a route can log them by name.
 export const reconcileCharacters = (campaign, sentIds, survivorIds, day) => {
-  const survived = new Set((survivorIds ?? []).map(Number))
+  // A MISSING list is not an empty one. `[]` means the engine looked and found
+  // no survivors — everyone sent died. `undefined` means it never reported,
+  // which is a bug in the pipeline rather than a massacre, and killing the whole
+  // company on a field that failed to arrive is the worse way to be wrong: a
+  // death here is permanent and a campaign cannot be un-lost.
+  if (survivorIds == null) return []
+  const survived = new Set(survivorIds.map(Number))
   const fallen = []
   for (const id of sentIds ?? []) {
     if (survived.has(Number(id))) continue

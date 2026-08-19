@@ -167,12 +167,17 @@ const battleResult = ({
   winner = 'blue',
   blue_squads = { 1: { survivors: { Soldier: 30 }, wiped: false } },
   red_survivors = {},
+  // Surviving CHARACTER ids (5-9). Left undefined by default so the existing
+  // raid cases keep behaving exactly as before — a missing list means the
+  // engine never reported, which kills nobody.
+  blue_characters,
 } = {}) => {
   const r = structuredClone(battleResultFixture)
   r.winner = winner
   r.blue_squads = blue_squads
   r.blue_survivors = sumSurvivors(blue_squads)
   r.red_survivors = red_survivors
+  if (blue_characters !== undefined) r.blue_characters = blue_characters
   return r
 }
 
@@ -1483,5 +1488,70 @@ describe('raid double-assignment is rejected (server-side, not just the UI)', ()
     await pinRaid(c.id, [OPP({ id: 'd2-0', capacity: 5000 })])
     const day2 = await launchBatch(c.id, { 'd2-0': [1] })
     expect(day2.status).toBe(201)
+  })
+})
+
+// Characters on raids (docs/CAMPAIGN_PLAN.md 5-8/5-9): attached means
+// EVERYWHERE, automatically, and at full risk. There is no per-raid opt-out
+// and none is wanted — detaching is free, so leaving your only Mage behind is
+// one click, and the risk is what makes taking them a decision.
+describe('characters ride on raids (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
+  const attach = (id, characterId, squadId) =>
+    auth(api.post(`/api/campaigns/${id}/characters/${characterId}/attach`)).send({ squadId })
+
+  test('an attached character joins the raid party on the squad’s block', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } } }),
+    )
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await attach(c.id, mage.id, 1).expect(200)
+    await pinRaid(c.id, [OPP()])
+
+    expect((await launch(c.id, 'd1-0', [1])).status).toBe(201)
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    const entry = input.player_placement.find((e) => e.character_id === mage.id)
+    expect(entry).toBeDefined()
+    // Same hex as the squad's block, so the engine groups them into one
+    // formation rather than fielding a one-body squad alongside it.
+    const block = input.player_placement.find((e) => e.squad_id === 1 && e.character_id == null)
+    expect([entry.q, entry.r]).toEqual([block.q, block.r])
+    expect(entry.avoids_melee).toBe(true)
+  })
+
+  test('a character left in camp does not ride, and cannot die on the raid', async () => {
+    engine.runBattle.mockResolvedValue(battleResult({ blue_characters: [] }))
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await pinRaid(c.id, [OPP()])
+
+    expect((await launch(c.id, 'd1-0', [1])).status).toBe(201)
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    expect(input.player_placement.some((e) => e.character_id === mage.id)).toBe(false)
+    const doc = await Campaign.findById(c.id)
+    expect(doc.characters.find((x) => x.id === mage.id).alive).toBe(true)
+  })
+
+  test('a raid kills a character exactly as a battle does, and keeps the record', async () => {
+    engine.runBattle.mockResolvedValue(
+      battleResult({ blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } }, blue_characters: [] }),
+    )
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await attach(c.id, mage.id, 1).expect(200)
+    await pinRaid(c.id, [OPP()])
+
+    const res = await launch(c.id, 'd1-0', [1])
+    expect(res.status).toBe(201)
+
+    const doc = await Campaign.findById(c.id)
+    const after = doc.characters.find((x) => x.id === mage.id)
+    expect(after.alive).toBe(false)
+    expect(after.diedDay).toBe(doc.day)
+    // Still on the rolls with their name — a later recovery needs something left.
+    expect(after.name).toBe(mage.name)
+    expect(res.body.report ?? JSON.stringify(res.body)).toBeDefined()
   })
 })

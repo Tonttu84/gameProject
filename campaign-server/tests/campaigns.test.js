@@ -3267,6 +3267,161 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     await attach(c.id, c.characters[0].id, 1).expect(200)
   })
 
+  // ── Taking the field (5-8) and dying on it (5-9) ─────────────────────────
+
+  // The battle route insists the WHOLE army takes the field, so the roster is
+  // shrunk to exactly what each case places — these tests are about characters,
+  // not about mustering 371 bodies. Characters are deliberately NOT cleared:
+  // they are the subject, and they sit outside the roster the check counts.
+  const fightWith = async (id, placement, blueCharacters, roster = { Soldier: 1 }) => {
+    engine.runBattle.mockResolvedValue({
+      ...structuredClone(battleResultFixture),
+      ...(blueCharacters === undefined ? {} : { blue_characters: blueCharacters }),
+    })
+    await Campaign.updateOne({ _id: id }, { $set: { roster, bossFightDue: true } })
+    return auth(api.post(`/api/campaigns/${id}/battles`)).send({ player_placement: placement })
+  }
+
+  test('an attached character rides along automatically, hanging back', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await attach(c.id, mage.id, 1).expect(200)
+
+    await fightWith(c.id, [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }], [mage.id])
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    const entry = input.player_placement.find((e) => e.character_id === mage.id)
+    // No separate placement step: they land on a hex their squad occupies.
+    expect(entry).toBeDefined()
+    expect(entry.squad_id).toBe(1)
+    expect(entry.q).toBe(4)
+    expect(entry.r).toBe(4)
+    // The toggle reaches the engine under its own name (5-8).
+    expect(entry.avoids_melee).toBe(true)
+  })
+
+  test('a character whose squad stayed in camp stays in camp too', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await attach(c.id, mage.id, 2).expect(200) // squad 2 is not fielded below
+
+    await fightWith(c.id, [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }], [])
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    expect(input.player_placement.some((e) => e.character_id === mage.id)).toBe(false)
+    // …and so cannot have died in it.
+    const after = await getView(c.id)
+    expect(after.characters.find((x) => x.id === mage.id).alive).toBe(true)
+  })
+
+  test('an unattached character can be placed individually', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+
+    await fightWith(
+      c.id,
+      [
+        { unit_type: 'Soldier', q: 4, r: 4 },
+        { unit_type: 'Mage', q: 5, r: 4, character_id: mage.id },
+      ],
+      [mage.id],
+    )
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    const entry = input.player_placement.find((e) => e.character_id === mage.id)
+    expect(entry).toMatchObject({ unit_type: 'Mage', q: 5, r: 4, avoids_melee: true })
+  })
+
+  // The client says WHERE a loose character stands; it never says how they
+  // fight. Same rule squad_mods follows.
+  test('a forged avoids_melee is stamped over from the record', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+
+    await fightWith(
+      c.id,
+      [{ unit_type: 'Mage', q: 5, r: 4, character_id: mage.id, avoids_melee: false }],
+      [mage.id],
+      {},
+    )
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    expect(input.player_placement[0].avoids_melee).toBe(true)
+  })
+
+  test('a character cannot be fielded twice, nor borrowed from another campaign', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    const twice = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [
+        { unit_type: 'Mage', q: 5, r: 4, character_id: mage.id },
+        { unit_type: 'Mage', q: 6, r: 4, character_id: mage.id },
+      ],
+    })
+    expect(twice.status).toBe(400)
+
+    const stranger = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Mage', q: 5, r: 4, character_id: 9999 }],
+    })
+    expect(stranger.status).toBe(400)
+  })
+
+  test('an attached character may not also be placed by hand', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await attach(c.id, mage.id, 1).expect(200)
+    await Campaign.updateOne({ _id: c.id }, { $set: { bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    const res = await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Mage', q: 5, r: 4, character_id: mage.id }],
+    })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/already riding/)
+  })
+
+  // 5-9: death is permanent, but the record and its data survive intact — a
+  // later recovery has to have something left to recover.
+  test('a character the engine does not return is dead, and keeps everything', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await Campaign.updateOne(
+      { _id: c.id, 'characters.id': mage.id },
+      { $set: { 'characters.$.experience': 7, 'characters.$.items': [{ id: 'staff' }] } },
+    )
+
+    await fightWith(c.id, [{ unit_type: 'Mage', q: 5, r: 4, character_id: mage.id }], [], {})
+
+    const doc = await Campaign.findById(c.id)
+    const after = doc.characters.find((x) => x.id === mage.id)
+    expect(after.alive).toBe(false)
+    expect(after.diedDay).toBe(doc.day)
+    // Still on the rolls, still holding everything they earned.
+    expect(after.experience).toBe(7)
+    expect(after.items).toHaveLength(1)
+  })
+
+  test('a character left in camp is never killed by a battle they never joined', async () => {
+    const { body: c } = await createCampaign()
+    await fightWith(c.id, [{ unit_type: 'Soldier', q: 4, r: 4 }], [])
+    const after = await getView(c.id)
+    expect(after.characters.every((x) => x.alive)).toBe(true)
+  })
+
+  // A missing list is not an empty one: `[]` means nobody survived, `undefined`
+  // means the engine never reported, and a permanent death must not be the
+  // default on a field that failed to arrive.
+  test('an engine result with no character list kills nobody', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await fightWith(c.id, [{ unit_type: 'Mage', q: 5, r: 4, character_id: mage.id }], undefined, {})
+    const after = await getView(c.id)
+    expect(after.characters.find((x) => x.id === mage.id).alive).toBe(true)
+  })
+
   test('a dead character cannot be attached to anything', async () => {
     const { body: c } = await createCampaign()
     const mage = c.characters[0]
