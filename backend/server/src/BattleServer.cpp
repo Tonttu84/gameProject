@@ -85,6 +85,24 @@ json squadSurvivorJson(const Army& army)
     return out;
 }
 
+// See BattleServer.hpp for the contract.
+json characterSurvivorJson(const Army& army)
+{
+    std::vector<int> ids;
+    for (const auto& u : army) {
+        if (!u) continue;
+        int cid = u->getCharacterId();
+        if (cid > 0) ids.push_back(cid);
+    }
+    // Sorted and de-duplicated: the output is a SET of who came home, and a
+    // stable one, so a test (or a diff of two battles) reads the same either
+    // way. A duplicate id would mean two bodies claiming one individual —
+    // impossible from a well-formed placement, and meaningless if it happened.
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return json(ids);
+}
+
 static json resultToJson(const BattleResult& r)
 {
     const char* winner = (r.winner == BLUETEAM) ? "blue"
@@ -96,6 +114,8 @@ static json resultToJson(const BattleResult& r)
         {"red_survivors",  survivorJson(r.redSurvivors)},
         {"blue_squads",    squadSurvivorJson(r.blueSurvivors)},
         {"red_squads",     squadSurvivorJson(r.redSurvivors)},
+        {"blue_characters", characterSurvivorJson(r.blueSurvivors)},
+        {"red_characters",  characterSurvivorJson(r.redSurvivors)},
     };
 }
 

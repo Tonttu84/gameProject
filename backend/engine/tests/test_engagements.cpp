@@ -718,3 +718,96 @@ TEST_CASE("resolveEngagements: formation fighters seats a fifth man on an Open s
     CHECK(seatedInRank1(1) == 4); // 5 × 9 = 45 > 40 — a -1 buys nothing
     CHECK(seatedInRank1(2) == 5);
 }
+
+// ── hang back unless we run out of troops (slice 5, decision 5-8) ────────────
+//
+// A unit flagged getAvoidsMelee() is seated in a SECOND pass, after every
+// other body in the hex has had its chance at the line. That split is the
+// whole rule: he then runs the same top-down fill as anyone else, so he takes
+// rank-1 frontage only when phase 1 left some — which is exactly the case
+// where there were not enough willing bodies to man the front.
+//
+// An Open side seats effectiveFrontage = 40 size-points in rank 1, so four
+// size-10 bodies fill it exactly (see the formation-fighter test above).
+
+TEST_CASE("resolveEngagements: a hang-back unit yields the front while others can hold it") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    // Squad declared first so it outlives its members (see the first test).
+    Squad alpha("Alpha", true);
+    Soldier s0(REDTEAM), s1(REDTEAM), s2(REDTEAM), s3(REDTEAM), shy(REDTEAM);
+    Soldier enemy(BLUETEAM);
+    std::vector<Soldier*> line = {&s0, &s1, &s2, &s3};
+    shy.setAvoidsMelee(true);
+
+    for (Soldier* u : line) { alpha.addMember(u); u->setHex(redHex); }
+    alpha.addMember(&shy);
+    shy.setHex(redHex);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    // Five bodies for four places at the front. The flagged one is the one who
+    // gives way — every time, not just usually: the other four are seated
+    // before he is considered at all.
+    for (Soldier* u : line) CHECK(u->getEngagedRank() == 1);
+    CHECK(shy.getEngagedRank() == 2);
+    CHECK(shy.getCanFight()    == false);
+}
+
+TEST_CASE("resolveEngagements: a hang-back unit holds the line when nobody else can") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    Soldier shy(REDTEAM);
+    Soldier enemy(BLUETEAM);
+    shy.setAvoidsMelee(true);
+    shy.setHex(redHex);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    // The last man on the field fights, flag or no flag. This is the case a
+    // back-first cascade would get wrong — the rear ranks always have room, so
+    // he would tuck himself into rank 2 and leave the boundary undefended.
+    CHECK(shy.getEngagedRank() == 1);
+    CHECK(shy.getCanFight()    == true);
+}
+
+TEST_CASE("resolveEngagements: a hang-back unit never evicts a fighter from the front") {
+    Battlefield bf;
+    Hex* redHex = bf.hexGrid.getHex(RED_HEX);
+    REQUIRE(redHex != nullptr);
+    Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
+    REQUIRE(enHex != nullptr);
+
+    // Rank 1 seats 40 points. Two size-10 soldiers and one size-20 rider leave
+    // it exactly full; the flagged rider that follows is bigger than a soldier,
+    // so WITHOUT the eviction guard he would shove one out to take his place —
+    // a unit trying to avoid melee putting a willing man in the rear.
+    Squad alpha("Alpha", true);
+    Soldier s0(REDTEAM), s1(REDTEAM);
+    Cavalry rider(REDTEAM), shyRider(REDTEAM);
+    Soldier enemy(BLUETEAM);
+    shyRider.setAvoidsMelee(true);
+
+    alpha.addMember(&s0);     s0.setHex(redHex);
+    alpha.addMember(&s1);     s1.setHex(redHex);
+    alpha.addMember(&rider);  rider.setHex(redHex);
+    alpha.addMember(&shyRider); shyRider.setHex(redHex);
+    enemy.setHex(enHex);
+
+    bf.resolveEngagements();
+
+    CHECK(s0.getEngagedRank()    == 1);
+    CHECK(s1.getEngagedRank()    == 1);
+    CHECK(rider.getEngagedRank() == 1);
+    CHECK(shyRider.getEngagedRank() != 1);
+}

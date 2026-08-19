@@ -268,6 +268,23 @@ public:
     const std::string& getSquadName() const { return _squadName; }
     void setSquadName(std::string name) { _squadName = std::move(name); }
 
+    // Persistent CHARACTER identity (campaign characters, docs/CAMPAIGN_PLAN.md
+    // "SLICE 5 — CHARACTERS"). Same idea as the squad tag above and set the same
+    // way — from the placement JSON — but it names ONE individual rather than a
+    // formation. The campaign layer needs it because survivors are reported as
+    // counts by type, which can say that a Mage died but never WHICH Mage; a
+    // character's death is permanent, so the wrong answer is unrecoverable.
+    // 0 = an ordinary body, belonging to no character.
+    int  getCharacterId() const         { return _characterId; }
+    void setCharacterId(int id)         { _characterId = id; }
+
+    // "Hang back unless we run out of troops" (SLICE 5 decision 5-8). A unit
+    // flagged here is passed over while the line is being manned and is seated
+    // at rank 1 only once nobody else can fill it — see resolveEngagements().
+    // It is a TAG, not a stat: it changes who gets seated where, never a number.
+    bool getAvoidsMelee() const         { return _avoidsMelee; }
+    void setAvoidsMelee(bool avoid)     { _avoidsMelee = avoid; }
+
     // ── Formation cohesion ────────────────────────────────────────────────────
     // Per-unit base score (0-100+). Subclasses or setup code set this; the
     // default of 50 puts a regular soldier at tier-1 bonus territory.
@@ -444,6 +461,8 @@ protected:
     Squad* _squad = nullptr;  // non-owning; nullptr = lone unit
     int  _squadId = 0;        // persistent campaign squad tag — see getSquadId()
     std::string _squadName;   // display name for the tag, e.g. for buildSquadsFromArmy
+    int  _characterId = 0;    // persistent campaign character tag — see getCharacterId()
+    bool _avoidsMelee = false; // hang back unless the line needs him — see getAvoidsMelee()
     int sortKey = 0; // random tiebreaker set at construction, used for render ordering
     int _cohesion      = 50; // base formation cohesion score; set by subclass or setup
     int _cohesionBonus = 0;  // per-tick tier (0-3), set by resolveEngagements, reset each tick

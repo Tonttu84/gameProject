@@ -1079,6 +1079,12 @@ struct RankSlots {
 // if capacity allows) when `u` doesn't fit and something smaller is present.
 // Returns false if `u` cannot be placed (nothing smaller to evict, or still too
 // large after eviction).
+//
+// Eviction is SUPPRESSED for a hang-back unit (getAvoidsMelee, SLICE 5): it
+// reaches rank 1 only in the second seating phase, once the line has already
+// been manned with everyone willing to hold it, and a unit that is there
+// under protest must never shove a fighter out of the front to take his place.
+// It takes leftover frontage or it takes nothing.
 static bool tryAssignToRankSlot(AUnit* u, size_t si, int ri,
                                  const std::vector<HexSide*>& sides,
                                  std::vector<std::array<RankSlots, 3>>& ranks)
@@ -1086,7 +1092,7 @@ static bool tryAssignToRankSlot(AUnit* u, size_t si, int ri,
     int cap = effectiveFrontage(*sides[si]);
     RankSlots& slot = ranks[si][ri];
 
-    if (ri == 0) {
+    if (ri == 0 && !u->getAvoidsMelee()) {
         // Eviction within rank 1: push the smallest displaced unit to rank 2 (if space).
         while (slot.frontage + static_cast<int>(u->getPackingSize()) > cap && !slot.units.empty()) {
             size_t smallestIdx = 0;
@@ -1125,15 +1131,29 @@ static bool tryAssignToRankSlot(AUnit* u, size_t si, int ri,
 // Seat squad members (fatigue in [fatLow, fatHigh)) into their squad's allocated sides.
 // Top-down fill: rank 1 first, then rank 2, then rank 3.
 // Round-robin across owned sides within each rank level for even distribution.
+//
+// `avoiders` selects WHICH seating phase this is: false seats every unit that
+// will hold the line, true seats the hang-back ones afterwards (SLICE 5
+// decision 5-8). The phase split is the WHOLE of the hang-back rule, and it
+// needs no special cascade to go with it: a hang-back unit runs the same
+// top-down fill as anyone else, so it takes rank-1 frontage that phase 1 left
+// over and otherwise falls to the rear ranks. Leftover frontage at the front
+// after every willing body has been seated IS the "unless we run out of troops"
+// condition — there is nothing to count.
+//
+// (Seating avoiders BACK-FIRST instead, rank 2 → 3 → 1, looks equivalent and is
+// not: the rear ranks always have room, so the last mage on the field would
+// tuck himself into rank 2 and watch the line stand empty.)
 static void fillSquadPassRanked(Squad* sq, Hex* hex,
                                  const std::vector<HexSide*>& sides,
                                  const std::vector<Squad*>& sideOwner,
                                  std::vector<std::array<RankSlots, 3>>& ranks,
-                                 int fatLow, int fatHigh)
+                                 int fatLow, int fatHigh, bool avoiders)
 {
     std::vector<AUnit*> members;
     for (AUnit* m : sq->getMembers()) {
         if (!m || !m->getAlive() || m->getBroken() || m->getHex() != hex) continue;
+        if (m->getAvoidsMelee() != avoiders) continue;
         int f = m->getFatigue();
         if (f < fatLow || f >= fatHigh) continue;
         members.push_back(m);
@@ -1177,11 +1197,12 @@ static void fillLonerPassRanked(Hex* hex,
                                  const std::vector<HexSide*>& sides,
                                  const std::vector<Squad*>& sideOwner,
                                  std::vector<std::array<RankSlots, 3>>& ranks,
-                                 int fatLow, int fatHigh)
+                                 int fatLow, int fatHigh, bool avoiders)
 {
     std::vector<AUnit*> existingLoners, newLoners;
     for (AUnit* u : hex->units) {
         if (!u || !u->getAlive() || u->getBroken() || u->getSquad()) continue;
+        if (u->getAvoidsMelee() != avoiders) continue;
         int f = u->getFatigue();
         if (f < fatLow || f >= fatHigh) continue;
         if (u->getEngagedRank() > 0) existingLoners.push_back(u);
@@ -1249,17 +1270,25 @@ void Battlefield::resolveEngagements()
         // Per-side, per-rank slot tracking [sideIdx][ri=0,1,2].
         std::vector<std::array<RankSlots, 3>> ranks(sides.size());
 
-        // Squad pass (top-down): fresh → tired → very tired.
-        for (Squad* sq : squadsHere)
-            fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, 0,             FATIGUE_TIRED);
-        for (Squad* sq : squadsHere)
-            fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
-        fillLonerPassRanked(hex, sides, sideOwner, ranks, 0,             FATIGUE_TIRED);
-        fillLonerPassRanked(hex, sides, sideOwner, ranks, FATIGUE_TIRED, FATIGUE_VERY_TIRED);
-        // Desperate pass: very tired units when sides would otherwise sit empty.
-        for (Squad* sq : squadsHere)
-            fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, FATIGUE_VERY_TIRED, FATIGUE_MAX);
-        fillLonerPassRanked(hex, sides, sideOwner, ranks, FATIGUE_VERY_TIRED, FATIGUE_MAX);
+        // The whole seating sequence runs TWICE (SLICE 5 decision 5-8): once for
+        // everyone who will hold the line, then once for the hang-back units.
+        // Phase 2 sees whatever frontage phase 1 could not fill, which is what
+        // makes "hang back unless we run out of troops" exact — including the
+        // desperate very-tired pass, so a hang-back mage is still a later
+        // resort than a man who can barely stand.
+        for (bool avoiders : {false, true}) {
+            // Squad pass (top-down): fresh → tired → very tired.
+            for (Squad* sq : squadsHere)
+                fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, 0,             FATIGUE_TIRED,      avoiders);
+            for (Squad* sq : squadsHere)
+                fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, FATIGUE_TIRED, FATIGUE_VERY_TIRED, avoiders);
+            fillLonerPassRanked(hex, sides, sideOwner, ranks, 0,             FATIGUE_TIRED,      avoiders);
+            fillLonerPassRanked(hex, sides, sideOwner, ranks, FATIGUE_TIRED, FATIGUE_VERY_TIRED, avoiders);
+            // Desperate pass: very tired units when sides would otherwise sit empty.
+            for (Squad* sq : squadsHere)
+                fillSquadPassRanked(sq, hex, sides, sideOwner, ranks, FATIGUE_VERY_TIRED, FATIGUE_MAX, avoiders);
+            fillLonerPassRanked(hex, sides, sideOwner, ranks, FATIGUE_VERY_TIRED, FATIGUE_MAX, avoiders);
+        }
 
         // Apply results: rank-1 units hold the boundary (engagedSide + canFight).
         // Rank 2/3 units get formationSide so the renderer can draw them in depth.

@@ -242,6 +242,22 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             }
         }
 
+        // Optional persistent CHARACTER tag (campaign characters, SLICE 5):
+        // character_id is an int > 0 naming ONE individual, so the campaign can
+        // tell which Mage came home rather than only how many did. avoids_melee
+        // is the hang-back toggle (decision 5-8) — a bool, deliberately not a
+        // squad_mods entry, because it seats a unit rather than changing a stat.
+        // Both follow the same never-throw rule: absent or mistyped is simply
+        // the default, never a rejected request.
+        auto characterIdIt = entry.find("character_id");
+        if (characterIdIt != entry.end() && characterIdIt->is_number_integer()) {
+            int cid = characterIdIt->get<int>();
+            if (cid > 0) u->setCharacterId(cid);
+        }
+        auto avoidsIt = entry.find("avoids_melee");
+        if (avoidsIt != entry.end() && avoidsIt->is_boolean())
+            u->setAvoidsMelee(avoidsIt->get<bool>());
+
         u->setHex(h);
         u->setPlaced(true);
         army.push_back(std::move(u));

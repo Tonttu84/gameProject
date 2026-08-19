@@ -1080,3 +1080,79 @@ TEST_CASE("squadSurvivorJson: wiped is false if even one tagged survivor is stil
     REQUIRE(out["7"]["survivors"]["Soldier"] == 2); // both counted as survivors
     REQUIRE(out["7"]["wiped"] == false);             // formation held — regroups
 }
+
+// ── character_id / avoids_melee in placement JSON (slice 5) ──────────────────
+//
+// Both are attached SERVER-SIDE by the campaign layer, like squad_id and
+// squad_mods before them, so these cases are as much about a forged or
+// malformed one being harmless as about a legitimate one working.
+
+TEST_CASE("buildArmyFromPlacement: character_id and avoids_melee tag the individual") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Mage"}, {"q", 3}, {"r", 5},
+             {"character_id", 4}, {"avoids_melee", true}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}}, // an ordinary body
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 2);
+    REQUIRE(army[0]->getCharacterId() == 4);
+    REQUIRE(army[0]->getAvoidsMelee() == true);
+    // The default is the ordinary one: no character, and willing to fight.
+    REQUIRE(army[1]->getCharacterId() == 0);
+    REQUIRE(army[1]->getAvoidsMelee() == false);
+}
+
+TEST_CASE("buildArmyFromPlacement: malformed character_id or avoids_melee is inert") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Mage"}, {"q", 3}, {"r", 5}, {"character_id", "seven"}},
+        json{{"unit_type", "Mage"}, {"q", 4}, {"r", 5}, {"character_id", 0}},
+        json{{"unit_type", "Mage"}, {"q", 5}, {"r", 5}, {"character_id", -3}},
+        json{{"unit_type", "Mage"}, {"q", 6}, {"r", 5}, {"avoids_melee", "yes"}},
+        json{{"unit_type", "Mage"}, {"q", 7}, {"r", 5}, {"avoids_melee", 1}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 5);
+    // Every one of them is placed — a bad tag is never a rejected request —
+    // and every one of them carries the default rather than the junk.
+    for (const auto& u : army) {
+        CHECK(u->getCharacterId() == 0);
+        CHECK(u->getAvoidsMelee() == false);
+    }
+}
+
+// ── characterSurvivorJson (blue_characters/red_characters output contract) ───
+
+TEST_CASE("characterSurvivorJson: lists tagged survivors, sorted, untagged skipped") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Priest"},  {"q", 3}, {"r", 5}, {"character_id", 9}},
+        json{{"unit_type", "Mage"},    {"q", 4}, {"r", 5}, {"character_id", 2}},
+        json{{"unit_type", "Soldier"}, {"q", 5}, {"r", 5}}, // untagged — excluded
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+
+    json out = characterSurvivorJson(army);
+    REQUIRE(out == json::array({2, 9}));
+}
+
+// The campaign layer reconciles by asking who it SENT: an id it committed and
+// does not find here is dead, permanently. So the empty case has to be an
+// empty array rather than null — "nobody came home" is an answer, not a
+// missing field.
+TEST_CASE("characterSurvivorJson: an army with no characters is an empty array") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+
+    json out = characterSurvivorJson(army);
+    REQUIRE(out.is_array());
+    REQUIRE(out.empty());
+}

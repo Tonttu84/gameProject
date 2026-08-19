@@ -56,3 +56,13 @@ int clampMaxTurns(int requested);
 // squad (broke and fled), so the campaign layer should fold them back into
 // the loose pool instead of reforming the squad. Exposed for unit tests.
 nlohmann::json squadSurvivorJson(const Army& army);
+
+// Which CHARACTERS walked off the field, as a sorted array of the character ids
+// (AUnit::getCharacterId() > 0) still alive in one side's surviving Army:
+//   [3, 7]
+// The flat *_survivors counts cannot answer this — they say a Mage came home,
+// never which one — and a character's death is permanent, so the campaign layer
+// has no way to recover from guessing (docs/CAMPAIGN_PLAN.md SLICE 5, 5-9).
+// An id absent from the array is dead: the caller reconciles by asking who it
+// SENT, not by trusting the list to be complete. Exposed for unit tests.
+nlohmann::json characterSurvivorJson(const Army& army);
