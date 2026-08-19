@@ -93,9 +93,26 @@ authority, and 4a bumped it. 4b, 4c and 4d needed no bump — none of them chang
 shape). **Slice 5a bumps it to 36** — `campaign.character` (singular, Mixed, a placeholder)
 becomes `campaign.characters` (an array of real entities).
 **Slice 4 IS DONE — 1, 2, 3, 4a, 4b, 4c and 4d of the squad overhaul are all SHIPPED**, 4d
-(Royal Guard) as of 2026-08-18. **SLICE 5 (characters) IS INTERVIEWED AND SPEC'D (2026-08-19)** —
-its twelve decisions are under "SLICE 5 — CHARACTERS" below, and they are the user's. Do not
-re-derive them. After it: banners, then the squad screen (decision 13, last).
+(Royal Guard) as of 2026-08-18. **SLICE 5a IS SHIPPED (2026-08-19, schema v36)** — casters are
+characters, hired by name, postable to a squad, riding into battles and raids, and permanently
+losable. Its twelve decisions are under "SLICE 5 — CHARACTERS" below, and they are the user's; do
+not re-derive them. After it: banners, then the squad screen (decision 13, last).
+
+**What 5a leaves for the next slice to know:**
+- **`roster` no longer holds a caster key at all.** Anything asking "how big is the army" must read
+  `allBodies(campaign)`, never `campaign.roster` — food, the meter, the field-points pool and the
+  annihilation check all do. A reader that forgets silently refunds six bodies' rations.
+- **A MISSING survivor list is not an empty one.** `blue_characters: []` means nobody lived;
+  `undefined` means the engine never reported. `reconcileCharacters` kills nobody in the second
+  case, and `battleRunner` passes the field through undefined-preserving to keep them
+  distinguishable. Defaulting it would turn a broken pipeline into a permanent massacre.
+- **The modifier layer is a SEAM, wired but empty.** `characterMods()` returns `{}`; items,
+  experience and wounds are stored and unpriced. The slices that fill them (5-4/5-5/5-6) change
+  that one function and nothing else — sources are stored, the bag is derived.
+- **`preferredRange` is now campaign-visible**, because the hang-back default derives from it. Two
+  integration tests hold the hand-written `catalogFixture` to the real dump and assert that every
+  character type still prefers range; before 5a the fixture had quietly drifted (Priest 0, Archer 8)
+  because nothing read it.
 
 **What 4d leaves for the next slice to know:**
 - **A row may now cost more than one slot**, and `picksAvailable` is `slotsFor − slotsUsed`
@@ -237,6 +254,18 @@ name from a hand-written list in campaign config. Zero UI, immediate flavour, an
 can arrive later without changing anything structural. **The six starting casters all begin
 UNATTACHED**, which makes attachment the player's first character decision and keeps the
 deploys-alone path exercised from the very first battle rather than lying untested.
+
+**5a SHIPPED 2026-08-19.** Built in four commits: the migration (roster → characters, allBodies,
+augury off characters), hiring by name plus attach/detach, taking the field and dying on it, and
+the plain `CharacterPanel`. C++ 368 cases, campaign-server 851, frontend 300, lint clean.
+
+**One assistant call worth flagging, since the spec marked it unconfirmed:** an unattached
+character is placed INDIVIDUALLY by the client (with the server stamping identity, the toggle and
+modifiers from the record), while an attached one is placed automatically on its squad's hex. That
+follows 5-12's reason for starting the six unattached — it "keeps the deploys-alone path exercised
+from the very first battle" — but the deploy screen does not yet offer them, so today that path is
+reachable through the API rather than the UI. Wiring it into the deploy screen is a loose end for
+the squad screen (decision 13) or a small follow-up.
 
 **What 5a BUILDS, and what it only RECORDS.** The line, drawn by the user:
 - **BUILT** — the migration (5-1); hire, name, persist, attach, detach (5-7, 5-12); riding along

@@ -1177,6 +1177,29 @@ router.post('/:id/characters/:characterId/attach', async (req, res) => {
   res.json(await campaignView(campaign))
 })
 
+// The hang-back toggle (5-8): "hold back unless we run out of troops". Carried
+// by EVERY character regardless of type — only the DEFAULT is type-derived — so
+// a battle-mage can be ordered to hold the line and a swordsman to stay out of
+// it. Ungated for the same reason attachment is: it spends nothing.
+router.post('/:id/characters/:characterId/hang-back', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const hangBack = req.body?.hangBack
+  if (typeof hangBack !== 'boolean')
+    return res.status(400).json({ error: 'hangBack must be true or false' })
+
+  const character = livingCharacters(campaign).find((c) => c.id === Number(req.params.characterId))
+  if (!character)
+    return res.status(400).json({ error: `not one of your living characters: ${req.params.characterId}` })
+
+  character.hangBack = hangBack
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
 router.post('/:id/end-day', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })

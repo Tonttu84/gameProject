@@ -111,6 +111,14 @@ export const reinforceSquad = (id, squadId, body) =>
 // this one. Returns the refreshed view directly, like reinforceSquad.
 export const takeSquadUpgrade = (id, squadId, upgrade) =>
   axios.post(`/api/campaigns/${id}/squads/${squadId}/upgrades`, { upgrade }, authed()).then(r => r.data)
+// Post a character to a squad, or bring them home with squadId null (5-7).
+// Free and ungated in any phase — there is deliberately no cost or lock here.
+export const attachCharacter = (id, characterId, squadId) =>
+  axios.post(`/api/campaigns/${id}/characters/${characterId}/attach`, { squadId }, authed()).then(r => r.data)
+// "Hold back unless we run out of troops" (5-8). Carried by every character
+// whatever their type; only the default is derived from the unit.
+export const setCharacterHangBack = (id, characterId, hangBack) =>
+  axios.post(`/api/campaigns/${id}/characters/${characterId}/hang-back`, { hangBack }, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

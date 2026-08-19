@@ -17,6 +17,8 @@ import {
   openRecruit,
   reinforceSquad,
   takeSquadUpgrade,
+  attachCharacter,
+  setCharacterHangBack,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -96,6 +98,14 @@ const useCampaignStore = create((set, get) => ({
 
   takeSquadUpgrade: async (squadId, upgrade) => {
     set({ campaign: await takeSquadUpgrade(get().campaign.id, squadId, upgrade) })
+  },
+
+  attachCharacter: async (characterId, squadId) => {
+    set({ campaign: await attachCharacter(get().campaign.id, characterId, squadId) })
+  },
+
+  setCharacterHangBack: async (characterId, hangBack) => {
+    set({ campaign: await setCharacterHangBack(get().campaign.id, characterId, hangBack) })
   },
 
   fight: async (playerPlacement) => {

@@ -20,6 +20,7 @@ import ForagePanel from './components/ForagePanel'
 import RaidPanel from './components/RaidPanel'
 import RecruitPanel from './components/RecruitPanel'
 import CampPanel from './components/CampPanel'
+import CharacterPanel from './components/CharacterPanel'
 import CampaignHUD from './components/CampaignHUD'
 import CampaignIntro from './components/CampaignIntro'
 import ScoutReport from './components/ScoutReport'
@@ -59,7 +60,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, reinforceSquad, takeSquadUpgrade, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, reinforceSquad, takeSquadUpgrade, attachCharacter, setCharacterHangBack, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -459,6 +460,13 @@ const App = () => {
           {campaign.fortification && (
             <CampPanel onFortify={guarded(fortify)} locked={committed} />
           )}
+          {/* Characters live on the camp screen because posting one to a squad
+              is a PREPARE-phase decision in spirit — though the server gates it
+              nowhere (5-7), so it stays usable if the player comes back to it. */}
+          <CharacterPanel
+            onAttach={guarded(attachCharacter)}
+            onSetHangBack={guarded(setCharacterHangBack)}
+          />
         </div>
       )}
 

@@ -3422,6 +3422,37 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     expect(after.characters.find((x) => x.id === mage.id).alive).toBe(true)
   })
 
+  const setHangBack = (id, characterId, hangBack) =>
+    auth(api.post(`/api/campaigns/${id}/characters/${characterId}/hang-back`)).send({ hangBack })
+
+  test('the hang-back toggle can be set either way, on any character', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+
+    const { body: off } = await setHangBack(c.id, mage.id, false).expect(200)
+    expect(off.characters.find((x) => x.id === mage.id).hangBack).toBe(false)
+
+    const { body: on } = await setHangBack(c.id, mage.id, true).expect(200)
+    expect(on.characters.find((x) => x.id === mage.id).hangBack).toBe(true)
+  })
+
+  test('the toggle refuses anything that is not a boolean', async () => {
+    const { body: c } = await createCampaign()
+    await setHangBack(c.id, c.characters[0].id, 'yes').expect(400)
+    await setHangBack(c.id, c.characters[0].id, undefined).expect(400)
+  })
+
+  test('the toggle reaches the battle, not just the document', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await setHangBack(c.id, mage.id, false).expect(200)
+
+    await fightWith(c.id, [{ unit_type: 'Mage', q: 5, r: 4, character_id: mage.id }], [mage.id], {})
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    expect(input.player_placement[0].avoids_melee).toBe(false)
+  })
+
   test('a dead character cannot be attached to anything', async () => {
     const { body: c } = await createCampaign()
     const mage = c.characters[0]
