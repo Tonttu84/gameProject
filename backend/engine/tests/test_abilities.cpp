@@ -77,8 +77,13 @@ TEST_CASE("a granted ability applies only while the unit is in a squad") {
     // The whole of 6-6 in one case: a banner's Fearless holds while the man
     // stands in the formation, and is gone the moment he leaves it — which is
     // exactly what Battlefield::flee() does to a man who breaks.
-    Soldier s(BLUETEAM);
+    // The Squad is declared FIRST so it outlives its members: ~Squad does not
+    // clear members' back-pointers (only disband() does), so a Squad dying
+    // first leaves the unit's destructor calling leaveSquad() on freed memory.
+    // The same note is on test_engagements' fixtures, and ASan finds it every
+    // time it is forgotten.
     Squad squad("Household");
+    Soldier s(BLUETEAM);
     s.setGrantedAbilities(UnitAbility::Fearless);
 
     REQUIRE_FALSE(s.hasAbility(UnitAbility::Fearless));  // granted, but no squad
@@ -93,8 +98,8 @@ TEST_CASE("a granted ability applies only while the unit is in a squad") {
 TEST_CASE("leaving the squad cannot strip what the creature innately is") {
     // The reason the two sets are kept apart: strip a banner's Fearless from a
     // skeleton and it must still be fearless, because it is mindless.
+    Squad squad("The Barrow");  // must outlive its members
     Skeleton bones(REDTEAM);
-    Squad squad("The Barrow");
     bones.setGrantedAbilities(UnitAbility::Fearless);
     squad.addMember(&bones);
     bones.leaveSquad();
@@ -104,8 +109,8 @@ TEST_CASE("leaving the squad cannot strip what the creature innately is") {
 TEST_CASE("a granted ability closes through the table like a declared one") {
     // Granting Mindless (nothing does today, but the closure must not care
     // where a flag came from) must bring Fearless with it.
+    Squad squad("Sworn");  // must outlive its members
     Soldier s(BLUETEAM);
-    Squad squad("Sworn");
     s.setGrantedAbilities(UnitAbility::Mindless);
     squad.addMember(&s);
     REQUIRE(s.hasAbility(UnitAbility::Fearless));

@@ -98,13 +98,46 @@ characters, hired by name, postable to a squad, riding into battles and raids, a
 losable. Its twelve decisions are under "SLICE 5 — CHARACTERS" below, and they are the user's; do
 not re-derive them.
 
-**SLICE 6 — BANNERS, ITEMS AND THE ABILITY SYSTEM — IS SPEC'D (2026-08-20, interviewed) AND IN
-BUILD.** Its fifteen decisions are under "SLICE 6" below and they are the user's. It bumps the
+**SLICE 6 — BANNERS, ITEMS AND THE ABILITY SYSTEM — IS SHIPPED (2026-08-20, schema v37).** Its fifteen decisions are under "SLICE 6" below and they are the user's. It bumps the
 schema to **v37** (`campaign.items`, the store; `squads[].banner`, the bound id). It is bigger than
 its name: the interview turned "what does a banner do" into **the engine's ability system** — a
 unit is stats + anatomy + abilities (6-1), `bool undead` splits into four composable flags behind
 an implication closure (6-3, 6-4), and a banner's gift is scoped to squad MEMBERSHIP rather than to
 `broken` (6-6). After it: the squad screen (decision 13, last) and 17's storage page.
+
+**What 6 leaves for the next slice to know:**
+- **`squad.banner` in the VIEW is a tier word, not a boolean** — `'plain' | 'basic' | 'item'`.
+  Every squad carries a plain banner, so `if (squad.banner)` is true for the whole army and means
+  nothing. The panel had exactly that bug for one commit. Ask `!== 'plain'`, or ask for the rung
+  you actually mean.
+- **`campaign.items` holds only what is on NOTHING.** A bound item lives on its holder, so
+  "is it held?" must check the store AND the holders (`heldItemIds`) — a store-only check would
+  hand out a second copy of a unique relic the moment the first one was bound.
+- **A `bool` on `AUnit` is now the wrong shape for anything creature-ish.** New behaviour that is
+  not a stat and not a body part is a `UnitAbility` flag; `docs/ADDING_UNITS.md` §1 has the rules,
+  and the implication table is the only place a "X implies Y" may be written.
+- **Granted abilities are scoped to squad MEMBERSHIP, not to `broken`.** Anything that moves a unit
+  in or out of a squad mid-battle changes what it can do, automatically and by design.
+- **A `Squad` must outlive its members in any test that builds one on the stack.** `~Squad` does not
+  clear members' back-pointers (only `disband()` does), so declaring the squad second is a
+  use-after-free that `test-fast` passes and the sanitized build catches. It caught it here.
+
+**Assistant's calls, flagged as overturnable:**
+- **`Squad::hasBanner` was DELETED rather than promoted to the tier.** Decision 10 said it should
+  "become the tier"; once 6-7 put ABILITIES on the wire instead of banners, the engine had no
+  banner concept left to hold, so the tier lives campaign-side next to the item catalog and the
+  engine-side flag simply went. 74 constructions lost an argument that never meant anything.
+- **An attached CHARACTER is covered by their squad's banner**, following 5-0 (a character is a
+  special kind of troop) and the banner's own "all units in that squad". Note the pre-existing gap
+  this sits beside: a character entry does NOT carry the squad's `squad_mods`, so an attached
+  character misses their squad's stat upgrades. That predates this slice and was left alone rather
+  than fixed silently — it wants its own decision.
+- **No raid card carries an item yet.** The generic `reward.item` path is built and unit-tested;
+  the first banner comes down the event channel, and a card that wants to offer one is a row of
+  config rather than a code change (6-13).
+- **The item store's `items` view field ships `kind` and `target` per row**, because the slot the
+  player clicked is what filters the list (6-14) — the client needs to know what a row IS, not only
+  what it is called.
 
 **What 5a leaves for the next slice to know:**
 - **`roster` no longer holds a caster key at all.** Anything asking "how big is the army" must read
@@ -430,6 +463,12 @@ screen does. This generalises to 5-4's typed character slots without change — 
 assignment path, the filter supplied by the caller, which is 17's "storage stays ignorant of what
 kinds exist" achieved in the UI as well as the service. Rejected: a store-first panel with a target
 picker (frames the store as a squad feature, and the second item kind would need a second control).
+
+**6 SHIPPED 2026-08-20.** Built in six commits: the ability system and the `undead` split, the
+`squad_abilities` transport (and `Squad::hasBanner`'s deletion), the store and the derived tier,
+acquisition through one `grantItem` from both channels, the wiring into both battle paths, and the
+slot → filtered store → permanence prompt. C++ 384 cases (sanitized), campaign-server 891,
+frontend 309, lint clean.
 
 **What slice 6 BUILDS, and what it only RECORDS:**
 - **BUILT** — the `UnitAbility` enum, dispatch and closure (6-2, 6-3); the `undead` split with

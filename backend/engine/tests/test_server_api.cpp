@@ -877,10 +877,13 @@ TEST_CASE("buildArmyFromPlacement: a granted ability only bites inside the squad
         json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
              {"squad_abilities", json::array({"fearless"})}},
     });
+    // Declared before the army so it outlives its members: ~Squad does not
+    // clear members' back-pointers, so a Squad dying first leaves the units'
+    // destructors calling leaveSquad() on freed memory.
+    Squad sq("Household");
     auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
     REQUIRE_FALSE(army[0]->hasAbility(UnitAbility::Fearless));
 
-    Squad sq("Household");
     sq.addMember(army[0].get());
     REQUIRE(army[0]->hasAbility(UnitAbility::Fearless));
 }
@@ -911,8 +914,8 @@ TEST_CASE("buildArmyFromPlacement: a granted flag still closes through the table
         json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
              {"squad_abilities", json::array({"mindless"})}},
     });
+    Squad sq("Sworn");  // must outlive its members
     auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
-    Squad sq("Sworn");
     sq.addMember(army[0].get());
     REQUIRE(army[0]->hasAbility(UnitAbility::Fearless));
 }

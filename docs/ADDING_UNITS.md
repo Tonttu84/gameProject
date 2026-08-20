@@ -27,9 +27,32 @@ the stat sheet:
 | speed / preferred range | `movementSpeed` (hexes per tick — implemented, not cosmetic), `preferredRange` |
 | ballistic skill     | `setBallisticSkill(n)` — melee-attack scale (10 = trained archer); derives the legacy 0-100 `accuracy` as n×5. Campaign scouting/foraging values derive from speed + this (`campaign-server/utils/capabilities.js`) |
 | weapons             | `addWeapon(MeleeWeapons::…)` (may modify defence/shield)   |
+| abilities           | `setInnateAbilities(UnitAbility::A \| UnitAbility::B)` — see below |
 
 Change a stat here later and it propagates everywhere on rebuild + server restart — that is
 the whole point of the design. Don't copy stats anywhere else.
+
+### Abilities: the third axis (slice 6)
+
+**A unit is STATS + ANATOMY + ABILITIES.** Anything that differs from a human and is not a
+stat and not a body part is an **ability** — it joins the `UnitAbility` vocabulary in
+`Defines.hpp` or it does not go in. Do not add a `bool` to `AUnit` for it; that is exactly
+what `bool undead` was, and splitting it is what slice 6 spent its time on.
+
+Two rules that catch people out:
+
+- **Declare only what the creature IS.** Implications are declared once in
+  `Abilities.cpp`'s table (`Mindless => Fearless`, `Undead => NoCorpse`) and applied by
+  `abilityClosure()` on every read. A Zombie declares `Undead | Mindless` and *receives*
+  `Fearless | NoCorpse`. Never OR an implied flag in by hand at a call site, and never
+  restate an ability as a stat (Skeleton used to set `morale = 99` *and* `undead = true`;
+  the two could drift, and one of them had to go).
+- **Read with `hasAbility()`, never `==`.** Abilities are a composable set, like `UnitRole`.
+  A type lists every ability that applies, and the interesting creatures are combinations.
+
+A new ability needs: a flag in the `UnitAbility` enum, its wire name in `Abilities.cpp`'s
+`NAMES` table (so the campaign layer can grant it), whatever behaviour reads it, and a row
+in the implication table **only** if it genuinely implies another.
 
 ## 2. Register it in the catalog (the only hand-maintained list)
 
