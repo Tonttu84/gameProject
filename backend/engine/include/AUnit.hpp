@@ -8,6 +8,7 @@
 #include "WeaponList.hpp"
 #include <vector>
 #include "Defines.hpp"
+#include "Abilities.hpp"
 #include "Battlefield.hpp"
 #include "Utility.hpp"
 
@@ -187,7 +188,40 @@ public:
     // bounds the value a squad can send over the wire.
      size_t getPackingSize() const;
      int getFormationFighter() const;
-     bool getUndead() const;
+     // ─── Abilities (slice 6) ────────────────────────────────────────────────
+     // Two sets, deliberately. _innateAbilities is what the TYPE is;
+     // _grantedAbilities is what the campaign layer handed this body for this
+     // battle (a squad's banner, arriving as `squad_abilities` on the placement
+     // entry). Keeping them apart is what lets a grant be revoked without
+     // touching what the creature is in itself — strip a banner's Fearless from
+     // a skeleton and it must still be fearless.
+     //
+     // The effective set is SCOPED TO SQUAD MEMBERSHIP (6-6): a granted ability
+     // holds only while the unit is actually in the formation the banner flies
+     // over. Battlefield::flee() already calls leaveSquad(), so a man who breaks
+     // loses the banner's gift by leaving; rallying clears `broken` but does NOT
+     // put him back in the squad, so he fights on as a lone trooper without it,
+     // and _squadId still regroups him into the charter after the battle. Every
+     // one of those behaviours falls out of this one expression — there is no
+     // strip step anywhere, and deliberately so: a strip in setBroken() would
+     // need rally to restore it, and would be order-dependent on when the grant
+     // landed.
+     //
+     // Closure is applied on READ (see Abilities.hpp) so that innate and granted
+     // flags imply through each other rather than only within their own set.
+     UnitAbility abilities() const;
+     bool hasAbility(UnitAbility flag) const { return hasAbilityFlag(abilities(), flag); }
+
+     // Declared abilities of the type. Constructors use this; it is closed on
+     // read, so a constructor declares only what the creature IS.
+     void setInnateAbilities(UnitAbility set)  { _innateAbilities = set; }
+     UnitAbility getInnateAbilities() const    { return _innateAbilities; }
+
+     // Granted by the campaign layer for this battle. Set once at construction
+     // from the placement entry; not additive by design, so a re-grant replaces
+     // rather than accumulating.
+     void setGrantedAbilities(UnitAbility set) { _grantedAbilities = set; }
+     UnitAbility getGrantedAbilities() const   { return _grantedAbilities; }
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
     int getFatigueCost() const;
@@ -449,7 +483,8 @@ protected:
     int  _engagedRank       = 0;
     bool spellcaster = false;
     bool placed = false;
-    bool undead = false;
+    UnitAbility _innateAbilities  = UnitAbility::None;
+    UnitAbility _grantedAbilities = UnitAbility::None;
     bool battleSummon = false;
     size_t spentMove = 0; // action recovery in ticks (archer fire), NOT terrain debt:
                           // blocks fireBow and one moveToward call per tick; special()

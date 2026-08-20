@@ -31,6 +31,45 @@ constexpr bool hasWeaponEffect(WeaponEffect set, WeaponEffect flag) {
     return (static_cast<unsigned>(set) & static_cast<unsigned>(flag)) != 0;
 }
 
+// ─── Unit abilities ──────────────────────────────────────────────────────────
+// The THIRD axis of the unit model (docs/CAMPAIGN_PLAN.md, slice 6 decision
+// 6-1): a unit is STATS + ANATOMY + ABILITIES. Anything that differs from a
+// human and is not a stat and not a body part is an ability — new behaviour
+// joins this vocabulary or it does not go in.
+//
+// Flags, not a kind, and modelled on WeaponEffect above for the same reasons:
+// a creature lists EVERY ability that applies, and membership is checked with
+// hasAbility(), never ==. That composability is the point — a banner grants
+// bare Fearless without also making your men mindless corpses.
+//
+//   Fearless – never breaks: AUnit::testMorale passes without rolling.
+//   Mindless – no mind to break. Implies Fearless (see abilityClosure).
+//              DELIBERATELY BARE (6-5): its real cost — mindless troops needing
+//              a commander able to lead them — is designed but NOT built. Do
+//              not stub it here.
+//   Undead   – the thematic tag. Implies NoCorpse. Carries no behaviour of its
+//              own yet; the morale immunity that used to hang off `bool undead`
+//              belongs to Mindless, so a later lich or vampire can be Undead and
+//              still be rattled.
+//   NoCorpse – leaves nothing for the necromancer's corpse pool (Team.cpp).
+//              Separable from Undead on purpose, for the small summons that
+//              vanish without being undead at all.
+enum class UnitAbility : unsigned {
+    None     = 0,
+    Fearless = 1u << 0,
+    Mindless = 1u << 1,
+    Undead   = 1u << 2,
+    NoCorpse = 1u << 3,
+};
+
+constexpr UnitAbility operator|(UnitAbility a, UnitAbility b) {
+    return static_cast<UnitAbility>(static_cast<unsigned>(a) | static_cast<unsigned>(b));
+}
+constexpr UnitAbility& operator|=(UnitAbility& a, UnitAbility b) { a = a | b; return a; }
+constexpr bool hasAbilityFlag(UnitAbility set, UnitAbility flag) {
+    return (static_cast<unsigned>(set) & static_cast<unsigned>(flag)) != 0;
+}
+
 // Armour values
 constexpr int LIGHTARMOUR = 2;
 constexpr int HEAVYARMOUR = 5;

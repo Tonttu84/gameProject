@@ -321,12 +321,12 @@ TEST_CASE("calcDistance returns 0 for same hex") {
 
 TEST_CASE("Zombie is undead") {
     Zombie z(REDTEAM);
-    REQUIRE(z.getUndead() == true);
+    REQUIRE(z.hasAbility(UnitAbility::Undead) == true);
 }
 
 TEST_CASE("Soldier is not undead") {
     Soldier s(REDTEAM);
-    REQUIRE(s.getUndead() == false);
+    REQUIRE(s.hasAbility(UnitAbility::Undead) == false);
 }
 
 TEST_CASE("Mage is a spellcaster") {

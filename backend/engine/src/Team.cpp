@@ -5,7 +5,7 @@ size_t Team::pruneDeadUnits() {
     auto it = units.begin();
     while (it != units.end()) {
         if (!(*it) || !(*it)->getAlive()) {
-            if (*it && !(*it)->getUndead()) ++corpsesLeft;
+            if (*it && !(*it)->hasAbility(UnitAbility::NoCorpse)) ++corpsesLeft;
             it = units.erase(it);
         } else {
             ++it;

@@ -687,7 +687,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	//returns true if the test is passed
 	bool AUnit::testMorale(int damage)
 	{
-		if (undead) return true;
+		if (hasAbility(UnitAbility::Fearless)) return true;
 		if (damage <= 0) return true;
 		int m1 = Utility::throwDice(), m2 = Utility::throwDice();
 		if (morale + cohesionStatBonus() + m1 - m2 > damage)
@@ -736,9 +736,15 @@ void AUnit::restoreForNextBattle()
 		fatiguelvl = fatigue / FATIGUE_LEVEL_DIV;
 	}
 
-	bool AUnit::getUndead() const
+	UnitAbility AUnit::abilities() const
 	{
-		return undead;
+		// Granted abilities apply only while the unit is IN the squad the
+		// banner flies over (6-6). A fleeing unit has already left it
+		// (Battlefield::flee -> leaveSquad), so it loses the gift by leaving
+		// rather than by any strip step.
+		UnitAbility set = _innateAbilities;
+		if (_squad) set |= _grantedAbilities;
+		return abilityClosure(set);
 	}
 
 

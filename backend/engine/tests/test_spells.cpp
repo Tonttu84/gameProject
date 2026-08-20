@@ -118,7 +118,7 @@ TEST_CASE("Necromancer with 3 corpses raises 3 zombie battle-summons and sets co
     REQUIRE(redTeam.size() == 4); // necro + 3 zombies
     for (size_t i = 1; i < redTeam.size(); ++i) {
         REQUIRE(redTeam[i]->getBattleSummon() == true);
-        REQUIRE(redTeam[i]->getUndead() == true);
+        REQUIRE(redTeam[i]->hasAbility(UnitAbility::Undead) == true);
         REQUIRE(redTeam[i]->getPrintSymbol() == 'Z');
         REQUIRE(redTeam[i]->getHex() != nullptr);
     }
@@ -171,7 +171,7 @@ TEST_CASE("Necromancer with no corpses conjures one free skeleton instead") {
     auto& redTeam = field.getTeam(REDTEAM);
     REQUIRE(redTeam.size() == 2); // necro + 1 skeleton
     REQUIRE(redTeam[1]->getBattleSummon() == true);
-    REQUIRE(redTeam[1]->getUndead() == true);
+    REQUIRE(redTeam[1]->hasAbility(UnitAbility::Undead) == true);
     REQUIRE(redTeam[1]->getPrintSymbol() == 'S');
     REQUIRE(field.getCorpses() == 0);
     REQUIRE(redTeam[0]->getCast() == 6);

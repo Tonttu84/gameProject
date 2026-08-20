@@ -4,8 +4,7 @@
 Skeleton::Skeleton(int setTeam) : AUnit(setTeam)
 {
     printSymbol = 'S';
-    undead      = true;
-    morale      = 99;  // undead — never breaks
+    setInnateAbilities(UnitAbility::Undead | UnitAbility::Mindless);  // Mindless => Fearless
     fatigueCost = 0;   // no flesh, no fatigue
     unitValue   = 4;
 
