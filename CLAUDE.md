@@ -26,6 +26,13 @@ only in Claude's per-machine auto-memory (`~/.claude/…`, which does NOT move b
 - Auto-memory may still be used for cross-project user preferences, but anything another machine
   needs to continue the work belongs in a committed file.
 
+**Check the branch before the first commit of a session or after a `/clear`.** A clear-and-resume
+keeps the conversation's memory of where the work was but not the checkout, and a branch that was
+current before the clear may not be current after it — nor after the user merges and moves on
+between sessions. Run `git rev-parse --abbrev-ref HEAD` and commit against what it says, not
+against what the transcript remembers. (2026-08-20: a commit meant for a feature branch landed on
+local `main` this way; the push then reported "Everything up-to-date" and looked like a success.)
+
 ## Shipping: finish the feature, then merge to main — don't ask
 
 **Standing instruction (user, 2026-08-10): once a feature is COMPLETE and CI is green, merge it to
