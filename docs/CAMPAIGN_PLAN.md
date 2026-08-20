@@ -103,7 +103,22 @@ schema to **v37** (`campaign.items`, the store; `squads[].banner`, the bound id)
 its name: the interview turned "what does a banner do" into **the engine's ability system** — a
 unit is stats + anatomy + abilities (6-1), `bool undead` splits into four composable flags behind
 an implication closure (6-3, 6-4), and a banner's gift is scoped to squad MEMBERSHIP rather than to
-`broken` (6-6). After it: the squad screen (decision 13, last) and 17's storage page.
+`broken` (6-6).
+
+**NEXT UP: DECISION 13 — THE SQUAD INSPECTION SCREEN (user, 2026-08-20: "13 is good").** The last
+of the squad overhaul, and the one that RENDERS everything the other twelve built. Decision 13
+already lists what it must show — composition against the per-type caps, prestige rank, banner tier
+and what it grants, attached character, availability (free / raiding / tied up) — but that is a
+CONTENTS LIST, not a design, and three panels are waiting to be absorbed into it:
+`SquadUpgradePanel` (which now also carries slice 6's banner slot), `SquadReinforcePanel`, and
+`CharacterPanel`, each of which says in its own header that it is deliberately plain until this
+screen exists.
+
+**INTERVIEW BEFORE BUILDING IT.** It is the largest UI decision in the campaign layer and the
+first screen that is a design rather than a mechanic, so it is exactly what the `grilling` skill
+in CLAUDE.md is for. Do not start from the contents list and guess a layout.
+
+After it: 17's storage page (which `ItemStorePanel` is the deliberately-plain placeholder for).
 
 **What 6 leaves for the next slice to know:**
 - **`squad.banner` in the VIEW is a tier word, not a boolean** — `'plain' | 'basic' | 'item'`.
