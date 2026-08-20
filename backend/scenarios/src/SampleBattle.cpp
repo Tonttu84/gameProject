@@ -126,7 +126,7 @@ void setupSampleBattle(Battlefield& field)
 
     // Red squads: placed manually on specific hexes AFTER randomPlaceArmy so
     // they aren't scattered. Both hexes are in the red deployment zone (rows 22-29).
-    auto redSq1 = std::make_unique<Squad>("Ironguard", false);
+    auto redSq1 = std::make_unique<Squad>("Ironguard");
     {
         Hex* h = field.hexGrid.getHex({0, 23});
         for (int i = 0; i < 12; ++i) {
@@ -137,7 +137,7 @@ void setupSampleBattle(Battlefield& field)
         }
     }
 
-    auto redSq2 = std::make_unique<Squad>("Bloodfist", false);
+    auto redSq2 = std::make_unique<Squad>("Bloodfist");
     {
         Hex* h = field.hexGrid.getHex({-1, 26});
         for (int i = 0; i < 15; ++i) {
@@ -158,7 +158,7 @@ void setupSampleBattle(Battlefield& field)
     randomPlaceArmy(blue, field, {0, field.width - 1, 0, field.height / 4});
 
     // Blue squads: placed in the blue deployment zone (rows 0-7).
-    auto blueSq1 = std::make_unique<Squad>("Silverbolt", false);
+    auto blueSq1 = std::make_unique<Squad>("Silverbolt");
     {
         Hex* h = field.hexGrid.getHex({5, 4});
         for (int i = 0; i < 10; ++i) {
@@ -169,7 +169,7 @@ void setupSampleBattle(Battlefield& field)
         }
     }
 
-    auto blueSq2 = std::make_unique<Squad>("Dawnshield", false);
+    auto blueSq2 = std::make_unique<Squad>("Dawnshield");
     {
         Hex* h = field.hexGrid.getHex({2, 7});
         for (int i = 0; i < 13; ++i) {
@@ -182,7 +182,7 @@ void setupSampleBattle(Battlefield& field)
 
     // Cavalry squad: Templar Riders — Soldier on a Warhorse (light armor, hoof
     // attack), so the squad showcases the mount fighting alongside its rider.
-    auto blueCavSq = std::make_unique<Squad>("Templar Riders", false);
+    auto blueCavSq = std::make_unique<Squad>("Templar Riders");
     blueCavSq->setType(SquadType::Cavalry);
     {
         Hex* h = field.hexGrid.getHex({8, 5});

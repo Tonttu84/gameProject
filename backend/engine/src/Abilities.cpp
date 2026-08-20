@@ -6,6 +6,16 @@
 namespace {
     struct Implication { UnitAbility from; UnitAbility to; };
 
+    struct NamedAbility { std::string_view name; UnitAbility flag; };
+
+    // The wire spelling of every flag. Lower-case, no separators.
+    constexpr NamedAbility NAMES[] = {
+        { "fearless", UnitAbility::Fearless },
+        { "mindless", UnitAbility::Mindless },
+        { "undead",   UnitAbility::Undead   },
+        { "nocorpse", UnitAbility::NoCorpse },
+    };
+
     // The whole table. Add a row here — never a second `|=` at a call site.
     constexpr Implication IMPLICATIONS[] = {
         { UnitAbility::Mindless, UnitAbility::Fearless },
@@ -27,4 +37,11 @@ UnitAbility abilityClosure(UnitAbility declared)
         if (set == before) break;
     }
     return set;
+}
+
+UnitAbility abilityFromName(std::string_view name)
+{
+    for (const NamedAbility& row : NAMES)
+        if (row.name == name) return row.flag;
+    return UnitAbility::None;
 }

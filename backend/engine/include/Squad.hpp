@@ -65,7 +65,7 @@ enum class SquadType { Infantry, Cavalry, Flying, Mixed };
 //   5. At battle end, Battlefield calls disband() before destroying each Squad.
 class Squad {
 public:
-    Squad(std::string name, bool hasBanner);
+    Squad(std::string name);
 
     // ── Identity & prestige ───────────────────────────────────────────────────
     const std::string& getName()     const { return _name; }
@@ -120,7 +120,6 @@ public:
     // ── Banner ───────────────────────────────────────────────────────────────
     // The banner is the persistent identity of the squad (carries prestige in roguelite).
     // A squad without a banner loses morale bonuses but still functions as a formation.
-    bool   hasBanner()     const { return _hasBanner; }
 
     // Flag bearer: the specific unit carrying the banner.
     // If nullptr, no one is currently assigned (happens briefly between bearer death
@@ -219,7 +218,6 @@ private:
     AUnit*              _leader     = nullptr;
     AUnit*              _flagBearer = nullptr;
     Wing*               _wing       = nullptr;  // non-owning; nullptr = wingless squad
-    bool                _hasBanner;
     SquadType           _type = SquadType::Infantry;
     int                 _holdTurns   = 0;
     bool                _shakenTested = false;  // true after shaken threshold fired; reset when % drops below

@@ -5,8 +5,13 @@
 #include <algorithm>
 #include <cassert>
 
-Squad::Squad(std::string name, bool hasBanner)
-    : _name(std::move(name)), _hasBanner(hasBanner) {}
+// No banner flag here, and deliberately none (slice 6, decision 6-7): the
+// banner is a CAMPAIGN fact, and the engine only ever learns the ABILITY a
+// banner grants, arriving per unit as `squad_abilities`. `_hasBanner` was
+// constructor-set dead code that decision 10 flagged; the tier it was meant to
+// become lives campaign-side in bannerTier(), where the item catalog is.
+Squad::Squad(std::string name)
+    : _name(std::move(name)) {}
 
 // ── Membership ────────────────────────────────────────────────────────────────
 

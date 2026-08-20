@@ -53,7 +53,7 @@ TEST_CASE("resolveEngagements: fresh squad and loners never share a HexSide") {
     // Squad must be declared before the soldiers so it is destroyed after them.
     // Soldier::~Soldier calls leaveSquad(), which touches the Squad; if the Squad
     // dies first the call is a use-after-free.
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM), sm3(REDTEAM), sm4(REDTEAM);
     Soldier ln0(REDTEAM), ln1(REDTEAM), ln2(REDTEAM);
     Soldier en0(BLUETEAM), en1(BLUETEAM), en2(BLUETEAM);
@@ -103,7 +103,7 @@ TEST_CASE("resolveEngagements: tired loners do not poach from partially-filled s
     REQUIRE(enE  != nullptr);
     REQUIRE(enSE != nullptr);
 
-    Squad alpha("Alpha", true);  // must outlive its members (see first test for explanation)
+    Squad alpha("Alpha");  // must outlive its members (see first test for explanation)
     Soldier sm(REDTEAM);
     Soldier ln0(REDTEAM), ln1(REDTEAM), ln2(REDTEAM);
     Soldier en0(BLUETEAM), en1(BLUETEAM), en2(BLUETEAM);
@@ -296,7 +296,7 @@ TEST_CASE("resolveEngagements: eviction also works for squad members across fati
     REQUIRE(enHex != nullptr);
 
     // Squad must outlive its members (their destructors call leaveSquad()).
-    Squad sq("Vanguard", false);
+    Squad sq("Vanguard");
     Soldier s1(REDTEAM), s2(REDTEAM);
     Cavalry cav(REDTEAM);
     sq.addMember(&s1); s1.setHex(redHex);
@@ -338,7 +338,7 @@ TEST_CASE("resolveEngagements: squad distributes members across 2 simultaneously
     REQUIRE(enE  != nullptr);
 
     // Squad must outlive its members.
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM), sm3(REDTEAM);
     Soldier sm4(REDTEAM), sm5(REDTEAM), sm6(REDTEAM), sm7(REDTEAM);
     alpha.addMember(&sm0); sm0.setHex(redHex);
@@ -500,7 +500,7 @@ TEST_CASE("combat ranks: existing loner promotes one rank per tick when space op
     Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
     REQUIRE(enHex != nullptr);
 
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM), sm3(REDTEAM);
     alpha.addMember(&sm0); sm0.setHex(redHex);
     alpha.addMember(&sm1); sm1.setHex(redHex);
@@ -542,7 +542,7 @@ TEST_CASE("combat ranks: loner fills remaining rank-1 capacity on squad's side (
     REQUIRE(enHex != nullptr);
 
     // Squad outlives its members (dtors call leaveSquad).
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM);
     alpha.addMember(&sm0); sm0.setHex(redHex);
     alpha.addMember(&sm1); sm1.setHex(redHex);
@@ -576,7 +576,7 @@ TEST_CASE("combat ranks: squad members reach rank 1 in the first tick", "[ranks]
     Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(RED_HEX)[0]);
     REQUIRE(enHex != nullptr);
 
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier sm0(REDTEAM), sm1(REDTEAM);
     alpha.addMember(&sm0); sm0.setHex(redHex);
     alpha.addMember(&sm1); sm1.setHex(redHex);
@@ -606,7 +606,7 @@ TEST_CASE("combat ranks: larger squad keeps rank-1 priority when two squads shar
 
     // Alpha: 4 members (larger). Beta: 2 members (smaller).
     // Only 1 engaged side → allocation gives the side to Alpha.
-    Squad alpha("Alpha", true), beta("Beta", false);
+    Squad alpha("Alpha"), beta("Beta");
     Soldier a0(REDTEAM), a1(REDTEAM), a2(REDTEAM), a3(REDTEAM);
     Soldier b0(REDTEAM), b1(REDTEAM);
     alpha.addMember(&a0); a0.setHex(redHex);
@@ -694,7 +694,7 @@ TEST_CASE("resolveEngagements: formation fighters seats a fifth man on an Open s
         REQUIRE(enHex != nullptr);
 
         // Squad declared first so it outlives its members (see the first test).
-        Squad alpha("Alpha", true);
+        Squad alpha("Alpha");
         Soldier s0(REDTEAM), s1(REDTEAM), s2(REDTEAM), s3(REDTEAM), s4(REDTEAM);
         Soldier enemy(BLUETEAM);
         std::vector<Soldier*> all = {&s0, &s1, &s2, &s3, &s4};
@@ -738,7 +738,7 @@ TEST_CASE("resolveEngagements: a hang-back unit yields the front while others ca
     REQUIRE(enHex != nullptr);
 
     // Squad declared first so it outlives its members (see the first test).
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier s0(REDTEAM), s1(REDTEAM), s2(REDTEAM), s3(REDTEAM), shy(REDTEAM);
     Soldier enemy(BLUETEAM);
     std::vector<Soldier*> line = {&s0, &s1, &s2, &s3};
@@ -792,7 +792,7 @@ TEST_CASE("resolveEngagements: a hang-back unit never evicts a fighter from the 
     // it exactly full; the flagged rider that follows is bigger than a soldier,
     // so WITHOUT the eviction guard he would shove one out to take his place —
     // a unit trying to avoid melee putting a willing man in the rear.
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier s0(REDTEAM), s1(REDTEAM);
     Cavalry rider(REDTEAM), shyRider(REDTEAM);
     Soldier enemy(BLUETEAM);

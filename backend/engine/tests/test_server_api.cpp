@@ -846,6 +846,77 @@ TEST_CASE("buildArmyFromPlacement: unknown or malformed squad_mods are inert") {
     for (const auto& u : army) REQUIRE(u->getAttackPWR() == baseAttack);
 }
 
+// ── squad_abilities in placement JSON (banners, slice 6 decision 6-7) ───────
+//
+// The campaign layer attaches these server-side from the banner bound to the
+// unit's squad. The engine learns the word `fearless` and never the word
+// `banner`, so these cases speak the ability vocabulary only — and, like
+// squad_mods above, they are as much about what a FORGED one cannot do.
+
+TEST_CASE("buildArmyFromPlacement: squad_abilities land in the GRANTED set") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_abilities", json::array({"fearless"})}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    // Granted, not innate: what a banner gave must stay separable from what the
+    // creature is, or revoking it would strip the creature's own nature too.
+    REQUIRE(hasAbilityFlag(army[0]->getGrantedAbilities(), UnitAbility::Fearless));
+    REQUIRE(army[0]->getInnateAbilities() == UnitAbility::None);
+}
+
+TEST_CASE("buildArmyFromPlacement: a granted ability only bites inside the squad") {
+    // buildArmyFromPlacement does not form squads (that happens later), so this
+    // is also the case that pins 6-6: parsed but unattached grants nothing.
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_abilities", json::array({"fearless"})}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE_FALSE(army[0]->hasAbility(UnitAbility::Fearless));
+
+    Squad sq("Household");
+    sq.addMember(army[0].get());
+    REQUIRE(army[0]->hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("buildArmyFromPlacement: unknown or malformed squad_abilities are inert") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        // a name the engine does not know, a non-string entry, a
+        // squad_abilities that is not an array, and an empty array
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_abilities", json::array({"invincible", 7})}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}, {"squad_abilities", "fearless"}},
+        json{{"unit_type", "Soldier"}, {"q", 5}, {"r", 5}, {"squad_abilities", json::array()}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 3);
+    for (const auto& u : army) REQUIRE(u->getGrantedAbilities() == UnitAbility::None);
+}
+
+TEST_CASE("buildArmyFromPlacement: a granted flag still closes through the table") {
+    // Nothing grants Mindless today, but the closure must not care where a flag
+    // came from — otherwise a future granted flag would silently skip its
+    // implications.
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_abilities", json::array({"mindless"})}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    Squad sq("Sworn");
+    sq.addMember(army[0].get());
+    REQUIRE(army[0]->hasAbility(UnitAbility::Fearless));
+}
+
 // ── formationFighter: the real-vs-packing size split (slice 4c) ──────────────
 //
 // The rule the split encodes (user, 2026-08-18): does a caller measure ROOM ON

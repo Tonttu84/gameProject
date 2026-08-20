@@ -258,8 +258,8 @@ TEST_CASE("formation layout: units order squad-first, then loners by type",
     // unit type (printSymbol). (user, 2026-07-06: "ordered by squads, then
     // unsquadded in unit type order".)
     Hex hex;
-    Squad beta("Beta", false);
-    Squad alpha("Alpha", false);
+    Squad beta("Beta");
+    Squad alpha("Alpha");
 
     // Deliberately interleave construction order so only orderlyLess can sort.
     auto lonerC = std::make_unique<Cavalry>(REDTEAM); // symbol 'C'

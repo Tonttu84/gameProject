@@ -346,7 +346,7 @@ TEST_CASE("MountedUnit: once both rider and mount are dead, stat delegates resol
 }
 
 TEST_CASE("Cavalry: dismounted rider leaves a Cavalry-typed squad automatically") {
-    Squad sq("Lancers", false);
+    Squad sq("Lancers");
     sq.setType(SquadType::Cavalry);
     Cavalry c(REDTEAM);
     sq.addMember(&c);

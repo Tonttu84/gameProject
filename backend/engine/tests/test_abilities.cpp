@@ -78,7 +78,7 @@ TEST_CASE("a granted ability applies only while the unit is in a squad") {
     // stands in the formation, and is gone the moment he leaves it — which is
     // exactly what Battlefield::flee() does to a man who breaks.
     Soldier s(BLUETEAM);
-    Squad squad("Household", false);
+    Squad squad("Household");
     s.setGrantedAbilities(UnitAbility::Fearless);
 
     REQUIRE_FALSE(s.hasAbility(UnitAbility::Fearless));  // granted, but no squad
@@ -94,7 +94,7 @@ TEST_CASE("leaving the squad cannot strip what the creature innately is") {
     // The reason the two sets are kept apart: strip a banner's Fearless from a
     // skeleton and it must still be fearless, because it is mindless.
     Skeleton bones(REDTEAM);
-    Squad squad("The Barrow", false);
+    Squad squad("The Barrow");
     bones.setGrantedAbilities(UnitAbility::Fearless);
     squad.addMember(&bones);
     bones.leaveSquad();
@@ -105,7 +105,7 @@ TEST_CASE("a granted ability closes through the table like a declared one") {
     // Granting Mindless (nothing does today, but the closure must not care
     // where a flag came from) must bring Fearless with it.
     Soldier s(BLUETEAM);
-    Squad squad("Sworn", false);
+    Squad squad("Sworn");
     s.setGrantedAbilities(UnitAbility::Mindless);
     squad.addMember(&s);
     REQUIRE(s.hasAbility(UnitAbility::Fearless));

@@ -213,6 +213,29 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             }
         }
 
+        // Optional squad_abilities (slice 6, decision 6-7): an array of ability
+        // names, e.g. ["fearless"], attached SERVER-SIDE by the campaign layer
+        // from the banner bound to this unit's squad.
+        //
+        // The engine learns the word `fearless` and never the word `banner` —
+        // campaign → engine, never back, the line UnitRole drew. What arrives
+        // here IS granted by definition, so it lands in the GRANTED set and
+        // needs no marker to distinguish it from what the creature innately is;
+        // AUnit::abilities() then scopes it to squad membership (6-6).
+        //
+        // Same never-throw discipline as squad_mods above: a non-array, a
+        // non-string entry or a name the engine does not know is skipped rather
+        // than rejected, so a forged one is harmless rather than fatal.
+        auto abilitiesIt = entry.find("squad_abilities");
+        if (abilitiesIt != entry.end() && abilitiesIt->is_array()) {
+            UnitAbility granted = UnitAbility::None;
+            for (const auto& name : *abilitiesIt) {
+                if (!name.is_string()) continue;
+                granted |= abilityFromName(name.get<std::string>());
+            }
+            u->setGrantedAbilities(granted);
+        }
+
         // Reject if placement would exceed hex capacity — in PACKING size, the
         // room the body takes, which is what a hex measures.
         int packedSize = static_cast<int>(u->getPackingSize());
@@ -313,7 +336,7 @@ std::vector<std::unique_ptr<Squad>> buildSquadsFromArmy(const Army& army)
             name = buf;
         }
 
-        auto sq = std::make_unique<Squad>(name, false);
+        auto sq = std::make_unique<Squad>(name);
         bool anyMounted = false, allMounted = true;
         for (AUnit* m : members) {
             bool mounted = m->getCategory() == UnitCategory::Mounted;

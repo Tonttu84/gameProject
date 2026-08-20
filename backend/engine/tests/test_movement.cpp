@@ -376,7 +376,7 @@ TEST_CASE("moveSquad: an engaged squad holds position even in a badly overcrowde
     // piled up around it: it does not abandon the line to equalize crowding.
     Battlefield& field = Utility::getBattlefield();
 
-    auto sqOwned = std::make_unique<Squad>("Spreaders", false);
+    auto sqOwned = std::make_unique<Squad>("Spreaders");
     Squad* sq = sqOwned.get();
 
     Army red, blue;
@@ -416,7 +416,7 @@ TEST_CASE("moveSquad: an engaged squad holds position even in a badly overcrowde
 TEST_CASE("moveSquad: an engaged squad holds even when it would itself be the reserve") {
     Battlefield& field = Utility::getBattlefield();
 
-    auto sqOwned = std::make_unique<Squad>("Holdouts", false);
+    auto sqOwned = std::make_unique<Squad>("Holdouts");
     Squad* sq = sqOwned.get();
 
     Army red, blue;
@@ -484,7 +484,7 @@ TEST_CASE("moveSquad: a non-engaged squad blocked from advancing spreads into an
     blue.push_back(std::move(enemy));
 
     Hex* origin = field.hexGrid.getHex(O);
-    auto sqOwned = std::make_unique<Squad>("Spreaders", false);
+    auto sqOwned = std::make_unique<Squad>("Spreaders");
     Squad* sq = sqOwned.get();
     for (int i = 0; i < 4; ++i) {
         auto u = std::make_unique<Soldier>(REDTEAM);
@@ -822,7 +822,7 @@ TEST_CASE("moveSquad: squad routes around impassable wall to reach the other sid
 
     // Squad must be declared before the unit objects so it outlives them
     // (member destructors call leaveSquad(), which touches the Squad object).
-    auto sqOwned = std::make_unique<Squad>("TestSquad", false);
+    auto sqOwned = std::make_unique<Squad>("TestSquad");
     Squad* sq = sqOwned.get();
 
     Army red, blue;
@@ -1025,8 +1025,8 @@ TEST_CASE("moveUnits: a squad advances at its slowest member's speed", "[movemen
     Battlefield& field = Utility::getBattlefield();
 
     // Squads must be declared before the unit objects so they outlive them.
-    auto fastOwned  = std::make_unique<Squad>("FastSquad", false);
-    auto mixedOwned = std::make_unique<Squad>("MixedSquad", false);
+    auto fastOwned  = std::make_unique<Squad>("FastSquad");
+    auto mixedOwned = std::make_unique<Squad>("MixedSquad");
     Squad* fastSq  = fastOwned.get();
     Squad* mixedSq = mixedOwned.get();
 
@@ -1078,7 +1078,7 @@ TEST_CASE("moveUnits: a squad advances at its slowest member's speed", "[movemen
 TEST_CASE("moveUnits: richer squad members aid a drained straggler at 3:1", "[movement][speed][squad]") {
     Battlefield& field = Utility::getBattlefield();
 
-    auto sqOwned = std::make_unique<Squad>("EscortSquad", false);
+    auto sqOwned = std::make_unique<Squad>("EscortSquad");
     Squad* sq = sqOwned.get();
 
     Army red, blue;
@@ -1241,7 +1241,7 @@ TEST_CASE("hold order: squad does not advance while holdTurns > 0") {
     // tests' grid state.
     Battlefield field;
 
-    auto sq = std::make_unique<Squad>("Alpha", false);
+    auto sq = std::make_unique<Squad>("Alpha");
     Squad* sqPtr = sq.get();
 
     auto a = std::make_unique<Soldier>(REDTEAM);

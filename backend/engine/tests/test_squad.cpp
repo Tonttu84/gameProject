@@ -11,27 +11,27 @@
 // ── Squad: membership ─────────────────────────────────────────────────────────
 
 TEST_CASE("addMember sets squad back-pointer on unit") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     sq.addMember(&s);
     REQUIRE(s.getSquad() == &sq);
 }
 
 TEST_CASE("addMember is visible via hasMember") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     sq.addMember(&s);
     REQUIRE(sq.hasMember(&s) == true);
 }
 
 TEST_CASE("hasMember returns false for unit not in squad") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     REQUIRE(sq.hasMember(&s) == false);
 }
 
 TEST_CASE("removeMember clears squad back-pointer on unit") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     sq.addMember(&s);
     sq.removeMember(&s);
@@ -40,7 +40,7 @@ TEST_CASE("removeMember clears squad back-pointer on unit") {
 }
 
 TEST_CASE("disband clears back-pointers on all members") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM), c(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -53,7 +53,7 @@ TEST_CASE("disband clears back-pointers on all members") {
 }
 
 TEST_CASE("aliveCount counts only alive members") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -62,7 +62,7 @@ TEST_CASE("aliveCount counts only alive members") {
 }
 
 TEST_CASE("setAlive(false) eagerly removes unit from squad") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -72,7 +72,7 @@ TEST_CASE("setAlive(false) eagerly removes unit from squad") {
 }
 
 TEST_CASE("pruneDeadMembers removes dead unit and clears its back-pointer") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -84,7 +84,7 @@ TEST_CASE("pruneDeadMembers removes dead unit and clears its back-pointer") {
 }
 
 TEST_CASE("pruneDeadMembers clears _leader pointer when leader dies") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -99,7 +99,7 @@ TEST_CASE("pruneDeadMembers clears _leader pointer when leader dies") {
 // ── Squad: leadership ─────────────────────────────────────────────────────────
 
 TEST_CASE("hasLeader returns true when leader is alive") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     sq.addMember(&s);
     sq.setLeader(&s);
@@ -107,7 +107,7 @@ TEST_CASE("hasLeader returns true when leader is alive") {
 }
 
 TEST_CASE("hasLeader returns false when leader is dead") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     sq.addMember(&s);
     sq.setLeader(&s);
@@ -116,7 +116,7 @@ TEST_CASE("hasLeader returns false when leader is dead") {
 }
 
 TEST_CASE("hasLeader returns false when no leader set") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     REQUIRE(sq.hasLeader() == false);
 }
 
@@ -124,7 +124,7 @@ TEST_CASE("hasLeader returns false when no leader set") {
 // ── Squad: flag bearer ────────────────────────────────────────────────────────
 
 TEST_CASE("setFlagBearer round-trip") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     sq.addMember(&s);
     sq.setFlagBearer(&s);
@@ -132,7 +132,7 @@ TEST_CASE("setFlagBearer round-trip") {
 }
 
 TEST_CASE("onFlagBearerDeath assigns a new alive non-broken bearer") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -144,7 +144,7 @@ TEST_CASE("onFlagBearerDeath assigns a new alive non-broken bearer") {
 }
 
 TEST_CASE("onFlagBearerDeath returns nullptr when no eligible member exists") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM);
     sq.addMember(&a);
     sq.setFlagBearer(&a);
@@ -155,7 +155,7 @@ TEST_CASE("onFlagBearerDeath returns nullptr when no eligible member exists") {
 }
 
 TEST_CASE("onFlagBearerDeath skips broken members") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM), c(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -171,27 +171,27 @@ TEST_CASE("onFlagBearerDeath skips broken members") {
 // ── Squad: collective morale ──────────────────────────────────────────────────
 
 TEST_CASE("moraleModifier returns 0 for Normal state") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     REQUIRE(sq.getMoraleState() == MoraleState::Normal);
     REQUIRE(sq.moraleModifier() == 0);
 }
 
 TEST_CASE("moraleModifier returns +1 for Confident state") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.improveMorale();
     REQUIRE(sq.getMoraleState() == MoraleState::Confident);
     REQUIRE(sq.moraleModifier() == 1);
 }
 
 TEST_CASE("moraleModifier returns -2 for Scared state") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.degradeMorale();
     REQUIRE(sq.getMoraleState() == MoraleState::Scared);
     REQUIRE(sq.moraleModifier() == -2);
 }
 
 TEST_CASE("degradeMorale steps through states in order") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     REQUIRE(sq.getMoraleState() == MoraleState::Normal);
     sq.degradeMorale();
     REQUIRE(sq.getMoraleState() == MoraleState::Scared);
@@ -200,14 +200,14 @@ TEST_CASE("degradeMorale steps through states in order") {
 }
 
 TEST_CASE("degradeMorale does nothing when already Broken") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.degradeMorale(); sq.degradeMorale(); // Normal→Scared→Broken
     sq.degradeMorale(); // no-op
     REQUIRE(sq.getMoraleState() == MoraleState::Broken);
 }
 
 TEST_CASE("improveMorale steps up through states") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.degradeMorale(); // Normal→Scared
     sq.improveMorale(); // Scared→Normal
     REQUIRE(sq.getMoraleState() == MoraleState::Normal);
@@ -216,14 +216,14 @@ TEST_CASE("improveMorale steps up through states") {
 }
 
 TEST_CASE("improveMorale does nothing when already Confident") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.improveMorale(); // Normal→Confident
     sq.improveMorale(); // no-op
     REQUIRE(sq.getMoraleState() == MoraleState::Confident);
 }
 
 TEST_CASE("updateMoraleState initialises peak on first call without testing") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM), c(REDTEAM), d(REDTEAM);
     sq.addMember(&a); sq.addMember(&b); sq.addMember(&c); sq.addMember(&d);
     sq.updateMoraleState(); // first call — sets peak, no test
@@ -235,7 +235,7 @@ TEST_CASE("updateMoraleState degrades on forced-fail casualty test (mock dice)")
     // Push dice so throwDice() < throwDice() → degrade.
     // dice sequence: first call=1(roll)+1(check), second call=5(roll)+1(check)
     // 1 < 5 → degrade.
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM), c(REDTEAM), d(REDTEAM);
     sq.addMember(&a); sq.addMember(&b); sq.addMember(&c); sq.addMember(&d);
     sq.updateMoraleState(); // init peak=4, lastTestedAlive=4
@@ -254,7 +254,7 @@ TEST_CASE("updateMoraleState degrades on forced-fail casualty test (mock dice)")
 }
 
 TEST_CASE("updateMoraleState does not test again without further casualties") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM), c(REDTEAM), d(REDTEAM);
     sq.addMember(&a); sq.addMember(&b); sq.addMember(&c); sq.addMember(&d);
     sq.updateMoraleState(); // init
@@ -279,7 +279,7 @@ TEST_CASE("updateMoraleState does not test again without further casualties") {
 // ── Squad: movement helpers ───────────────────────────────────────────────────
 
 TEST_CASE("totalSizePoints sums alive members only") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier a(REDTEAM), b(REDTEAM);
     sq.addMember(&a);
     sq.addMember(&b);
@@ -291,12 +291,12 @@ TEST_CASE("totalSizePoints sums alive members only") {
 // ── Squad: prestige ───────────────────────────────────────────────────────────
 
 TEST_CASE("prestige starts at zero") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     REQUIRE(sq.getPrestige() == 0);
 }
 
 TEST_CASE("addPrestige accumulates") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.addPrestige(10);
     sq.addPrestige(5);
     REQUIRE(sq.getPrestige() == 15);
@@ -307,7 +307,7 @@ TEST_CASE("addPrestige accumulates") {
 
 TEST_CASE("addSquad sets wing back-pointer on squad") {
     Wing w("Left");
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     w.addSquad(&sq);
     REQUIRE(sq.getWing() == &w);
     REQUIRE(w.getSquads().size() == 1);
@@ -315,7 +315,7 @@ TEST_CASE("addSquad sets wing back-pointer on squad") {
 
 TEST_CASE("removeSquad clears wing back-pointer") {
     Wing w("Left");
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     w.addSquad(&sq);
     w.removeSquad(&sq);
     REQUIRE(sq.getWing() == nullptr);
@@ -324,7 +324,7 @@ TEST_CASE("removeSquad clears wing back-pointer") {
 
 TEST_CASE("Wing::disband clears back-pointers on all squads") {
     Wing w("Left");
-    Squad a("Alpha", true), b("Beta", false);
+    Squad a("Alpha"), b("Beta");
     w.addSquad(&a);
     w.addSquad(&b);
     w.disband();
@@ -362,14 +362,14 @@ TEST_CASE("AUnit: holdTurns INT_MAX never decrements to 0") {
 // ── Hold order: Squad ─────────────────────────────────────────────────────────
 
 TEST_CASE("Squad: holdTurns defaults to 0, tickHold returns false") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     REQUIRE(sq.getHoldTurns() == 0);
     REQUIRE(sq.tickHold() == false);
     REQUIRE(sq.getHoldTurns() == 0);
 }
 
 TEST_CASE("Squad: tickHold returns true and decrements while holdTurns > 0") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.setHoldTurns(2);
     REQUIRE(sq.tickHold() == true);  REQUIRE(sq.getHoldTurns() == 1);
     REQUIRE(sq.tickHold() == true);  REQUIRE(sq.getHoldTurns() == 0);
@@ -377,7 +377,7 @@ TEST_CASE("Squad: tickHold returns true and decrements while holdTurns > 0") {
 }
 
 TEST_CASE("Squad: holdTurns INT_MAX never decrements to 0") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     sq.setHoldTurns(INT_MAX);
     for (int i = 0; i < 100; ++i)
         REQUIRE(sq.tickHold() == true);
@@ -401,7 +401,7 @@ TEST_CASE("AUnit: squadId/squadName round-trip") {
 }
 
 TEST_CASE("leaveSquad clears the live squad pointer but not the persistent squadId") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     s.setSquadId(7);
     s.setSquadName("1st Cohort");
@@ -416,7 +416,7 @@ TEST_CASE("a break-triggered leaveSquad (Squad::removeMember) also preserves squ
     // Mirrors what Battlefield::moveUnits does when a unit breaks: it calls
     // leaveSquad(), which is Squad::removeMember() under the hood. The
     // persistent tag must survive exactly like the direct leaveSquad() case.
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     s.setSquadId(7);
     sq.removeMember(&s); // no-op, not a member yet — sanity
@@ -427,7 +427,7 @@ TEST_CASE("a break-triggered leaveSquad (Squad::removeMember) also preserves squ
 }
 
 TEST_CASE("setAlive(false) (death) also preserves squadId on the now-dead unit") {
-    Squad sq("Alpha", true);
+    Squad sq("Alpha");
     Soldier s(REDTEAM);
     s.setSquadId(7);
     sq.addMember(&s);

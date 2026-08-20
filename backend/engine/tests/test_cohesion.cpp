@@ -25,7 +25,7 @@ TEST_CASE("cohesion: rank-1 squad members get the tier; a loner on the same side
     REQUIRE(enHex != nullptr);
 
     // Squad must outlive its members (their dtors call leaveSquad()).
-    Squad alpha("Alpha", true);
+    Squad alpha("Alpha");
     Soldier sm0(REDTEAM), sm1(REDTEAM), sm2(REDTEAM);
     alpha.addMember(&sm0); sm0.setHex(redHex);
     alpha.addMember(&sm1); sm1.setHex(redHex);
@@ -65,7 +65,7 @@ static int grantedTierOnTerrain(TerrainType terrain) {
     Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(COH_RED_HEX)[0]);
     REQUIRE(enHex != nullptr);
 
-    Squad alpha("Alpha", true); // must outlive its members
+    Squad alpha("Alpha"); // must outlive its members
     Soldier sm0(REDTEAM), sm1(REDTEAM);
     sm0.setCohesion(100); sm1.setCohesion(100);
     alpha.addMember(&sm0); sm0.setHex(redHex);
@@ -108,7 +108,7 @@ static int zombieHpAfterCohesionAttack(bool squadded) {
     Hex* enHex = bf.hexGrid.getHex(bf.hexGrid.neighbors(COH_RED_HEX)[1]);
     REQUIRE(enHex != nullptr);
 
-    Squad alpha("Alpha", true); // must outlive its members
+    Squad alpha("Alpha"); // must outlive its members
     Soldier attacker(REDTEAM), buddy(REDTEAM);
     if (squadded) {
         alpha.addMember(&attacker);
