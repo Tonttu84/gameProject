@@ -1,5 +1,6 @@
 import { eventValenceFor, eventEligible, GARRISON_SORTIE_EVENTS } from './events.js'
 import { adjustResolve } from './garrison.js'
+import { findItem, grantItem } from './items.js'
 import {
   RAID_BASE_TARGETS,
   RAID_RANGE_JITTER,
@@ -431,6 +432,23 @@ export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
     if (slot) slot.countered = true
     entries.push('The muster is scattered — a blow that was coming will never fall.')
   }
+  // A magic item on the card (slice 6, 6-13) — generic, outside the type
+  // switch, the same shape as the modifierId lift below: ANY card carrying
+  // `reward.item` grants it, whatever it is typed as. Banners are not a KIND
+  // of raid; they are a kind of LOOT, and the second item kind must not need
+  // its own raid type either.
+  //
+  // No card in RAID_TYPES carries one today — the first banner comes down the
+  // event channel (the garrison's standard). This path exists because the
+  // acquisition rule is channel-agnostic: an item can arrive like any other
+  // magic item, and a card that wants to offer one is a row of config, not a
+  // code change.
+  if (opportunity.reward?.item) {
+    const row = findItem(opportunity.reward.item)
+    if (row && grantItem(campaign, opportunity.reward.item))
+      entries.push(`${row.name} is carried back with the plunder.`)
+  }
+
   // Standing forage pressure lifted (S3) — generic, outside the type switch:
   // ANY card carrying a modifierId removes that modifier by being won, whatever
   // it's typed as. The card itself is taken off the board by being resolved

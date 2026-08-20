@@ -19,7 +19,7 @@ exists to inform, not to make.
 | Starting army eats | ~12.4 t / turn |
 | Fates per turn | 3 slots, each a uniform draw |
 | Ungated draw pool | 26 events → each ~11.5% of a slot, 0.115 appearances/turn |
-| With every gate open | 33 events → 0.091 appearances/turn each |
+| With every gate open | 34 events → 0.088 appearances/turn each |
 | Enemy host | 721 units → a raid target is 22–50 units (mean 36) |
 | Scouting costs | 200 pts a new target, 50 pts a reveal |
 
@@ -70,6 +70,7 @@ one row per rung. Food in tonnes; blank means the outcome does not touch that co
 | The Garrison Turns Its Back `garrison_spurned` | gated draw (resolve ≤33) | 2 | — |  |  |  |  | Soldier ×0.97 |  |  |
 | Stores from the Wall `garrison_stores` | gated draw (resolve ≥67) | 1 | — | +2 |  |  |  |  |  |  |
 | The Garrison's Paychest `garrison_paychest` | gated draw (resolve ≥67) | 1 | — |  |  | +75 |  |  |  |  |
+| The Standard Comes Down `garrison_standard` | gated draw (resolve ≥75) | 3 | — |  |  |  |  |  |  | item: The Unbroken Line (fearless) |
 | A Sally in the Night `garrison_night_sally` | gated draw (resolve ≥67) | 3 | — |  |  |  |  |  | 0.92 |  |
 | A Chance to Mend the Bond `garrison_recovery` | gated draw (resolve ≤33) | 2 | Send stores and stand the watch with them | −2 |  |  |  |  |  | resolve +15 |
 | A Chance to Mend the Bond `garrison_recovery` | gated draw (resolve ≤33) | 2 | Turn away — you have your own to feed |  |  |  |  |  |  | resolve -10 |

@@ -3,6 +3,7 @@ import {
   GARRISON_SORTIE_EVENTS,
   SIEGE_SPINE,
 } from './events.js'
+import { findItem } from './items.js'
 import {
   AUGURY_SLOTS,
   ENEMY_ARMY,
@@ -97,6 +98,21 @@ const addInto = (acc, effect) => {
     case 'flag':
       acc.notes.push(`flag ${effect.flag ?? ''}`.trim())
       break
+    case 'item': {
+      // A magic item (slice 6). Priced as a NOTE rather than a number, and
+      // deliberately: it grants no resource and no bodies, so any figure here
+      // would be invented. What the author needs to see on the sheet is which
+      // unique relic a fate hands over and what it does — the abilities line is
+      // the closest thing to its cost, since ability strength is what the
+      // balancing pass will argue about.
+      const row = findItem(effect.itemId)
+      acc.notes.push(
+        row
+          ? `item: ${row.name}${row.abilities?.length ? ` (${row.abilities.join(', ')})` : ''}`
+          : `item: ${effect.itemId}`,
+      )
+      break
+    }
     case 'multi':
       for (const sub of effect.effects ?? []) addInto(acc, sub)
       break

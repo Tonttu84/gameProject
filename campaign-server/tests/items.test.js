@@ -12,7 +12,14 @@ import {
   squadAbilities,
   bindItemToSquad,
 } from '../services/items.js'
-import { ITEM_CATALOG, SQUAD_RANKS, SQUAD_BANNER_RANK } from '../utils/campaignConfig.js'
+import {
+  ITEM_CATALOG,
+  SQUAD_RANKS,
+  SQUAD_BANNER_RANK,
+  GARRISON_BANNER_RESOLVE,
+} from '../utils/campaignConfig.js'
+import { applyEffect, describeEffect, eventEligible, EVENT_POOL } from '../services/events.js'
+import { applyRaidReward } from '../services/raid.js'
 
 // Slice 6's item store and banner tier (docs/CAMPAIGN_PLAN.md 6-8..6-14).
 
@@ -189,5 +196,81 @@ describe('binding', () => {
     const target = seasoned()
     const campaign = campaignWith({ items: [], squads: [target] })
     expect(bindItemToSquad(campaign, target, 'banner_of_nothing').error).toMatch(/no such item/)
+  })
+})
+
+describe('acquisition (6-13) — channel-agnostic', () => {
+  test('an event effect puts a won item in the store', () => {
+    const campaign = campaignWith()
+    const log = applyEffect(campaign, { type: 'item', itemId: BANNER.id })
+    expect(campaign.items).toEqual([BANNER.id])
+    expect(log.join(' ')).toContain(BANNER.name)
+  })
+
+  test('a raid card carrying reward.item grants it, whatever the card is typed as', () => {
+    // The generic tail, not a raid TYPE: banners are a kind of loot, not a kind
+    // of raid, and the second item kind must not need its own raid type either.
+    const campaign = campaignWith({
+      resources: { food: 0, materials: 0, gold: 0, horses: 0 },
+    })
+    const entries = applyRaidReward(
+      campaign,
+      { type: 'seize_horses', reward: { horses: 0, item: BANNER.id } },
+      {},
+    )
+    expect(campaign.items).toEqual([BANNER.id])
+    expect(entries.join(' ')).toContain(BANNER.name)
+  })
+
+  test('a second grant of the same item is refused through EITHER channel', () => {
+    const campaign = campaignWith({ items: [BANNER.id] })
+    applyEffect(campaign, { type: 'item', itemId: BANNER.id })
+    expect(campaign.items).toEqual([BANNER.id])
+  })
+
+  test('a fate granting an item already held is never DRAWN', () => {
+    // The other half of uniqueness. The defensive refusal above is what catches
+    // a SCHEDULED event, which bypasses the draw entirely; this is what stops
+    // the offer being made at all.
+    const fate = { id: 'x', effect: { type: 'item', itemId: BANNER.id } }
+    expect(eventEligible(fate, campaignWith())).toBe(true)
+    expect(eventEligible(fate, campaignWith({ items: [BANNER.id] }))).toBe(false)
+    expect(
+      eventEligible(fate, campaignWith({ squads: [seasoned({ banner: BANNER.id })] })),
+    ).toBe(false)
+  })
+
+  test('the card SAYS what it is offering — no card shows flavour alone', () => {
+    const lines = describeEffect({ type: 'item', itemId: BANNER.id })
+    expect(lines.join(' ')).toContain(BANNER.name)
+  })
+
+  test('an item whose row has left the catalog still renders and never throws', () => {
+    expect(describeEffect({ type: 'item', itemId: 'banner_retired' })).toEqual(['A magic item'])
+    const campaign = campaignWith()
+    expect(() => applyEffect(campaign, { type: 'item', itemId: 'banner_retired' })).not.toThrow()
+    expect(campaign.items).toEqual([])
+  })
+})
+
+describe('the garrison standard (6-13)', () => {
+  const fate = EVENT_POOL.find((e) => e.id === 'garrison_standard')
+
+  test('exists, and hands over the banner', () => {
+    expect(fate).toBeDefined()
+    expect(fate.effect).toEqual({ type: 'item', itemId: BANNER.id })
+  })
+
+  test('is gated a band above the ordinary garrison gifts', () => {
+    expect(fate.requires.minResolve).toBe(GARRISON_BANNER_RESOLVE)
+    const ordinary = EVENT_POOL.filter(
+      (e) => e.id !== fate.id && e.requires?.minResolve != null,
+    ).map((e) => e.requires.minResolve)
+    expect(Math.max(...ordinary)).toBeLessThan(GARRISON_BANNER_RESOLVE)
+  })
+
+  test('a campaign at the starting resolve cannot draw it', () => {
+    expect(eventEligible(fate, { garrison: { resolve: GARRISON_BANNER_RESOLVE - 1 } })).toBe(false)
+    expect(eventEligible(fate, { garrison: { resolve: GARRISON_BANNER_RESOLVE } })).toBe(true)
   })
 })

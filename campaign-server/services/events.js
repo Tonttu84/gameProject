@@ -1,8 +1,11 @@
 import {
   EVENT_RUNG_BY_BAND,
   GARRISON_RESOLVE_START,
+  GARRISON_BANNER_RESOLVE,
+  ITEM_CATALOG,
 } from '../utils/campaignConfig.js'
 import { adjustResolve } from './garrison.js'
+import { findItem, grantItem, holdsItem } from './items.js'
 
 // Fortnightly event pool + effect application. Events reach the player only
 // as the augur's prophecy (services/augury.js): each turn one TRUE event and
@@ -182,6 +185,13 @@ export const EVENT_POOL = [
   // use to men who cannot get out to spend it, so a garrison that trusts you
   // sends its paychest over the wall to the army that can put it to work.
   { id: 'garrison_paychest', title: 'The Garrison\'s Paychest', description: 'Karrowgate\'s paymaster has a chest of coin and nowhere inside the walls to spend it. Trusting you to buy what the siege denies them, the garrison lowers it to your quartermasters. +75 gold.', severity: 1, effect: { type: 'gold', delta: +75 }, requires: { minResolve: 67 } },
+  // The garrison's own standard (slice 6, 6-13). A band above the ordinary
+  // garrison gifts at 67: food, coin and a night sally are things a grateful
+  // garrison does often — parting with the standard they have defended is what
+  // they do when they would follow you out of the gate. Once won it can never
+  // be drawn again, because eventEligible drops any fate granting an item the
+  // campaign already holds.
+  { id: 'garrison_standard', title: 'The Standard Comes Down', description: 'At first light the defenders lower their own standard from the gatehouse — the one they have fought under since the lines closed — and send it out to you. It is not a gift they can make twice, and they make it without being asked.', severity: 3, effect: { type: 'item', itemId: ITEM_CATALOG.find((r) => r.kind === 'banner').id }, requires: { minResolve: GARRISON_BANNER_RESOLVE } },
   { id: 'garrison_night_sally', title: 'A Sally in the Night', description: 'Needing no prompting from you, the garrison throws open a postern in the small hours and falls on the sleeping siege lines; by dawn the enemy\'s forward works are a shambles of cut ropes and dead men.', severity: 3, effect: { type: 'enemy_losses', factor: 0.92 }, requires: { minResolve: 67 } },
   {
     id: 'garrison_recovery', title: 'A Chance to Mend the Bond', description: 'The garrison\'s trust has worn thin, but a grey-haired captain sends word over the wall: stand with them now, and the old faith might be rekindled.', severity: 2,
@@ -368,6 +378,17 @@ const livingCharactersOfType = (ctx, type) =>
 // truth nor the decoy until its trigger is met, so a chain's later beat can't
 // surface early and a state-flavoured fate can't fire on the wrong army.
 export const eventEligible = (event, ctx = {}) => {
+  // Uniqueness (6-13) is checked FIRST, above the no-requires early-out: a
+  // fate granting an item the campaign already holds must never be drawn, and
+  // an item fate need not carry a `requires` block at all. Putting this below
+  // the early return made a banner with no prerequisites offerable twice — the
+  // exact duplicate a unique relic cannot survive.
+  //
+  // It lives in the shared gate rather than in the banner event because
+  // uniqueness belongs to the ITEM, not to the channel offering it. Absent item
+  // context (the creation-time draw) reads as holding nothing, which is exactly
+  // what a campaign that does not exist yet holds.
+  if (event.effect?.type === 'item' && holdsItem(ctx, event.effect.itemId)) return false
   const req = event.requires
   if (!req) return true
   const day = ctx.day ?? 1
@@ -433,6 +454,11 @@ export const eventValence = (effect) => {
     // its sibling effects in a bundle carry the fate's actual mood.
     case 'garrison':
       return 'neutral'
+    // A won item is a gain, always: nothing in the catalog is a curse, and if
+    // one ever is, it says so by carrying its own valence rather than by making
+    // this classifier guess from the row.
+    case 'item':
+      return 'good'
     // A standing forage pressure (S3). The two targets read in OPPOSITE
     // directions: more of the player's own capacity is a gain, but more enemy
     // drain strips the shared rings faster, so it's a loss. Both levers point
@@ -518,6 +544,16 @@ export const describeEffect = (effect) => {
       return [`The enemy host ×${effect.factor}`]
     case 'enemy_reveal':
       return ['The enemy host lies open to your scouts for a turn']
+    // A magic item (slice 6, decision 15). The name and what it does, because
+    // "no card shows flavour alone" — a raid card offering a banner has to SAY
+    // so on the board, and an event granting one has to state it. An id whose
+    // row has left the catalog prints the generic line rather than throwing:
+    // this runs on cards already in front of a player.
+    case 'item': {
+      const row = findItem(effect.itemId)
+      if (!row) return ['A magic item']
+      return [`${row.name} — ${row.blurb}`]
+    }
     case 'forage_modifier': {
       if (effect.target === 'enemyDrain')
         return [
@@ -658,6 +694,18 @@ export function applyEffect(campaign, effect) {
     const next = effect.delta !== undefined ? cur + effect.delta : (effect.value ?? 1)
     if (flags instanceof Map) flags.set(effect.name, next)
     else flags[effect.name] = next
+  } else if (effect.type === 'item') {
+    // A won item lands in the STORE first, always (decision 17): acquisition
+    // and assignment are separate actions, and the store is the first step of
+    // item handling rather than a fallback for when nothing qualifies yet.
+    //
+    // grantItem refuses a duplicate, which is the defensive half of uniqueness
+    // — the draw-time filter in eventEligible is what stops the offer being
+    // made at all. Both exist because a SCHEDULED event bypasses the draw.
+    const row = findItem(effect.itemId)
+    if (grantItem(campaign, effect.itemId)) {
+      log.push(`${row.name} is carried into camp, and set aside until you say where it goes.`)
+    }
   } else if (effect.type === 'forage_modifier') {
     // Standing forage pressure (S3): push a modifier onto forage.modifiers,
     // where resolveForaging folds it into the player's capacity or the enemy's

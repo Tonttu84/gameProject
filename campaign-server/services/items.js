@@ -51,6 +51,11 @@ export const storedItemsOfKind = (campaign, kind) =>
 export const grantItem = (campaign, itemId) => {
   if (!findItem(itemId)) return false
   if (holdsItem(campaign, itemId)) return false
+  // Degrade safely on a campaign with no store at all — the same convention
+  // applyEffect's `flag` and `forage_modifier` branches use, and it matters for
+  // the same reason: the structural tests sweep every authored fate through
+  // applyEffect against skeleton campaigns.
+  if (!campaign.items) campaign.items = []
   campaign.items.push(itemId)
   return true
 }
