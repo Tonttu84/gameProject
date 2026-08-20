@@ -118,6 +118,16 @@ screen exists.
 first screen that is a design rather than a mechanic, so it is exactly what the `grilling` skill
 in CLAUDE.md is for. Do not start from the contents list and guess a layout.
 
+**One 13 decision already taken (user, 2026-08-20): AVAILABILITY RENDERS ONLY WHAT EXISTS —
+free, or out raiding today.** The screen does NOT get decision 12's "tied up for X turns" state,
+and 12 does not fold into this slice. The reason is 12's own: a tie-up and the event that REQUIRES
+a squad are two halves of one readable trade and must ship together, or the cost lands
+uncompensated. Building the display half here would mean rendering a state nothing in the game can
+put a squad into. Also rejected: rendering all three states with the third unreachable — a branch
+no test can reach through the game is how a stale reader survives (the 4c lesson,
+`8027892 fix(campaign): stop a self-skipping test from hiding a stale reader`). When 12 lands, the
+screen learns the third state then.
+
 After it: 17's storage page (which `ItemStorePanel` is the deliberately-plain placeholder for).
 
 **What 6 leaves for the next slice to know:**
