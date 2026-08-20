@@ -3152,6 +3152,56 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
     expect(input.player_placement[0].squad_mods).toBeUndefined()
   })
 
+  // Slice 6: a bound banner reaches the engine as `squad_abilities` on the same
+  // entry. The engine learns the word `fearless` and never the word `banner`,
+  // so these assert the WORD arrives — and that a forged one cannot.
+  test('a bound banner reaches the engine as squad_abilities', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne(
+      { _id: c.id, 'squads.id': 1 },
+      { $set: { 'squads.$.banner': BANNER.id, 'squads.$.prestige': seasoned } },
+    )
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }],
+    })
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].squad_abilities).toEqual(BANNER.abilities)
+    // The engine must never be told what a banner IS.
+    expect(JSON.stringify(input)).not.toContain('banner')
+  })
+
+  test('a squad with no bound banner sends no squad_abilities at all', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }],
+    })
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].squad_abilities).toBeUndefined()
+  })
+
+  test('a forged squad_abilities in the request body is discarded', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, squad_id: 1, squad_abilities: ['fearless'] },
+      ],
+    })
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].squad_abilities).toBeUndefined()
+  })
+
   test('an unknown squad is a 400, not a crash', async () => {
     const { body: c } = await createCampaign()
     await takeUpgrade(c.id, 99, 'deeper_ranks').expect(400)

@@ -175,7 +175,16 @@ export const planAttach = (campaign, characterId, squadId) => {
 // Nothing here is ever taken from the request. The client says WHERE a loose
 // character stands; it never says who they are, how they fight, or what
 // modifiers they carry. That is the same rule squad_mods follows (4b).
-export const characterEntryFor = (character, { q, r }) => {
+// `abilities` is what the character's SQUAD grants them — a bound banner's gift
+// (slice 6). It is passed in rather than looked up here because this module
+// knows nothing about items, and the caller already has the squad in hand.
+//
+// An attached character IS covered by their squad's banner: 5-0's standing rule
+// is that a character is a special kind of troop and follows every rule troops
+// follow, and the banner's own rule is that it grants its ability to all units
+// in the squad. Empty for a loose character, who is in no squad to be covered
+// by — which is the same membership scoping the engine applies (6-6).
+export const characterEntryFor = (character, { q, r }, abilities = []) => {
   const mods = characterMods(character)
   return {
     unit_type: character.type,
@@ -186,6 +195,7 @@ export const characterEntryFor = (character, { q, r }) => {
     // undefined so the entry always states the intent explicitly.
     avoids_melee: character.hangBack ?? false,
     ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
+    ...(abilities.length > 0 ? { squad_abilities: abilities } : {}),
   }
 }
 

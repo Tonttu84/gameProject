@@ -18,7 +18,7 @@ import {
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planReinforcement, applyReinforcement, looseRoster } from '../services/squadReinforce.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
-import { bindItemToSquad } from '../services/items.js'
+import { bindItemToSquad, squadAbilities } from '../services/items.js'
 import {
   mintCharacter,
   planAttach,
@@ -512,14 +512,32 @@ router.post('/:id/battles', async (req, res) => {
   // anyway — AUnit::MAX_STAT_MOD — but this is the door it never gets through.)
   // Entries with no squad, or a squad with no stat rows, are passed through
   // untouched so the JSON is unchanged for an unupgraded army.
+  //
+  // A bound banner's ABILITY rides the same road (slice 6, 6-7) and under the
+  // same rule: server-attached, never trusted from the body. The engine learns
+  // the ability name and never that a banner exists — the translation happens
+  // here, campaign-side, where the item catalog is.
   const modsBySquad = new Map(
     campaign.squads.map((squad) => [squad.id, statMods(squad)]),
   )
+  const abilitiesBySquad = new Map(
+    campaign.squads.map((squad) => [squad.id, squadAbilities(squad)]),
+  )
+  // An attached character is covered by their squad's banner (5-0: a character
+  // is a special kind of troop). A loose one is in no squad to be covered by.
+  const abilitiesFor = (character) =>
+    character?.squadId == null ? [] : (abilitiesBySquad.get(character.squadId) ?? [])
   const moddedPlacement = placement.map((entry) => {
     const mods = entry.squad_id == null ? null : modsBySquad.get(entry.squad_id)
-    const base = !mods || Object.keys(mods).length === 0
+    const abilities = entry.squad_id == null ? null : abilitiesBySquad.get(entry.squad_id)
+    const withoutMods = !mods || Object.keys(mods).length === 0
       ? (() => { const { squad_mods: _forged, ...clean } = entry; return clean })()
       : { ...entry, squad_mods: mods }
+    // Same treatment for a forged squad_abilities: overwritten when the squad
+    // has one, stripped when it does not.
+    const base = !abilities || abilities.length === 0
+      ? (() => { const { squad_abilities: _forgedAbilities, ...clean } = withoutMods; return clean })()
+      : { ...withoutMods, squad_abilities: abilities }
     // A character's own fields are stamped from the RECORD, never taken from
     // the request — the same rule squad_mods follows. Otherwise a client could
     // send avoids_melee for someone it does not own, or modifiers nobody earned.
@@ -528,7 +546,7 @@ router.post('/:id/battles', async (req, res) => {
       return noFlag
     }
     const character = livingCharacters(campaign).find((c) => c.id === entry.character_id)
-    return characterEntryFor(character, { q: entry.q, r: entry.r })
+    return characterEntryFor(character, { q: entry.q, r: entry.r }, abilitiesFor(character))
   })
 
   // Attached characters ride along AUTOMATICALLY (5-8) — no separate placement
@@ -542,7 +560,7 @@ router.post('/:id/battles', async (req, res) => {
     if (!hex) continue
     const squad = campaign.squads.find((s) => s.id === character.squadId)
     moddedPlacement.push({
-      ...characterEntryFor(character, { q: hex.q, r: hex.r }),
+      ...characterEntryFor(character, { q: hex.q, r: hex.r }, abilitiesFor(character)),
       squad_id: character.squadId,
       ...(squad?.name ? { squad_name: squad.name } : {}),
     })
@@ -750,12 +768,16 @@ router.post('/:id/raids/launch', async (req, res) => {
     // so a squad fights upgraded wherever it fights rather than only in the
     // pitched battle. Omitted entirely when the squad has none, keeping the
     // placement JSON identical to before for an unupgraded charter.
+    // A bound banner comes on the raid for the same reason its upgrades do
+    // (6-7): a squad fights with what it has, wherever it fights.
     for (const squad of squads) {
       const mods = statMods(squad)
+      const abilities = squadAbilities(squad)
       placer.addBlock(squad.composition, {
         squad_id: squad.id,
         squad_name: squad.name,
         ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
+        ...(abilities.length > 0 ? { squad_abilities: abilities } : {}),
       })
     }
     // Attached characters ride on the raid too, at full risk (5-8). No per-raid
@@ -770,7 +792,7 @@ router.post('/:id/raids/launch', async (req, res) => {
         const hex = raidPlacement.find((e) => e.squad_id === squad.id)
         if (!hex) continue
         raidPlacement.push({
-          ...characterEntryFor(character, { q: hex.q, r: hex.r }),
+          ...characterEntryFor(character, { q: hex.q, r: hex.r }, squadAbilities(squad)),
           squad_id: squad.id,
           squad_name: squad.name,
         })
