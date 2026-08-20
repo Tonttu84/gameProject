@@ -27,10 +27,10 @@ import {
   slotsUsed,
   upgradeSlotCost,
   picksAvailable,
-  hasBanner,
   findUpgrade,
   reinforceSurcharge,
 } from './squadUpgrades.js'
+import { bannerTier, squadBanner, storedItems } from './items.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
@@ -359,6 +359,14 @@ export async function campaignView(campaign) {
       alive: c.alive,
       diedDay: c.diedDay ?? null,
     })),
+    // The item STORE (slice 6): everything held that is on nothing. Rows are
+    // sent RESOLVED, like upgrades, because the client has no copy of the
+    // catalog — and `kind`/`target` ride along because the slot the player
+    // clicked is what filters this list (6-14), so the client needs to know
+    // what each row IS, not only what it is called.
+    items: storedItems(campaign).map(({ id, kind, name, blurb, target }) => ({
+      id, kind, name, blurb, target,
+    })),
     squads: campaign.squads.map((squad) => ({
       id: squad.id,
       name: squad.name,
@@ -392,7 +400,14 @@ export async function campaignView(campaign) {
       // how many are still unfilled, and whether the banner has been reached.
       upgradeSlots: slotsFor(squad),
       upgradePicks: picksAvailable(squad),
-      banner: hasBanner(squad),
+      // The TIER word, not a boolean (slice 6, 6-8): 'plain' | 'basic' | 'item'.
+      // Derived on every read, so a retuned rank ladder reaches campaigns in
+      // flight. `bannerItem` is the bound relic resolved, or null — sent like
+      // upgrades are, because the client has no copy of the catalog.
+      banner: bannerTier(squad),
+      bannerItem: squadBanner(squad)
+        ? (({ id, name, blurb }) => ({ id, name, blurb }))(squadBanner(squad))
+        : null,
       // The pending draft, or null. Resolved the same way; `rank` is the rung
       // that paid for it, which is what the panel headlines the choice with.
       // `slots` rides along per option (4d): a row that costs two would

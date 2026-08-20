@@ -1,11 +1,9 @@
 import { getRandom } from '../utils/dice.js'
 import { squadRank } from '../utils/capabilities.js'
 import {
-  SQUAD_RANKS,
   SQUAD_UPGRADE_POOL,
   SQUAD_UPGRADE_SLOTS_BY_RANK,
   SQUAD_UPGRADE_DRAW,
-  SQUAD_BANNER_RANK,
 } from '../utils/campaignConfig.js'
 
 // Squad upgrades — the squad overhaul's slice 4a (docs/CAMPAIGN_PLAN.md
@@ -80,11 +78,10 @@ export const picksAvailable = (squad) => Math.max(0, slotsFor(squad) - slotsUsed
 // against.
 const canAfford = (squad, row) => MAX_SLOTS - slotsUsed(squad) >= upgradeSlotCost(row)
 
-// The banner is a rank fact, not an inventory one: at or above the banner rung,
-// a squad has it. Compared on PRESTIGE against that rung's threshold rather
-// than on the rank word, so it stays true for every rank above it too.
-const BANNER_MIN = SQUAD_RANKS.find((r) => r.label === SQUAD_BANNER_RANK)?.min ?? Infinity
-export const hasBanner = (squad) => (squad?.prestige ?? 0) >= BANNER_MIN
+// hasBanner MOVED to services/items.js in slice 6, where the tier it feeds
+// (plain / basic / item) and the item catalog live. It stayed a rank fact —
+// only its home changed — and it is not re-exported from here: one rule, one
+// place, which is the whole reason the move was worth making.
 
 // What this charter could still draw: its archetype's rows, minus what it
 // already holds, minus anything its remaining ladder cannot pay for. A squad

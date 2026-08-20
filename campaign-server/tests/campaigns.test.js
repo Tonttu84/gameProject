@@ -22,7 +22,10 @@ import {
   SQUAD_RANKS,
   SQUAD_UPGRADE_POOL,
   SQUAD_ARCHETYPES,
+  ITEM_CATALOG,
 } from '../utils/campaignConfig.js'
+
+const BANNER = ITEM_CATALOG.find((row) => row.kind === 'banner')
 
 // Stub the engine service — these tests cover the campaign layer, not the
 // C++ binary. getInfo feeds buildEnemyPlacement's zone geometry.
@@ -1318,9 +1321,14 @@ describe('POST /api/campaigns/:id/battles', () => {
       // Slice 4d added upgradeSlotsUsed: with a row that costs two slots,
       // "honours held" and "slots spent" are different numbers for the first
       // time, so the panel is told both rather than counting the list itself.
+      // Slice 6 turned `banner` from a boolean into the TIER word and added
+      // `bannerItem`, the bound relic resolved: a fresh charter is 'plain',
+      // which is a banner it genuinely carries and one that does nothing, not
+      // an absence.
       const fresh = {
         prestige: 0, rank: 'Untested', reinforcedToday: false, reinforceSurcharge: {},
-        upgrades: [], upgradeSlots: 0, upgradeSlotsUsed: 0, upgradePicks: 0, banner: false,
+        upgrades: [], upgradeSlots: 0, upgradeSlotsUsed: 0, upgradePicks: 0,
+        banner: 'plain', bannerItem: null,
         upgradeOffer: null,
       }
       expect(c.squads).toEqual([
@@ -2954,7 +2962,7 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
     for (const squad of view.squads) {
       expect(squad.upgradeSlots).toBe(0)
       expect(squad.upgradeOffer).toBeNull()
-      expect(squad.banner).toBe(false)
+      expect(squad.banner).toBe('plain')
     }
   })
 
@@ -3155,8 +3163,58 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
   test('Seasoned grants the banner and still only one pick', async () => {
     const c = await promoteAndTurn(1, seasoned)
     const cohort = (await getView(c.id)).squads.find((s) => s.id === 1)
-    expect(cohort.banner).toBe(true)
+    expect(cohort.banner).toBe('basic')
     expect(cohort.upgradeSlots).toBe(1)
+  })
+
+  // ── binding a banner (slice 6, 6-10/6-11/6-14) ────────────────────────────
+  //
+  // The route is the trust boundary; the UI's greying-out is a courtesy. So
+  // every refusal below is tested here, against the server, rather than being
+  // left to the panel.
+
+  const bindBanner = (id, squadId, itemId) =>
+    auth(api.post(`/api/campaigns/${id}/squads/${squadId}/banner`)).send({ itemId })
+
+  const stock = (id, itemId) => Campaign.findByIdAndUpdate(id, { items: [itemId] })
+
+  test('a Seasoned squad binds a banner from the store, and the store empties', async () => {
+    const c = await promoteAndTurn(1, seasoned)
+    await stock(c.id, BANNER.id)
+    const { body: view } = await bindBanner(c.id, 1, BANNER.id).expect(200)
+    const cohort = view.squads.find((s) => s.id === 1)
+    expect(cohort.banner).toBe('item')
+    expect(cohort.bannerItem).toMatchObject({ id: BANNER.id, name: BANNER.name })
+    expect(view.items).toEqual([])
+  })
+
+  test('a squad below the banner rung is refused — the basic banner opens the slot', async () => {
+    const c = await promoteAndTurn(1, blooded)
+    await stock(c.id, BANNER.id)
+    await bindBanner(c.id, 1, BANNER.id).expect(400)
+    const cohort = (await getView(c.id)).squads.find((s) => s.id === 1)
+    expect(cohort.banner).toBe('plain')
+  })
+
+  test('bound is bound — a second banner cannot displace the first', async () => {
+    const c = await promoteAndTurn(1, seasoned)
+    await stock(c.id, BANNER.id)
+    await bindBanner(c.id, 1, BANNER.id).expect(200)
+    // Put it back in the store by hand: even then, the charter refuses.
+    await stock(c.id, BANNER.id)
+    await bindBanner(c.id, 1, BANNER.id).expect(400)
+  })
+
+  test('an item that is not in the store cannot be bound', async () => {
+    const c = await promoteAndTurn(1, seasoned)
+    await bindBanner(c.id, 1, BANNER.id).expect(400)
+  })
+
+  test('an unknown item or squad is a 400, not a crash', async () => {
+    const c = await promoteAndTurn(1, seasoned)
+    await stock(c.id, BANNER.id)
+    await bindBanner(c.id, 1, 'banner_of_nothing').expect(400)
+    await bindBanner(c.id, 99, BANNER.id).expect(400)
   })
 
   test('an upgrade reaches the numbers the reinforcement gates use', async () => {

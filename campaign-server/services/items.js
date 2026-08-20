@@ -1,0 +1,111 @@
+import { ITEM_CATALOG, SQUAD_RANKS, SQUAD_BANNER_RANK } from '../utils/campaignConfig.js'
+
+// Magic items and the banner tier — docs/CAMPAIGN_PLAN.md, SLICE 6.
+//
+// The shape the interview settled, because a later reader will otherwise
+// "simplify" it back:
+//   - The STORE (campaign.items) holds every item NOT currently held; a bound
+//     item lives on its holder (squads[].banner), the same convention 5a used
+//     for characters[].items. So "in the store" means exactly "on nothing".
+//   - Acquisition is CHANNEL-AGNOSTIC (6-13). grantItem is the one chokepoint;
+//     a raid reward and an event effect both come through it, and neither knows
+//     anything the other doesn't.
+//   - Uniqueness is a property of the ITEM, never of the channel that offers
+//     it. holdsItem() is what a draw filters on, and grantItem refuses a
+//     duplicate defensively so a scheduled event cannot sneak one through.
+//   - The banner TIER is derived, never stored (6-8): retune the rank ladder
+//     and every squad's tier follows, because nothing froze it at the moment of
+//     crossing.
+
+export const findItem = (id) => ITEM_CATALOG.find((row) => row.id === id) ?? null
+
+// Mongoose arrays are array-likes and plain tests pass arrays; one reader
+// covers both, and a campaign written before the field existed reads as empty.
+const storeIds = (campaign) => [...(campaign?.items ?? [])]
+
+// Every item the campaign holds ANYWHERE — in the store or bound to something.
+// The uniqueness check has to see both, or a banner already flying over a squad
+// could be won a second time.
+export const heldItemIds = (campaign) => [
+  ...storeIds(campaign),
+  ...[...(campaign?.squads ?? [])].map((squad) => squad?.banner).filter(Boolean),
+]
+
+export const holdsItem = (campaign, itemId) => heldItemIds(campaign).includes(itemId)
+
+// The store, resolved for display. An id whose row has left the catalog
+// degrades to nothing rather than throwing — the archetypeOf convention, so a
+// campaign in flight still loads after a catalog edit.
+export const storedItems = (campaign) => storeIds(campaign).map(findItem).filter(Boolean)
+
+// What a slot of this kind can be filled from right now. The SLOT declares what
+// it accepts and the store filters to that (6-14) — storage itself stays
+// ignorant of what kinds exist, which is what lets a character's head slot use
+// this same function later.
+export const storedItemsOfKind = (campaign, kind) =>
+  storedItems(campaign).filter((row) => row.kind === kind)
+
+// Put a won item in the store. Returns true if it landed, false if the campaign
+// already holds it — the defensive half of uniqueness (the draw-time filter is
+// the other half, and is what stops the offer appearing at all).
+export const grantItem = (campaign, itemId) => {
+  if (!findItem(itemId)) return false
+  if (holdsItem(campaign, itemId)) return false
+  campaign.items.push(itemId)
+  return true
+}
+
+// ─── The banner tier ────────────────────────────────────────────────────────
+// Three rungs (decision 10): every squad carries a PLAIN banner, which does
+// nothing and ships inert because spell cost does not exist yet; the Seasoned
+// rung grants a BASIC one, whose only job today is opening the item slot (its
+// bonus is deferred ON PURPOSE by decision 16 — do not invent one); a bound
+// relic is the ITEM tier, and REPLACES the basic banner rather than stacking.
+const BANNER_MIN = SQUAD_RANKS.find((r) => r.label === SQUAD_BANNER_RANK)?.min ?? Infinity
+
+// True at or above the banner rung. Compared on PRESTIGE against the rung's
+// threshold rather than on the rank word, so it stays true for every rank above
+// it too. This is what OPENS the item slot.
+export const hasBanner = (squad) => (squad?.prestige ?? 0) >= BANNER_MIN
+
+export const bannerTier = (squad) => {
+  if (squad?.banner) return 'item'
+  return hasBanner(squad) ? 'basic' : 'plain'
+}
+
+// The item bound to this charter, resolved, or null.
+export const squadBanner = (squad) => (squad?.banner ? findItem(squad.banner) : null)
+
+// The ability names a squad's banner grants every body in it. Empty for the
+// plain and basic tiers — the basic banner's benefit is deferred, not missing.
+// This is the ONLY place the campaign layer turns a banner into engine words;
+// the engine never learns what a banner is (6-7).
+export const squadAbilities = (squad) => [...(squadBanner(squad)?.abilities ?? [])]
+
+// Bind an item to a squad. Refuses everything the UI also greys out, because
+// the server is the trust boundary and the UI is a courtesy:
+//   - an item that is not in the store (already bound, or never won)
+//   - an item that does not target a squad
+//   - a squad below the banner rung — the basic banner is what opens the slot
+//   - a squad that already carries a bound banner: bound is bound (decision
+//     10), and a bound banner never comes back to the store
+// Returns the resolved row on success, or an {error} the route turns into a 400.
+export const bindItemToSquad = (campaign, squad, itemId) => {
+  const row = findItem(itemId)
+  if (!row) return { error: 'no such item' }
+  if (row.target !== 'squad') return { error: 'that item does not go to a squad' }
+  if (!storeIds(campaign).includes(itemId)) return { error: 'that item is not in the store' }
+  if (!squad) return { error: 'no such squad' }
+  if (row.kind === 'banner') {
+    if (!hasBanner(squad)) return { error: `a squad must be ${SQUAD_BANNER_RANK} to carry a banner` }
+    if (squad.banner) return { error: 'that squad already carries a banner' }
+    squad.banner = itemId
+  } else {
+    return { error: 'that item has nowhere to go on a squad' }
+  }
+  // Out of the store for good: a permanent item leaves and never returns.
+  // Written as a filter rather than a splice-by-index so a store that somehow
+  // held the id twice still ends up clean.
+  campaign.items = storeIds(campaign).filter((id) => id !== itemId)
+  return { item: row }
+}

@@ -6,7 +6,6 @@ import {
   slotsUsed,
   upgradeSlotCost,
   picksAvailable,
-  hasBanner,
   eligibleUpgrades,
   drawUpgradeOffer,
   planUpgrade,
@@ -69,17 +68,14 @@ describe('the slot ladder', () => {
   // The interview's shape: Seasoned pays for the BANNER, not a pick, so it is
   // the one rung that grants no extra slot. A later reader "fixing" this to
   // 0/1/2/3/4 would silently hand out a fourth upgrade.
+  // The banner half of this rung moved to tests/items.test.js in slice 6, with
+  // hasBanner itself. What stays here is the slot arithmetic it is easy to
+  // "fix" wrongly: a later reader renumbering the ladder to 0/1/2/3/4 would
+  // silently hand out a fourth upgrade.
   test('Seasoned grants no extra slot — it grants the banner instead', () => {
     expect(slotsFor(squad({ prestige: prestigeFor('Seasoned') }))).toBe(
       slotsFor(squad({ prestige: prestigeFor('Blooded') })),
     )
-    expect(hasBanner(squad({ prestige: prestigeFor('Blooded') }))).toBe(false)
-    expect(hasBanner(squad({ prestige: prestigeFor('Seasoned') }))).toBe(true)
-  })
-
-  test('the banner stays granted at every rank above Seasoned', () => {
-    expect(hasBanner(squad({ prestige: prestigeFor('Renowned') }))).toBe(true)
-    expect(hasBanner(squad({ prestige: prestigeFor('Legendary') }))).toBe(true)
   })
 
   test('picks are slots minus what is already held, never negative', () => {
@@ -94,7 +90,6 @@ describe('the slot ladder', () => {
   test('a charter written before the field existed reads as empty, not broken', () => {
     expect(slotsFor({})).toBe(0)
     expect(picksAvailable({})).toBe(0)
-    expect(hasBanner({})).toBe(false)
     expect(squadUpgrades({})).toEqual([])
   })
 })

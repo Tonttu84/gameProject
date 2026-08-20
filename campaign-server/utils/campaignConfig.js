@@ -175,6 +175,49 @@ export const SQUAD_UPGRADE_SLOTS_BY_RANK = {
 // deliberate and must not be filled in by invention (see the slice-4 spec).
 export const SQUAD_BANNER_RANK = 'Seasoned'
 
+// ─── Magic items (docs/CAMPAIGN_PLAN.md, SLICE 6) ────────────────────────────
+//
+// ONE catalog for every kind of item, never a per-kind table (decision 17:
+// "build it for items in general and never for banners specifically"). A row
+// DECLARES what it may attach to and whether that attachment is permanent, so
+// the single assignment path asks the item rather than inferring anything from
+// its kind — the first re-assignable kind (character armour, 5-4/5-5) then
+// needs no new path.
+//
+// A stored item is a BARE CATALOG ID (6-9): no per-instance uid, because every
+// non-basic banner is unique in a campaign and a save is never migrated
+// (routes/campaigns.js culls any document from another schema or build). If a
+// duplicate-able kind ever arrives, the store grows a uid then.
+//
+//   kind       – free-form; the SLOT names what it accepts, storage stays
+//                ignorant of what kinds exist.
+//   target     – 'squad' | 'character'. Where it goes. Nothing attaches to an
+//                individual rank-and-file troop, and nothing should.
+//   permanent  – true means assignment is one-way: it leaves the store and
+//                never returns (decision 10, for banners).
+//   abilities  – the UnitAbility wire names this item grants every body in the
+//                squad, sent as `squad_abilities` on each placement entry.
+//                Banners grant ABILITIES, never flat stats (user, 2026-08-20).
+export const ITEM_CATALOG = [
+  {
+    id: 'banner_unbroken_line',
+    kind: 'banner',
+    name: 'The Unbroken Line',
+    blurb:
+      'Karrowgate\'s own standard, carried off the wall and put into your hands. ' +
+      'While it flies over them, the squad does not break.',
+    target: 'squad',
+    permanent: true,
+    abilities: ['fearless'],
+  },
+]
+
+// The resolve a grateful garrison must feel before it will part with its
+// standard (user, 2026-08-20). The ordinary garrison gifts sit at 67 — food,
+// coin and a night sally are things a grateful garrison does often. This is a
+// band above them: what they do when they would follow you out of the gate.
+export const GARRISON_BANNER_RESOLVE = 75
+
 // Rows offered at each pick; the player keeps ONE, permanently. Fewer are
 // offered when fewer remain eligible — the draw never pads itself.
 export const SQUAD_UPGRADE_DRAW = 3

@@ -18,6 +18,7 @@ import {
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planReinforcement, applyReinforcement, looseRoster } from '../services/squadReinforce.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
+import { bindItemToSquad } from '../services/items.js'
 import {
   mintCharacter,
   planAttach,
@@ -1135,6 +1136,41 @@ router.post('/:id/squads/:squadId/upgrades', async (req, res) => {
 
   const entries = applyUpgrade(campaign, squad, plan)
   campaign.log.push({ day: campaign.day, entries })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// Bind a magic item from the store to a squad (slice 6, decisions 6-10, 6-14).
+// Body: `{ itemId }`.
+//
+// PERMANENT, and the one-way-ness is the point: a bound banner leaves the store
+// and never returns (decision 10). The client raises a confirmation naming that
+// before it calls here, but the courtesy is the client's — this route is the
+// trust boundary, and bindItemToSquad refuses everything the UI greys out
+// (an item not in the store, one that does not target a squad, a charter below
+// the banner rung, a charter that already carries one).
+//
+// Not phase-guarded, for the same reason character attachment is not: binding
+// spends nothing and reveals nothing, so the one-way march has no decision here
+// to protect. Unlike attachment it cannot be undone — but that is the item's
+// declared permanence, not a turn structure.
+router.post('/:id/squads/:squadId/banner', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const squadId = Number(req.params.squadId)
+  const squad = campaign.squads.find((s) => s.id === squadId)
+  if (!squad) return res.status(400).json({ error: `not one of your squads: squad_id ${req.params.squadId}` })
+
+  const bound = bindItemToSquad(campaign, squad, req.body?.itemId)
+  if (bound.error) return res.status(400).json({ error: bound.error })
+
+  campaign.log.push({
+    day: campaign.day,
+    entries: [`${bound.item.name} is given into the keeping of ${squad.name}, for good.`],
+  })
   await campaign.save()
   res.json(await campaignView(campaign))
 })
