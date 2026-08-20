@@ -85,7 +85,7 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-19) — START HERE
+### Where the work stands (2026-08-20) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **35**
 (this block read 34 until 2026-08-18; `CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
@@ -96,7 +96,15 @@ becomes `campaign.characters` (an array of real entities).
 (Royal Guard) as of 2026-08-18. **SLICE 5a IS SHIPPED (2026-08-19, schema v36)** — casters are
 characters, hired by name, postable to a squad, riding into battles and raids, and permanently
 losable. Its twelve decisions are under "SLICE 5 — CHARACTERS" below, and they are the user's; do
-not re-derive them. After it: banners, then the squad screen (decision 13, last).
+not re-derive them.
+
+**SLICE 6 — BANNERS, ITEMS AND THE ABILITY SYSTEM — IS SPEC'D (2026-08-20, interviewed) AND IN
+BUILD.** Its fifteen decisions are under "SLICE 6" below and they are the user's. It bumps the
+schema to **v37** (`campaign.items`, the store; `squads[].banner`, the bound id). It is bigger than
+its name: the interview turned "what does a banner do" into **the engine's ability system** — a
+unit is stats + anatomy + abilities (6-1), `bool undead` splits into four composable flags behind
+an implication closure (6-3, 6-4), and a banner's gift is scoped to squad MEMBERSHIP rather than to
+`broken` (6-6). After it: the squad screen (decision 13, last) and 17's storage page.
 
 **What 5a leaves for the next slice to know:**
 - **`roster` no longer holds a caster key at all.** Anything asking "how big is the army" must read
@@ -287,6 +295,152 @@ the squad screen (decision 13) or a small follow-up.
   loner Mage/Priest of today. No-regression reading of decision 9, not separately confirmed.
 - **`CharacterPanel` is deliberately plain** — list, attachment picker, hang-back toggle, dead roll —
   because decision 13's squad screen will absorb it. It should not grow a design of its own.
+
+**SLICE 6 — BANNERS, ITEMS AND THE ABILITY SYSTEM (SPEC'D 2026-08-20, interviewed).**
+Decisions 10, 15, 16 and 17 of the squad overhaul, taken through a `grilling` interview the same
+way 4b/4c/4d and 5 were. Fifteen decisions, all the user's. Build TDD against them; do not
+re-derive them. **Schema v36 → v37.**
+
+**6-0. THE SLICE IS THE WHOLE CHAIN, SERVER-SIDE, PLUS THE ASSIGN FLOW** — tier ladder, a generic
+item store, a banner won as loot, binding, and the ability it grants reaching the battlefield.
+Deferred as their own later slices: 17's full storage PAGE and 13's squad screen. Considered and
+rejected: shipping the tier ladder alone (decision 10 without 15/16/17), which changes nothing
+observable — plain is inert, basic's bonus is deferred, and the item rung would be unreachable.
+
+**6-1. THE STANDING PRINCIPLE, and the one to reach for when this spec is silent: A UNIT IS STATS
++ ANATOMY + ABILITIES** (user, 2026-08-20: *"anything weird will operate with the abilities …
+everything that differs from human and is not just stats or body parts"*). Anything that differs
+from a human and is not a stat and not a body part (5-6's slot layout) is an ABILITY. New
+behaviour joins the ability vocabulary or it does not go in. This is the third axis of the unit
+model and it outlives this slice — flying, ethereal, fire resistance and the rest arrive here when
+the creatures that need them do.
+
+**6-2. Abilities are a BITMASK on the unit, in two sets — innate and granted.** A new
+`UnitAbility` enum in `Defines.hpp` with an `Abilities.hpp/.cpp` dispatch, modelled exactly on
+`WeaponEffect`/`WeaponEffects.cpp`, which is the shape this codebase already proves. `_innate`
+comes from the type; `_granted` arrives from the campaign layer (6-7). Rejected: reusing
+`WeaponEffect` (it is a property of a *weapon* constructed into shared `WeaponList` values, so a
+per-unit grant means either mutating shared data or giving every unit a private weapon copy), and
+reusing `Spell` (gated on mana, cooldown and a caster, none of which an aura wants).
+
+**6-3. Adding one ability can AUTO-ADD another: a declared IMPLICATION table, applied by a closure
+at every assignment point** (user's own proposal, against the risk of *"accidentally creating
+undead that leave a corpse"*). Declared today, and only these:
+
+    Mindless ⇒ Fearless          (the immunity comes from mindlessness, not from undeath)
+    Undead   ⇒ NoCorpse
+
+A type declares `Undead | Mindless` and *receives* `Fearless | NoCorpse`; nobody can forget the
+pairing because nobody types it. Rejected: a CI test asserting the pairing instead — it catches
+the mistake but still lets it be written, and does nothing for abilities granted at runtime.
+Closure makes the bad state unrepresentable rather than merely detectable.
+
+**6-4. `bool undead` DIES, and splits into four composable flags.** `Undead`, `Mindless`,
+`Fearless`, `NoCorpse`. Zombie and Skeleton declare `Undead | Mindless`. `AUnit::testMorale` asks
+`Fearless` (not `undead`), `Team.cpp`'s corpse count asks `NoCorpse`, and `getUndead()` goes away —
+it had exactly one caller, so nothing anywhere asks "is this thing undead?" as a fact in its own
+right. **Skeleton's `morale = 99 // undead — never breaks` goes with it**: the same fact stated
+twice in one constructor, which is the `placeable`/`spawnable` mistake in miniature.
+**`Undead` must NOT imply `Fearless`** — a lich or a vampire is precisely an undead thing that CAN
+be rattled, and the implication would make it unexpressible.
+
+**6-5. `Mindless` ships BARE-BONES — the immunity only.** Its real cost is known and deliberately
+unbuilt: **mindless troops need a commander able to lead mindless**, and nothing like that exists
+yet (user, 2026-08-20). Recorded here so the later slice has its premise; do NOT stub it.
+
+**6-6. A granted ability is tied to squad MEMBERSHIP, not to `broken`.**
+
+    abilities() = closure(_innate | (_squad ? _granted : None))
+
+`Battlefield::flee()` already calls `leaveSquad()` ("a fleeing unit leaves its squad — it's no
+longer part of the formation"), and `_squadId` is deliberately left intact so a straggler regroups
+after the battle. So every behaviour the user described falls out of one expression with no new
+logic: he flees and loses the banner's gift; he rallies but stays out of the squad and fights on as
+a lone trooper without it; he survives and rejoins the charter afterwards. Rejected: stripping
+`_granted` in `setBroken` (rally would then have to restore it, and a grant landing after a break
+would be an ordering bug), and revoking from the WHOLE squad when any one man breaks (one coward
+would delete a unique relic's payoff for everyone, and it inverts `Fearless` — the men the banner
+was protecting are the only ones who could not trigger it).
+
+**6-7. Transport: `squad_abilities: ["fearless"]`, a sibling of `squad_mods` on the placement
+entry**, attached SERVER-SIDE from the squad's banner, parsed with the same never-throw discipline
+(`UnitRegistry.cpp`). **The engine learns the word `fearless` and never the word `banner`** —
+campaign → engine, never back, exactly the line `UnitRole` drew. Whatever arrives this way IS
+granted by definition, so the innate/granted split needs no marker. Rejected: a top-level
+`squads: [{id, abilities}]` block (nothing in BattleInput is normalised, and it would be the only
+cross-referencing structure in the format) and a reserved key inside `squad_mods` (a non-stat in a
+stat-modifier object). Consequence, accepted: `enemyPlacement.js` reads `extra.squad_mods` already,
+so the same door lets an enemy host field ability-carrying troops — that is the enemy FIELDING a
+type, not DECIDING anything, so principle 1 is untouched.
+
+**6-8. The tier is FULLY DERIVED — the only stored fact is the binding.**
+`bannerTier(squad, campaign)` returns `item` if a banner is bound, else `basic` at or above
+`SQUAD_BANNER_RANK`, else `plain`; `campaignView`'s `banner: true/false` becomes the tier word.
+This is 4a's rule again (store what was taken, derive the rest). Rejected: storing
+`squad.bannerTier` — retune the rank ladder and every save is silently wrong, because the tier was
+frozen at the moment of crossing.
+
+**6-9. A stored item is a BARE CATALOG ID, and every non-basic banner is UNIQUE in a campaign**
+(user, 2026-08-20). No per-instance uid: document shape is free to change here, because
+`routes/campaigns.js` culls any save whose `schemaVersion` or `buildVersion` differs, so a save is
+never migrated. **The distinction that decides it, and worth keeping: a CODE SEAM is worth
+pre-building (5-2's modifier layer, and 6-13's `grantItem` below); a DOCUMENT SHAPE is not.** If a
+duplicate-able kind ever arrives, the store grows a uid then and the saves die as they always do.
+
+**6-10. The binding is HOLDER-SIDE.** `campaign.items` is the store — every item NOT currently
+held — and `squads[].banner` holds the bound id; binding moves the id out of the store, and per
+decision 10 it never comes back. This is 5a's `characters[].items` convention (a character's gear
+lives on the character), so banners and armour are stored the same way and 17's single assignment
+path never has to branch on kind. Rejected: a store-side `{id, boundTo}` list, which stores the two
+kinds by opposite conventions.
+
+**6-11. The Seasoned rung opens the item slot AND grants the basic banner; an item banner REPLACES
+the basic one** (user, 2026-08-20). Below that rung a won banner simply sits in the store, which 17
+already ruled is fine and needs no explanation — an unassigned item is an item at the stage every
+item starts in. Rejected: no gate at all, which would empty the basic tier completely: with its
+bonus deferred by 16 AND its gate removed, "basic" would be a word in a switch with no consequence
+anywhere. **16 still stands — do NOT invent a bonus for the basic banner.**
+
+**6-12. ONE banner in the catalog, granting `Fearless`.** The grantable vocabulary is exactly that
+one ability (`Undead`/`Mindless`/`NoCorpse` are innate-only — no banner hands out undeath), and the
+catalog grows when new abilities arrive with the creatures that need them. Rejected: several
+banners carrying upgrade-style effects (`caps`, `intake`, `raidCost`) for variety — the user ruled
+out banners granting flat stats, and campaign bookkeeping bonuses are the same species; they would
+make the first banners read like upgrade rows wearing a flag.
+
+**6-13. ACQUISITION IS CHANNEL-AGNOSTIC** (user, 2026-08-20: *"It is an item and you should be able
+to acquire it like any other magical item even if each banner is unique"*). One `grantItem`
+chokepoint, reached from BOTH `applyRaidReward`'s generic tail (any card carrying `reward.item`,
+outside the type switch — the shape S3's `modifierId` already uses) and a new `{type: 'item',
+itemId}` event effect. **Uniqueness is a property of the ITEM, never of the channel**: filter at
+draw time (a card or event offering an already-held item is never drawn — `eligibleUpgrades`'
+shape), and no-op defensively at apply time. Per 15, `describeEffect` learns the type, so a card
+offering a banner SAYS so. **Content in this slice: the garrison event** — a plain event in the
+random pool, `requires: { minResolve: 75 }` (the existing garrison-gift tier sits at 67; food, coin
+and a night sally are things a grateful garrison does often — handing over their standard is what
+they do when they would follow you out the gate). No raid card is authored yet; when a second
+banner exists, one row of config gives it a raid home.
+
+**6-14. THE SLOT DECLARES WHAT IT ACCEPTS, AND THE STORE FILTERS TO THAT** (user, 2026-08-20). A
+Seasoned+ squad row in `SquadUpgradePanel` shows a BANNER SLOT (empty = the basic banner, filled =
+the bound item). Clicking it pushes a UI-only `store` screen via `useUiStore` carrying
+`{accepts: 'banner', target: {kind: 'squad', id}}`; clicking a banner there raises a CONFIRM PROMPT
+naming the permanence before the bind route is called; Back returns where you were, as the replay
+screen does. This generalises to 5-4's typed character slots without change — one store, one
+assignment path, the filter supplied by the caller, which is 17's "storage stays ignorant of what
+kinds exist" achieved in the UI as well as the service. Rejected: a store-first panel with a target
+picker (frames the store as a squad feature, and the second item kind would need a second control).
+
+**What slice 6 BUILDS, and what it only RECORDS:**
+- **BUILT** — the `UnitAbility` enum, dispatch and closure (6-2, 6-3); the `undead` split with
+  `morale = 99` removed (6-4); membership-scoped grants (6-6); the `squad_abilities` transport
+  (6-7); the derived tier (6-8); `campaign.items` + `squads[].banner` (6-9, 6-10); the Seasoned
+  gate (6-11); one banner granting `Fearless` (6-12); `grantItem` with both channels wired and the
+  garrison event authored (6-13); the slot → filtered store → permanence prompt (6-14).
+- **RECORDED, NOT BUILT** — the commander who leads mindless troops (6-5); the basic banner's
+  bonus (16, still deferred on purpose); flying, ethereal, fire resistance and the rest of the
+  vocabulary (6-1); 17's full storage page; 13's squad screen; banners capping scripted spells,
+  which still waits on spell costs existing at all (10).
 
 **SLICE 4 — THE UPGRADE CATALOG (SPEC'D 2026-08-13, interviewed; 4a/4b/4c/4d ALL SHIPPED).**
 The design interview the handoff above asked for is DONE. Eight decisions, all the user's. Built TDD.
