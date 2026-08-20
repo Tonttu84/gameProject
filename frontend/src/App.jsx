@@ -21,6 +21,7 @@ import RaidPanel from './components/RaidPanel'
 import RecruitPanel from './components/RecruitPanel'
 import CampPanel from './components/CampPanel'
 import CharacterPanel from './components/CharacterPanel'
+import ItemStorePanel from './components/ItemStorePanel'
 import CampaignHUD from './components/CampaignHUD'
 import CampaignIntro from './components/CampaignIntro'
 import ScoutReport from './components/ScoutReport'
@@ -52,7 +53,7 @@ const App = () => {
     phase, setPhase, battleResult, setBattleResult, raidBattle, setRaidBattle,
     dayReport, setDayReport, demoBattle, setDemoBattle, demoLoading,
     tutorial, toggleTutorial, connectionError, setConnectionError,
-    introSeen, setIntroSeen,
+    introSeen, setIntroSeen, storeRequest,
   } = useUiStore()
 
   const { placements, squadPlacements } = usePlacementStore()
@@ -60,7 +61,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, reinforceSquad, takeSquadUpgrade, attachCharacter, setCharacterHangBack, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, reinforceSquad, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -382,6 +383,20 @@ const App = () => {
           backLabel="Back to the raids"
           onBack={() => setRaidBattle(null)}
         />
+      </div>
+    )
+  }
+
+  // Choosing an item for a slot takes over the screen the same way a replay
+  // does; Back returns to whatever phase the player was in (6-14). It sits
+  // ABOVE the pending-choices overlay deliberately — binding is not a campaign
+  // action the server 409s on, so a player who opened the stores can finish
+  // what they were doing rather than being bounced into the choice cards.
+  if (storeRequest) {
+    return (
+      <div className="app">
+        {authBar}
+        <ItemStorePanel onBind={guarded(bindSquadBanner)} />
       </div>
     )
   }

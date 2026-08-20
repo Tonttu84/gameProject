@@ -75,10 +75,10 @@ const withOffer = (overrides = {}) => ({
           upgrades: [],
           upgradeSlots: 1,
           upgradePicks: 1,
-          banner: false,
+          banner: 'plain',
           upgradeOffer: OFFER,
         }
-      : { ...s, upgrades: [], upgradeSlots: 0, upgradePicks: 0, banner: false, upgradeOffer: null },
+      : { ...s, upgrades: [], upgradeSlots: 0, upgradePicks: 0, banner: 'plain', upgradeOffer: null },
   ),
   ...overrides,
 })
@@ -88,7 +88,7 @@ const noOffer = () => ({
   augury: consultedAugury,
   recruit: { fervor: 0, boosted: false, hiredToday: true, drawn: true, options: [] },
   squads: campaignFixture.squads.map((s) => ({
-    ...s, upgrades: [], upgradeSlots: 0, upgradePicks: 0, banner: false, upgradeOffer: null,
+    ...s, upgrades: [], upgradeSlots: 0, upgradePicks: 0, banner: 'plain', upgradeOffer: null,
   })),
 })
 
@@ -221,11 +221,11 @@ describe('squad upgrade panel', () => {
 
   // The banner is granted free at Seasoned and carries NO bonus — decision 16
   // is deferred on purpose. The screen must say what it is and promise nothing.
-  it('names the banner without promising a bonus', async () => {
+  it('names the banner without promising a bonus, and opens the slot', async () => {
     const seasoned = {
       ...noOffer(),
       squads: noOffer().squads.map((s) =>
-        s.id === 1 ? { ...s, prestige: 25, rank: 'Seasoned', banner: true } : s,
+        s.id === 1 ? { ...s, prestige: 25, rank: 'Seasoned', banner: 'basic' } : s,
       ),
     }
     await toRecruitScreen(seasoned)

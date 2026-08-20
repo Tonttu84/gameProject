@@ -18,6 +18,7 @@ import {
   reinforceSquad,
   takeSquadUpgrade,
   attachCharacter,
+  bindSquadBanner,
   setCharacterHangBack,
 } from '../services/api'
 
@@ -98,6 +99,10 @@ const useCampaignStore = create((set, get) => ({
 
   takeSquadUpgrade: async (squadId, upgrade) => {
     set({ campaign: await takeSquadUpgrade(get().campaign.id, squadId, upgrade) })
+  },
+
+  bindSquadBanner: async (squadId, itemId) => {
+    set({ campaign: await bindSquadBanner(get().campaign.id, squadId, itemId) })
   },
 
   attachCharacter: async (characterId, squadId) => {

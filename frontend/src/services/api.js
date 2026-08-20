@@ -111,6 +111,12 @@ export const reinforceSquad = (id, squadId, body) =>
 // this one. Returns the refreshed view directly, like reinforceSquad.
 export const takeSquadUpgrade = (id, squadId, upgrade) =>
   axios.post(`/api/campaigns/${id}/squads/${squadId}/upgrades`, { upgrade }, authed()).then(r => r.data)
+// Bind an item from the store to a squad (slice 6). PERMANENT: a bound banner
+// leaves the store and never returns, and like takeSquadUpgrade there is
+// deliberately no undo endpoint to pair with this one. The confirmation the
+// player sees is the client's courtesy; the refusal is the server's.
+export const bindSquadBanner = (id, squadId, itemId) =>
+  axios.post(`/api/campaigns/${id}/squads/${squadId}/banner`, { itemId }, authed()).then(r => r.data)
 // Post a character to a squad, or bring them home with squadId null (5-7).
 // Free and ungated in any phase — there is deliberately no cost or lock here.
 export const attachCharacter = (id, characterId, squadId) =>

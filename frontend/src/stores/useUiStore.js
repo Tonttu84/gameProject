@@ -21,6 +21,12 @@ const initialState = () => ({
   // it — harmless for fluff); startCampaign resets it so each new campaign opens
   // on the scene-setter, not tutorial-gated (it's story, everyone sees it once).
   introSeen: false,
+  // The item store, opened FROM a slot (slice 6, 6-14). Null when closed;
+  // otherwise `{accepts, squadId, squadName}` — what the slot the player
+  // clicked will take, and where a chosen item goes. The SLOT declares what it
+  // accepts and the store filters to that, so the store itself never learns
+  // what kinds of item exist and a character's typed slot can reuse it as-is.
+  storeRequest: null,
 })
 
 // UI-only campaign state: which screen is showing, in-progress battle
@@ -37,6 +43,8 @@ const useUiStore = create((set) => ({
   setDemoLoading: (demoLoading) => set({ demoLoading }),
   setConnectionError: (connectionError) => set({ connectionError }),
   setIntroSeen: (introSeen) => set({ introSeen }),
+  openItemStore: (storeRequest) => set({ storeRequest }),
+  closeItemStore: () => set({ storeRequest: null }),
 
   toggleTutorial: () =>
     set((state) => {
@@ -48,7 +56,7 @@ const useUiStore = create((set) => ({
   // The bundle a stale-campaign (404) recovery resets: back to the war
   // council (the Prepare phase) with no in-flight battle UI left over.
   resetBattleUI: () =>
-    set({ battleResult: null, raidBattle: null, dayReport: null, phase: 'prepare' }),
+    set({ battleResult: null, raidBattle: null, dayReport: null, storeRequest: null, phase: 'prepare' }),
 
   reset: () => set(initialState()),
 }))
