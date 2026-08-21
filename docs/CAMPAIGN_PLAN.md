@@ -198,12 +198,55 @@ states with the third unreachable — a branch no test can reach through the gam
 reader survives (the 4c lesson, `8027892 fix(campaign): stop a self-skipping test from hiding a
 stale reader`). When 12 lands, the screen learns the third state then.
 
-**STILL OPEN, and the interview picks up here:** whether 13-2's auto-refill ships as its own slice
-before the screen; how prestige reads on the page (rank word, or the climb to the next rung); where
-the upgrade draft lives now that `SquadUpgradePanel` is going, and how a Recruit-gated action
-renders outside Recruit; whether the deploy screen's missing unattached-character placement (5a's
-loose end) is in scope; and whether the attached-character `squad_mods` gap gets fixed here or
-takes its own decision.
+**13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
+own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
+`SquadReinforcePanel` deleted — and nothing is lost in the gap, because the mechanic it removes is
+replaced by one that runs itself. Slice B is then a pure UI slice against a settled server, and
+13-6's forecast calls arithmetic that already exists rather than one invented alongside the screen
+that renders it. Rejected: one big slice (a diff spanning server logic and the largest campaign UI,
+where a red CI means bisecting across two unrelated kinds of change) and screen-first (it would
+mean building a reinforcement form we have already decided to throw away).
+
+**13-13. THE REFILL DRAINS THE LOOSE POOL — the army IS its charters.** Nothing protects the pool:
+charters fill to their caps and whatever they cannot hold stays loose, so the pool empties early
+(total caps 102 against a starting army of ~76) and refills on its own once the charters are full.
+The system is self-limiting, and hiring a type no charter admits is how a loose contingent is built
+deliberately. **The consequence to watch:** `HexGrid` hand-places loose bodies straight from
+`campaign.roster`, so for the first several turns there will be almost nothing to hand-place at
+deploy. Rejected: a protected reserve (a new number to tune, and charters under strength while
+bodies sit idle) and a one-turn grace for fresh hires (roster counts have no identity to age).
+
+**13-14. PRESTIGE READS AS RANK AND RAW NUMBERS, WITH NO PROMISES** — "Blooded — 18 prestige, next
+rung at 25". The ladder is legible and the numbers are honest, but the page does not editorialise
+about what a rung is worth; you learn that when the draft or the banner arrives. The server ships
+the threshold (the client never re-derives campaign math). Rejected: the rank word alone (a system
+the player can feel but never plan around) and naming the next rung's grant (turns the page into a
+progress bar).
+
+**13-15. THE UPGRADE SCREEN SURVIVES AS A SCREEN, REACHED FROM THE SQUAD SCREEN** (user,
+2026-08-21: *"we can just keep the upgrade screen accessible from the squad screen, mark the squads
+that can be upgraded in the screen where you have all squads"*). The roll marks which charters have
+a draft waiting; the three cards and their permanence confirm live on their own screen. **This
+amends 13-1**: the panels are not all dissolved into the charter page. The squad screen is the HUB
+you navigate FROM — which is how `ItemStorePanel` already works (a `storeRequest` takeover reached
+from the banner slot), so the pattern is the house one rather than a new idea.
+
+**13-16. THE CHARACTER SCREEN LIKEWISE STAYS A SCREEN, reached from the squad screen.** The full
+roll of the living and the fallen, the attachment picker and the hang-back toggle keep a place of
+their own — 5-9's roll of the dead has nowhere to live on a charter page — and the charter page
+shows who is posted with a way through. Rejected: folding it into the charter page, and doing both
+(two code paths for one mutation).
+
+**13-17. MEMBERSHIP MEANS MEMBERSHIP — an attached character DOES receive their squad's
+`squad_mods`.** The gap flagged at the end of slice 6 is closed rather than left: 5-0 already says a
+character is a special kind of troop and 6-6 already scopes the banner's gift to squad MEMBERSHIP,
+so a third neighbouring system answering "does this reach the character?" differently was an
+inconsistency, not a design. Posting a character to your best-drilled cohort is now worth what it
+looks like. Small server change; it rides with slice A.
+
+**13-18. SLICE B CLOSES 5a's DEPLOY LOOSE END** — the deploy screen learns to place an unattached
+character. It is the last thing keeping a shipped feature reachable only through the API, and it is
+what 5-12 was for when it started all six casters unposted.
 
 After it: 17's storage page (which `ItemStorePanel` is the deliberately-plain placeholder for).
 
