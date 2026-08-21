@@ -118,15 +118,92 @@ screen exists.
 first screen that is a design rather than a mechanic, so it is exactly what the `grilling` skill
 in CLAUDE.md is for. Do not start from the contents list and guess a layout.
 
-**One 13 decision already taken (user, 2026-08-20): AVAILABILITY RENDERS ONLY WHAT EXISTS —
-free, or out raiding today.** The screen does NOT get decision 12's "tied up for X turns" state,
-and 12 does not fold into this slice. The reason is 12's own: a tie-up and the event that REQUIRES
-a squad are two halves of one readable trade and must ship together, or the cost lands
-uncompensated. Building the display half here would mean rendering a state nothing in the game can
-put a squad into. Also rejected: rendering all three states with the third unreachable — a branch
-no test can reach through the game is how a stale reader survives (the 4c lesson,
-`8027892 fix(campaign): stop a self-skipping test from hiding a stale reader`). When 12 lands, the
-screen learns the third state then.
+**THE INTERVIEW IS UNDER WAY — ten decisions taken so far (user, 2026-08-20/21), recorded here
+because a `/clear` ate the first batch once already.** They are the user's; do not re-derive them.
+The rest of the interview continues from 13-11 below.
+
+**13-1. THE SCREEN IS THE HUB, not a display case.** It absorbs the actions, and
+`SquadUpgradePanel`, `SquadReinforcePanel` and `CharacterPanel` are DELETED rather than left
+beside it. Every one of those actions needs the same context the screen exists to show (composition
+against caps, slots against rank, who is already posted), so a look-here/act-there split would
+build that context twice. Rejected: read-only inspection (the screen becomes a thing you visit, and
+the army is still managed in three places).
+
+**13-2. REINFORCEMENT BECOMES AUTOMATIC — there is no player action left** (user: *"reinforcements
+happen automatically"*). At turn end every charter under its caps pulls from the loose pool up to
+its archetype's intake, server-side. `POST /:id/squads/:squadId/reinforce` and its panel GO. This
+is decision 14's own wording made real ("it refills through the ordinary per-turn intake, taking
+suitable troops from the loose pool"), and it is why 13-1 has one less action to absorb than the
+handoff above predicted. Rejected: standing orders per charter, and a manual path kept for
+deliberate shaping — both re-admit the per-turn fiddling the decision exists to remove.
+
+**13-3. IT STILL COSTS, auto-spent and reported.** The refill pays the same `SQUAD_REINFORCE_POOL`
+prices (plus the squad's `reinforceSurcharge`) out of the treasury, fills as far as the money goes,
+and stops. Every number in `docs/BALANCE_SHEET.md` survives and 4d's "the ongoing cost IS
+reinforcement" stays true — a mauled guard cohort still bleeds 5 gold a body. Rejected: free
+refills (a real gold/materials sink vanishes and RoyalGuard's dear recipe stops being a downside)
+and free-for-the-rank-and-file (a rule with an exception in it). The price of spending money
+without asking is 13-6.
+
+**13-4. WHEN IT RUNS SHORT, CHARTERS FILL IN ROLL ORDER — flat, oldest first.** Predictable, no new
+concept, and the shortfall lands on whoever is last. Rejected: most-decorated-first (prestige
+already gates three other things) and neediest-first (elite squads would be fed last exactly when
+you want them ready).
+
+**13-5. INSIDE A CHARTER, THE CAPS TABLE'S DECLARED ORDER DECIDES — primary type first.** `line` is
+`{Soldier, Pikeman}` and `skirmish` is `{Archer, Militia}`, already written primary-first, so a
+line charter fills soldiers to cap before it touches pikemen and stays recognisably a line charter.
+A designer retunes it by reordering one line. Rejected: biggest-hole-first (a bad battle rewrites
+what the squad IS) and proportional (rounding rules, and a refill you cannot predict body by body).
+
+**13-6. THE REFILL IS FORECAST ON THE SCREEN AND RECORDED IN THE REPORT.** The charter shows what
+will join at turn's end and what it will cost *before* it happens ("6 Soldiers join — 12 gold, 12
+materials", or "nothing: the loose pool is empty"); the day report says what actually arrived and
+what was spent. The forecast is what turns the screen from a scoreboard into a planning tool — it
+is how a player learns that raiding for gold this turn is what refills the line next turn — and it
+is the answer to 13-3 spending money unasked.
+
+**13-7. IT IS A TAKEOVER, REACHABLE FROM THE HUD IN EVERY PHASE.** Back returns to the phase you
+were on, the `ItemStorePanel`/`ReplayView` pattern that already works. Squads matter in every phase
+(picked for raids, placed at deploy, posted to in prepare) and two of its three actions have no
+server phase gate, so binding it to one phase would hide it for most of the turn. Rejected: a new
+step in the turn ladder (another mandatory click on quiet turns, and unreachable while deciding a
+raid) and a panel inside `RecruitPanel` (stays a panel; unreachable when you most want it).
+
+**13-8. THE SHAPE IS A ROLL → A PAGE PER CHARTER** (user: *"list of units, clicking them will
+redirect to the units page so it will scale well, the test campaign doesnt mean anything for scale
+of the real game"*). Not cards side by side: the design target is an army of many charters, not
+today's three. There is no router in `frontend/` — the page swap is UI state in `useUiStore`, the
+way `storeRequest` already takes over the screen.
+
+**13-9. THE ROLL IS THE WHOLE ARMY: charters, then the loose pool, then unposted characters.** The
+loose pool is now the fuel every refill eats (13-2), so "why did nothing join?" must be answerable
+on the same page that shows the shortfall; an unattached caster is a resource going to waste and
+needs somewhere to be seen. Rejected: a charters-only list (cause and effect on different screens,
+and `CharacterPanel` survives after all).
+
+**13-10. THE CHARTER PAGE SHOWS TROOP TYPES AS ROWS — counts against caps**, plus rank, banner,
+posted character, upgrades and free slots, availability, the pending refill, and the actions.
+Composition IS counts by type; only characters are individuals. Rejected for later slices of their
+own: a page per troop type (the engine's unit catalog surfacing to the player — a real feature, not
+this one) and modelling every body as a named individual (composition, reinforcement, casualties
+and the battle round-trip all stop being counts).
+
+**13-11. AVAILABILITY RENDERS ONLY WHAT EXISTS — free, or out raiding today.** The screen does NOT
+get decision 12's "tied up for X turns" state, and 12 does not fold into this slice. The reason is
+12's own: a tie-up and the event that REQUIRES a squad are two halves of one readable trade and
+must ship together, or the cost lands uncompensated. Building the display half here would mean
+rendering a state nothing in the game can put a squad into. Also rejected: rendering all three
+states with the third unreachable — a branch no test can reach through the game is how a stale
+reader survives (the 4c lesson, `8027892 fix(campaign): stop a self-skipping test from hiding a
+stale reader`). When 12 lands, the screen learns the third state then.
+
+**STILL OPEN, and the interview picks up here:** whether 13-2's auto-refill ships as its own slice
+before the screen; how prestige reads on the page (rank word, or the climb to the next rung); where
+the upgrade draft lives now that `SquadUpgradePanel` is going, and how a Recruit-gated action
+renders outside Recruit; whether the deploy screen's missing unattached-character placement (5a's
+loose end) is in scope; and whether the attached-character `squad_mods` gap gets fixed here or
+takes its own decision.
 
 After it: 17's storage page (which `ItemStorePanel` is the deliberately-plain placeholder for).
 
