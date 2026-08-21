@@ -198,6 +198,21 @@ states with the third unreachable — a branch no test can reach through the gam
 reader survives (the 4c lesson, `8027892 fix(campaign): stop a self-skipping test from hiding a
 stale reader`). When 12 lands, the screen learns the third state then.
 
+**SLICE A IS SHIPPED (2026-08-21, schema v38)** — the refill runs, the route and the panel are
+gone, and 13-17 rode along. What slice B needs to know before it starts:
+
+- **`planAutoRefill` IS the forecast.** 13-6's on-screen "6 Soldiers join — 12 gold" is that
+  function called against today's pool and purse; do not compute a preview a second way, or the
+  screen and the turn will drift the moment a gate changes.
+- **The view lost `reinforceRecipes`, `reinforceSurcharge` and `reinforcedToday`** with the panel
+  that read them. `caps`, `intake` and `loose` stayed, because the screen shows all three.
+- **The forecast is a PREDICTION, and an honest one has to say so.** It is computed against tonight's
+  numbers; a raid fought afterwards changes the purse, and every charter ahead of this one in the
+  roll spends before it does (13-4). A forecast rendered as a promise will look like a bug the first
+  time a raid moves it.
+- **`refillSquads` is the only caller of `applyReinforcement`.** If slice B wants a "what would
+  happen" endpoint, it calls `planAutoRefill` and never `apply`.
+
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
 `SquadReinforcePanel` deleted — and nothing is lost in the gap, because the mechanic it removes is
