@@ -33,7 +33,6 @@ vi.mock('../services/api', () => ({
   endCampaignDay: vi.fn(),
   hireRecruit: vi.fn(),
   openRecruit: vi.fn(),
-  reinforceSquad: vi.fn(),
   takeSquadUpgrade: vi.fn(),
 }))
 
@@ -101,7 +100,7 @@ const toRecruitScreen = async (campaign, { expectPanel = true } = {}) => {
   fireEvent.click(await screen.findByTestId('to-recruit'))
   // Reinforcement always renders on this screen; wait on it so an absent
   // upgrade panel is a real absence rather than a race.
-  await screen.findByTestId('reinforce-panel')
+  await screen.findByTestId('recruit-panel')
   if (expectPanel) await screen.findByTestId('upgrade-panel')
 }
 

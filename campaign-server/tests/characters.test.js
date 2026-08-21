@@ -260,8 +260,32 @@ describe('the placement entry', () => {
     expect(characterEntryFor(character({ hangBack: undefined }), { q: 0, r: 0 }).avoids_melee).toBe(false)
   })
 
-  test('carries no squad_mods while the modifier layer is empty', () => {
+  test('carries no squad_mods when neither the character nor a squad grants any', () => {
     expect(characterEntryFor(character(), { q: 0, r: 0 }).squad_mods).toBeUndefined()
+  })
+
+  // 13-17: membership means membership. The squad's drill and equipment reach
+  // its posted character, the way the squad's banner ability already did (6-6)
+  // and the way 5-0 says a character follows every rule troops follow.
+  test('carries the SQUAD’s upgrades — a posted character is drilled with them', () => {
+    const entry = characterEntryFor(character(), { q: 1, r: 2 }, [], { attack: 1, defense: 2 })
+    expect(entry.squad_mods).toEqual({ attack: 1, defense: 2 })
+  })
+
+  // The squad's bag is COPIED, not handed through: the entry must not alias the
+  // caller's modsBySquad value, or one character's future modifiers would write
+  // themselves into every other member's. This is the half of "the two bags
+  // add" that is observable while characterMods() still returns {} — the sum
+  // itself has nothing to sum until 5-4/5-5/5-6 fill that seam.
+  test('the squad’s bag is copied into the entry, never aliased', () => {
+    const squadBag = { attack: 1 }
+    const entry = characterEntryFor(character(), { q: 0, r: 0 }, [], squadBag)
+    expect(entry.squad_mods).toEqual(squadBag)
+    expect(entry.squad_mods).not.toBe(squadBag)
+  })
+
+  test('a loose character is in no squad, so no squad mods reach them', () => {
+    expect(characterEntryFor(character(), { q: 0, r: 0 }, [], {}).squad_mods).toBeUndefined()
   })
 })
 

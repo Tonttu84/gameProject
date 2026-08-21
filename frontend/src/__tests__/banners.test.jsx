@@ -34,7 +34,6 @@ vi.mock('../services/api', () => ({
   endCampaignDay: vi.fn(),
   hireRecruit: vi.fn(),
   openRecruit: vi.fn(),
-  reinforceSquad: vi.fn(),
   takeSquadUpgrade: vi.fn(),
   bindSquadBanner: vi.fn(),
 }))
@@ -99,7 +98,7 @@ const toRecruitScreen = async (campaign) => {
   await screen.findByText(/War Council/)
   await marchToRaids()
   fireEvent.click(await screen.findByTestId('to-recruit'))
-  await screen.findByTestId('reinforce-panel')
+  await screen.findByTestId('recruit-panel')
 }
 
 beforeEach(() => {
@@ -150,7 +149,7 @@ describe('the store, opened from a slot', () => {
     // The slot declares what it accepts; the store filters to that.
     expect(screen.queryByTestId(`store-item-${HELM.id}`)).toBeNull()
     // It really is a takeover — the recruit screen is gone underneath.
-    expect(screen.queryByTestId('reinforce-panel')).toBeNull()
+    expect(screen.queryByTestId('recruit-panel')).toBeNull()
   })
 
   it('says so plainly when the stores hold nothing that would serve', async () => {
@@ -163,7 +162,7 @@ describe('the store, opened from a slot', () => {
     await toRecruitScreen(seasoned({ items: [BANNER] }))
     fireEvent.click(screen.getByTestId('banner-slot-1'))
     fireEvent.click(await screen.findByTestId('item-store-back'))
-    await screen.findByTestId('reinforce-panel')
+    await screen.findByTestId('recruit-panel')
     expect(bindSquadBanner).not.toHaveBeenCalled()
   })
 })
@@ -193,7 +192,7 @@ describe('binding', () => {
 
     await waitFor(() => expect(bindSquadBanner).toHaveBeenCalledWith('c1', 1, BANNER.id))
     // And the store closes on success, back to the phase underneath.
-    await screen.findByTestId('reinforce-panel')
+    await screen.findByTestId('recruit-panel')
   })
 
   it('backing out of the confirmation posts nothing', async () => {

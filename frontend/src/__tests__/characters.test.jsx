@@ -32,7 +32,6 @@ vi.mock('../services/api', () => ({
   endCampaignDay: vi.fn(),
   hireRecruit: vi.fn(),
   openRecruit: vi.fn(),
-  reinforceSquad: vi.fn(),
   takeSquadUpgrade: vi.fn(),
   attachCharacter: vi.fn(),
   setCharacterHangBack: vi.fn(),

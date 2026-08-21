@@ -4,8 +4,9 @@ import {
   canSquadAccept,
   findReinforceRecipe,
   looseRoster,
-  planReinforcement,
+  planAutoRefill,
   applyReinforcement,
+  refillSquads,
   squadSizePoints,
 } from '../services/squadReinforce.js'
 import { catalogFixture } from './fixtures/catalog.js'
@@ -18,10 +19,17 @@ import {
   STARTING_SQUADS,
 } from '../utils/campaignConfig.js'
 
-// Squad reinforcement — the squad overhaul's slice 3 (docs/CAMPAIGN_PLAN.md
-// "SLICE 3 — reinforcement"). This is the pure layer: the recipe table, the
-// per-type headroom, the pooled intake, the size-budget gate and the atomic
-// plan/apply pair. The route wiring is covered in campaigns.test.js.
+// Squad reinforcement — slice 3's gates, driven by 13-2's automatic refill.
+// This is the pure layer: the recipe table, the per-type headroom, the pooled
+// intake, the size-budget gate, and the end-of-turn pass that now decides for
+// itself what each charter takes on. The end-day wiring is covered in
+// campaigns.test.js.
+//
+// THE GATES ARE THE SAME; WHAT CHANGED IS WHAT THEY DO. Slice 3 refused an
+// over-request so the player could ask again for less. Nobody asks any more, so
+// every gate is a ceiling and the refill takes what fits under all of them —
+// which is why almost every test here reads "takes N" where it used to read
+// "refuses".
 
 const sizeOf = new Map(catalogFixture.units.map((u) => [u.name, u.size]))
 
@@ -132,133 +140,102 @@ describe('canSquadAccept', () => {
   })
 })
 
-describe('planReinforcement', () => {
-  const plan = (overrides = {}) =>
-    planReinforcement({
+describe('planAutoRefill', () => {
+  const refill = (overrides = {}) =>
+    planAutoRefill({
       squad: squad({ composition: { Soldier: 30 } }),
-      request: { Soldier: 5 },
       sizeOf,
       loose: looseEnough,
       resources: richEnough,
       ...overrides,
     })
 
-  test('prices the whole request: inputs destroyed, outputs created, cost summed', () => {
+  test('takes a full intake when pool, purse and caps all allow it', () => {
     const soldier = findReinforceRecipe('Soldier')
-    const result = plan()
-    expect(result.error).toBeUndefined()
-    expect(result.outputs).toEqual({ Soldier: 5 })
-    expect(result.inputs).toEqual({ Soldier: 5 * soldier.inputs.Soldier })
+    const result = refill()
+    expect(result.outputs).toEqual({ Soldier: SQUAD_ARCHETYPES.line.intake })
+    expect(result.inputs).toEqual({ Soldier: SQUAD_ARCHETYPES.line.intake })
+    expect(result.bodies).toBe(SQUAD_ARCHETYPES.line.intake)
     expect(result.cost).toEqual({
-      gold: 5 * soldier.cost.gold,
-      materials: 5 * soldier.cost.materials,
+      gold: SQUAD_ARCHETYPES.line.intake * soldier.cost.gold,
+      materials: SQUAD_ARCHETYPES.line.intake * soldier.cost.materials,
     })
-    expect(result.bodies).toBe(5)
   })
 
-  // A MAP applied ATOMICALLY (decision I): "once per turn per squad" stays
-  // literally true while a mixed archetype still splits its intake across its
-  // types — which vanguard (intake 2, two permitted types) needs on day one.
-  test('a mixed request sums both sides across types', () => {
-    const result = plan({
-      squad: squad({ archetype: 'vanguard', composition: { Cavalry: 5, LightCavalry: 5 } }),
-      request: { Cavalry: 1, LightCavalry: 1 },
+  // The clamp that replaces slice 3's "there is room for 2, not 5" refusal.
+  // Pikemen at cap in these fixtures on purpose: with room left in the second
+  // type the refill would spill into it (which is 13-5 working), and the point
+  // here is what the FIRST type's cap does.
+  test('the per-type cap clamps the fill instead of refusing it', () => {
+    expect(refill({ squad: squad({ composition: { Soldier: 38, Pikeman: 10 } }) }).outputs)
+      .toEqual({ Soldier: 2 })
+  })
+
+  test('a charter at full strength takes nothing at all', () => {
+    expect(refill({ squad: squad({ composition: { Soldier: 40, Pikeman: 10 } }) })).toBeNull()
+  })
+
+  test('a charter with no archetype can never be refilled', () => {
+    expect(refill({ squad: squad({ archetype: undefined }) })).toBeNull()
+  })
+
+  // 13-5: the caps table is written primary-type-first, so a line charter fills
+  // soldiers to their cap before it touches pikemen — and the intake left over
+  // spills into the next type rather than going unused.
+  test('types fill in the caps table order, and the remainder spills onward', () => {
+    const result = refill({ squad: squad({ composition: { Soldier: 35 } }) })
+    expect(result.outputs).toEqual({ Soldier: 5, Pikeman: 5 })
+    expect(Object.keys(result.outputs)).toEqual(['Soldier', 'Pikeman'])
+    expect(result.bodies).toBe(SQUAD_ARCHETYPES.line.intake)
+  })
+
+  // Pooled on the OUTPUT side (decision C), so vanguard's intake of 2 is two
+  // BODIES across every type it admits — not two per type.
+  test('the pooled intake is spent across types, not per type', () => {
+    const result = refill({ squad: squad({ archetype: 'vanguard', composition: {} }) })
+    expect(result.bodies).toBe(SQUAD_ARCHETYPES.vanguard.intake)
+    // Cavalry is written first, so it takes the whole allowance.
+    expect(result.outputs).toEqual({ Cavalry: 2 })
+  })
+
+  test('the loose pool is a ceiling — a thin pool fills what it can', () => {
+    expect(refill({ loose: { Soldier: 3 } }).outputs).toEqual({ Soldier: 3 })
+    expect(refill({ loose: {} })).toBeNull()
+  })
+
+  // 13-3: the price survives automation, so the treasury is the last ceiling.
+  test('the purse is a ceiling — the refill stops when the money does', () => {
+    // 2 gold a body: five gold buys two and leaves one unspendable.
+    expect(refill({ resources: { gold: 5, materials: 1000 } }).outputs).toEqual({ Soldier: 2 })
+    expect(refill({ resources: { gold: 0, materials: 1000 } })).toBeNull()
+  })
+
+  test('a resource the recipe needs and the stores lack stops that type', () => {
+    // Horses price cavalry and nothing else; without them the vanguard stands.
+    const broke = refill({
+      squad: squad({ archetype: 'vanguard', composition: {} }),
+      resources: { gold: 1000, materials: 1000, horses: 0 },
     })
-    expect(result.error).toBeUndefined()
-    expect(result.outputs).toEqual({ Cavalry: 1, LightCavalry: 1 })
-    expect(result.cost).toEqual({ gold: 9, materials: 7, horses: 2 })
+    expect(broke).toBeNull()
   })
 
-  test('a type with no recipe is refused, naming it', () => {
-    expect(plan({ request: { Dragon: 1 } }).error).toMatch(/Dragon/)
+  // The SIZE BUDGET stays an INDEPENDENT gate (decision G): over-cap is a design
+  // knob, over-hex is a bug. It clamps like the rest now.
+  test('the hex budget clamps a fill the cap alone would allow', () => {
+    // 55 Soldiers occupy 550 of the 560 points left once the character reserve
+    // is set aside, so exactly one more size-10 body fits — though the Pikeman
+    // cap would happily take ten.
+    const swollen = squad({ composition: { Soldier: 55 } })
+    expect(canSquadAccept(swollen, 'Pikeman')).toBe(10)
+    expect(refill({ squad: swollen }).outputs).toEqual({ Pikeman: 1 })
   })
 
-  // At the ROUTE an over-request is a refusal with nothing spent, never a
-  // silent clamp — a clamp would leave the UI's arithmetic and the server's
-  // disagreeing with nobody noticing.
-  test('asking for more than fits is refused, not clamped', () => {
-    const result = plan({ squad: squad({ composition: { Soldier: 38 } }), request: { Soldier: 5 } })
-    expect(result.error).toMatch(/room for 2/)
-    expect(result.cost).toBeUndefined()
+  test('a squad already over its hex takes nothing rather than throwing', () => {
+    expect(refill({ squad: squad({ composition: { Soldier: 60 } }) })).toBeNull()
   })
 
-  test('a type outside the archetype is refused even when the squad already holds some', () => {
-    expect(plan({ request: { Archer: 1 } }).error).toMatch(/Archer/)
-  })
-
-  // Intake is a POOLED per-squad budget metered on the OUTPUT side (decision
-  // C): vanguard's `intake: 2` means at most 2 bodies JOIN this turn, however
-  // many were destroyed to make them.
-  test('the pooled intake caps the bodies that may JOIN this turn', () => {
-    const vanguard = squad({ archetype: 'vanguard', composition: {} })
-    expect(plan({ squad: vanguard, request: { Cavalry: 2 } }).error).toBeUndefined()
-    expect(plan({ squad: vanguard, request: { Cavalry: 3 } }).error).toMatch(/2 replacements/)
-    // Pooled, not per type: 2 of each is 4 bodies and blows the same budget.
-    expect(plan({ squad: vanguard, request: { Cavalry: 2, LightCavalry: 2 } }).error).toMatch(/2 replacements/)
-  })
-
-  test('a full-intake line refill is within the allowance', () => {
-    const line = squad({ composition: { Soldier: 25 } })
-    expect(plan({ squad: line, request: { Soldier: SQUAD_ARCHETYPES.line.intake } }).error).toBeUndefined()
-  })
-
-  // The SIZE BUDGET is a second, INDEPENDENT gate (decision G): over-cap is a
-  // design knob, over-hex is a bug — the engine drops or scatters units that
-  // outgrow a hex, and a squad must always be one formation on one hex.
-  test('the hex budget refuses a reinforcement the cap alone would allow', () => {
-    // An over-strength squad — 60 Soldier where the cap is 40, which decision F
-    // allows an event to produce — still has Pikeman headroom, so the per-type
-    // cap would wave this through. The hex will not: 65 bodies × size 10 = 650,
-    // plus the 40 reserved for characters, against a 600-point budget.
-    const swollen = squad({ composition: { Soldier: 60 } })
-    expect(canSquadAccept(swollen, 'Pikeman')).toBe(10) // the cap is happy
-    const overBudget = plan({ squad: swollen, request: { Pikeman: 5 } })
-    expect(overBudget.error).toMatch(/hex|room|budget/i)
-    // …and the same squad at a size the hex can hold is fine.
-    expect(plan({ squad: squad({ composition: { Soldier: 30 } }), request: { Pikeman: 5 } }).error)
-      .toBeUndefined()
-  })
-
-  test('the character reserve is part of the budget, not spare room beside it', () => {
-    const bodies = (SQUAD_TROOP_BUDGET - SQUAD_CHARACTER_RESERVE) / 10
-    expect(squadSizePoints({ Soldier: bodies }, sizeOf)).toBe(SQUAD_TROOP_BUDGET - SQUAD_CHARACTER_RESERVE)
-    expect(squadSizePoints({ Cavalry: 6, LightCavalry: 6 }, sizeOf)).toBe(240)
-  })
-
-  test('a type the catalog does not know THROWS — a data bug, not a 400', () => {
-    expect(() =>
-      planReinforcement({
-        squad: squad({ composition: { Soldier: 30 } }),
-        request: { Soldier: 1 },
-        sizeOf: new Map(),
-        loose: looseEnough,
-        resources: richEnough,
-      }),
-    ).toThrow(/Soldier/)
-  })
-
-  test('the loose pool must actually hold the bodies being destroyed', () => {
-    const result = plan({ loose: { Soldier: 2 } })
-    expect(result.error).toMatch(/unassigned|loose/i)
-  })
-
-  test('the stores must cover the whole request, summed', () => {
-    expect(plan({ resources: { gold: 4, materials: 1000 } }).error).toMatch(/gold/)
-    expect(
-      plan({
-        squad: squad({ archetype: 'vanguard', composition: {} }),
-        request: { Cavalry: 1 },
-        resources: { gold: 100, materials: 100, horses: 0 },
-      }).error,
-    ).toMatch(/horses/)
-  })
-
-  test('an empty or malformed request is refused', () => {
-    expect(plan({ request: {} }).error).toBeTruthy()
-    expect(plan({ request: undefined }).error).toBeTruthy()
-    expect(plan({ request: { Soldier: 0 } }).error).toBeTruthy()
-    expect(plan({ request: { Soldier: -2 } }).error).toBeTruthy()
-    expect(plan({ request: { Soldier: 1.5 } }).error).toBeTruthy()
+  test('a type the catalog does not know THROWS — a data bug, not a quiet skip', () => {
+    expect(() => refill({ sizeOf: new Map() })).toThrow(/Soldier/)
   })
 })
 
@@ -286,26 +263,24 @@ describe('applyReinforcement', () => {
     squads: [{ id: 1, name: '1st Cohort', archetype: 'line', composition: new Map([['Soldier', 30]]) }],
   })
 
-  test('destroys the inputs, creates the outputs, charges the cost, stamps the day', () => {
+  test('destroys the inputs, creates the outputs, charges the cost', () => {
     const campaign = campaignDoc()
     const target = campaign.squads[0]
-    const plan = planReinforcement({
+    const plan = planAutoRefill({
       squad: target,
-      request: { Soldier: 5 },
       sizeOf,
       loose: looseRoster(campaign),
       resources: campaign.resources,
     })
     const log = applyReinforcement(campaign, target, plan)
 
-    // 1:1 today: five loose bodies destroyed, five created inside the charter,
+    // 1:1 today: ten loose bodies destroyed, ten created inside the charter,
     // so the roster total is unchanged and only the LOOSE count moved.
     expect(campaign.roster.get('Soldier')).toBe(100)
-    expect(target.composition.get('Soldier')).toBe(35)
-    expect(looseRoster(campaign).Soldier).toBe(65)
+    expect(target.composition.get('Soldier')).toBe(40)
+    expect(looseRoster(campaign).Soldier).toBe(60)
     expect(campaign.resources.gold).toBe(100 - plan.cost.gold)
     expect(campaign.resources.materials).toBe(100 - plan.cost.materials)
-    expect(target.reinforcedDay).toBe(campaign.day)
     expect(log.join(' ')).toMatch(/1st Cohort/)
   })
 
@@ -350,32 +325,36 @@ describe('a drilled squad packs tighter and pays more', () => {
 
   // The payoff on the campaign side: the same request the hex refuses for an
   // undrilled squad fits once the squad packs tighter.
-  test('the hex budget lets a drilled squad hold what it would otherwise refuse', () => {
+  test('the hex budget lets a drilled squad take on what it otherwise could not', () => {
     const composition = { Soldier: 55 }
-    const request = { Pikeman: 5 }
-    const args = { request, sizeOf, loose: looseEnough, resources: richEnough }
-    // 60 bodies × 10 = 600, + 40 reserve = 640 > 600.
-    expect(planReinforcement({ squad: squad({ composition }), ...args }).error).toMatch(/hex/i)
-    // Drilled: 60 × 8 = 480, + 40 = 520, which fits.
-    expect(planReinforcement({ squad: drilled({ composition }), ...args }).error).toBeUndefined()
+    const args = { sizeOf, loose: looseEnough, resources: richEnough }
+    // Undrilled: 550 points of the 560 available, so one size-10 body fits.
+    expect(planAutoRefill({ squad: squad({ composition }), ...args }).outputs).toEqual({ Pikeman: 1 })
+    // Drilled, the same 55 pack into 440 — room enough that the CAP and the
+    // intake become the binding constraints instead of the hex.
+    expect(planAutoRefill({ squad: drilled({ composition }), ...args }).outputs)
+      .toEqual({ Pikeman: SQUAD_ARCHETYPES.line.caps.Pikeman })
   })
 
   // The price rides the ROW, not the ability (user, 2026-08-18): +1 gold per
   // BODY brought in, on top of whatever the recipe costs.
   test('the surcharge is added per body, on top of the recipe', () => {
-    const composition = { Soldier: 30 }
-    const args = { request: { Soldier: 5 }, sizeOf, loose: looseEnough, resources: richEnough }
-    const plain = planReinforcement({ squad: squad({ composition }), ...args })
-    const paid = planReinforcement({ squad: drilled({ composition }), ...args })
+    // Room for exactly five, so both squads take the same five bodies and the
+    // only difference in the bill is the row itself.
+    const composition = { Soldier: 35, Pikeman: 10 }
+    const args = { sizeOf, loose: looseEnough, resources: richEnough }
+    const plain = planAutoRefill({ squad: squad({ composition }), ...args })
+    const paid = planAutoRefill({ squad: drilled({ composition }), ...args })
+    expect(plain.bodies).toBe(5)
+    expect(paid.bodies).toBe(5)
     expect(paid.cost.gold).toBe(plain.cost.gold + 5)
     // Only the resources the row names — the rest of the bill is untouched.
     expect(paid.cost.materials).toBe(plain.cost.materials)
   })
 
   test('a squad without the row pays exactly what it did before', () => {
-    const composition = { Soldier: 30 }
-    const args = { request: { Soldier: 5 }, sizeOf, loose: looseEnough, resources: richEnough }
-    const before = planReinforcement({ squad: squad({ composition }), ...args })
+    const args = { sizeOf, loose: looseEnough, resources: richEnough }
+    const before = planAutoRefill({ squad: squad({ composition: { Soldier: 35, Pikeman: 10 } }), ...args })
     expect(before.cost).toEqual({ gold: 10, materials: 10 })
   })
 })
@@ -393,8 +372,7 @@ describe('the guard squad pays a dearer rate for its replacements', () => {
   const args = { sizeOf, loose: looseEnough, resources: richEnough }
 
   test('a replacement is trained OUT of a loose Soldier, not out of a guard', () => {
-    const result = planReinforcement({ squad: guard(), request: { RoyalGuard: 4 }, ...args })
-    expect(result.error).toBeUndefined()
+    const result = planAutoRefill({ squad: guard({ composition: { RoyalGuard: 36, Pikeman: 10 } }), ...args })
     // There are never loose Royal Guards to draw on — the upgrade is the only
     // thing that makes one — so the Soldier pipeline stays load-bearing.
     expect(result.inputs).toEqual({ Soldier: 4 })
@@ -414,26 +392,32 @@ describe('the guard squad pays a dearer rate for its replacements', () => {
   // No surcharge on top: unlike Formation Fighters, the dearer RECIPE is the
   // price of this row, and stacking one would charge the same trade twice.
   test('the recipe IS the price — no upgrade surcharge on top', () => {
-    const result = planReinforcement({ squad: guard(), request: { RoyalGuard: 2 }, ...args })
+    const result = planAutoRefill({ squad: guard({ composition: { RoyalGuard: 38, Pikeman: 10 } }), ...args })
+    expect(result.outputs).toEqual({ RoyalGuard: 2 })
     expect(result.cost).toEqual({ gold: 10, materials: 8 })
   })
 
   // The whole point of Soldier LEAVING the charter: a guard squad cannot quietly
   // refill with the cheap bodies it used to hold.
-  test('the converted charter refuses ordinary Soldiers outright', () => {
-    const result = planReinforcement({ squad: guard(), request: { Soldier: 1 }, ...args })
-    expect(result.error).toMatch(/does not take Soldier/)
+  // The whole point of Soldier LEAVING the charter, and it is sharper now than
+  // it was: the refill picks the types itself, so if the swap had not taken
+  // Soldier off the caps table this charter would quietly refill with cheap
+  // bodies every turn and nobody would ever see the dearer recipe.
+  test('the refill never brings an ordinary Soldier into a converted charter', () => {
+    const result = planAutoRefill({ squad: guard({ composition: { RoyalGuard: 20 } }), ...args })
+    expect(result.outputs.Soldier).toBeUndefined()
+    expect(Object.keys(result.outputs)).toEqual(['RoyalGuard'])
   })
 
-  test('the loose pool must hold the Soldiers the training destroys', () => {
-    const result = planReinforcement({
+  test('the loose Soldiers on hand are the ceiling on new guards', () => {
+    const result = planAutoRefill({
       squad: guard(),
-      request: { RoyalGuard: 3 },
       sizeOf,
       loose: { Soldier: 2 },
       resources: richEnough,
     })
-    expect(result.error).toMatch(/only 2 unassigned Soldier/)
+    expect(result.outputs).toEqual({ RoyalGuard: 2 })
+    expect(result.inputs).toEqual({ Soldier: 2 })
   })
 
   test('a converted squad measures against the hex exactly as it did before', () => {
@@ -449,12 +433,88 @@ describe('the guard squad pays a dearer rate for its replacements', () => {
       resources: { gold: 100, materials: 100 },
       roster: new Map([['Soldier', 10], ['RoyalGuard', 30]]),
     }
-    const s = { ...guard(), composition: new Map([['RoyalGuard', 30]]) }
-    const plan = planReinforcement({ squad: s, request: { RoyalGuard: 2 }, ...args })
+    const s = { ...guard(), composition: new Map([['RoyalGuard', 38], ['Pikeman', 10]]) }
+    const plan = planAutoRefill({ squad: s, ...args })
     applyReinforcement(campaign, s, plan)
-    expect(s.composition.get('RoyalGuard')).toBe(32)
+    expect(s.composition.get('RoyalGuard')).toBe(40)
     expect(campaign.roster.get('RoyalGuard')).toBe(32)
     expect(campaign.roster.get('Soldier')).toBe(8)
     expect(campaign.resources).toEqual({ gold: 90, materials: 92 })
+  })
+})
+
+// ── The end-of-turn pass (13-2/13-4) ────────────────────────────────────────
+//
+// One charter at a time, in roll order, each priced against what the ones
+// before it left behind. These are the tests that would catch a refill that
+// looked right per squad and double-spent across the army.
+describe('refillSquads', () => {
+  const army = (squads, { roster, ...resources } = {}) => ({
+    day: 4,
+    resources: { gold: 1000, materials: 1000, horses: 100, ...resources },
+    roster: new Map(Object.entries(roster ?? { Soldier: 200, Archer: 200 })),
+    squads,
+  })
+  const charter = (id, name, overrides = {}) => ({
+    id,
+    name,
+    archetype: 'line',
+    composition: new Map([['Soldier', 30], ['Pikeman', 10]]),
+    ...overrides,
+  })
+
+  test('every charter under strength takes on bodies, and says so in the log', () => {
+    const campaign = army([charter(1, '1st Cohort'), charter(2, '2nd Cohort')])
+    const entries = refillSquads(campaign, sizeOf)
+    expect(campaign.squads[0].composition.get('Soldier')).toBe(40)
+    expect(campaign.squads[1].composition.get('Soldier')).toBe(40)
+    expect(entries).toHaveLength(2)
+    expect(entries.join(' ')).toMatch(/1st Cohort/)
+    expect(entries.join(' ')).toMatch(/2nd Cohort/)
+  })
+
+  test('a charter with nothing to take is silent — no empty log line', () => {
+    const full = charter(1, 'Full Cohort', { composition: new Map([['Soldier', 40], ['Pikeman', 10]]) })
+    expect(refillSquads(army([full]), sizeOf)).toEqual([])
+  })
+
+  // 13-4: flat roll order, oldest first, and the shortfall lands on whoever is
+  // last. The pool is re-read per charter — whatever the first took is simply
+  // not there for the second, which is the whole ordering rule.
+  test('a thin loose pool is spent in roll order, and the last charter goes short', () => {
+    const campaign = army(
+      [charter(1, '1st Cohort'), charter(2, '2nd Cohort')],
+      { roster: { Soldier: 66, Pikeman: 20 } }, // 60 committed + 10 committed = 6 loose
+    )
+    refillSquads(campaign, sizeOf)
+    expect(campaign.squads[0].composition.get('Soldier')).toBe(36)
+    expect(campaign.squads[1].composition.get('Soldier')).toBe(30)
+  })
+
+  // The same story for 13-3's money: one treasury, spent down the roll.
+  test('the purse is shared, so an empty treasury strands the later charters', () => {
+    const campaign = army(
+      [charter(1, '1st Cohort'), charter(2, '2nd Cohort')],
+      { gold: 12, materials: 1000 },
+    )
+    refillSquads(campaign, sizeOf)
+    // 2 gold a body: six bodies is the whole purse, and it goes to the first.
+    expect(campaign.squads[0].composition.get('Soldier')).toBe(36)
+    expect(campaign.squads[1].composition.get('Soldier')).toBe(30)
+    expect(campaign.resources.gold).toBe(0)
+  })
+
+  // Decision 14: a wiped charter stays on the rolls at composition {} and
+  // refills through this ordinary intake — there is no rebuild cost and no
+  // special state, so nothing here needs to know it was ever wiped.
+  test('a wiped charter rebuilds through the ordinary intake', () => {
+    const campaign = army([charter(1, 'Ghost Cohort', { composition: new Map() })])
+    refillSquads(campaign, sizeOf)
+    expect(campaign.squads[0].composition.get('Soldier')).toBe(SQUAD_ARCHETYPES.line.intake)
+  })
+
+  test('an army with no squads at all is a no-op', () => {
+    expect(refillSquads(army([]), sizeOf)).toEqual([])
+    expect(refillSquads({ ...army([]), squads: undefined }, sizeOf)).toEqual([])
   })
 })

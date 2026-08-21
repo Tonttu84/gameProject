@@ -15,7 +15,6 @@ import {
   ENEMY_SUPPLY_BANDS,
   RAID_SCOUT_COST_ADD,
   RAID_SCOUT_COST_REVEAL,
-  SQUAD_REINFORCE_POOL,
   bandLabel,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
@@ -28,7 +27,6 @@ import {
   upgradeSlotCost,
   picksAvailable,
   findUpgrade,
-  reinforceSurcharge,
 } from './squadUpgrades.js'
 import { bannerTier, squadBanner, storedItems } from './items.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
@@ -342,9 +340,7 @@ export async function campaignView(campaign) {
     // `archetype` is the stored id; `caps` and `intake` are RESOLVED from it
     // here rather than shipped as an id for the client to look up, which is
     // what keeps SQUAD_ARCHETYPES single-sourced (and is why the document
-    // stores the bare id). `reinforcedToday` reads the reinforcedDay stamp
-    // against today the same way recruit.drawn reads drawnDay — the client
-    // needs the answer, not the ledger.
+    // stores the bare id).
     // Characters (slice 5). All own info, so the whole list ships — including
     // the DEAD, who stay on the rolls (5-9) and whom the panel shows as a roll
     // of honour. `items`/`experience`/`wounds` are deliberately NOT projected:
@@ -375,20 +371,12 @@ export async function campaignView(campaign) {
       rank: squadRank(squad.prestige),
       archetype: squad.archetype ?? null,
       // Caps and intake already carry the squad's upgrades (squadReinforce
-      // resolves the archetype row THROUGH them), so the panel prices a
-      // reinforcement against the same numbers the route will check.
+      // resolves the archetype row THROUGH them), so what the screen shows is
+      // what the end-of-turn refill will actually work to.
       caps: squadCaps(squad),
       intake: squadIntake(squad),
-      // What this squad's upgrades ADD per body it takes on (4c), e.g.
-      // `{gold: 1}`. Shipped per squad because the recipe table is global and
-      // this is not: the panel prices a draft off both, and a preview that knew
-      // only the recipes would quietly understate a drilled squad's bill — the
-      // one disagreement with the server the panel is built to make impossible.
-      reinforceSurcharge: reinforceSurcharge(squad),
-      reinforcedToday: squad.reinforcedDay === campaign.day,
       // Slice 4a. Rows are sent RESOLVED (name + blurb) because the client has
-      // no copy of the catalog and a blurb is display text, not a rule — the
-      // same reason reinforceRecipes is projected rather than referenced. What
+      // no copy of the catalog and a blurb is display text, not a rule. What
       // the client sends BACK is always the id.
       upgrades: squadUpgrades(squad).map(({ id, name, blurb }) => ({ id, name, blurb })),
       // How much of the ladder this squad has already spent (4d). Sent beside
@@ -430,18 +418,10 @@ export async function campaignView(campaign) {
         : null,
     })),
     // The unassigned remainder per type — roster minus every charter's
-    // composition. Derived server-side because reinforcement now SPENDS it
-    // (services/squadReinforce.js), and the number the panel prices a
-    // reinforcement against must be the one the route will check.
+    // composition. It is what the end-of-turn refill eats (13-2), and 13-13
+    // protects none of it, so this number is both "who is left to hand-place at
+    // deploy" and "how much the charters can take on tonight".
     loose: looseRoster(campaign),
-    // What a replacement costs, by OUTPUT type: the recipe table projected onto
-    // the wire so the panel can preview a price without a second copy of the
-    // numbers. Shipped ONCE for the army rather than per squad — recipes are
-    // global and the archetype only decides which of them a charter may use
-    // (its `caps` keys), so per-squad copies would be the same rows repeated.
-    reinforceRecipes: Object.fromEntries(
-      SQUAD_REINFORCE_POOL.map((r) => [r.output.type, { count: r.output.count, inputs: r.inputs, cost: r.cost }]),
-    ),
     // Civilian labour pool (own info): available = total − used. Forts and
     // Recruit hires both spend it; the client gates their buttons on
     // `available`.

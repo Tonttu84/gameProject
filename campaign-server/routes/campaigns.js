@@ -16,7 +16,6 @@ import {
   resolveHire,
 } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
-import { planReinforcement, applyReinforcement, looseRoster } from '../services/squadReinforce.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
 import { bindItemToSquad, squadAbilities } from '../services/items.js'
 import {
@@ -527,6 +526,9 @@ router.post('/:id/battles', async (req, res) => {
   // is a special kind of troop). A loose one is in no squad to be covered by.
   const abilitiesFor = (character) =>
     character?.squadId == null ? [] : (abilitiesBySquad.get(character.squadId) ?? [])
+  // 13-17: and their squad's upgrades, by the same membership rule.
+  const modsFor = (character) =>
+    character?.squadId == null ? {} : (modsBySquad.get(character.squadId) ?? {})
   const moddedPlacement = placement.map((entry) => {
     const mods = entry.squad_id == null ? null : modsBySquad.get(entry.squad_id)
     const abilities = entry.squad_id == null ? null : abilitiesBySquad.get(entry.squad_id)
@@ -546,7 +548,7 @@ router.post('/:id/battles', async (req, res) => {
       return noFlag
     }
     const character = livingCharacters(campaign).find((c) => c.id === entry.character_id)
-    return characterEntryFor(character, { q: entry.q, r: entry.r }, abilitiesFor(character))
+    return characterEntryFor(character, { q: entry.q, r: entry.r }, abilitiesFor(character), modsFor(character))
   })
 
   // Attached characters ride along AUTOMATICALLY (5-8) — no separate placement
@@ -560,7 +562,7 @@ router.post('/:id/battles', async (req, res) => {
     if (!hex) continue
     const squad = campaign.squads.find((s) => s.id === character.squadId)
     moddedPlacement.push({
-      ...characterEntryFor(character, { q: hex.q, r: hex.r }, abilitiesFor(character)),
+      ...characterEntryFor(character, { q: hex.q, r: hex.r }, abilitiesFor(character), modsFor(character)),
       squad_id: character.squadId,
       ...(squad?.name ? { squad_name: squad.name } : {}),
     })
@@ -792,7 +794,7 @@ router.post('/:id/raids/launch', async (req, res) => {
         const hex = raidPlacement.find((e) => e.squad_id === squad.id)
         if (!hex) continue
         raidPlacement.push({
-          ...characterEntryFor(character, { q: hex.q, r: hex.r }, squadAbilities(squad)),
+          ...characterEntryFor(character, { q: hex.q, r: hex.r }, squadAbilities(squad), statMods(squad)),
           squad_id: squad.id,
           squad_name: squad.name,
         })
@@ -1072,59 +1074,6 @@ router.post('/:id/recruit/hire', async (req, res) => {
   // preview computed against POST-hire resources in the view below — clearing
   // makes "nothing left to pick today" unambiguous.
   campaign.recruit.dailyOptions = []
-  campaign.log.push({ day: campaign.day, entries })
-  await campaign.save()
-  res.json(await campaignView(campaign))
-})
-
-// Reinforce ONE squad (docs/CAMPAIGN_PLAN.md "SLICE 3 — reinforcement"): the
-// Recruit phase's other sink. The body is a MAP of output type → bodies,
-// `{ reinforce: { Cavalry: 1, LightCavalry: 1 } }`, applied ATOMICALLY — all of
-// it or none. That keeps "once per turn, per squad" literally true while a
-// mixed archetype still splits its intake across its types (vanguard, intake 2
-// over two permitted types, needs exactly that on day one), and it is why a
-// rejection leaves nothing spent: planReinforcement decides, and only
-// applyReinforcement writes.
-//
-// FULLY INDEPENDENT OF THE DAY'S HIRE, both directions (decision I): they are
-// different sinks — the hire spends food/workers and adds bodies to the ARMY,
-// this spends gold/materials and moves bodies into a CHARTER. Coupling them
-// would make the mandatory hire silently a mandatory reinforcement decision.
-// The only shared gate is the phase itself.
-router.post('/:id/squads/:squadId/reinforce', async (req, res) => {
-  const campaign = await findOwn(req)
-  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
-  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
-  if (rejectIfChoicePending(campaign, res)) return
-  // Phase-guarded to Recruit, exactly like the hire: the draw stamp is the
-  // door in, rejectIfPhasePassed is the door out.
-  if (rejectIfPhasePassed(campaign, res, 'recruit')) return
-  if (campaign.recruit.drawnDay !== campaign.day)
-    return res.status(400).json({ error: 'recruiting has not been opened today' })
-
-  const squadId = Number(req.params.squadId)
-  const squad = campaign.squads.find((s) => s.id === squadId)
-  if (!squad) return res.status(400).json({ error: `not one of your squads: squad_id ${req.params.squadId}` })
-  // The once-per-turn ledger: a day stamp on the charter itself (schema v34),
-  // so it survives a wipe with the squad and needs no end-of-day clearing.
-  if (squad.reinforcedDay === campaign.day)
-    return res.status(400).json({ error: `${squad.name} has already taken replacements this turn` })
-
-  const catalog = await getCatalog()
-  const sizeOf = new Map([...catalog].map(([name, type]) => [name, type.size]))
-  const plan = planReinforcement({
-    squad,
-    request: req.body?.reinforce,
-    sizeOf,
-    loose: looseRoster(campaign),
-    resources: campaign.resources,
-  })
-  // One 400 for every refusal, naming the reason: an over-request is never
-  // silently clamped to what fits (a clamp would leave the UI's arithmetic and
-  // the server's disagreeing with nobody noticing).
-  if (plan.error) return res.status(400).json({ error: plan.error })
-
-  const entries = applyReinforcement(campaign, squad, plan)
   campaign.log.push({ day: campaign.day, entries })
   await campaign.save()
   res.json(await campaignView(campaign))

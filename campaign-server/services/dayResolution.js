@@ -14,6 +14,7 @@ import {
 } from '../utils/capabilities.js'
 import { bracketOnLevelUp } from './recon.js'
 import { drawUpgradeOffer } from './squadUpgrades.js'
+import { refillSquads } from './squadReinforce.js'
 import {
   applyEffect,
   firedRung,
@@ -324,6 +325,21 @@ export async function endDay(campaign) {
     if (deserters > 0) entries.push(`${deserters} soldiers deserted — the stores are empty.`)
   }
   report.upkeep = { foodConsumed, deserters }
+
+  // 5.5. Replacements (13-2): every charter under its caps draws from the loose
+  // pool up to its archetype's intake and pays for them out of the treasury,
+  // with no player action anywhere. This is decision 14's "it refills through
+  // the ordinary per-turn intake" finally made real.
+  //
+  // AFTER upkeep and desertion, deliberately. A body that joins tonight did not
+  // eat this fortnight's rations, and it must not slip away in a desertion that
+  // happened before it arrived — running this earlier would charge the player
+  // for replacements and then desert a tenth of them the same night.
+  //
+  // BEFORE the end conditions below, so the report line lands in the turn that
+  // paid for it. The refill moves bodies from loose to charter rather than
+  // creating them, so it cannot rescue an army from annihilation.
+  entries.push(...refillSquads(campaign, new Map([...catalog].map(([name, type]) => [name, type.size]))))
 
   // 6. End conditions
   entries.push(...checkAnnihilation(campaign))

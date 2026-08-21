@@ -27,39 +27,27 @@ export const campaignFixture = {
   // Persistent player-facing squads (playtest item 1) — a subset of roster
   // organized into named formations; the remainder stays loose.
   // `caps`/`intake` are RESOLVED server-side from the stored archetype id
-  // (slice 2/3), and `reinforcedToday` reads the once-per-turn stamp against
-  // today. The starting squads sit exactly AT their caps, so a fresh fixture
-  // has no reinforcement room — squadReinforcePanel.test.jsx mauls them first,
-  // which is the state a battle or a raid leaves behind.
+  // (slice 2/3) — what the end-of-turn refill (13-2) works to. The starting
+  // squads sit exactly AT their caps, so a fresh fixture has no room to take
+  // anyone on, which is a full formation reading correctly.
   squads: [
     {
       id: 1, name: '1st Cohort', composition: { Soldier: 40 }, prestige: 0, rank: 'Untested',
-      archetype: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10, reinforcedToday: false,
+      archetype: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10,
     },
     {
       id: 2, name: 'Skirmishers', composition: { Archer: 30 }, prestige: 0, rank: 'Untested',
-      archetype: 'skirmish', caps: { Archer: 30, Militia: 10 }, intake: 6, reinforcedToday: false,
+      archetype: 'skirmish', caps: { Archer: 30, Militia: 10 }, intake: 6,
     },
     {
       id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 }, prestige: 0, rank: 'Untested',
-      archetype: 'vanguard', caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2, reinforcedToday: false,
+      archetype: 'vanguard', caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2,
     },
   ],
-  // roster minus every charter's composition — the pool a reinforcement
-  // destroys bodies out of. Derived server-side so the panel prices against
-  // the same number the route checks.
+  // roster minus every charter's composition — the bodies the end-of-turn
+  // refill eats (13-13 protects none of it) and the ones the player hand-places
+  // at deploy.
   loose: { Soldier: 260, Archer: 20, Mage: 3, Priest: 3, Cavalry: 4, LightCavalry: 6 },
-  // What a replacement costs by output type (services/squadReinforce.js's
-  // SQUAD_REINFORCE_POOL projected onto the wire): inputs are DESTROYED and
-  // outputs CREATED, so the two sides need not match.
-  reinforceRecipes: {
-    Militia:      { count: 1, inputs: { Militia: 1 },      cost: { gold: 1, materials: 1 } },
-    Soldier:      { count: 1, inputs: { Soldier: 1 },      cost: { gold: 2, materials: 2 } },
-    Archer:       { count: 1, inputs: { Archer: 1 },       cost: { gold: 2, materials: 2 } },
-    Pikeman:      { count: 1, inputs: { Pikeman: 1 },      cost: { gold: 2, materials: 1 } },
-    LightCavalry: { count: 1, inputs: { LightCavalry: 1 }, cost: { gold: 4, materials: 3, horses: 1 } },
-    Cavalry:      { count: 1, inputs: { Cavalry: 1 },      cost: { gold: 5, materials: 4, horses: 1 } },
-  },
   // Civilian labour pool: available = total − used. Forts + militia spend it.
   workers: { total: 2000, used: 0, available: 2000 },
   // Own info (not hidden): fort level + next-level material/worker cost + the

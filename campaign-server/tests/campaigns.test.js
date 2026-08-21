@@ -1310,14 +1310,12 @@ describe('POST /api/campaigns/:id/battles', () => {
       const { body: c } = await createCampaign()
       // prestige/rank joined the wire shape in slice 1 — a fresh squad starts
       // at 0 and reads as the lowest rank. Slice 3 added the archetype and its
-      // RESOLVED caps/intake (the document stores only the id), plus the
-      // once-per-turn reinforcement stamp read against today. Slice 4a added
+      // RESOLVED caps/intake (the document stores only the id) — which is what
+      // 13-2's end-of-turn refill now works to, no longer a preview for a
+      // reinforcement form. Slice 4a added
       // the upgrade fields: a fresh squad is Untested, so it has no slot, no
       // pick, no banner and no draft — every one of them derived from prestige
       // rather than stored, which is why they read as zero rather than absent.
-      // Slice 4c added the per-squad reinforcement surcharge its upgrades
-      // impose — empty for a fresh charter, and shipped per squad because the
-      // recipe table the panel prices against is global and this is not.
       // Slice 4d added upgradeSlotsUsed: with a row that costs two slots,
       // "honours held" and "slots spent" are different numbers for the first
       // time, so the panel is told both rather than counting the list itself.
@@ -1326,7 +1324,7 @@ describe('POST /api/campaigns/:id/battles', () => {
       // which is a banner it genuinely carries and one that does nothing, not
       // an absence.
       const fresh = {
-        prestige: 0, rank: 'Untested', reinforcedToday: false, reinforceSurcharge: {},
+        prestige: 0, rank: 'Untested',
         upgrades: [], upgradeSlots: 0, upgradeSlotsUsed: 0, upgradePicks: 0,
         banner: 'plain', bannerItem: null,
         upgradeOffer: null,
@@ -1801,20 +1799,16 @@ describe('Recruit phase locks the rest of the turn', () => {
   })
 })
 
-// Squad reinforcement (docs/CAMPAIGN_PLAN.md "SLICE 3 — reinforcement"): the
-// Recruit phase's OTHER sink. A hire spends food/workers and adds bodies to the
-// ARMY; a reinforcement spends gold/materials and moves bodies from the loose
-// pool into a CHARTER, once per turn per squad, bounded by the archetype's
-// pooled intake. The two are fully independent in both directions (decision I).
+// Automatic reinforcement (docs/CAMPAIGN_PLAN.md 13-2): the Recruit phase's
+// other sink is GONE as a player action. There is no reinforce route to call
+// and no draft to submit — every charter refills once, at end of turn, from the
+// loose pool and the treasury.
 //
-// The pure layer — recipes, headroom, intake, the hex budget — is covered in
-// squadReinforce.test.js; this is the route's contract: the phase gate, the
-// once-per-turn ledger, and atomicity (a refusal spends NOTHING).
-describe('squad reinforcement (docs/CAMPAIGN_PLAN.md "SLICE 3")', () => {
-  const openRecruit = (id) => auth(api.post(`/api/campaigns/${id}/recruit/open`)).send({})
-  const reinforce = (id, squadId, body) =>
-    auth(api.post(`/api/campaigns/${id}/squads/${squadId}/reinforce`)).send(body)
-
+// The pure layer — recipes, headroom, intake, the hex budget, the clamps and
+// the roll order — is covered in squadReinforce.test.js. This is the wiring:
+// that end-day actually runs it, WHERE in the resolution it runs, and that the
+// player is told what it did and what it cost.
+describe('automatic reinforcement (docs/CAMPAIGN_PLAN.md 13-2)', () => {
   // The starting squads all sit exactly AT their caps (a full formation has no
   // room, which reads correctly), so every case here first takes losses off
   // one — the state a battle or a raid would leave behind.
@@ -1824,204 +1818,97 @@ describe('squad reinforcement (docs/CAMPAIGN_PLAN.md "SLICE 3")', () => {
       { $set: { 'squads.$.composition': composition } },
     )
   const fund = (id, resources) => Campaign.findByIdAndUpdate(id, { $set: resources })
-  // Take whatever the day actually offered: funding a campaign with gold puts
-  // the casters in the affordable pool, so the two drawn options are not
-  // reliably the day-1 Militia card.
-  const hireWhateverIsOffered = async (id) => {
-    const view = await getView(id)
-    return auth(api.post(`/api/campaigns/${id}/recruit/hire`)).send({ entryId: view.recruit.options[0].id })
-  }
+  const squadOf = async (id, squadId) =>
+    (await getView(id)).squads.find((s) => s.id === squadId)
 
-  // A campaign in the Recruit phase with a mauled 1st Cohort (line: 40 Soldier,
-  // intake 10) and coin to spend.
-  // Gold is generous by default so the day's DRAWN offer stays affordable
-  // after a reinforcement has been paid for. That interaction is real and
-  // intended (see the independence test below): the two sinks share the purse
-  // even though neither gates the other, so a lavish reinforcement can put a
-  // 100-gold caster out of reach. The free Travellers card is what keeps the
-  // phase exitable regardless.
-  const readyCampaign = async ({ composition = { Soldier: 30 }, squadId = 1, gold = 500 } = {}) => {
+  test('the route the player used to call is gone', async () => {
     const { body: c } = await createCampaign()
-    await maulSquad(c.id, squadId, composition)
-    await fund(c.id, { 'resources.gold': gold, 'resources.horses': 10 })
-    await openRecruit(c.id)
-    return c
-  }
+    const gone = await auth(api.post(`/api/campaigns/${c.id}/squads/1/reinforce`))
+      .send({ reinforce: { Soldier: 1 } })
+    expect(gone.status).toBe(404)
+  })
 
-  test('the view resolves each squad’s archetype into its caps and intake', async () => {
+  test('a mauled charter refills at end of turn, with nobody asking', async () => {
     const { body: c } = await createCampaign()
-    expectNoHiddenInfo(c)
-    const cohort = c.squads.find((s) => s.id === 1)
-    // Resolved SERVER-side from the id (which is all the document stores), so
-    // the config stays single-sourced and a rebalance reaches live campaigns.
-    expect(cohort.archetype).toBe('line')
-    expect(cohort.caps).toEqual({ Soldier: 40, Pikeman: 10 })
-    expect(cohort.intake).toBe(10)
-    expect(cohort.reinforcedToday).toBe(false)
-    // The loose pool the reinforcement draws on: roster minus every charter.
-    expect(c.loose.Soldier).toBe(c.roster.Soldier - 40)
-    expect(c.loose.Cavalry).toBe(c.roster.Cavalry - 6)
-    // The price list, once for the army rather than copied onto every squad —
-    // so the panel previews a cost from the same numbers the route charges.
-    expect(c.reinforceRecipes.Cavalry).toEqual({
-      count: 1,
-      inputs: { Cavalry: 1 },
-      cost: { gold: 5, materials: 4, horses: 1 },
-    })
-  })
-
-  test('reinforcing moves loose bodies into the charter and charges the recipe', async () => {
-    const c = await readyCampaign()
-    const before = await getView(c.id)
-    const res = await reinforce(c.id, 1, { reinforce: { Soldier: 5 } })
-
-    expect(res.status).toBe(200)
-    expectNoHiddenInfo(res.body)
-    const cohort = res.body.squads.find((s) => s.id === 1)
-    expect(cohort.composition.Soldier).toBe(35)
-    // 1:1 today: the army is no bigger, the bodies just moved off the loose
-    // rolls and into the squad.
-    expect(res.body.roster.Soldier).toBe(before.roster.Soldier)
-    expect(res.body.loose.Soldier).toBe(before.loose.Soldier - 5)
-    expect(res.body.resources.gold).toBe(before.resources.gold - 10)
-    expect(res.body.resources.materials).toBe(before.resources.materials - 10)
-    expect(cohort.reinforcedToday).toBe(true)
-    expect(res.body.log.at(-1).entries.join(' ')).toMatch(/1st Cohort/)
-  })
-
-  test('once per turn, per squad — and the ledger is per charter, not global', async () => {
-    const c = await readyCampaign()
-    await maulSquad(c.id, 2, { Archer: 25 })
-    expect((await reinforce(c.id, 1, { reinforce: { Soldier: 1 } })).status).toBe(200)
-
-    const again = await reinforce(c.id, 1, { reinforce: { Soldier: 1 } })
-    expect(again.status).toBe(400)
-    expect(again.body.error).toMatch(/already/i)
-
-    // A different charter is untouched by the first one's stamp.
-    expect((await reinforce(c.id, 2, { reinforce: { Archer: 2 } })).status).toBe(200)
-  })
-
-  test('a mixed request is applied atomically — or refused whole', async () => {
-    const c = await readyCampaign({ squadId: 3, composition: { Cavalry: 5, LightCavalry: 5 } })
-    const before = await getView(c.id)
-    // vanguard: intake 2, two permitted types — the case a single-type call
-    // could not serve without breaking once-per-turn.
-    const ok = await reinforce(c.id, 3, { reinforce: { Cavalry: 1, LightCavalry: 1 } })
-    expect(ok.status).toBe(200)
-    const vanguard = ok.body.squads.find((s) => s.id === 3)
-    expect(vanguard.composition).toEqual({ Cavalry: 6, LightCavalry: 6 })
-    expect(ok.body.resources.gold).toBe(before.resources.gold - 9)
-    expect(ok.body.resources.horses).toBe(before.resources.horses - 2)
-  })
-
-  test('an over-request is refused with NOTHING spent — never a silent clamp', async () => {
-    const c = await readyCampaign({ composition: { Soldier: 38 } })
-    const before = await getView(c.id)
-    const res = await reinforce(c.id, 1, { reinforce: { Soldier: 5 } })
-
-    expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/room for 2/)
-    const after = await getView(c.id)
-    expect(after.squads.find((s) => s.id === 1).composition.Soldier).toBe(38)
-    expect(after.resources.gold).toBe(before.resources.gold)
-    expect(after.squads.find((s) => s.id === 1).reinforcedToday).toBe(false)
-  })
-
-  test('one bad type in the map spends nothing for the good ones either', async () => {
-    const c = await readyCampaign({ squadId: 3, composition: { Cavalry: 4, LightCavalry: 4 } })
-    const before = await getView(c.id)
-    // Archer is not in vanguard's caps at all; the Cavalry half is legal.
-    const res = await reinforce(c.id, 3, { reinforce: { Cavalry: 1, Archer: 1 } })
-    expect(res.status).toBe(400)
-    const after = await getView(c.id)
-    expect(after.squads.find((s) => s.id === 3).composition).toEqual({ Cavalry: 4, LightCavalry: 4 })
-    expect(after.resources.gold).toBe(before.resources.gold)
-  })
-
-  test('the pooled intake bounds the turn, however the map is split', async () => {
-    const c = await readyCampaign({ squadId: 3, composition: { Cavalry: 2, LightCavalry: 2 } })
-    const greedy = await reinforce(c.id, 3, { reinforce: { Cavalry: 2, LightCavalry: 1 } })
-    expect(greedy.status).toBe(400)
-    expect(greedy.body.error).toMatch(/at most 2/)
-  })
-
-  test('a wiped charter refills through the ordinary intake — no special case', async () => {
-    const c = await readyCampaign({ composition: {} })
-    const res = await reinforce(c.id, 1, { reinforce: { Soldier: 10 } })
-    expect(res.status).toBe(200)
-    expect(res.body.squads.find((s) => s.id === 1).composition).toEqual({ Soldier: 10 })
-  })
-
-  test('the loose pool is the only source — a committed body cannot be recommitted', async () => {
-    const c = await readyCampaign({ composition: { Soldier: 30 } })
-    // Every loose Soldier spent elsewhere: roster down to exactly what the
-    // charters already hold (30 here + nothing else), so nothing is unassigned.
-    await Campaign.findByIdAndUpdate(c.id, { $set: { 'roster.Soldier': 30 } })
-    const res = await reinforce(c.id, 1, { reinforce: { Soldier: 1 } })
-    expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/unassigned/i)
-  })
-
-  test('the stores must cover it: no reinforcing on credit', async () => {
-    const c = await readyCampaign({ gold: 3 })
-    const res = await reinforce(c.id, 1, { reinforce: { Soldier: 5 } })
-    expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/gold/)
-  })
-
-  test('it is phase-guarded: not before recruiting opens, not after it closes', async () => {
-    const { body: early } = await createCampaign()
-    await maulSquad(early.id, 1, { Soldier: 30 })
-    await fund(early.id, { 'resources.gold': 100 })
-    const before = await reinforce(early.id, 1, { reinforce: { Soldier: 1 } })
-    expect(before.status).toBe(400)
-    expect(before.body.error).toMatch(/opened/i)
-
-    const c = await readyCampaign()
-    await Campaign.findByIdAndUpdate(c.id, { phase: 'deploy' })
-    const late = await reinforce(c.id, 1, { reinforce: { Soldier: 1 } })
-    expect(late.status).toBe(409)
-    expect(late.body.error).toMatch(/behind you/i)
-  })
-
-  // Decision I: reinforcing does not consume the day's hire, and the hire does
-  // not gate reinforcing. Coupling them would make the mandatory hire silently
-  // a mandatory reinforcement decision too.
-  test('it is independent of the day’s hire, in both directions', async () => {
-    const c = await readyCampaign()
-    const reinforced = await reinforce(c.id, 1, { reinforce: { Soldier: 1 } })
-    expect(reinforced.status).toBe(200)
-    // The day's hire is untouched: still owed, still on the table.
-    expect(reinforced.body.recruit.hiredToday).toBe(false)
-    expect(reinforced.body.recruit.options.length).toBeGreaterThan(0)
-    expect((await hireWhateverIsOffered(c.id)).status).toBe(200)
-
-    const other = await readyCampaign()
-    expect((await hireWhateverIsOffered(other.id)).status).toBe(200)
-    expect((await reinforce(other.id, 1, { reinforce: { Soldier: 1 } })).status).toBe(200)
-  })
-
-  test('the stamp is a DAY stamp: the next turn reinforces again', async () => {
-    const c = await readyCampaign()
-    await pinAugury(c.id)
-    expect((await reinforce(c.id, 1, { reinforce: { Soldier: 1 } })).status).toBe(200)
-    await hireWhateverIsOffered(c.id)
+    await maulSquad(c.id, 1, { Soldier: 25 })
+    await fund(c.id, { 'resources.gold': 500, 'resources.materials': 500 })
     await endTurn(c.id)
-    await openRecruit(c.id)
-    const res = await reinforce(c.id, 1, { reinforce: { Soldier: 1 } })
-    expect(res.status).toBe(200)
-    expect(res.body.squads.find((s) => s.id === 1).composition.Soldier).toBe(32)
+    // Intake 10, cap 40, pool and purse both deep: a full intake joins.
+    expect((await squadOf(c.id, 1)).composition).toEqual({ Soldier: 35 })
   })
 
-  test('an unknown squad, a malformed body and a foreign campaign are all refused', async () => {
-    const c = await readyCampaign()
-    expect((await reinforce(c.id, 99, { reinforce: { Soldier: 1 } })).status).toBe(400)
-    expect((await reinforce(c.id, 1, {})).status).toBe(400)
-    expect((await reinforce(c.id, 1, { reinforce: { Soldier: 'lots' } })).status).toBe(400)
+  test('it is paid for out of the treasury, and the report says so', async () => {
+    const { body: c } = await createCampaign()
+    // QUIET again: a live fate can spend gold of its own, and this test is
+    // about what the REFILL cost.
+    await pinAugury(c.id)
+    await maulSquad(c.id, 1, { Soldier: 30 })
+    await fund(c.id, { 'resources.gold': 500, 'resources.materials': 500 })
+    const { body: { report } } = await endTurn(c.id)
+    const after = await getView(c.id)
+    // Ten bodies at 2 gold / 2 materials apiece.
+    expect(after.resources.gold).toBe(500 - 20)
+    expect(after.resources.materials).toBe(500 - 20)
+    expect(report.entries.join(' ')).toMatch(/1st Cohort takes on 10 Soldier/)
+    expect(report.entries.join(' ')).toMatch(/20 gold/)
+  })
 
-    const foreign = new mongoose.Types.ObjectId()
-    expect((await reinforce(foreign, 1, { reinforce: { Soldier: 1 } })).status).toBe(404)
+  test('an empty treasury simply means no replacements — never a debt', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id)
+    await maulSquad(c.id, 1, { Soldier: 25 })
+    await fund(c.id, { 'resources.gold': 0, 'resources.materials': 0 })
+    await endTurn(c.id)
+    const after = await getView(c.id)
+    expect(after.squads.find((s) => s.id === 1).composition).toEqual({ Soldier: 25 })
+    expect(after.resources.gold).toBe(0)
+    expect(after.resources.materials).toBe(0)
+  })
+
+  // 13-13: nothing protects the loose pool — it is what the charters eat.
+  test('the bodies come OUT of the loose pool, not out of thin air', async () => {
+    const { body: c } = await createCampaign()
+    // Pinned to QUIET: the fates fire during this same end-day and a lively one
+    // can hand out or kill troops, which would make the pool arithmetic below
+    // measure the turn rather than the refill.
+    await pinAugury(c.id)
+    await maulSquad(c.id, 1, { Soldier: 30 })
+    await fund(c.id, { 'resources.gold': 500, 'resources.materials': 500 })
+    const before = await getView(c.id)
+    await endTurn(c.id)
+    const after = await getView(c.id)
+    expect(after.loose.Soldier).toBe(before.loose.Soldier - 10)
+  })
+
+  // The refill runs AFTER upkeep and desertion, deliberately: a body that joins
+  // tonight did not eat this fortnight's rations and must not slip away in a
+  // desertion that happened before it arrived.
+  test('replacements arrive after the starving army has already deserted', async () => {
+    const { body: c } = await createCampaign()
+    await maulSquad(c.id, 1, { Soldier: 20 })
+    await fund(c.id, { 'resources.food': 0, 'resources.gold': 500, 'resources.materials': 500 })
+    const { body: { report } } = await endTurn(c.id)
+    expect(report.upkeep.deserters).toBeGreaterThan(0)
+    // The full intake still lands: the ten who joined are not among the tenth
+    // who walked, because they were not there when it happened.
+    expect((await squadOf(c.id, 1)).composition.Soldier).toBe(30)
+  })
+
+  test('a charter at full strength is left alone and says nothing', async () => {
+    const { body: c } = await createCampaign()
+    await fund(c.id, { 'resources.gold': 500, 'resources.materials': 500 })
+    const { body: { report } } = await endTurn(c.id)
+    expect(report.entries.join(' ')).not.toMatch(/takes on/)
+  })
+
+  // Decision 14, now actually load-bearing: a wiped charter is answered by the
+  // ordinary intake and needs no rebuild mechanic of its own.
+  test('a wiped charter climbs back on its own', async () => {
+    const { body: c } = await createCampaign()
+    await maulSquad(c.id, 1, {})
+    await fund(c.id, { 'resources.gold': 500, 'resources.materials': 500 })
+    await endTurn(c.id)
+    expect((await squadOf(c.id, 1)).composition).toEqual({ Soldier: 10 })
   })
 })
 

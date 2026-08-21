@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
-import SquadReinforcePanel from './SquadReinforcePanel'
 import SquadUpgradePanel from './SquadUpgradePanel'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
@@ -24,8 +23,8 @@ const costLabel = (cost) =>
     .join(', ') || 'free'
 
 // recruit/resources/workers come straight from the campaign store; onHire and
-// onReinforce are still props (guarded actions).
-const RecruitPanel = ({ onHire, onReinforce, onTakeUpgrade }) => {
+// onTakeUpgrade are still props (guarded actions).
+const RecruitPanel = ({ onHire, onTakeUpgrade }) => {
   const recruit = useCampaignStore((s) => s.campaign?.recruit)
   const resources = useCampaignStore((s) => s.campaign?.resources)
   const workers = useCampaignStore((s) => s.campaign?.workers)
@@ -124,7 +123,6 @@ const RecruitPanel = ({ onHire, onReinforce, onTakeUpgrade }) => {
           intake the panel below prices against, so choosing one first means
           the replacement arithmetic on screen is already the upgraded one. */}
       <SquadUpgradePanel onTakeUpgrade={onTakeUpgrade} />
-      <SquadReinforcePanel onReinforce={onReinforce} />
     </div>
   )
 }

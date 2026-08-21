@@ -184,8 +184,22 @@ export const planAttach = (campaign, characterId, squadId) => {
 // follow, and the banner's own rule is that it grants its ability to all units
 // in the squad. Empty for a loose character, who is in no squad to be covered
 // by — which is the same membership scoping the engine applies (6-6).
-export const characterEntryFor = (character, { q, r }, abilities = []) => {
-  const mods = characterMods(character)
+//
+// `squadMods` is the same story for the squad's UPGRADES (13-17): membership
+// means membership, so the drill and the equipment a charter has earned reach
+// its posted character too. Until 13-17 they did not, and posting a character
+// to your best-drilled cohort was quietly worth less than it looked — the gap
+// slice 6 flagged and left rather than fixed silently.
+//
+// The two bags ADD rather than override. Both are {stat: delta} deltas headed
+// for the same bounded engine door, and a squad's +1 on top of a character's
+// own +1 is +2 by the only arithmetic either side means. `characterMods` is
+// still {} today, so nothing observes the sum yet — which is exactly when to
+// get it right.
+export const characterEntryFor = (character, { q, r }, abilities = [], squadMods = {}) => {
+  const mods = { ...squadMods }
+  for (const [stat, delta] of Object.entries(characterMods(character)))
+    mods[stat] = (mods[stat] ?? 0) + delta
   return {
     unit_type: character.type,
     q,

@@ -12,15 +12,18 @@ import {
   typeSwaps,
 } from './squadUpgrades.js'
 
-// Squad reinforcement — the squad overhaul's slice 3 (docs/CAMPAIGN_PLAN.md
-// "SLICE 3 — reinforcement"). Slice 2 stored the archetype and its caps and
-// enforced nothing, deliberately: nothing added troops to a squad until this
-// file existed. These are the teeth.
+// Squad reinforcement — slice 3's teeth (the archetype's caps, the pooled
+// intake, the hex fence), now driven by nobody. As of 13-2 THE REFILL IS
+// AUTOMATIC: it runs once at end of turn for every charter, and the player has
+// no reinforce action at all. `POST /:id/squads/:squadId/reinforce` and
+// SquadReinforcePanel are gone; what survives is the arithmetic they used to
+// ask for.
 //
-// The shape is plan-then-apply, like recruit.js's resolveHire/applyHire:
-// `planReinforcement` prices and refuses, `applyReinforcement` is the only
-// thing that mutates. That split is what makes the route's ATOMIC contract
-// cheap — a rejection has spent nothing because nothing ran.
+// The shape is still plan-then-apply, like recruit.js's resolveHire/applyHire:
+// `planAutoRefill` decides and prices, `applyReinforcement` is the only thing
+// that mutates. The split earns its keep differently now — the plan is what
+// slice B's on-screen FORECAST (13-6) renders before the turn ends, so what the
+// player is promised and what is applied cannot drift.
 //
 // Three independent gates, in order of what they protect:
 //   1. the per-type CAP — a design knob. Over-cap is INERT, never an error:
@@ -128,84 +131,101 @@ export const looseRoster = (campaign) => {
   return loose
 }
 
-// Price a whole request — `{ Cavalry: 1, LightCavalry: 1 }`, counts of OUTPUT
-// bodies — against every gate, and return either `{ error }` or the plan
-// applyReinforcement consumes. Pure: it decides, it never spends. The request
-// is all-or-nothing, so the first refusal ends it and the caller has nothing
-// to unwind.
-export const planReinforcement = ({ squad, request, sizeOf, loose, resources }) => {
-  const asked = Object.entries(request ?? {})
-  if (asked.length === 0) return { error: 'name at least one troop type to reinforce' }
-  for (const [type, count] of asked)
-    if (!Number.isInteger(count) || count <= 0)
-      return { error: `${type}: ask for a whole number of replacements` }
+// Everything a charter can take on this turn, clamped by every gate rather
+// than refused by any of them (13-2/13-3). This is the automatic refill's whole
+// arithmetic: nobody asks for replacements any more, so there is no request to
+// validate — slice 3's `planReinforcement` and its "you asked for 5, there is
+// room for 3" errors went with the route that served them.
+//
+// CLAMP, DO NOT REFUSE, is the difference that matters. A manual draft could
+// say no and leave the player to ask again for less; an end-of-turn pass has
+// nobody to ask, so each gate becomes a ceiling and the refill takes what fits
+// under all of them at once.
+//
+// The gates, unchanged from slice 3 and applied in the same spirit:
+//   1. per-type CAP — the design knob (over-cap stays inert, never an error);
+//   2. pooled INTAKE — bodies that may JOIN this turn, metered on the OUTPUT
+//      side so caps, composition and intake stay one currency;
+//   3. the hex SIZE BUDGET — the bug fence, independent of the caps;
+//   4. the LOOSE POOL — bodies to draw on (13-13: nothing protects it);
+//   5. the TREASURY — 13-3 keeps the price, so the refill stops when the money
+//      does rather than running up a debt.
+//
+// TYPE ORDER IS THE CAPS TABLE'S OWN (13-5): `line` is written {Soldier,
+// Pikeman} and fills soldiers to cap before it touches pikemen, so a designer
+// retunes the priority by reordering one line of config. That is why this walks
+// `squadCaps(squad)` rather than, say, the composition or the recipe pool.
+//
+// Pure: it decides, it never spends. Returns null when nothing can join, which
+// is the ordinary case for a charter at full strength.
+export const planAutoRefill = ({ squad, sizeOf, loose, resources }) => {
+  let intakeLeft = squadIntake(squad)
+  if (intakeLeft <= 0) return null
 
-  if (!archetypeOf(squad))
-    return { error: `${squad?.name ?? 'that squad'} has no archetype, so nothing can be trained into it` }
+  const packing = formationFighter(squad)
+  const surcharge = reinforceSurcharge(squad)
+  // The hex is measured ONCE against the composition as it stands, then spent
+  // down per body — squadSizePoints over a growing composition each time round
+  // would be the same number recomputed, and this keeps the character reserve
+  // out of the per-body arithmetic where it does not belong.
+  let pointsLeft =
+    SQUAD_TROOP_BUDGET -
+    SQUAD_CHARACTER_RESERVE -
+    squadSizePoints(squad.composition, sizeOf, packing)
 
+  // Working copies: earlier types in this same pass really do eat the pool and
+  // the purse, and a RoyalGuard row consumes the very Soldiers a later row
+  // might have wanted.
+  const poolLeft = { ...(loose ?? {}) }
+  const purseLeft = { ...(resources ?? {}) }
+
+  const outputs = {}
   const inputs = {}
   const cost = {}
   let bodies = 0
-  for (const [type, count] of asked) {
+
+  for (const type of Object.keys(squadCaps(squad))) {
     const recipe = findReinforceRecipe(type)
-    if (!recipe) return { error: `there is no way to train replacement ${type}` }
+    if (!recipe) continue
 
-    const headroom = canSquadAccept(squad, type)
-    if (headroom === 0 && squadCaps(squad)[type] === undefined)
-      return { error: `${squad.name} does not take ${type} into its ranks` }
-    if (count > headroom)
-      return { error: `${squad.name} has room for ${headroom} more ${type}, not ${count}` }
+    const per = recipe.output.count
+    // What one application costs, recipe plus the standard the squad's own
+    // upgrades hold it to (4c) — per BODY for the surcharge, per application
+    // for the recipe, exactly as slice 3 priced it.
+    const perCost = { ...recipe.cost }
+    for (const [resource, amount] of Object.entries(surcharge))
+      perCost[resource] = (perCost[resource] ?? 0) + amount * per
 
-    // Output-side metering means a one-to-many recipe is only orderable in
-    // whole applications — asking for 5 of a 3-at-a-time row would otherwise
-    // have to round, and a silent clamp is exactly what decision F forbids.
-    if (count % recipe.output.count !== 0)
-      return { error: `${type} is trained ${recipe.output.count} at a time` }
-    const applications = count / recipe.output.count
+    const size = sizeOf.get(type)
+    if (!size) throw new Error(`no catalog size for ${type} — cannot measure the squad against the hex`)
 
-    for (const [inputType, per] of Object.entries(recipe.inputs))
-      inputs[inputType] = (inputs[inputType] ?? 0) + per * applications
-    for (const [resource, per] of Object.entries(recipe.cost))
-      cost[resource] = (cost[resource] ?? 0) + per * applications
-    bodies += count
-  }
+    let apps = Math.min(
+      Math.floor(canSquadAccept(squad, type) / per),
+      Math.floor(intakeLeft / per),
+      Math.floor(pointsLeft / (packedSize(size, packing) * per)),
+    )
+    for (const [inputType, amount] of Object.entries(recipe.inputs))
+      apps = Math.min(apps, Math.floor((poolLeft[inputType] ?? 0) / amount))
+    for (const [resource, amount] of Object.entries(perCost))
+      apps = Math.min(apps, Math.floor((purseLeft[resource] ?? 0) / amount))
+    if (apps <= 0) continue
 
-  // The upgrade surcharge (4c): what a squad's taken ROWS add to every body it
-  // brings in, on top of the recipe. Per BODY rather than per application, so a
-  // one-to-many recipe pays for each body it produces — the recipe prices the
-  // transformation, this prices the standard the squad now has to meet.
-  for (const [resource, per] of Object.entries(reinforceSurcharge(squad)))
-    cost[resource] = (cost[resource] ?? 0) + per * bodies
-
-  // Gate 2: the pooled intake, in bodies that JOIN — however many were
-  // destroyed to make them. Pooled rather than per type on purpose: a per-type
-  // allowance would let an archetype's real refill rate scale with how many
-  // types it admits, so vanguard (2) would quietly outpace line (10).
-  const intake = squadIntake(squad)
-  if (bodies > intake)
-    return { error: `${squad.name} takes at most ${intake} replacements a turn, not ${bodies}` }
-
-  // Gate 3: the hex. Independent of the caps by design — over-cap is a design
-  // knob, over-hex is a bug (decision G).
-  const after = Object.fromEntries(entriesOf(squad.composition))
-  for (const [type, count] of asked) after[type] = (after[type] ?? 0) + count
-  const points = squadSizePoints(after, sizeOf, formationFighter(squad)) + SQUAD_CHARACTER_RESERVE
-  if (points > SQUAD_TROOP_BUDGET)
-    return {
-      error: `${squad.name} would not fit its own hex (${points} of ${SQUAD_TROOP_BUDGET} size points, characters included)`,
+    const joined = apps * per
+    outputs[type] = (outputs[type] ?? 0) + joined
+    for (const [inputType, amount] of Object.entries(recipe.inputs)) {
+      inputs[inputType] = (inputs[inputType] ?? 0) + amount * apps
+      poolLeft[inputType] -= amount * apps
     }
-
-  for (const [type, count] of Object.entries(inputs)) {
-    const available = loose?.[type] ?? 0
-    if (available < count)
-      return { error: `only ${available} unassigned ${type} to draw on, and ${count} are needed` }
+    for (const [resource, amount] of Object.entries(perCost)) {
+      cost[resource] = (cost[resource] ?? 0) + amount * apps
+      purseLeft[resource] -= amount * apps
+    }
+    intakeLeft -= joined
+    pointsLeft -= packedSize(size, packing) * joined
+    bodies += joined
   }
 
-  for (const [resource, count] of Object.entries(cost))
-    if ((resources?.[resource] ?? 0) < count)
-      return { error: `not enough ${resource} — ${count} needed` }
-
-  return { inputs, outputs: Object.fromEntries(asked), cost, bodies }
+  return bodies === 0 ? null : { inputs, outputs, cost, bodies }
 }
 
 const costLine = (cost) =>
@@ -237,13 +257,37 @@ export function applyReinforcement(campaign, squad, plan) {
     squad.composition.set(type, (squad.composition.get(type) ?? 0) + count)
   }
 
-  // The once-per-turn ledger: a day stamp on the charter, mirroring
-  // recruit.drawnDay's sealed-day convention. It survives a wipe with the
-  // charter and needs no end-of-day clearing.
-  squad.reinforcedDay = campaign.day
-
   const drawn = bodyLine(plan.inputs)
   const joined = bodyLine(plan.outputs)
   const from = drawn === joined ? 'from the loose ranks' : `out of ${drawn}`
   return [`${squad.name} takes on ${joined} ${from} (${costLine(plan.cost)}).`]
+}
+
+// ── The end-of-turn pass (13-2) ─────────────────────────────────────────────
+//
+// Every charter, in ROLL ORDER (13-4): flat, oldest first, so the shortfall
+// lands on whoever is last. Deliberately not neediest-first or by prestige —
+// both were considered and rejected as rules the player would have to learn
+// before they could predict their own army.
+//
+// The pool and the purse are re-read per charter rather than tracked across the
+// loop, because applyReinforcement has already spent them: whatever the 1st
+// Cohort took is simply not there when the Skirmishers are priced. That is the
+// whole of 13-4's ordering rule, and it needs no bookkeeping to be true.
+//
+// Mutates the campaign in place; the caller saves. Returns log lines, the same
+// contract as applyHire and applyEffect.
+export function refillSquads(campaign, sizeOf) {
+  const entries = []
+  for (const squad of campaign.squads ?? []) {
+    const plan = planAutoRefill({
+      squad,
+      sizeOf,
+      loose: looseRoster(campaign),
+      resources: campaign.resources,
+    })
+    if (!plan) continue
+    entries.push(...applyReinforcement(campaign, squad, plan))
+  }
+  return entries
 }
