@@ -225,6 +225,14 @@ army, a page per charter, the refill forecast on it, and the honours and company
 off it. 13-18 rode along, so nothing of slice 5a is API-only any more. What the next slice needs to
 know:
 
+- **A PENDING FATE OUTRANKS THE SCREEN, and the item store with it.** Every action either one
+  offers — upgrades, banner binding, attachment, hang-back — is a route guarded by
+  `rejectIfChoicePending`, so both render BELOW the pending-choices overlay and the HUD hides its
+  door while a decision is owed. The store used to sit ABOVE it on the strength of a comment saying
+  binding "is not a campaign action the server 409s on"; `POST /squads/:id/banner` carries the same
+  guard as the rest, so that was simply false. Both orderings are now pinned by tests in
+  `squadScreen.test.jsx` rather than by a comment — which is the lesson: a claim about what the
+  server does belongs in a test, because a comment that drifts takes the layout with it.
 - **The forecast is `planAutoRefill`, walked once for the whole army.** `forecastRefills(campaign,
   sizeOf)` in `services/squadReinforce.js` is `refillSquads` with the spending simulated instead of
   done — same order, same shared pool and purse (13-4). The two are pinned together by an agreement
