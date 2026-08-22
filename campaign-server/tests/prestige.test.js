@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { raidBandWeight, raidPrestige, squadRank } from '../utils/capabilities.js'
+import { raidBandWeight, raidPrestige, squadRank, nextRank } from '../utils/capabilities.js'
 import {
   RAID_STRENGTH_BANDS,
   SQUAD_RANKS,
@@ -100,5 +100,41 @@ describe('squadRank', () => {
   test('a missing prestige value reads as the lowest rank', () => {
     expect(squadRank(undefined)).toBe('Untested')
     expect(squadRank(null)).toBe('Untested')
+  })
+})
+
+// 13-14: the screen states the rung and the number, and promises nothing about
+// what the rung grants. The number is the server's — a client with its own copy
+// of the thresholds goes stale the moment they are retuned.
+describe('nextRank', () => {
+  test('names the rung above and what it takes', () => {
+    expect(nextRank(0)).toEqual({ label: 'Blooded', at: 10 })
+    expect(nextRank(9)).toEqual({ label: 'Blooded', at: 10 })
+    expect(nextRank(10)).toEqual({ label: 'Seasoned', at: 25 })
+    expect(nextRank(44)).toEqual({ label: 'Renowned', at: 45 })
+    expect(nextRank(45)).toEqual({ label: 'Legendary', at: 70 })
+  })
+
+  // The ladder ends; prestige does not. A squad at the top has no next rung,
+  // and the screen must render that as an end rather than as an unreachable
+  // target.
+  test('the top of the ladder has nothing above it', () => {
+    expect(nextRank(70)).toBeNull()
+    expect(nextRank(1000)).toBeNull()
+  })
+
+  test('a missing prestige value reads as a fresh squad', () => {
+    expect(nextRank(undefined)).toEqual({ label: 'Blooded', at: 10 })
+  })
+
+  // The pair must agree: you are your rank, and the next rung is the one you
+  // have NOT reached — never the one you are standing on.
+  test('the rung it names is always above the rank you hold', () => {
+    for (let prestige = 0; prestige < 100; prestige++) {
+      const next = nextRank(prestige)
+      if (!next) continue
+      expect(next.at).toBeGreaterThan(prestige)
+      expect(squadRank(next.at)).toBe(next.label)
+    }
   })
 })

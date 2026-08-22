@@ -85,7 +85,7 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-20) — START HERE
+### Where the work stands (2026-08-22) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **35**
 (this block read 34 until 2026-08-18; `CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
@@ -105,7 +105,13 @@ unit is stats + anatomy + abilities (6-1), `bool undead` splits into four compos
 an implication closure (6-3, 6-4), and a banner's gift is scoped to squad MEMBERSHIP rather than to
 `broken` (6-6).
 
-**NEXT UP: DECISION 13 — THE SQUAD INSPECTION SCREEN (user, 2026-08-20: "13 is good").** The last
+**DECISION 13 IS DONE — BOTH SLICES SHIPPED (A 2026-08-21, B 2026-08-22). The squad overhaul is
+finished, and the NEXT SLICE IS 17, the storage page.** What follows in this block is the record of
+13's interview and what it built; the "SLICE B IS SHIPPED" note below it is what a later slice needs
+to know. Decision 12 (a squad tied up for X turns) is still unbuilt and still waits for the event
+that requires a squad.
+
+**DECISION 13 — THE SQUAD INSPECTION SCREEN (user, 2026-08-20: "13 is good").** The last
 of the squad overhaul, and the one that RENDERS everything the other twelve built. Decision 13
 already lists what it must show — composition against the per-type caps, prestige rank, banner tier
 and what it grants, attached character, availability (free / raiding / tied up) — but that is a
@@ -212,6 +218,45 @@ gone, and 13-17 rode along. What slice B needs to know before it starts:
   time a raid moves it.
 - **`refillSquads` is the only caller of `applyReinforcement`.** If slice B wants a "what would
   happen" endpoint, it calls `planAutoRefill` and never `apply`.
+
+**SLICE B IS SHIPPED (2026-08-22, no schema bump)** — decision 13 is DONE, and with it the squad
+overhaul. The screen exists: a takeover opened from the HUD in every phase, a roll of the whole
+army, a page per charter, the refill forecast on it, and the honours and company screens hanging
+off it. 13-18 rode along, so nothing of slice 5a is API-only any more. What the next slice needs to
+know:
+
+- **The forecast is `planAutoRefill`, walked once for the whole army.** `forecastRefills(campaign,
+  sizeOf)` in `services/squadReinforce.js` is `refillSquads` with the spending simulated instead of
+  done — same order, same shared pool and purse (13-4). The two are pinned together by an agreement
+  test that forecasts a campaign, then applies the pass to it and demands the same bodies. **Do not
+  add a second preview path**; if a gate moves, move it in `planAutoRefill` and both follow.
+- **A null plan cannot say WHY, so `refillBlocker` does** — one word, one of
+  `pool｜cost｜space｜intake｜full｜none`, reached only when the plan came back empty. Where two types
+  are blocked differently the one with the most ROOM decides, because that is the shortfall the
+  player came to the screen about. The client phrases it (`BLOCKED` in `SquadCharterPage.jsx`) and
+  phrases nothing else.
+- **The view grew `squads[].refill` and `squads[].nextRank`** and nothing else. `nextRank` is
+  `{label, at}` or null at the top of the ladder — shipped because SQUAD_RANKS is one server-side
+  constant, and a client copy of the thresholds goes stale the first time they are retuned.
+- **`SquadUpgradePanel` is now the DRAFT and nothing else.** What a charter HOLDS — its banner, its
+  honours, its slots — moved to the charter page. Two screens listing a squad's honours is exactly
+  the "managed in three places" 13-1 exists to end, so if a later slice wants the held list back,
+  it moves rather than copies.
+- **`RecruitPanel` keeps only a POINTER to the honours** ("An honour waits… Go to the army"). It
+  takes no `onTakeUpgrade` any more.
+- **Character placement is client-side only.** The battle route has accepted `character_id`
+  entries since 5a; 13-18 just gave them a screen. `usePlacementStore.characterPlacements` is
+  `{characterId: {col, row}}`, and only an UNATTACHED living character ever appears in it — an
+  attached one is seated by the server on their squad's hex (5-8), and offering them at deploy
+  would field the same person twice.
+- **A placed character is counted APART from the troops.** The "whole army must take the field"
+  gate is roster arithmetic and a character is not a roster count (5-1), so folding them into
+  `placedCount` would break the in-camp sum on both sides of the wire. Leaving a caster in camp
+  does not hold up the battle, server-side or on screen.
+
+**What 13 did NOT ship, deliberately:** decision 12's "tied up for X turns" availability (13-11 —
+it lands with the event that requires a squad, not before), and decision 17's storage page, which
+`ItemStorePanel` remains the deliberately-plain placeholder for. **17 is next.**
 
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and

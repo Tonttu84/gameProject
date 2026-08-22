@@ -4,6 +4,7 @@ import {
   reconBand,
   reconLevel,
   squadRank,
+  nextRank,
   SCOUTING_BANDS,
 } from '../utils/capabilities.js'
 import {
@@ -18,7 +19,7 @@ import {
   bandLabel,
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
-import { squadCaps, squadIntake, looseRoster } from './squadReinforce.js'
+import { squadCaps, squadIntake, looseRoster, forecastRefills } from './squadReinforce.js'
 import { allBodies } from './characters.js'
 import {
   squadUpgrades,
@@ -269,6 +270,12 @@ const visionCard = ({ id, title, description, severity, effect }) => ({
 
 export async function campaignView(campaign) {
   const catalog = await getCatalog()
+  // Tonight's automatic refill, charter by charter, decided but not done
+  // (13-6). One walk for the whole army rather than a plan per squad, because
+  // the charters share one pool and one purse and fill in roll order (13-4) —
+  // the last charter's forecast has to know what the first will take.
+  const sizeOf = new Map([...catalog.values()].map((t) => [t.name, t.size]))
+  const refills = forecastRefills(campaign, sizeOf)
   const points = campaign.recon?.points ?? 0
   const band = reconBand(points)
   const level = reconLevel(points)
@@ -369,12 +376,32 @@ export async function campaignView(campaign) {
       composition: Object.fromEntries(squad.composition),
       prestige: squad.prestige ?? 0,
       rank: squadRank(squad.prestige),
+      // The rung above and the prestige it takes — {label, at}, or null at the
+      // top of the ladder (13-14). Shipped, never re-derived client-side: the
+      // thresholds are one server-side constant. The screen states the number
+      // and promises nothing about what the rung is worth.
+      nextRank: nextRank(squad.prestige),
       archetype: squad.archetype ?? null,
       // Caps and intake already carry the squad's upgrades (squadReinforce
       // resolves the archetype row THROUGH them), so what the screen shows is
       // what the end-of-turn refill will actually work to.
       caps: squadCaps(squad),
       intake: squadIntake(squad),
+      // TONIGHT'S REFILL, forecast (13-6): who joins, what it costs, or the one
+      // word for why nobody does. It is `planAutoRefill`'s own output — the very
+      // arithmetic the end-of-turn pass runs — so the screen and the turn cannot
+      // drift apart.
+      //
+      // It is a PREDICTION, not a promise, and the screen must say so: it is
+      // computed against tonight's pool and purse, and a raid fought afterwards
+      // moves both. `blocked` is one of pool/cost/space/intake/full/none (see
+      // refillBlocker) and is null whenever a plan exists.
+      refill: (({ plan, blocked }) => ({
+        outputs: plan?.outputs ?? {},
+        cost: plan?.cost ?? {},
+        bodies: plan?.bodies ?? 0,
+        blocked,
+      }))(refills.get(squad.id) ?? { plan: null, blocked: 'none' }),
       // Slice 4a. Rows are sent RESOLVED (name + blurb) because the client has
       // no copy of the catalog and a blurb is display text, not a rule. What
       // the client sends BACK is always the id.

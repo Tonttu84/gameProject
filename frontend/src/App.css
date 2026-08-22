@@ -624,3 +624,54 @@ body {
 }
 .bug-report-count { color: #666; font-size: 11px; text-align: right; }
 .bug-report-actions { display: flex; gap: 0.8rem; align-items: center; }
+
+/* ── The squad screen (docs/CAMPAIGN_PLAN.md, decision 13) ──────────────────
+   A takeover like .item-store's, scrolling itself inside the locked .app
+   viewport exactly as every full-screen phase does. The ROLL is a column of
+   cards (.raid-card, the house card) and a charter's page is a column of
+   sections — deliberately plain furniture, because the design target is an
+   army of many charters and anything denser stops scaling. */
+.squad-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.squad-screen h2 { color: var(--gold); font-size: 1.4rem; }
+.squad-screen h3 { color: var(--gold); font-size: 1.05rem; margin: 0.5rem 0 0; }
+.squad-roll,
+.charter-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 720px;
+}
+.squad-roll p,
+.charter-page p { font-size: 0.85rem; margin: 0; }
+.squad-roll-note { color: #8888aa; font-style: italic; }
+/* A charter with a draft waiting is MARKED on the roll (13-15) — the cards
+   themselves live on the honours screen. */
+.roll-honour-waiting { color: var(--gold); }
+.charter-page h4 { color: #aab; font-size: 0.9rem; margin: 0.6rem 0 0; }
+.charter-muster { border-collapse: collapse; font-size: 0.85rem; }
+.charter-muster td { padding: 0.15rem 0.75rem 0.15rem 0; }
+/* The forecast is a PREDICTION (13-6): a raid fought this afternoon moves the
+   purse under it, so it is written as a caveat rather than a promise. */
+.charter-forecast-note { color: #8888aa; font-style: italic; }
+.squad-screen-nav { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem; }
+/* The screen's one door, on the HUD so it is reachable in every phase (13-7). */
+.hud-army {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--gold);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0.15rem 0.5rem;
+}
+.recruit-honours-waiting { color: var(--gold); font-size: 0.85rem; }

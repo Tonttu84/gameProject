@@ -21,6 +21,18 @@ const initialState = () => ({
   // it — harmless for fluff); startCampaign resets it so each new campaign opens
   // on the scene-setter, not tutorial-gated (it's story, everyone sees it once).
   introSeen: false,
+  // THE SQUAD SCREEN (decision 13). Null when closed; otherwise the page
+  // showing: {page: 'roll'} — the whole army — or {page: 'charter'|'honours'|
+  // 'company', squadId} for a page reached FROM the roll. A takeover, not a
+  // phase (13-7): it opens over whatever screen the player is on and Back puts
+  // them back, exactly as storeRequest does.
+  //
+  // There is no router in this app and this slice does not introduce one (13-8):
+  // the page swap is this one field, so a screen is opened by naming it and
+  // closed by forgetting it. `squadId` is carried rather than the squad itself —
+  // the campaign store is the authority on what a charter IS, and a copy taken
+  // at open time would go stale the moment an honour was taken.
+  squadScreen: null,
   // The item store, opened FROM a slot (slice 6, 6-14). Null when closed;
   // otherwise `{accepts, squadId, squadName}` — what the slot the player
   // clicked will take, and where a chosen item goes. The SLOT declares what it
@@ -46,6 +58,12 @@ const useUiStore = create((set) => ({
   openItemStore: (storeRequest) => set({ storeRequest }),
   closeItemStore: () => set({ storeRequest: null }),
 
+  // The squad screen opens on the roll and navigates within itself; closing it
+  // returns to the phase underneath, which was never unmounted.
+  openSquadScreen: () => set({ squadScreen: { page: 'roll' } }),
+  showSquadPage: (page, squadId = null) => set({ squadScreen: { page, squadId } }),
+  closeSquadScreen: () => set({ squadScreen: null }),
+
   toggleTutorial: () =>
     set((state) => {
       const next = !state.tutorial
@@ -56,7 +74,10 @@ const useUiStore = create((set) => ({
   // The bundle a stale-campaign (404) recovery resets: back to the war
   // council (the Prepare phase) with no in-flight battle UI left over.
   resetBattleUI: () =>
-    set({ battleResult: null, raidBattle: null, dayReport: null, storeRequest: null, phase: 'prepare' }),
+    set({
+      battleResult: null, raidBattle: null, dayReport: null,
+      storeRequest: null, squadScreen: null, phase: 'prepare',
+    }),
 
   reset: () => set(initialState()),
 }))

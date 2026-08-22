@@ -11,7 +11,7 @@ import {
   startBattle, watchRaid, nextDay, watchDemo,
 } from './stores/flows'
 import {
-  useTotalUnits, usePlacedCount, useSquadPlacedCount, useInCamp,
+  useTotalUnits, usePlacedCount, useSquadPlacedCount, useInCamp, useCharacterPlacedCount,
 } from './stores/selectors'
 import HexGrid from './components/HexGrid'
 import AuguryPanel from './components/AuguryPanel'
@@ -20,8 +20,8 @@ import ForagePanel from './components/ForagePanel'
 import RaidPanel from './components/RaidPanel'
 import RecruitPanel from './components/RecruitPanel'
 import CampPanel from './components/CampPanel'
-import CharacterPanel from './components/CharacterPanel'
 import ItemStorePanel from './components/ItemStorePanel'
+import SquadScreen from './components/SquadScreen'
 import CampaignHUD from './components/CampaignHUD'
 import CampaignIntro from './components/CampaignIntro'
 import ScoutReport from './components/ScoutReport'
@@ -53,7 +53,7 @@ const App = () => {
     phase, setPhase, battleResult, setBattleResult, raidBattle, setRaidBattle,
     dayReport, setDayReport, demoBattle, setDemoBattle, demoLoading,
     tutorial, toggleTutorial, connectionError, setConnectionError,
-    introSeen, setIntroSeen, storeRequest,
+    introSeen, setIntroSeen, storeRequest, squadScreen,
   } = useUiStore()
 
   const { placements, squadPlacements } = usePlacementStore()
@@ -69,6 +69,7 @@ const App = () => {
   const totalUnits = useTotalUnits()
   const placedCount = usePlacedCount()
   const squadPlacedCount = useSquadPlacedCount()
+  const characterPlacedCount = useCharacterPlacedCount()
   const inCamp = useInCamp()
 
   // Server-side campaign state reacts to the login session: reload it when a
@@ -401,6 +402,25 @@ const App = () => {
     )
   }
 
+  // The squad screen (decision 13) takes over the same way, and for the same
+  // reason: it is reachable in every phase (13-7), none of its actions is a
+  // phase-gated campaign call, and Back drops the player back on the phase
+  // underneath. It sits below the store takeover because the store is opened
+  // FROM it — a banner slot on a charter page — and must render over it.
+  if (squadScreen) {
+    return (
+      <div className="app">
+        <CampaignHUD />
+        {authBar}
+        <SquadScreen
+          onTakeUpgrade={guarded(takeSquadUpgrade)}
+          onAttach={guarded(attachCharacter)}
+          onSetHangBack={guarded(setCharacterHangBack)}
+        />
+      </div>
+    )
+  }
+
   // A decision owed with no report on screen (the report died with a reload):
   // reopen the choice cards straight from the view in choices-only mode. The
   // server 409s every other campaign action until they're resolved, so this
@@ -475,13 +495,6 @@ const App = () => {
           {campaign.fortification && (
             <CampPanel onFortify={guarded(fortify)} locked={committed} />
           )}
-          {/* Characters live on the camp screen because posting one to a squad
-              is a PREPARE-phase decision in spirit — though the server gates it
-              nowhere (5-7), so it stays usable if the player comes back to it. */}
-          <CharacterPanel
-            onAttach={guarded(attachCharacter)}
-            onSetHangBack={guarded(setCharacterHangBack)}
-          />
         </div>
       )}
 
@@ -570,11 +583,7 @@ const App = () => {
       {phase === 'recruit' && (
         <div className="phase-recruit">
           <h2>Recruiting</h2>
-          <RecruitPanel
-            key={`recruit-${campaign.day}`}
-            onHire={guarded(hireRecruit)}
-            onTakeUpgrade={guarded(takeSquadUpgrade)}
-          />
+          <RecruitPanel key={`recruit-${campaign.day}`} onHire={guarded(hireRecruit)} />
           <div className="raids-bar">
             <button
               className="btn-primary"
@@ -632,6 +641,14 @@ const App = () => {
               {placedCount + squadPlacedCount} units placed in {placements.length} hex{placements.length !== 1 ? 'es' : ''}
               {Object.keys(squadPlacements).length > 0 &&
                 ` + ${Object.keys(squadPlacements).length} squad${Object.keys(squadPlacements).length !== 1 ? 's' : ''}`}
+              {/* Characters are counted apart from the troops (13-18): they are
+                  individuals, not roster bodies, and the "still in camp" gate
+                  below has nothing to weigh them against. */}
+              {characterPlacedCount > 0 && (
+                <span data-testid="placement-characters">
+                  {` + ${characterPlacedCount} character${characterPlacedCount !== 1 ? 's' : ''}`}
+                </span>
+              )}
               {inCamp > 0 && (
                 <span className="placement-in-camp" data-testid="placement-in-camp">
                   {' '}— {inCamp} still in camp

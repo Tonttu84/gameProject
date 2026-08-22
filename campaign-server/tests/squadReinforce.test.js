@@ -7,6 +7,8 @@ import {
   planAutoRefill,
   applyReinforcement,
   refillSquads,
+  forecastRefills,
+  refillBlocker,
   squadSizePoints,
 } from '../services/squadReinforce.js'
 import { catalogFixture } from './fixtures/catalog.js'
@@ -516,5 +518,148 @@ describe('refillSquads', () => {
   test('an army with no squads at all is a no-op', () => {
     expect(refillSquads(army([]), sizeOf)).toEqual([])
     expect(refillSquads({ ...army([]), squads: undefined }, sizeOf)).toEqual([])
+  })
+})
+
+// ── The forecast (13-6) ─────────────────────────────────────────────────────
+//
+// What the squad screen shows BEFORE the turn ends. The load-bearing property
+// is not any single number but the agreement: the forecast is the same walk as
+// the pass, with the spending simulated instead of done. If those two ever
+// disagree the screen promises bodies the turn does not deliver, which is the
+// one failure mode this whole split exists to prevent.
+describe('forecastRefills', () => {
+  const army = (squads, { roster, ...resources } = {}) => ({
+    day: 4,
+    resources: { gold: 1000, materials: 1000, horses: 100, ...resources },
+    roster: new Map(Object.entries(roster ?? { Soldier: 200, Archer: 200 })),
+    squads,
+  })
+  const charter = (id, name, overrides = {}) => ({
+    id,
+    name,
+    archetype: 'line',
+    composition: new Map([['Soldier', 30], ['Pikeman', 10]]),
+    ...overrides,
+  })
+
+  // The twin test. Every scenario the pass is covered for above is forecast
+  // first and applied second, and the two must name the same bodies.
+  const agrees = (campaign) => {
+    const forecast = forecastRefills(campaign, sizeOf)
+    const before = campaign.squads.map((s) => new Map(s.composition))
+    refillSquads(campaign, sizeOf)
+    campaign.squads.forEach((squad, i) => {
+      const joined = {}
+      for (const [type, count] of squad.composition) {
+        const gained = count - (before[i].get(type) ?? 0)
+        if (gained > 0) joined[type] = gained
+      }
+      expect(forecast.get(squad.id).plan?.outputs ?? {}, `${squad.name}'s forecast`).toEqual(joined)
+    })
+  }
+
+  test('it names exactly the bodies the end-of-turn pass then takes on', () => {
+    agrees(army([charter(1, '1st Cohort'), charter(2, '2nd Cohort')]))
+  })
+
+  test('it goes short on the same charter the thin pool strands', () => {
+    agrees(army([charter(1, '1st'), charter(2, '2nd')], { roster: { Soldier: 66, Pikeman: 20 } }))
+  })
+
+  test('it strands the same charter the empty treasury does', () => {
+    agrees(army([charter(1, '1st'), charter(2, '2nd')], { gold: 12, materials: 1000 }))
+  })
+
+  test('it forecasts the rebuild of a wiped charter', () => {
+    agrees(army([charter(1, 'Ghost', { composition: new Map() })]))
+  })
+
+  // Pure: reading the forecast must not cost the player a body or a coin —
+  // this is the thing that would turn a screen visit into a mutation.
+  test('it spends nothing — the campaign is untouched', () => {
+    const campaign = army([charter(1, '1st Cohort')])
+    forecastRefills(campaign, sizeOf)
+    expect(campaign.squads[0].composition.get('Soldier')).toBe(30)
+    expect(campaign.roster.get('Soldier')).toBe(200)
+    expect(campaign.resources.gold).toBe(1000)
+  })
+
+  test('it prices what joins, so the screen can say what tonight costs', () => {
+    const forecast = forecastRefills(army([charter(1, '1st Cohort')]), sizeOf)
+    const { plan, blocked } = forecast.get(1)
+    expect(plan.outputs).toEqual({ Soldier: SQUAD_ARCHETYPES.line.intake })
+    expect(plan.cost.gold).toBeGreaterThan(0)
+    expect(blocked).toBeNull()
+  })
+
+  // 13-6's other half: "nothing: the loose pool is empty" needs a REASON, and
+  // a null plan cannot carry one — it clamps at every gate at once.
+  test('a charter that takes nobody says which gate closed', () => {
+    const full = charter(1, 'Full', { composition: new Map([['Soldier', 40], ['Pikeman', 10]]) })
+    expect(forecastRefills(army([full]), sizeOf).get(1)).toEqual({ plan: null, blocked: 'full' })
+
+    const starved = army([charter(1, 'Thin')], { roster: { Soldier: 30, Pikeman: 10 } })
+    expect(forecastRefills(starved, sizeOf).get(1).blocked).toBe('pool')
+
+    const broke = army([charter(1, 'Broke')], { gold: 0 })
+    expect(forecastRefills(broke, sizeOf).get(1).blocked).toBe('cost')
+  })
+
+  // The pool is spent down the roll in the forecast too, so the second charter
+  // is told the truth rather than each being forecast in isolation.
+  test('the later charter is forecast against what the earlier one will take', () => {
+    const campaign = army(
+      [charter(1, '1st'), charter(2, '2nd')],
+      { roster: { Soldier: 66, Pikeman: 20 } }, // 6 loose Soldiers, and the 1st takes them
+    )
+    const forecast = forecastRefills(campaign, sizeOf)
+    expect(forecast.get(1).plan.outputs).toEqual({ Soldier: 6 })
+    expect(forecast.get(2).plan).toBeNull()
+    expect(forecast.get(2).blocked).toBe('pool')
+  })
+
+  test('a charter with no archetype is outside the system, not at full strength', () => {
+    const stray = charter(1, 'Stray', { archetype: undefined })
+    expect(forecastRefills(army([stray]), sizeOf).get(1).blocked).toBe('none')
+  })
+})
+
+describe('refillBlocker', () => {
+  // The hex fence is the one gate no amount of money or bodies lifts, so the
+  // screen must be able to tell it apart from the ones the player can act on.
+  // Today's caps all fit inside the budget, so this is reached the way the
+  // fence itself could be — by the catalog growing a body: a size-20 Soldier
+  // puts 30 of them over the troop budget while the cap still says 40.
+  test('a squad that has outgrown its hex is blocked on space, not on stores', () => {
+    const heavy = new Map([...sizeOf.entries(), ['Soldier', 20]])
+    const squad = { id: 1, name: 'Overfull', archetype: 'line', composition: { Soldier: 30 } }
+    expect(squadSizePoints(squad.composition, heavy))
+      .toBeGreaterThan(SQUAD_TROOP_BUDGET - SQUAD_CHARACTER_RESERVE)
+    expect(refillBlocker({ squad, sizeOf: heavy, loose: looseEnough, resources: richEnough }))
+      .toBe('space')
+  })
+
+  // Two types blocked for two different reasons: the one the player has most
+  // room to fill is the one the screen talks about. A line cohort short of
+  // soldiers it cannot pay for, holding no pikemen at all, is a money problem.
+  test('the type with the most room to fill decides the reason', () => {
+    const squad = { id: 1, name: 'Mauled', archetype: 'line', composition: { Soldier: 25 } }
+    // Soldiers: 15 of room, bodies in the pool, no gold. Pikemen: 10 of room and
+    // none anywhere to draw on.
+    const loose = { Soldier: 100, Pikeman: 0 }
+    expect(refillBlocker({ squad, sizeOf, loose, resources: { gold: 0, materials: 100 } })).toBe('cost')
+    // Take the soldiers' own room away and the pikemen's reason is all that is
+    // left to report.
+    const full = { ...squad, composition: { Soldier: 40 } }
+    expect(refillBlocker({ squad: full, sizeOf, loose, resources: { gold: 0, materials: 100 } })).toBe('pool')
+  })
+
+  // …and with room on the hex, the same squad is blocked by nothing at all —
+  // the gate above is the only thing the stretched size changed.
+  test('the same squad at ordinary sizes is not blocked on space', () => {
+    const squad = { id: 1, name: 'Ordinary', archetype: 'line', composition: { Soldier: 30 } }
+    expect(refillBlocker({ squad, sizeOf, loose: looseEnough, resources: richEnough }))
+      .not.toBe('space')
   })
 })

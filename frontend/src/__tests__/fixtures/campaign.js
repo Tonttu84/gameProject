@@ -30,18 +30,30 @@ export const campaignFixture = {
   // (slice 2/3) — what the end-of-turn refill (13-2) works to. The starting
   // squads sit exactly AT their caps, so a fresh fixture has no room to take
   // anyone on, which is a full formation reading correctly.
+  // `nextRank` is the rung above and its threshold (13-14) — shipped, never
+  // re-derived here. `refill` is tonight's automatic refill forecast (13-6):
+  // what will join, what it will cost, or the one word for why nobody does.
+  // The starting squads are AT their caps in the types they hold, so a fresh
+  // fixture forecasts nobody — 'pool' where a capped type has room but the
+  // loose ranks hold none of it, 'full' where there is no room at all.
   squads: [
     {
       id: 1, name: '1st Cohort', composition: { Soldier: 40 }, prestige: 0, rank: 'Untested',
+      nextRank: { label: 'Blooded', at: 10 },
       archetype: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10,
+      refill: { outputs: {}, cost: {}, bodies: 0, blocked: 'pool' },
     },
     {
       id: 2, name: 'Skirmishers', composition: { Archer: 30 }, prestige: 0, rank: 'Untested',
+      nextRank: { label: 'Blooded', at: 10 },
       archetype: 'skirmish', caps: { Archer: 30, Militia: 10 }, intake: 6,
+      refill: { outputs: {}, cost: {}, bodies: 0, blocked: 'pool' },
     },
     {
       id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 }, prestige: 0, rank: 'Untested',
+      nextRank: { label: 'Blooded', at: 10 },
       archetype: 'vanguard', caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2,
+      refill: { outputs: {}, cost: {}, bodies: 0, blocked: 'full' },
     },
   ],
   // roster minus every charter's composition — the bodies the end-of-turn

@@ -63,7 +63,7 @@ export const breakCamp = async () => {
 const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
 
 export const startBattle = guarded(async () => {
-  const { placements, squadPlacements } = usePlacementStore.getState()
+  const { placements, squadPlacements, characterPlacements } = usePlacementStore.getState()
   if (placements.length === 0 && Object.keys(squadPlacements).length === 0) return
   useUiStore.getState().setPhase('battling')
 
@@ -87,7 +87,20 @@ export const startBattle = guarded(async () => {
       })),
     )
   })
-  const playerPlacement = [...loosePlacement, ...squadPlacement]
+  // A LONE character (13-18): one entry carrying their character_id, which is
+  // how the server tells them from a roster body — casters are individuals now
+  // (5-1) and there is no roster count to budget them against. Their type comes
+  // from the record here only to name the entry; the server stamps every field
+  // that matters from its own copy, and refuses an id that is not a living,
+  // unattached character of yours.
+  const characters = useCampaignStore.getState().campaign?.characters ?? []
+  const characterPlacement = Object.entries(characterPlacements).flatMap(([id, p]) => {
+    const character = characters.find((c) => String(c.id) === String(id))
+    if (!character || !character.alive || character.squadId != null) return []
+    const { q, r } = toAxial(p.col, p.row)
+    return [{ unit_type: character.type, q, r, hold_turns: 0, character_id: character.id }]
+  })
+  const playerPlacement = [...loosePlacement, ...squadPlacement, ...characterPlacement]
 
   const result = await useCampaignStore.getState().fight(playerPlacement)
   if (!result) {

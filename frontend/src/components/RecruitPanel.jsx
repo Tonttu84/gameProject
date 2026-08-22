@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
 import TutorialIntro from './TutorialIntro'
-import SquadUpgradePanel from './SquadUpgradePanel'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
+import { EMPTY_ARRAY } from '../stores/selectors'
 
 // Recruit phase (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops"): the
 // day's 2 server-drawn options, one of which must be hired — there is no skip,
@@ -22,9 +22,12 @@ const costLabel = (cost) =>
     .map(([key, n]) => `${n} ${RESOURCE_LABELS[key] ?? key}`)
     .join(', ') || 'free'
 
-// recruit/resources/workers come straight from the campaign store; onHire and
-// onTakeUpgrade are still props (guarded actions).
-const RecruitPanel = ({ onHire, onTakeUpgrade }) => {
+// recruit/resources/workers come straight from the campaign store; onHire is
+// still a prop (a guarded action). HONOURS LEFT WITH DECISION 13: the upgrade
+// cards live on the squad screen now (13-1/13-15), so this panel keeps only a
+// POINTER to them — one mechanic in one place, and the player is still told on
+// the screen where they are spending that a draft is waiting.
+const RecruitPanel = ({ onHire }) => {
   const recruit = useCampaignStore((s) => s.campaign?.recruit)
   const resources = useCampaignStore((s) => s.campaign?.resources)
   const workers = useCampaignStore((s) => s.campaign?.workers)
@@ -32,6 +35,8 @@ const RecruitPanel = ({ onHire, onTakeUpgrade }) => {
   // affordability depends on the roster as much as on the stores.
   const roster = useCampaignStore((s) => s.campaign?.roster)
   const tutorial = useUiStore((s) => s.tutorial)
+  const squads = useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
+  const openSquadScreen = useUiStore((s) => s.openSquadScreen)
   const [busy, setBusy] = useState(false)
 
   if (!recruit) return null
@@ -115,14 +120,18 @@ const RecruitPanel = ({ onHire, onTakeUpgrade }) => {
           })}
         </>
       )}
-      {/* The phase's OTHER sink, and deliberately below the hire: the hire is
-          the mandatory exit, replacements are optional. Neither gates the
-          other server-side (docs/CAMPAIGN_PLAN.md "SLICE 3", decision I), so
-          this section stays live once the day's hire is resolved. */}
-      {/* Honours sit ABOVE replacements: an upgrade can raise the caps and
-          intake the panel below prices against, so choosing one first means
-          the replacement arithmetic on screen is already the upgraded one. */}
-      <SquadUpgradePanel onTakeUpgrade={onTakeUpgrade} />
+      {/* A POINTER, not the mechanic: the draft is claimed on the squad screen
+          (13-15). Recruiting is where a player's mind is on growing the army,
+          so a charter with an honour waiting is worth saying here — but saying
+          it twice, in two places that could disagree, is what 13-1 rejects. */}
+      {squads.some((squad) => (squad.upgradeOffer?.options?.length ?? 0) > 0) && (
+        <p className="recruit-honours-waiting" data-testid="recruit-honours-waiting">
+          An honour waits to be claimed.{' '}
+          <button className="btn-secondary" data-testid="recruit-to-army" onClick={openSquadScreen}>
+            Go to the army
+          </button>
+        </p>
+      )}
     </div>
   )
 }

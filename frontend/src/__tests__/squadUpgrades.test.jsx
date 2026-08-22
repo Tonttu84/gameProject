@@ -7,6 +7,11 @@
  * seals it on the document, so these tests are about what the screen shows,
  * what it posts, and that it cannot post anything the server did not offer.
  * The rules themselves live in campaign-server's squadUpgrades.test.js.
+ *
+ * SLICE B REHOMED THE PANEL (13-15): the honours screen is reached from the
+ * squad screen — the roll marks the charter with a draft waiting, its page
+ * offers the way through — and what a charter HOLDS moved to that page, so this
+ * screen is now the draft and nothing else.
  */
 
 import React from 'react'
@@ -39,7 +44,7 @@ vi.mock('../services/api', () => ({
 import { getInfo, getMap, getCampaigns, openRecruit, takeSquadUpgrade } from '../services/api'
 import App from '../App'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
-import { marchToRaids } from './helpers/nav'
+import { openArmy, openCharter } from './helpers/nav'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -91,17 +96,27 @@ const noOffer = () => ({
   })),
 })
 
-const toRecruitScreen = async (campaign, { expectPanel = true } = {}) => {
+// The honours screen, reached the way the player reaches it: the roll, the
+// charter that is marked, and the button on its page.
+const toHonours = async (campaign, squadId = 1) => {
   getCampaigns.mockResolvedValue([campaign])
   openRecruit.mockResolvedValue(campaign)
   render(<App />)
   await screen.findByText(/War Council/)
-  await marchToRaids()
-  fireEvent.click(await screen.findByTestId('to-recruit'))
-  // Reinforcement always renders on this screen; wait on it so an absent
-  // upgrade panel is a real absence rather than a race.
-  await screen.findByTestId('recruit-panel')
-  if (expectPanel) await screen.findByTestId('upgrade-panel')
+  await openCharter(squadId)
+  fireEvent.click(await screen.findByTestId(`charter-to-honours-${squadId}`))
+  await screen.findByTestId('upgrade-panel')
+}
+
+// A campaign with no draft anywhere still HAS the honours screen — it is a
+// screen now, not a panel that renders itself away. What it says instead is
+// that nothing is waiting.
+const toArmy = async (campaign) => {
+  getCampaigns.mockResolvedValue([campaign])
+  openRecruit.mockResolvedValue(campaign)
+  render(<App />)
+  await screen.findByText(/War Council/)
+  await openArmy()
 }
 
 beforeEach(() => {
@@ -116,13 +131,24 @@ beforeEach(() => {
 })
 
 describe('squad upgrade panel', () => {
-  it('shows nothing at all when no squad has honours or a draft', async () => {
-    await toRecruitScreen(noOffer(), { expectPanel: false })
-    expect(screen.queryByTestId('upgrade-panel')).toBeNull()
+  it('offers no way through to honours when no squad has a draft', async () => {
+    await toArmy(noOffer())
+    // The roll does not mark any charter…
+    expect(screen.queryByTestId('roll-honour-1')).toBeNull()
+    fireEvent.click(await screen.findByTestId('roll-open-1'))
+    await screen.findByTestId('charter-page-1')
+    // …and the charter page offers no button to a draft that does not exist.
+    expect(screen.queryByTestId('charter-to-honours-1')).toBeNull()
+  })
+
+  it('marks the charter holding a draft on the roll itself', async () => {
+    await toArmy(withOffer())
+    expect(screen.getByTestId('roll-honour-1')).toHaveTextContent('An honour waits')
+    expect(screen.queryByTestId('roll-honour-2')).toBeNull()
   })
 
   it('deals the server’s three rows, named and described', async () => {
-    await toRecruitScreen(withOffer())
+    await toHonours(withOffer())
 
     const card = screen.getByTestId('upgrade-squad-1')
     expect(card).toHaveTextContent('1st Cohort')
@@ -138,7 +164,7 @@ describe('squad upgrade panel', () => {
   })
 
   it('only the squad holding a draft is offered one', async () => {
-    await toRecruitScreen(withOffer())
+    await toHonours(withOffer())
     expect(screen.getByTestId('upgrade-squad-1')).toBeInTheDocument()
     expect(screen.queryByTestId('upgrade-squad-2')).toBeNull()
     expect(screen.queryByTestId('upgrade-squad-3')).toBeNull()
@@ -147,7 +173,7 @@ describe('squad upgrade panel', () => {
   // Permanence is the whole cost of an otherwise free upgrade, so the confirm
   // step is deliberate: nothing is posted until a row is actually chosen.
   it('refuses to submit until a row is chosen', async () => {
-    await toRecruitScreen(withOffer())
+    await toHonours(withOffer())
     expect(screen.getByTestId('upgrade-submit-1')).toBeDisabled()
     fireEvent.click(screen.getByTestId('upgrade-submit-1'))
     expect(takeSquadUpgrade).not.toHaveBeenCalled()
@@ -169,7 +195,7 @@ describe('squad upgrade panel', () => {
       ),
     }
     takeSquadUpgrade.mockResolvedValue(after)
-    await toRecruitScreen(withOffer())
+    await toHonours(withOffer())
 
     fireEvent.click(screen.getByTestId('upgrade-option-1-standing_drafts').querySelector('input'))
     fireEvent.click(screen.getByTestId('upgrade-submit-1'))
@@ -191,13 +217,18 @@ describe('squad upgrade panel', () => {
       ),
     }
     takeSquadUpgrade.mockResolvedValue(after)
-    await toRecruitScreen(withOffer())
+    await toHonours(withOffer())
 
     fireEvent.click(screen.getByTestId('upgrade-option-1-deeper_ranks').querySelector('input'))
     fireEvent.click(screen.getByTestId('upgrade-submit-1'))
 
     await waitFor(() => expect(screen.queryByTestId('upgrade-squad-1')).toBeNull())
-    expect(screen.getByTestId('upgrade-held-1-deeper_ranks')).toHaveTextContent('Deeper Ranks')
+    // What the charter HOLDS is on the charter's own page now (13-10) — one
+    // place that lists a squad's honours, not two that could disagree.
+    fireEvent.click(screen.getByTestId('squad-screen-roll'))
+    fireEvent.click(await screen.findByTestId('roll-open-1'))
+    expect(await screen.findByTestId('charter-upgrade-1-deeper_ranks'))
+      .toHaveTextContent('Deeper Ranks')
   })
 
   // A row may cost more than one honour (4d: the Royal Guard costs two, the
@@ -210,7 +241,7 @@ describe('squad upgrade panel', () => {
     campaign.squads = campaign.squads.map((s) =>
       s.id === 1 ? { ...s, upgradeOffer: { rank: 'Blooded', options: [...OFFER.options, dear] } } : s,
     )
-    await toRecruitScreen(campaign)
+    await toHonours(campaign)
 
     expect(screen.getByTestId('upgrade-option-cost-1-royal_guard')).toHaveTextContent('Costs 2 honours')
     // A one-slot row says nothing — the note is a warning, not a price tag on
@@ -219,15 +250,18 @@ describe('squad upgrade panel', () => {
   })
 
   // The banner is granted free at Seasoned and carries NO bonus — decision 16
-  // is deferred on purpose. The screen must say what it is and promise nothing.
-  it('names the banner without promising a bonus, and opens the slot', async () => {
+  // is deferred on purpose. The charter page must say what it is and promise
+  // nothing. (The slot's own flow lives in banners.test.jsx.)
+  it('names the banner without promising a bonus, on the charter page', async () => {
     const seasoned = {
       ...noOffer(),
       squads: noOffer().squads.map((s) =>
         s.id === 1 ? { ...s, prestige: 25, rank: 'Seasoned', banner: 'basic' } : s,
       ),
     }
-    await toRecruitScreen(seasoned)
-    expect(screen.getByTestId('upgrade-banner-1')).toHaveTextContent('Carries its own banner.')
+    await toArmy(seasoned)
+    fireEvent.click(await screen.findByTestId('roll-open-1'))
+    expect(await screen.findByTestId('charter-banner-1'))
+      .toHaveTextContent('Carries its own banner.')
   })
 })

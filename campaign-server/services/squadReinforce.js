@@ -131,6 +131,18 @@ export const looseRoster = (campaign) => {
   return loose
 }
 
+// What ONE application of a recipe costs: the recipe's own price plus the
+// standard the squad's upgrades hold it to (4c) — per BODY for the surcharge,
+// per application for the recipe, exactly as slice 3 priced it. Shared by the
+// plan and by the blocker below so the two can never disagree about whether
+// the purse can pay for a body.
+const applicationCost = (recipe, surcharge) => {
+  const cost = { ...recipe.cost }
+  for (const [resource, amount] of Object.entries(surcharge))
+    cost[resource] = (cost[resource] ?? 0) + amount * recipe.output.count
+  return cost
+}
+
 // Everything a charter can take on this turn, clamped by every gate rather
 // than refused by any of them (13-2/13-3). This is the automatic refill's whole
 // arithmetic: nobody asks for replacements any more, so there is no request to
@@ -189,12 +201,7 @@ export const planAutoRefill = ({ squad, sizeOf, loose, resources }) => {
     if (!recipe) continue
 
     const per = recipe.output.count
-    // What one application costs, recipe plus the standard the squad's own
-    // upgrades hold it to (4c) — per BODY for the surcharge, per application
-    // for the recipe, exactly as slice 3 priced it.
-    const perCost = { ...recipe.cost }
-    for (const [resource, amount] of Object.entries(surcharge))
-      perCost[resource] = (perCost[resource] ?? 0) + amount * per
+    const perCost = applicationCost(recipe, surcharge)
 
     const size = sizeOf.get(type)
     if (!size) throw new Error(`no catalog size for ${type} — cannot measure the squad against the hex`)
@@ -277,6 +284,10 @@ export function applyReinforcement(campaign, squad, plan) {
 //
 // Mutates the campaign in place; the caller saves. Returns log lines, the same
 // contract as applyHire and applyEffect.
+//
+// `forecastRefills` below is this loop with the spending simulated instead of
+// done — the screen's forecast (13-6). Change what one of them walks and the
+// agreement test in tests/squadReinforce.test.js goes red.
 export function refillSquads(campaign, sizeOf) {
   const entries = []
   for (const squad of campaign.squads ?? []) {
@@ -290,4 +301,98 @@ export function refillSquads(campaign, sizeOf) {
     entries.push(...applyReinforcement(campaign, squad, plan))
   }
   return entries
+}
+
+// ── The forecast (13-6) ─────────────────────────────────────────────────────
+//
+// WHY a charter takes nobody on tonight, in one word. The forecast has to
+// answer "why did nothing join?" on the same page that shows the shortfall
+// (13-9), and `planAutoRefill` returning null cannot say which gate closed —
+// it clamps at all of them at once, which is exactly what makes it right for
+// deciding and useless for explaining.
+//
+// Only ever asked when the plan is null, and it reads the SAME gates in the
+// SAME order through the same helpers, so it cannot invent a reason the plan
+// does not have.
+//
+// WHICH type's reason wins, when two are blocked differently: the one with the
+// most room to fill. A line cohort fifteen soldiers short and holding no pikemen
+// at all is blocked on money for the soldiers and on bodies for the pikemen, and
+// the soldiers are what the player came to the screen about. Ties go to the caps
+// table's own order (13-5) — the order the refill itself fills in.
+const gateFor = ({ recipe, per, intake, loose, resources, surcharge, points, size, packing }) => {
+  if (intake < per) return 'intake'
+  if (Object.entries(recipe.inputs).some(([input, n]) => (loose?.[input] ?? 0) < n)) return 'pool'
+  const perCost = applicationCost(recipe, surcharge)
+  if (Object.entries(perCost).some(([resource, n]) => (resources?.[resource] ?? 0) < n)) return 'cost'
+  if (points < packedSize(size, packing) * per) return 'space'
+  return null
+}
+
+export const refillBlocker = ({ squad, sizeOf, loose, resources }) => {
+  // No archetype ⇒ no caps, no intake and nothing to reinforce into. A charter
+  // in that state is not "at full strength", it is outside the system.
+  const intake = squadIntake(squad)
+  if (intake <= 0) return 'none'
+
+  const packing = formationFighter(squad)
+  const surcharge = reinforceSurcharge(squad)
+  const points =
+    SQUAD_TROOP_BUDGET -
+    SQUAD_CHARACTER_RESERVE -
+    squadSizePoints(squad.composition, sizeOf, packing)
+
+  let worst = null
+  for (const type of Object.keys(squadCaps(squad))) {
+    const recipe = findReinforceRecipe(type)
+    if (!recipe) continue
+    const per = recipe.output.count
+    const room = canSquadAccept(squad, type)
+    // At strength in this type: not a blocker, just nothing wanted.
+    if (room < per) continue
+    const size = sizeOf.get(type)
+    if (!size) throw new Error(`no catalog size for ${type} — cannot measure the squad against the hex`)
+    const gate = gateFor({ recipe, per, intake, loose, resources, surcharge, points, size, packing })
+    if (gate && (worst === null || room > worst.room)) worst = { room, gate }
+  }
+  // No type wanted anybody ⇒ the charter is at strength. That is the only way
+  // out of the loop without a gate, since this is asked only when the plan
+  // itself came back empty.
+  return worst?.gate ?? 'full'
+}
+
+// What tonight's refill will do to EVERY charter, without doing any of it —
+// what the squad screen renders before the turn ends (13-6). Returns a Map of
+// squad id → {plan, blocked}: the plan `refillSquads` would apply, or null with
+// the word for why not.
+//
+// ROLL ORDER AND A SHARED POOL, because that is what actually happens (13-4):
+// the pool and the purse are carried across the walk and spent down per
+// charter, so the last charter's forecast already knows what the first will
+// take. `refillSquads` gets the same effect by re-reading a campaign that
+// `applyReinforcement` has already mutated — the twin of this loop, which is
+// what the agreement test in tests/squadReinforce.test.js pins.
+//
+// Only INPUTS leave the pool: an output joins the roster and the composition in
+// the same breath, so loose (roster − compositions) is unmoved by it.
+//
+// Pure — it never touches the campaign. It is a PREDICTION and the screen says
+// so: a raid fought after it is read moves the purse under it.
+export function forecastRefills(campaign, sizeOf) {
+  const loose = looseRoster(campaign)
+  const resources = { ...campaign.resources }
+  const forecast = new Map()
+
+  for (const squad of campaign.squads ?? []) {
+    const plan = planAutoRefill({ squad, sizeOf, loose, resources })
+    if (!plan) {
+      forecast.set(squad.id, { plan: null, blocked: refillBlocker({ squad, sizeOf, loose, resources }) })
+      continue
+    }
+    forecast.set(squad.id, { plan, blocked: null })
+    for (const [type, count] of Object.entries(plan.inputs)) loose[type] = (loose[type] ?? 0) - count
+    for (const [resource, count] of Object.entries(plan.cost))
+      resources[resource] = (resources[resource] ?? 0) - count
+  }
+  return forecast
 }

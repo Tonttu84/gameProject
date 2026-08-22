@@ -7,6 +7,7 @@ const compositionSummary = (composition) =>
 const ReachMenu = ({
   hex, placements, roster, units, hexTerrain, hexCapacity, onPlace, onClose,
   squads = [], squadPlacements = {}, onPlaceSquad, onRemoveSquad,
+  characters = [], characterPlacements = {}, onPlaceCharacter, onRemoveCharacter,
 }) => {
   const stackCounts = Object.fromEntries(placements.map(p => [p.type, p.count]))
 
@@ -36,6 +37,14 @@ const ReachMenu = ({
   const squadSizeUsedHere = squadsHereExcluding(null)
     .reduce((sum, sq) => sum + squadSizePoints(sq), 0)
 
+  // A lone character (13-18) occupies the hex exactly like anyone else — one
+  // body of their type's size. They are outside a squad's CAPS (decision 3) but
+  // emphatically not outside the hex, which is the same rule the server's
+  // character reserve encodes.
+  const charactersHere = characters.filter(c => characterPlacements[c.id]?.col === hex.col
+    && characterPlacements[c.id]?.row === hex.row)
+  const characterSizeUsedHere = charactersHere.reduce((sum, c) => sum + sizeOf(c.type), 0)
+
   const looseSizeUsed = units.reduce(
     (sum, u) => sum + (counts[u.type] ?? 0) * (u.placementSize ?? 1), 0
   )
@@ -44,7 +53,7 @@ const ReachMenu = ({
     units.reduce((sum, u) => {
       if (u.type === type) return sum
       return sum + (counts[u.type] ?? 0) * (u.placementSize ?? 1)
-    }, 0) + squadSizeUsedHere
+    }, 0) + squadSizeUsedHere + characterSizeUsedHere
 
   const maxCount = (unit) => {
     if (isForbidden(unit)) return 0
@@ -52,15 +61,21 @@ const ReachMenu = ({
     return Math.min(roster[unit.type] ?? 0, Math.max(0, cap))
   }
 
-  const totalSizeUsed = looseSizeUsed + squadSizeUsedHere
+  const totalSizeUsed = looseSizeUsed + squadSizeUsedHere + characterSizeUsedHere
 
   // Remaining room for a squad NOT already counted as "here" — excludes its
   // own footprint so re-evaluating a squad already on this hex (moving it
   // to itself is a no-op) doesn't double-count it.
   const remainingCapacityFor = (squadId) =>
-    hexCapacity - looseSizeUsed
+    hexCapacity - looseSizeUsed - characterSizeUsedHere
       - squadsHereExcluding(squadId).reduce((sum, sq) => sum + squadSizePoints(sq), 0)
   const squadFits = (squad) => squadSizePoints(squad) <= remainingCapacityFor(squad.id)
+  // Same sum for a character, minus their own footprint if they are already
+  // standing here (re-placing someone on their own hex is a no-op).
+  const characterFits = (character) =>
+    sizeOf(character.type)
+      <= hexCapacity - totalSizeUsed
+        + (charactersHere.some(c => c.id === character.id) ? sizeOf(character.type) : 0)
 
   const handleChange = (unit, rawVal) => {
     if (isForbidden(unit)) return
@@ -160,6 +175,55 @@ const ReachMenu = ({
                 {elsewhere && (
                   <span className="reach-squad-elsewhere">
                     at ({squadPlacements[squad.id].col},{squadPlacements[squad.id].row})
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </>
+      )}
+
+      {/* 13-18: the last thing 5a left reachable only through the API. An
+          unattached character is placed by hand, one body at a time — no
+          quantity, only where — and posting them to a squad instead is what
+          makes them ride along automatically. */}
+      {characters.length > 0 && (
+        <>
+          <div className="reach-section-title">Characters</div>
+          {characters.map(character => {
+            const here = characterPlacements[character.id]?.col === hex.col
+              && characterPlacements[character.id]?.row === hex.row
+            const elsewhere = characterPlacements[character.id] && !here
+            return (
+              <div
+                key={character.id}
+                className="reach-squad-row"
+                data-testid={`character-row-${character.id}`}
+              >
+                <span className="reach-squad-name">{character.name}</span>
+                <span className="reach-squad-composition">{character.type}</span>
+                {here ? (
+                  <button
+                    className="reach-squad-remove"
+                    data-testid={`character-remove-${character.id}`}
+                    onClick={() => onRemoveCharacter(character.id)}
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <button
+                    className="reach-squad-place"
+                    data-testid={`character-place-${character.id}`}
+                    onClick={() => onPlaceCharacter(hex.col, hex.row, character.id)}
+                    disabled={!characterFits(character)}
+                    title={!characterFits(character) ? 'No room left on this hex' : undefined}
+                  >
+                    {elsewhere ? 'Move here' : 'Place here'}
+                  </button>
+                )}
+                {elsewhere && (
+                  <span className="reach-squad-elsewhere">
+                    at ({characterPlacements[character.id].col},{characterPlacements[character.id].row})
                   </span>
                 )}
               </div>

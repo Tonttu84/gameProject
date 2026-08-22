@@ -6,10 +6,10 @@ import { EMPTY_ARRAY } from '../stores/selectors'
 // named individuals rather than roster counts, each of whom can be posted to a
 // squad, told to hang back, and lost for good.
 //
-// DELIBERATELY PLAIN, and it should stay that way — decision 13's squad screen
-// will absorb this, so it is the minimum that makes the mechanic playable
-// rather than a design of its own. List, attachment picker, hang-back toggle,
-// and the roll of the dead.
+// A SCREEN OF ITS OWN, reached from the squad screen (13-16). It was not folded
+// into the charter page: 5-9's roll of the dead has nowhere to live there, and
+// doing both would mean two code paths for one mutation. The charter page names
+// who is posted and offers the way through to here.
 //
 // The dead are LISTED, not hidden. Their record survives with everything on it
 // (5-9) because a later recovery — a mummification, a special spell — has to
@@ -21,7 +21,8 @@ const CharacterPanel = ({ onAttach, onSetHangBack }) => {
   const squads = useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
   const [busy, setBusy] = useState(false)
 
-  if (characters.length === 0) return null
+  if (characters.length === 0)
+    return <p data-testid="character-panel-empty">No characters ride with this army.</p>
 
   const living = characters.filter((c) => c.alive)
   const fallen = characters.filter((c) => !c.alive)

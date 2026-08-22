@@ -78,8 +78,15 @@ const HexGrid = ({ info, map }) => {
   const setPlacements = usePlacementStore((s) => s.setPlacements)
   const squadPlacements = usePlacementStore((s) => s.squadPlacements)
   const setSquadPlacements = usePlacementStore((s) => s.setSquadPlacements)
+  const characterPlacements = usePlacementStore((s) => s.characterPlacements)
+  const setCharacterPlacements = usePlacementStore((s) => s.setCharacterPlacements)
   const roster = useAvailableRoster()
   const squads = useSquads()
+  // 13-18: the characters the player must place THEMSELVES — living, and posted
+  // to nobody. An attached one rides with their squad and is placed server-side
+  // on the squad's hex (5-8), so offering them here would field them twice.
+  const characters = useCampaignStore((s) => s.campaign?.characters ?? EMPTY_ARRAY)
+  const loneCharacters = characters.filter((c) => c.alive && c.squadId == null)
   const disabled = useUiStore((s) => s.phase === 'battling')
   const fortifiedSides = useCampaignStore((s) => s.campaign?.fortification?.sides ?? EMPTY_ARRAY)
   const enemyPlacements = useCampaignStore((s) => s.campaign?.enemy?.placements ?? EMPTY_ARRAY)
@@ -176,6 +183,21 @@ const HexGrid = ({ info, map }) => {
   const squadsAt = (col, row) =>
     squads.filter(sq => squadPlacements[sq.id]?.col === col && squadPlacements[sq.id]?.row === row)
 
+  // A character is placed as one body, immediately, like a squad: there is no
+  // quantity to type, only where.
+  const handlePlaceCharacter = (col, row, characterId) => {
+    setCharacterPlacements(prev => ({ ...prev, [characterId]: { col, row } }))
+  }
+  const handleRemoveCharacter = (characterId) => {
+    setCharacterPlacements(prev => {
+      const { [characterId]: _removed, ...rest } = prev
+      return rest
+    })
+  }
+  const charactersAt = (col, row) =>
+    loneCharacters.filter(c => characterPlacements[c.id]?.col === col
+      && characterPlacements[c.id]?.row === row)
+
   const hexElements = []
   for (let row = 0; row < grid.height; row++) {
     for (let col = 0; col < grid.width; col++) {
@@ -185,6 +207,7 @@ const HexGrid = ({ info, map }) => {
       const isSelected = selectedHex?.col === col && selectedHex?.row === row
       const stack      = placementsAt(col, row)
       const hexSquads  = squadsAt(col, row)
+      const hexCharacters = charactersAt(col, row)
       const hexData    = getHexData(col, row)
       const baseColor  = terrainColorMap[hexData.terrain] ?? '#5a6441'
 
@@ -270,6 +293,25 @@ const HexGrid = ({ info, map }) => {
               </React.Fragment>
             )
           })}
+          {hexCharacters.map((character, i) => {
+            const rowY = y
+              + (stack.length + hexSquads.length + i
+                - (stack.length + hexSquads.length + hexCharacters.length - 1) / 2) * 9
+            return (
+              <text
+                key={`character-${character.id}`}
+                data-testid={`character-marker-${col}-${row}-${character.id}`}
+                x={x}
+                y={rowY}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="8"
+                fill="#cc99ff"
+              >
+                {character.name}
+              </text>
+            )
+          })}
           {isSelected && (
             <polygon points={hexPoints(x, y)} fill="none" stroke="#6688ff" strokeWidth="1.5" />
           )}
@@ -351,6 +393,10 @@ const HexGrid = ({ info, map }) => {
           squadPlacements={squadPlacements}
           onPlaceSquad={handlePlaceSquad}
           onRemoveSquad={handleRemoveSquad}
+          characters={loneCharacters}
+          characterPlacements={characterPlacements}
+          onPlaceCharacter={handlePlaceCharacter}
+          onRemoveCharacter={handleRemoveCharacter}
         />
       )}
     </div>

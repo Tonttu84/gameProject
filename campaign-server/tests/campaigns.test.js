@@ -1323,24 +1323,34 @@ describe('POST /api/campaigns/:id/battles', () => {
       // `bannerItem`, the bound relic resolved: a fresh charter is 'plain',
       // which is a banner it genuinely carries and one that does nothing, not
       // an absence.
+      // Slice B added `nextRank` (the rung above and its threshold — the
+      // client never re-derives the ladder) and `refill`, tonight's automatic
+      // refill forecast (13-6). A fresh army is forecast to take on NOBODY, and
+      // the reason differs by charter: the Vanguard is at its caps in both its
+      // types, while the other two have room they cannot fill because the loose
+      // pool holds none of the type that would fill it.
       const fresh = {
-        prestige: 0, rank: 'Untested',
+        prestige: 0, rank: 'Untested', nextRank: { label: 'Blooded', at: 10 },
         upgrades: [], upgradeSlots: 0, upgradeSlotsUsed: 0, upgradePicks: 0,
         banner: 'plain', bannerItem: null,
         upgradeOffer: null,
       }
+      const takesNobody = (blocked) => ({ refill: { outputs: {}, cost: {}, bodies: 0, blocked } })
       expect(c.squads).toEqual([
         {
           id: 1, name: '1st Cohort', composition: { Soldier: 40 }, ...fresh,
           archetype: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10,
+          ...takesNobody('pool'),
         },
         {
           id: 2, name: 'Skirmishers', composition: { Archer: 30 }, ...fresh,
           archetype: 'skirmish', caps: { Archer: 30, Militia: 10 }, intake: 6,
+          ...takesNobody('pool'),
         },
         {
           id: 3, name: 'Vanguard Riders', composition: { Cavalry: 6, LightCavalry: 6 }, ...fresh,
           archetype: 'vanguard', caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2,
+          ...takesNobody('full'),
         },
       ])
     })
@@ -1863,6 +1873,41 @@ describe('automatic reinforcement (docs/CAMPAIGN_PLAN.md 13-2)', () => {
     expect(after.squads.find((s) => s.id === 1).composition).toEqual({ Soldier: 25 })
     expect(after.resources.gold).toBe(0)
     expect(after.resources.materials).toBe(0)
+  })
+
+  // ── The forecast the screen reads (13-6) ──────────────────────────────────
+  //
+  // The whole point of `planAutoRefill` being the forecast: what the squad
+  // screen promised at midday is what the turn delivers at midnight. A second
+  // preview computed alongside the screen is exactly what these two tests would
+  // fail to notice.
+  test('the view forecasts tonight\'s refill, and the turn delivers it', async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id)
+    await maulSquad(c.id, 1, { Soldier: 25 })
+    await fund(c.id, { 'resources.gold': 500, 'resources.materials': 500 })
+    const before = await getView(c.id)
+    const forecast = before.squads.find((s) => s.id === 1).refill
+    expect(forecast).toEqual({ outputs: { Soldier: 10 }, cost: { gold: 20, materials: 20 }, bodies: 10, blocked: null })
+
+    await endTurn(c.id)
+    const after = await getView(c.id)
+    expect(after.squads.find((s) => s.id === 1).composition).toEqual({ Soldier: 35 })
+    expect(after.resources.gold).toBe(500 - 20)
+  })
+
+  // …and when nobody joins, the screen is told WHICH gate closed rather than
+  // being left to guess from a plan that is simply absent.
+  test('a charter that will take nobody names the gate that stopped it', async () => {
+    const { body: c } = await createCampaign()
+    await maulSquad(c.id, 1, { Soldier: 25 })
+    await fund(c.id, { 'resources.gold': 0, 'resources.materials': 0 })
+    const broke = (await getView(c.id)).squads.find((s) => s.id === 1).refill
+    expect(broke).toEqual({ outputs: {}, cost: {}, bodies: 0, blocked: 'cost' })
+
+    // The Vanguard is at its caps in both types: there is nothing to buy, which
+    // is a different sentence on the screen from "you cannot afford it".
+    expect((await getView(c.id)).squads.find((s) => s.id === 3).refill.blocked).toBe('full')
   })
 
   // 13-13: nothing protects the loose pool — it is what the charters eat.

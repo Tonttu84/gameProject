@@ -66,6 +66,15 @@ export const useSquadPlacedCount = () => {
   }, 0)
 }
 
+// Lone characters placed by hand (13-18). Counted SEPARATELY from the troop
+// tallies below and never folded into them: a character is not a roster count
+// (5-1), so the "whole army on the field" arithmetic — roster minus raiders
+// minus placed — has nothing to weigh them against. The server draws the same
+// line, budgeting characters against the character list and the roster against
+// itself.
+export const useCharacterPlacedCount = () =>
+  usePlacementStore((s) => Object.keys(s.characterPlacements).length)
+
 // Battle commits the WHOLE army (user, 2026-07-05): only raiders stay behind
 // (foraging is passive since S2). Fight unlocks when every available unit —
 // loose stock AND every squad — is on the field; the server enforces the

@@ -40,3 +40,18 @@ export async function marchToDeployment() {
   fireEvent.click(await screen.findByTestId('to-deploy'))
   await screen.findByTestId('pitched-battle-deploy')
 }
+
+// The squad screen (decision 13) is a TAKEOVER reached from the HUD in every
+// phase (13-7), so a test opens it wherever it happens to be rather than
+// marching to a phase first. Lands on the roll.
+export async function openArmy() {
+  fireEvent.click(await screen.findByTestId('hud-army'))
+  await screen.findByTestId('squad-roll')
+}
+
+// …and on into one charter's own page (13-8: a roll, then a page per charter).
+export async function openCharter(squadId) {
+  await openArmy()
+  fireEvent.click(await screen.findByTestId(`roll-open-${squadId}`))
+  await screen.findByTestId(`charter-page-${squadId}`)
+}

@@ -5,6 +5,10 @@
  * clicking it opens the store filtered to what the slot accepts; choosing one
  * raises a confirmation naming the permanence; only then does the bind post.
  *
+ * SLICE B MOVED THE SLOT, not the flow: what a charter holds is on its own page
+ * now (13-10), so the slot is clicked there and Back from the store returns to
+ * the charter rather than to a phase screen.
+ *
  * The SLOT declares what it accepts and the store filters to that — so these
  * tests are as much about the store showing nothing it should not as about the
  * happy path. The rules themselves live in campaign-server's items.test.js.
@@ -41,7 +45,7 @@ vi.mock('../services/api', () => ({
 import { getInfo, getMap, getCampaigns, openRecruit, bindSquadBanner } from '../services/api'
 import App from '../App'
 import { campaignFixture, consultedAugury } from './fixtures/campaign'
-import { marchToRaids } from './helpers/nav'
+import { openCharter } from './helpers/nav'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -91,14 +95,14 @@ const seasoned = (over = {}) => {
   }
 }
 
-const toRecruitScreen = async (campaign) => {
+// The charter's own page, reached from the HUD in whatever phase the campaign
+// happens to be in — the squad screen is a takeover, not a step (13-7).
+const toCharterPage = async (campaign, squadId = 1) => {
   getCampaigns.mockResolvedValue([campaign])
   openRecruit.mockResolvedValue(campaign)
   render(<App />)
   await screen.findByText(/War Council/)
-  await marchToRaids()
-  fireEvent.click(await screen.findByTestId('to-recruit'))
-  await screen.findByTestId('recruit-panel')
+  await openCharter(squadId)
 }
 
 beforeEach(() => {
@@ -114,14 +118,17 @@ beforeEach(() => {
 
 describe('the banner slot', () => {
   it('is not offered to a squad that has not reached the rung', async () => {
-    await toRecruitScreen(atRecruit())
-    expect(screen.queryByTestId('banner-slot-1')).toBeNull()
+    await toCharterPage(atRecruit())
+    expect(screen.queryByTestId('charter-banner-slot-1')).toBeNull()
+    // …and the plain banner every squad carries is STATED rather than left
+    // blank: 'plain' is a banner that does nothing, not an absence.
+    expect(screen.getByTestId('charter-banner-1')).toHaveTextContent('A plain banner')
   })
 
   it('opens at Seasoned, beside the basic banner it comes with', async () => {
-    await toRecruitScreen(seasoned())
-    expect(screen.getByTestId('upgrade-banner-1')).toHaveTextContent('Carries its own banner.')
-    expect(screen.getByTestId('banner-slot-1')).toBeInTheDocument()
+    await toCharterPage(seasoned())
+    expect(screen.getByTestId('charter-banner-1')).toHaveTextContent('Carries its own banner.')
+    expect(screen.getByTestId('charter-banner-slot-1')).toBeInTheDocument()
   })
 
   it('shows a bound relic in place of the basic banner, with no slot left', async () => {
@@ -131,38 +138,38 @@ describe('the banner slot', () => {
     bound.squads = bound.squads.map((s) =>
       s.id === 1 ? { ...s, banner: 'item', bannerItem: BANNER } : s,
     )
-    await toRecruitScreen(bound)
-    expect(screen.getByTestId('upgrade-banner-1')).toHaveTextContent(BANNER.name)
-    expect(screen.getByTestId('upgrade-banner-1')).not.toHaveTextContent('Carries its own banner.')
-    expect(screen.queryByTestId('banner-slot-1')).toBeNull()
+    await toCharterPage(bound)
+    expect(screen.getByTestId('charter-banner-1')).toHaveTextContent(BANNER.name)
+    expect(screen.getByTestId('charter-banner-1')).not.toHaveTextContent('Carries its own banner.')
+    expect(screen.queryByTestId('charter-banner-slot-1')).toBeNull()
   })
 })
 
 describe('the store, opened from a slot', () => {
   it('takes over the screen and shows what the slot accepts', async () => {
-    await toRecruitScreen(seasoned({ items: [BANNER, HELM] }))
-    fireEvent.click(screen.getByTestId('banner-slot-1'))
+    await toCharterPage(seasoned({ items: [BANNER, HELM] }))
+    fireEvent.click(screen.getByTestId('charter-banner-slot-1'))
 
     const store = await screen.findByTestId('item-store')
     expect(store).toHaveTextContent('1st Cohort')
     expect(screen.getByTestId(`store-item-${BANNER.id}`)).toBeInTheDocument()
     // The slot declares what it accepts; the store filters to that.
     expect(screen.queryByTestId(`store-item-${HELM.id}`)).toBeNull()
-    // It really is a takeover — the recruit screen is gone underneath.
-    expect(screen.queryByTestId('recruit-panel')).toBeNull()
+    // It really is a takeover — the charter page is gone underneath.
+    expect(screen.queryByTestId('charter-page-1')).toBeNull()
   })
 
   it('says so plainly when the stores hold nothing that would serve', async () => {
-    await toRecruitScreen(seasoned({ items: [HELM] }))
-    fireEvent.click(screen.getByTestId('banner-slot-1'))
+    await toCharterPage(seasoned({ items: [HELM] }))
+    fireEvent.click(screen.getByTestId('charter-banner-slot-1'))
     expect(await screen.findByTestId('item-store-empty')).toBeInTheDocument()
   })
 
-  it('Back returns to the phase underneath, having posted nothing', async () => {
-    await toRecruitScreen(seasoned({ items: [BANNER] }))
-    fireEvent.click(screen.getByTestId('banner-slot-1'))
+  it('Back returns to the charter it was opened from, having posted nothing', async () => {
+    await toCharterPage(seasoned({ items: [BANNER] }))
+    fireEvent.click(screen.getByTestId('charter-banner-slot-1'))
     fireEvent.click(await screen.findByTestId('item-store-back'))
-    await screen.findByTestId('recruit-panel')
+    await screen.findByTestId('charter-page-1')
     expect(bindSquadBanner).not.toHaveBeenCalled()
   })
 })
@@ -170,8 +177,8 @@ describe('the store, opened from a slot', () => {
 describe('binding', () => {
   it('names the permanence before it will post', async () => {
     // The step exists because there is no undo endpoint to pair with it.
-    await toRecruitScreen(seasoned({ items: [BANNER] }))
-    fireEvent.click(screen.getByTestId('banner-slot-1'))
+    await toCharterPage(seasoned({ items: [BANNER] }))
+    fireEvent.click(screen.getByTestId('charter-banner-slot-1'))
     fireEvent.click(await screen.findByTestId(`store-choose-${BANNER.id}`))
 
     expect(screen.getByTestId(`store-warn-${BANNER.id}`)).toHaveTextContent(/cannot be taken back/i)
@@ -185,19 +192,21 @@ describe('binding', () => {
     )
     bindSquadBanner.mockResolvedValue(after)
 
-    await toRecruitScreen(seasoned({ items: [BANNER] }))
-    fireEvent.click(screen.getByTestId('banner-slot-1'))
+    await toCharterPage(seasoned({ items: [BANNER] }))
+    fireEvent.click(screen.getByTestId('charter-banner-slot-1'))
     fireEvent.click(await screen.findByTestId(`store-choose-${BANNER.id}`))
     fireEvent.click(screen.getByTestId(`store-confirm-${BANNER.id}`))
 
     await waitFor(() => expect(bindSquadBanner).toHaveBeenCalledWith('c1', 1, BANNER.id))
-    // And the store closes on success, back to the phase underneath.
-    await screen.findByTestId('recruit-panel')
+    // And the store closes on success, back to the charter — which now shows
+    // the relic in place of the basic banner it replaced.
+    const charter = await screen.findByTestId('charter-page-1')
+    expect(charter).toHaveTextContent(BANNER.name)
   })
 
   it('backing out of the confirmation posts nothing', async () => {
-    await toRecruitScreen(seasoned({ items: [BANNER] }))
-    fireEvent.click(screen.getByTestId('banner-slot-1'))
+    await toCharterPage(seasoned({ items: [BANNER] }))
+    fireEvent.click(screen.getByTestId('charter-banner-slot-1'))
     fireEvent.click(await screen.findByTestId(`store-choose-${BANNER.id}`))
     fireEvent.click(screen.getByTestId(`store-cancel-${BANNER.id}`))
 

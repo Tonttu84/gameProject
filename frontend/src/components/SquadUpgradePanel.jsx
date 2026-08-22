@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import useCampaignStore from '../stores/useCampaignStore'
-import useUiStore from '../stores/useUiStore'
 import { EMPTY_ARRAY } from '../stores/selectors'
 
 // Squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE CATALOG"): what
@@ -16,25 +15,25 @@ import { EMPTY_ARRAY } from '../stores/selectors'
 // only thing a pick costs is every other pick; the confirm step below exists
 // for that reason and should not be smoothed away. There is no undo endpoint.
 //
-// Deliberately NOT the squad inspection screen (decision 13, still last) — this
-// is the minimum that makes the mechanic playable.
+// A SCREEN OF ITS OWN, reached from the squad screen (13-15). Decision 13 was
+// going to dissolve this panel into the charter page; the interview amended
+// that — the three cards and the permanence confirm want room to themselves,
+// and the roll MARKS which charters have a draft waiting, so the hub is what
+// you navigate from rather than what swallows everything.
+//
+// What a charter HOLDS — its banner, its honours, its free slots — lives on the
+// charter page instead. This screen is the DRAFT and nothing else: two screens
+// listing the same honours would be the "managed in three places" problem 13-1
+// exists to end.
 
 const SquadUpgradePanel = ({ onTakeUpgrade }) => {
   const squads = useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
-  const openItemStore = useUiStore((s) => s.openItemStore)
   // {squadId: upgradeId} — which row the player has selected but not yet
   // confirmed. Local: nothing is real until the server says so.
   const [picked, setPicked] = useState({})
   const [busy, setBusy] = useState(false)
 
   const offering = squads.filter((squad) => (squad.upgradeOffer?.options?.length ?? 0) > 0)
-  // `banner` is a TIER WORD now ('plain' | 'basic' | 'item'), so a truthiness
-  // test would match every squad in the army — every one of them carries a
-  // plain banner. What is worth showing is a banner the squad EARNED.
-  const decorated = squads.filter(
-    (squad) => (squad.upgrades?.length ?? 0) > 0 || squad.banner !== 'plain',
-  )
-  if (offering.length === 0 && decorated.length === 0) return null
 
   const confirm = async (squad) => {
     const upgrade = picked[squad.id]
@@ -51,7 +50,11 @@ const SquadUpgradePanel = ({ onTakeUpgrade }) => {
   return (
     <div className="upgrade-panel" data-testid="upgrade-panel">
       <h3>Honours</h3>
-      {offering.length > 0 && (
+      {offering.length === 0 ? (
+        <p data-testid="upgrade-none">
+          No charter has an honour waiting. They are earned by the ranks a squad reaches.
+        </p>
+      ) : (
         <p className="upgrade-intro">
           A squad that has made its name may be trained to something more. Choose one — the choice
           is made once and stands for the rest of the campaign.
@@ -113,44 +116,6 @@ const SquadUpgradePanel = ({ onTakeUpgrade }) => {
         )
       })}
 
-      {decorated.map((squad) => (
-        <div className="raid-card" key={`held-${squad.id}`} data-testid={`upgrade-held-${squad.id}`}>
-          <strong>{squad.name}</strong>
-          {/* The BANNER SLOT (slice 6, 6-14). Reached at Seasoned, which grants
-              the basic banner and opens the slot in the same breath. The basic
-              banner carries NO bonus yet — deliberately deferred (decision 16),
-              not missing, so this says what it is and promises nothing.
-
-              Clicking the empty slot opens the store filtered to banners; a
-              bound relic REPLACES the basic banner rather than stacking, which
-              is why one line renders both states rather than two lines
-              disagreeing about what the squad carries. */}
-          {squad.banner === 'basic' && (
-            <>
-              <p data-testid={`upgrade-banner-${squad.id}`}>Carries its own banner.</p>
-              <button
-                className="btn-secondary"
-                data-testid={`banner-slot-${squad.id}`}
-                onClick={() =>
-                  openItemStore({ accepts: 'banner', squadId: squad.id, squadName: squad.name })
-                }
-              >
-                Give them a standard
-              </button>
-            </>
-          )}
-          {squad.banner === 'item' && squad.bannerItem && (
-            <p data-testid={`upgrade-banner-${squad.id}`}>
-              <strong>{squad.bannerItem.name}</strong> — {squad.bannerItem.blurb}
-            </p>
-          )}
-          {(squad.upgrades ?? []).map((upgrade) => (
-            <p key={upgrade.id} data-testid={`upgrade-held-${squad.id}-${upgrade.id}`}>
-              <strong>{upgrade.name}</strong> — {upgrade.blurb}
-            </p>
-          ))}
-        </div>
-      ))}
     </div>
   )
 }

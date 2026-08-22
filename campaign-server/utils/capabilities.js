@@ -145,3 +145,22 @@ export const squadRank = (prestige) => {
   const value = prestige ?? 0
   return (SQUAD_RANKS.find((r) => value >= r.min) ?? SQUAD_RANKS.at(-1)).label
 }
+
+// The next rung up and what it costs — {label, at} — or null for a squad
+// already at the top of an uncapped ladder.
+//
+// Shipped rather than re-derived client-side (13-14) for the reason every other
+// campaign number is: SQUAD_RANKS is the one place the thresholds live, and a
+// client with its own copy would go stale the first time they are retuned. The
+// screen states the rung and the number and promises NOTHING about what the
+// rung grants — that is 13-14's other half, and it lives in the wording, not
+// here.
+export const nextRank = (prestige) => {
+  const value = prestige ?? 0
+  // Strongest-first, so the last rung the value has NOT reached is the next
+  // one up; nothing above the top rung's threshold has a next.
+  const rungs = [...SQUAD_RANKS].filter((r) => value < r.min)
+  if (rungs.length === 0) return null
+  const next = rungs.at(-1)
+  return { label: next.label, at: next.min }
+}
