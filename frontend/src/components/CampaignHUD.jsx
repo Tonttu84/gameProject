@@ -54,14 +54,20 @@ const garrisonGauge = (level = 'normal') => ({
 // never re-derives campaign math), the player reads tonnes. Reads straight
 // from the campaign store — only ever mounted once a campaign exists.
 const CampaignHUD = () => {
-  const { day, resources, fortification, forage, meter, bossFightDue, garrison, raid, scouting } =
+  const { day, resources, fortification, forage, meter, bossFightDue, garrison, raid, scouting, pendingChoices } =
     useCampaignStore((s) => s.campaign)
   const roster = useRoster()
   // The squad screen's ONE door (13-7). It lives on the HUD rather than in a
   // phase because squads matter in every phase — picked for raids, placed at
   // deploy, posted to in prepare — and binding it to one would hide it for most
   // of the turn.
+  //
+  // It closes while a FATE IS OWED, though: every action on that screen is a
+  // route the server 409s until the choice is resolved, so the door would only
+  // lead to three buttons that cannot work. The choice cards are the campaign
+  // until they are answered.
   const openSquadScreen = useUiStore((s) => s.openSquadScreen)
+  const choiceOwed = (pendingChoices?.length ?? 0) > 0
 
   const landLeft = forage?.rings?.reduce((s, r) => s + r.richness, 0) ?? 0
   const landTotal = forage?.rings?.reduce((s, r) => s + r.initialRichness, 0) ?? 0
@@ -151,9 +157,11 @@ const CampaignHUD = () => {
       <span className="hud-scouting" data-testid="hud-scouting">
         Screen pts: {Math.floor(raid?.scoutingPoints ?? 0)}
       </span>
-      <button className="hud-army" data-testid="hud-army" onClick={openSquadScreen}>
-        The Army
-      </button>
+      {!choiceOwed && (
+        <button className="hud-army" data-testid="hud-army" onClick={openSquadScreen}>
+          The Army
+        </button>
+      )}
       <span className="hud-roster">
         {Object.entries(roster)
           .filter(([, n]) => n > 0)

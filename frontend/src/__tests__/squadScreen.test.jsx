@@ -255,3 +255,53 @@ describe('the ways on (13-15/13-16)', () => {
     expect(screen.getByTestId('charter-character-1')).toHaveTextContent('Nobody is posted here')
   })
 })
+
+// ── While a fate is owed, the door is shut ───────────────────────────────────
+//
+// Every action this screen offers — upgrades, banner binding, attachment,
+// hang-back — is a route the server guards with rejectIfChoicePending. A screen
+// reachable while a choice is pending would therefore be a screen of buttons
+// that answer 409, so the HUD hides its door and the choice cards win the
+// takeover. These tests exist because the ordering in App.jsx was previously
+// justified by a COMMENT that had the server's behaviour backwards.
+describe('a pending choice outranks the screen', () => {
+  const owed = (over = {}) => ({
+    ...campaignFixture,
+    day: 2,
+    pendingChoices: [{
+      slot: 0,
+      title: 'Refugees at the Palisade',
+      description: 'A column of burned-out villagers begs shelter at the camp gates.',
+      options: [
+        { id: 'take_them_in', label: 'Take them in' },
+        { id: 'turn_them_away', label: 'Turn them away' },
+      ],
+    }],
+    ...over,
+  })
+
+  it('hides the HUD door rather than offering buttons that cannot work', async () => {
+    getCampaigns.mockResolvedValue([owed()])
+    render(<App />)
+    await screen.findByTestId('reveal-beat-choice-0')
+    expect(screen.queryByTestId('hud-army')).toBeNull()
+  })
+
+  // The item store is opened FROM a charter page, so it renders OVER the squad
+  // screen — but it yields to the choice cards for the same reason the squad
+  // screen does: POST /squads/:id/banner is choice-gated like the rest.
+  //
+  // The store is opened through the ui store directly, because the only way in
+  // through the UI is the charter page this very test says is unreachable. An
+  // assertion that a store nobody opened is absent would pass on an empty page.
+  it('takes the screen back from an item store already open', async () => {
+    const { default: useUiStore } = await import('../stores/useUiStore')
+    useUiStore.getState().openItemStore({ squadId: 1, kind: 'banner', target: 'squad' })
+    getCampaigns.mockResolvedValue([owed()])
+    render(<App />)
+
+    await screen.findByTestId('reveal-beat-choice-0')
+    expect(useUiStore.getState().storeRequest).not.toBeNull() // still open underneath
+    expect(screen.queryByTestId('item-store')).toBeNull()
+  })
+})

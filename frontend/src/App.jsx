@@ -388,39 +388,6 @@ const App = () => {
     )
   }
 
-  // Choosing an item for a slot takes over the screen the same way a replay
-  // does; Back returns to whatever phase the player was in (6-14). It sits
-  // ABOVE the pending-choices overlay deliberately — binding is not a campaign
-  // action the server 409s on, so a player who opened the stores can finish
-  // what they were doing rather than being bounced into the choice cards.
-  if (storeRequest) {
-    return (
-      <div className="app">
-        {authBar}
-        <ItemStorePanel onBind={guarded(bindSquadBanner)} />
-      </div>
-    )
-  }
-
-  // The squad screen (decision 13) takes over the same way, and for the same
-  // reason: it is reachable in every phase (13-7), none of its actions is a
-  // phase-gated campaign call, and Back drops the player back on the phase
-  // underneath. It sits below the store takeover because the store is opened
-  // FROM it — a banner slot on a charter page — and must render over it.
-  if (squadScreen) {
-    return (
-      <div className="app">
-        <CampaignHUD />
-        {authBar}
-        <SquadScreen
-          onTakeUpgrade={guarded(takeSquadUpgrade)}
-          onAttach={guarded(attachCharacter)}
-          onSetHangBack={guarded(setCharacterHangBack)}
-        />
-      </div>
-    )
-  }
-
   // A decision owed with no report on screen (the report died with a reload):
   // reopen the choice cards straight from the view in choices-only mode. The
   // server 409s every other campaign action until they're resolved, so this
@@ -431,6 +398,49 @@ const App = () => {
         <CampaignHUD />
         {authBar}
         <EventRevealScreen pendingChoices={campaign.pendingChoices} onChoose={chooseFate} />
+      </div>
+    )
+  }
+
+  // Choosing an item for a slot takes over the screen the same way a replay
+  // does; Back returns to whatever phase the player was in (6-14). ABOVE the
+  // squad screen, because it is opened FROM one — a banner slot on a charter
+  // page — and must render over it.
+  //
+  // BELOW the pending-choices overlay, with the squad screen: this comment used
+  // to say binding was not a campaign action the server 409s on, and that is
+  // simply not true — POST /squads/:id/banner carries the same
+  // rejectIfChoicePending guard as the rest. A store rendered over the choice
+  // cards would offer a Bind that can only answer 409. An unresolved
+  // storeRequest survives the detour, so answering the last choice drops the
+  // player back into the stores rather than losing their place.
+  if (storeRequest) {
+    return (
+      <div className="app">
+        {authBar}
+        <ItemStorePanel onBind={guarded(bindSquadBanner)} />
+      </div>
+    )
+  }
+
+  // The squad screen (decision 13) takes over the same way a replay or the
+  // stores do, and Back drops the player back on the phase underneath (13-7).
+  //
+  // BELOW the pending-choices overlay: every action this screen offers —
+  // upgrades, banner binding, attachment, hang-back — is a route that 409s
+  // while a fate is owed (rejectIfChoicePending guards all four), so letting a
+  // player wander in there would offer buttons that can only fail. The HUD
+  // hides its door for the same reason while choices are pending.
+  if (squadScreen) {
+    return (
+      <div className="app">
+        <CampaignHUD />
+        {authBar}
+        <SquadScreen
+          onTakeUpgrade={guarded(takeSquadUpgrade)}
+          onAttach={guarded(attachCharacter)}
+          onSetHangBack={guarded(setCharacterHangBack)}
+        />
       </div>
     )
   }
