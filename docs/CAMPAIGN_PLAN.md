@@ -264,7 +264,11 @@ know:
 
 **What 13 did NOT ship, deliberately:** decision 12's "tied up for X turns" availability (13-11 —
 it lands with the event that requires a squad, not before), and decision 17's storage page, which
-`ItemStorePanel` remains the deliberately-plain placeholder for. **17 is next.**
+`ItemStorePanel` remains the deliberately-plain placeholder for. **17 is next, and its INTERVIEW
+IS DONE (2026-08-23) — seven decisions, spec'd in full under "SLICE 17 — THE STORAGE PAGE" below
+and NOT YET BUILT. They are the user's; do not re-derive them.** Two of them reach past the slice:
+assignment always happens at the TARGET's screen (17-3), and a read-only screen stays open while a
+fate is owed (17-6).
 
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
@@ -1713,6 +1717,86 @@ Two caveats: the startup line is printed BEFORE the run because ASan/UBSan abort
 end-of-run listener would never fire; and `std::uniform_int_distribution` is not specified to map
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
+
+### SLICE 17 — THE STORAGE PAGE (SPEC'D 2026-08-23, interviewed; NOT YET BUILT)
+
+The interview the handoff asked for is DONE. **Seven decisions, all the user's — do not re-derive
+them.** Build TDD against them. **No schema bump:** nothing about the document changes; the store
+is `campaign.items`, which slice 6 already shipped.
+
+**17-1. PAGE ONLY, AGAINST TODAY'S CATALOG.** `ITEM_CATALOG` holds exactly one row
+(`banner_unbroken_line`), and decision 9's character armour is NOT part of this slice. The page's
+job is DISCOVERABILITY: today a won banner is invisible unless the player happens to click the
+banner slot on a Seasoned+ charter, so the item can sit unheld for a whole campaign without the
+player ever learning they hold it. Rejected: bundling decision 9's character equipment to give the
+page a second kind and its first reversible item (it needs the engine-side slot layout of 5-6,
+which does not exist — two slices' work in one), and authoring more banners first (spends the
+slice on balance decisions instead of the screen).
+
+**17-2. THE PAGE IS THE STORE, STRICTLY — only what is on nothing.** It renders `campaign.items`
+and nothing else; a bound banner does not appear on it. This is 17's own wording ("the home of
+every item that is not currently on something") taken literally. **The consequence, and it binds
+the next slice:** an assigned item is not on this page, so when the first REVERSIBLE kind arrives,
+"unassign" lives on the HOLDER's page — the character's screen, the charter's page — never here.
+Accepted cost: with one permanent item, the store reads empty for the rest of the campaign the
+moment the banner is bound. Rejected: showing everything owned with its holder named, and one flat
+list with a status per row.
+
+**17-3. THE PAGE IS READ-ONLY, AND THE WIDER RULE WITH IT: ASSIGNMENT HAPPENS AT THE TARGET'S
+SCREEN** (user, 2026-08-23: *"the items get assigned from the character screen or banner from the
+screen of that squad, if we create any camp items etc they get assigned from general screen etc"*).
+The slot lives with the thing that wears it. This is 6-14 restated as a standing rule rather than a
+banner-shaped one, and it means the stores NEVER grow a target picker: there is exactly one code
+path per mutation, and a new item kind brings its own slot on its own owner's screen. Rejected: an
+assign-from-the-page picker (two ways to bind one banner, two permanence prompts to keep in step —
+6-14 rejected this once already), and handing off to the squad roll with eligible charters lit.
+
+**17-4. ONE STORE SCREEN, TWO MODES — and the browse door is its own** (user, 2026-08-23:
+*"you select the slot from outside. The store opens (and filters for allowed items for that type),
+then you choose an item and the item gets moved to the slot. This is the flow with everything"*).
+  - **SLOT MODE** — opened from a slot, exactly as today: filtered to what the slot accepts,
+    clicking an item assigns it, the permanence prompt unchanged.
+  - **BROWSE MODE** — opened from a `The Stores` door in the HUD beside `The Army`, from any
+    phase: unfiltered, and clicking a row only opens its detail.
+The browse door is the HUD's because 17-3 just made the store campaign-wide rather than
+army-owned — camp items belong to the camp, gear to characters — so hanging its only door off the
+army screen would file it under one of the things it is not. Rejected: a door on the squad roll,
+and no browse door at all (the store stays reachable only from slots, and nothing ever tells a
+player what they hold).
+
+**17-5. THE SERVER PHRASES EVERYTHING.** The view grows `permanent` and a SERVER-WRITTEN effect
+line per item; the client renders sentences it never composes. This is the `describeEffect`
+precedent decision 15 already named, and the reason is the house one: the client holds no copy of
+`ITEM_CATALOG` and has no business turning the enum word `fearless` into English. Rejected: letting
+the flavour blurb carry the mechanics (every future item's truth then depends on an author
+remembering to write it into prose) and shipping the raw `abilities` array for the client to list
+(leaks engine vocabulary and reads like a debug view).
+
+**17-6. AT A PENDING FATE, THE TWO MODES SPLIT.** Browse renders **ABOVE** the pending-choices
+overlay and its HUD door stays visible — it is read-only, so there is nothing the server can
+refuse, and the user's rule is that read-only screens stay open. Slot mode stays **BELOW**, exactly
+as today, because `POST /squads/:id/banner` carries `rejectIfChoicePending` and a Give button
+rendered over the choice cards could only answer 409. **This amends the single rule slice B
+pinned** ("both render BELOW the pending-choices overlay"), and both halves get their own test —
+the lesson from that same entry is that a claim about what the server does belongs in a test, not a
+comment. Rejected: keeping both below (makes "read-only screens stay open" untrue for this one) and
+putting both above (restores the exact 409-able button the old comment existed to record).
+
+**17-7. THE DOOR IS ALWAYS THERE, UNCHANGING.** No count, no badge, no appearing the day the first
+item is won: `The Stores` sits in the HUD from turn one and reads the same whether the store holds
+nothing or five things. Empty, the PAGE says so plainly. Rejected: a held-count on the door (a
+ninth number in a header that already carries eight) and hiding the door until something is won (a
+feature a player can finish a campaign without discovering).
+
+**Assistant's calls, flagged as overturnable:**
+- `describeItem(row)` in `services/items.js` returns the phrased `{effect, where, binding}` lines,
+  and BOTH modes render them — one function, so the two modes cannot drift apart in wording.
+- **One component, two modes** (`ItemStorePanel` branching on whether its request carries a slot)
+  rather than a second component beside it, for the same reason.
+- Browse detail is the clicked row EXPANDING INLINE, not a sub-page: there is no router, and 13-8
+  already settled that a page swap is `useUiStore` state.
+- `storeRequest` carries browse as its own shape (`{browse: true}`) — one field, one takeover,
+  `App.jsx` branching on it, which is what 17-6's split needs to read.
 
 ### The balance sheet (2026-08-13) ✅ SHIPPED
 
