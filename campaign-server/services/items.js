@@ -38,6 +38,46 @@ export const holdsItem = (campaign, itemId) => heldItemIds(campaign).includes(it
 // campaign in flight still loads after a catalog edit.
 export const storedItems = (campaign) => storeIds(campaign).map(findItem).filter(Boolean)
 
+// ─── Phrasing (17-5) ────────────────────────────────────────────────────────
+// The SERVER phrases every item, and the client renders sentences it never
+// composes. Same contract as describeEffect: the client holds no copy of
+// ITEM_CATALOG and has no business turning the enum word `fearless` into
+// English. One function, so the store's two modes (17-4) cannot drift apart in
+// wording, and a future holder's page gets the same sentences for free.
+
+// What each ability WORD means, in the player's language. This map is the whole
+// reason the raw `abilities` array never crosses to the client. A new ability
+// that lands in ITEM_CATALOG without a line here fails items.test.js's sweep on
+// purpose — the alternative is an item whose power is a debug word.
+export const ITEM_ABILITY_TEXT = {
+  fearless: 'The squad does not break: it holds where another would rout, whatever the odds.',
+}
+
+// Where the thing can go. Derived from target+kind rather than authored per
+// row, so the sentence stays true when the slot rules move — the Seasoned rung
+// is named from the same constant hasBanner() gates on.
+const whereText = (row) => {
+  if (row.target === 'squad' && row.kind === 'banner') {
+    return `Flown by a squad, in its banner slot — a charter must be ${SQUAD_BANNER_RANK} before the slot opens.`
+  }
+  if (row.target === 'squad') return 'Given to a squad.'
+  if (row.target === 'character') return 'Carried by a character.'
+  return 'It has nowhere to go yet.'
+}
+
+// The three lines the store renders for an item, in both modes. An ability with
+// no phrasing is DROPPED rather than printed raw — a reader must never meet the
+// engine's vocabulary — and an item left with nothing to say says that plainly.
+export const describeItem = (row) => ({
+  effect:
+    (row.abilities ?? []).map((name) => ITEM_ABILITY_TEXT[name]).filter(Boolean).join(' ') ||
+    'It carries no power of its own — not yet.',
+  where: whereText(row),
+  binding: row.permanent
+    ? 'Once it is given, it stays: it cannot be taken back, and nothing else will ever carry it.'
+    : 'It can be taken back later and given to something else.',
+})
+
 // What a slot of this kind can be filled from right now. The SLOT declares what
 // it accepts and the store filters to that (6-14) — storage itself stays
 // ignorant of what kinds exist, which is what lets a character's head slot use

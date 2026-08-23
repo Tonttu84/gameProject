@@ -664,8 +664,11 @@ body {
    purse under it, so it is written as a caveat rather than a promise. */
 .charter-forecast-note { color: #8888aa; font-style: italic; }
 .squad-screen-nav { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem; }
-/* The screen's one door, on the HUD so it is reachable in every phase (13-7). */
-.hud-army {
+/* The screen's one door, on the HUD so it is reachable in every phase (13-7).
+   The stores' browse door (17-4) sits beside it and reads the same — one rule
+   for both, so a door added later cannot look like a different kind of thing. */
+.hud-army,
+.hud-stores {
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -675,3 +678,13 @@ body {
   padding: 0.15rem 0.5rem;
 }
 .recruit-honours-waiting { color: var(--gold); font-size: 0.85rem; }
+/* Browse mode's row (17-4): the name IS the control that opens the detail, so
+   it is styled as the heading it reads as rather than as a button. */
+.item-store [data-testid^='store-open-'] {
+  border: none;
+  color: var(--gold);
+  font-size: 1rem;
+  font-weight: bold;
+  padding: 0;
+  text-align: left;
+}

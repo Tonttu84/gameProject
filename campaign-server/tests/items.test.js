@@ -11,6 +11,8 @@ import {
   squadBanner,
   squadAbilities,
   bindItemToSquad,
+  describeItem,
+  ITEM_ABILITY_TEXT,
 } from '../services/items.js'
 import {
   ITEM_CATALOG,
@@ -272,5 +274,59 @@ describe('the garrison standard (6-13)', () => {
   test('a campaign at the starting resolve cannot draw it', () => {
     expect(eventEligible(fate, { garrison: { resolve: GARRISON_BANNER_RESOLVE - 1 } })).toBe(false)
     expect(eventEligible(fate, { garrison: { resolve: GARRISON_BANNER_RESOLVE } })).toBe(true)
+  })
+})
+
+// ─── Slice 17: the server phrases every item (17-5) ──────────────────────────
+describe('describeItem', () => {
+  test('every catalog row is phrased on all three axes', () => {
+    // The sweep is the point: a new item that reaches the store without
+    // sentences would render as a blank card, and the store page is the only
+    // place a player learns what they hold.
+    for (const row of ITEM_CATALOG) {
+      const { effect, where, binding } = describeItem(row)
+      for (const line of [effect, where, binding]) {
+        expect(typeof line).toBe('string')
+        expect(line.length).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  test('every ability a catalog row grants has a player-facing line', () => {
+    // The escape hatch describeItem has (drop what it cannot phrase) is only
+    // safe because this fails first. Without it a new ability would silently
+    // vanish from the store and the item would read as doing nothing.
+    for (const row of ITEM_CATALOG) {
+      for (const ability of row.abilities ?? []) {
+        expect(ITEM_ABILITY_TEXT[ability]).toBeTruthy()
+      }
+    }
+  })
+
+  test('never leaks an engine word to the client', () => {
+    for (const row of ITEM_CATALOG) {
+      for (const ability of row.abilities ?? []) {
+        expect(describeItem(row).effect).not.toContain(ability)
+      }
+    }
+  })
+
+  test('names the rung a banner needs, from the same constant that gates it', () => {
+    expect(describeItem(BANNER).where).toContain(SQUAD_BANNER_RANK)
+  })
+
+  test('states permanence both ways', () => {
+    expect(describeItem({ ...BANNER, permanent: true }).binding).toMatch(/cannot be taken back/i)
+    expect(describeItem({ ...BANNER, permanent: false }).binding).toMatch(/taken back later/i)
+  })
+
+  test('an item with no abilities says so, rather than nothing', () => {
+    expect(describeItem({ ...BANNER, abilities: [] }).effect).toMatch(/no power of its own/i)
+  })
+
+  test('an unphrased ability is dropped, not printed raw', () => {
+    const effect = describeItem({ ...BANNER, abilities: ['tremendous_wibble'] }).effect
+    expect(effect).not.toContain('tremendous_wibble')
+    expect(effect).toMatch(/no power of its own/i)
   })
 })

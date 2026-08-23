@@ -388,6 +388,22 @@ const App = () => {
     )
   }
 
+  // BROWSING the stores (17-4) takes over the screen like the slot store does,
+  // but sits on the OTHER side of the pending-choices overlay (17-6): it is
+  // read-only, so there is nothing here the server can refuse, and the standing
+  // rule is that a read-only screen stays open while a fate is owed. Its HUD
+  // door stays visible with it. The slot store's own branch is below the
+  // overlay, where it belongs, and is what a request WITHOUT `browse` reaches.
+  if (storeRequest?.browse) {
+    return (
+      <div className="app">
+        <CampaignHUD />
+        {authBar}
+        <ItemStorePanel />
+      </div>
+    )
+  }
+
   // A decision owed with no report on screen (the report died with a reload):
   // reopen the choice cards straight from the view in choices-only mode. The
   // server 409s every other campaign action until they're resolved, so this
@@ -414,6 +430,12 @@ const App = () => {
   // cards would offer a Bind that can only answer 409. An unresolved
   // storeRequest survives the detour, so answering the last choice drops the
   // player back into the stores rather than losing their place.
+  //
+  // ONLY the slot mode reaches here — browse is handled above the overlay
+  // (17-6), and the split is per MODE, not per screen, because only this half
+  // has a button the server can refuse. Both halves are tested: the lesson of
+  // the wrong comment above is that a claim about what the server does belongs
+  // in a test, not a comment.
   if (storeRequest) {
     return (
       <div className="app">

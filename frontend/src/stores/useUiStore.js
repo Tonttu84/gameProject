@@ -33,11 +33,17 @@ const initialState = () => ({
   // the campaign store is the authority on what a charter IS, and a copy taken
   // at open time would go stale the moment an honour was taken.
   squadScreen: null,
-  // The item store, opened FROM a slot (slice 6, 6-14). Null when closed;
-  // otherwise `{accepts, squadId, squadName}` — what the slot the player
-  // clicked will take, and where a chosen item goes. The SLOT declares what it
-  // accepts and the store filters to that, so the store itself never learns
-  // what kinds of item exist and a character's typed slot can reuse it as-is.
+  // The item store (slice 6, 6-14; slice 17). Null when closed; otherwise ONE
+  // of two shapes, which is what the panel's two modes branch on (17-4):
+  //   - SLOT: `{accepts, squadId, squadName}` — what the slot the player
+  //     clicked will take, and where a chosen item goes. The SLOT declares what
+  //     it accepts and the store filters to that, so the store itself never
+  //     learns what kinds of item exist and a character's typed slot can reuse
+  //     it as-is.
+  //   - BROWSE: `{browse: true}` — the HUD's `The Stores` door. Unfiltered and
+  //     read-only, and one field rather than a second takeover field because
+  //     App.jsx has to tell the two apart to place them on opposite sides of
+  //     the pending-choices overlay (17-6).
   storeRequest: null,
 })
 
@@ -56,6 +62,9 @@ const useUiStore = create((set) => ({
   setConnectionError: (connectionError) => set({ connectionError }),
   setIntroSeen: (introSeen) => set({ introSeen }),
   openItemStore: (storeRequest) => set({ storeRequest }),
+  // The browse door (17-4). Same field, same Back, so a player is never in two
+  // stores at once — opening a slot from a charter simply replaces the request.
+  openStoreBrowse: () => set({ storeRequest: { browse: true } }),
   closeItemStore: () => set({ storeRequest: null }),
 
   // The squad screen opens on the roll and navigates within itself; closing it

@@ -106,7 +106,10 @@ an implication closure (6-3, 6-4), and a banner's gift is scoped to squad MEMBER
 `broken` (6-6).
 
 **DECISION 13 IS DONE — BOTH SLICES SHIPPED (A 2026-08-21, B 2026-08-22). The squad overhaul is
-finished, and the NEXT SLICE IS 17, the storage page.** What follows in this block is the record of
+finished. SLICE 17, THE STORAGE PAGE, IS ALSO SHIPPED (2026-08-23, no schema bump)** — its seven
+decisions and what they built are under "SLICE 17" below. Two standing rules came out of it and
+bind every later slice: **assignment happens at the target's screen, never at a store** (17-3), and
+**the server phrases every item; the client composes no sentence** (17-5). What follows in this block is the record of
 13's interview and what it built; the "SLICE B IS SHIPPED" note below it is what a later slice needs
 to know. Decision 12 (a squad tied up for X turns) is still unbuilt and still waits for the event
 that requires a squad.
@@ -338,6 +341,25 @@ After it: 17's storage page (which `ItemStorePanel` is the deliberately-plain pl
 - **A `Squad` must outlive its members in any test that builds one on the stack.** `~Squad` does not
   clear members' back-pointers (only `disband()` does), so declaring the squad second is a
   use-after-free that `test-fast` passes and the sanitized build catches. It caught it here.
+
+**WHAT SHIPPED (2026-08-23).** All seven decisions, TDD against them, no schema bump:
+- `describeItem(row)` in `campaign-server/services/items.js` returns `{effect, where, binding}`,
+  phrased from `abilities`/`target`/`kind`/`permanent`. `ITEM_ABILITY_TEXT` is the ability→English
+  map, and **items.test.js sweeps every catalog row through it**: a new ability that lands in
+  `ITEM_CATALOG` without a line fails the suite rather than reaching a player as a debug word.
+  describeItem DROPS what it cannot phrase (never prints the enum), which is only safe because
+  that sweep fails first — do not remove one without the other.
+- The view's `items` rows grow `permanent` plus the three lines. The client still holds no copy of
+  the catalog, and a route-level test asserts the word `fearless` never crosses.
+- `ItemStorePanel` is one component with two modes, branching on `storeRequest.browse`.
+  Browse: unfiltered, read-only, the clicked row expanding inline. Slot: unchanged, plus the
+  phrased lines. `where` is rendered in browse only — you arrived FROM the slot in slot mode —
+  but the WORDING comes from the one server function either way, which is the drift that matters.
+- `The Stores` door in `CampaignHUD`, always rendered, no count. It outlives a pending fate;
+  `The Army` beside it does not.
+- `App.jsx` branches on `storeRequest?.browse` ABOVE the pending-choices overlay and keeps the
+  slot branch below it. **Both halves have a test** (`itemStoreBrowse.test.jsx`, "the two modes
+  split") — the amended rule is no longer a comment making a claim about the server.
 
 **Assistant's calls, flagged as overturnable:**
 - **`Squad::hasBanner` was DELETED rather than promoted to the tier.** Decision 10 said it should
@@ -1718,7 +1740,7 @@ end-of-run listener would never fire; and `std::uniform_int_distribution` is not
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
 
-### SLICE 17 — THE STORAGE PAGE (SPEC'D 2026-08-23, interviewed; NOT YET BUILT)
+### SLICE 17 — THE STORAGE PAGE ✅ SHIPPED 2026-08-23 (no schema bump)
 
 The interview the handoff asked for is DONE. **Seven decisions, all the user's — do not re-derive
 them.** Build TDD against them. **No schema bump:** nothing about the document changes; the store

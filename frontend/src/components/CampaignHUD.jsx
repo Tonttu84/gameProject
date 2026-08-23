@@ -67,6 +67,7 @@ const CampaignHUD = () => {
   // lead to three buttons that cannot work. The choice cards are the campaign
   // until they are answered.
   const openSquadScreen = useUiStore((s) => s.openSquadScreen)
+  const openStoreBrowse = useUiStore((s) => s.openStoreBrowse)
   const choiceOwed = (pendingChoices?.length ?? 0) > 0
 
   const landLeft = forage?.rings?.reduce((s, r) => s + r.richness, 0) ?? 0
@@ -162,6 +163,21 @@ const CampaignHUD = () => {
           The Army
         </button>
       )}
+      {/* The stores' only browse door (17-4), beside the army's — the store is
+          CAMPAIGN-wide, not army-owned (camp things belong to the camp, gear to
+          characters), so hanging it off the army screen would file it under one
+          of the things it is not.
+
+          ALWAYS THERE, UNCHANGING (17-7): no count, no badge, and it does not
+          wait for the first item to be won — a door that appears only once you
+          hold something is a door you can finish a campaign without finding.
+          Empty, the page says so.
+
+          It survives a pending fate, unlike The Army beside it (17-6): browse is
+          read-only, so there is no button behind it the server could 409. */}
+      <button className="hud-stores" data-testid="hud-stores" onClick={openStoreBrowse}>
+        The Stores
+      </button>
       <span className="hud-roster">
         {Object.entries(roster)
           .filter(([, n]) => n > 0)

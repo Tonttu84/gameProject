@@ -3170,6 +3170,21 @@ describe('squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4")', () => {
     expect(view.items).toEqual([])
   })
 
+  // 17-5: the client holds no copy of ITEM_CATALOG, so the view is where an
+  // item becomes English. Asserted against the ROUTE because that is the only
+  // thing the store page ever sees.
+  test('a stored item reaches the client phrased, and says whether it is permanent', async () => {
+    const c = await promoteAndTurn(1, seasoned)
+    await stock(c.id, BANNER.id)
+    const [row] = (await getView(c.id)).items
+    expect(row).toMatchObject({ id: BANNER.id, permanent: true })
+    expect(row.effect).toMatch(/does not break/i)
+    expect(row.where).toMatch(/banner slot/i)
+    expect(row.binding).toMatch(/cannot be taken back/i)
+    // The engine's vocabulary stays server-side (6-7 restated for the store).
+    expect(JSON.stringify(row)).not.toContain('fearless')
+  })
+
   test('a squad below the banner rung is refused — the basic banner opens the slot', async () => {
     const c = await promoteAndTurn(1, blooded)
     await stock(c.id, BANNER.id)

@@ -29,7 +29,7 @@ import {
   picksAvailable,
   findUpgrade,
 } from './squadUpgrades.js'
-import { bannerTier, squadBanner, storedItems } from './items.js'
+import { bannerTier, describeItem, squadBanner, storedItems } from './items.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
@@ -367,8 +367,18 @@ export async function campaignView(campaign) {
     // catalog — and `kind`/`target` ride along because the slot the player
     // clicked is what filters this list (6-14), so the client needs to know
     // what each row IS, not only what it is called.
-    items: storedItems(campaign).map(({ id, kind, name, blurb, target }) => ({
-      id, kind, name, blurb, target,
+    // `permanent` and the three PHRASED lines ride along (17-5): the store's
+    // browse mode has to state what an item does before it is on anything, and
+    // the client composes no sentence of its own — describeItem is the single
+    // wording site for both modes.
+    items: storedItems(campaign).map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      name: row.name,
+      blurb: row.blurb,
+      target: row.target,
+      permanent: row.permanent ?? false,
+      ...describeItem(row),
     })),
     squads: campaign.squads.map((squad) => ({
       id: squad.id,
