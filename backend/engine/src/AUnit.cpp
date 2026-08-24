@@ -642,6 +642,35 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			attackPWR = std::max(0, attackPWR + delta);
 			return true;
 		}
+		// ── The gear stat vocabulary (slice 9a, decision 9-5) ─────────────
+		// "Values should be the stuff that we show as numbers on a character
+		// sheet. Anything tricky is an ability." (user, 2026-08-24)
+		//
+		// maxHP is the sheet number; `hitpoints` is NOT a stat and can never be
+		// modded directly. HP is REGENERATED from maxHP here, which is what
+		// stops a suit of armour making its wearer start the battle already
+		// wounded — the user's explicit call: "maxHP should of course be the one
+		// that gets changed, not the HP".
+		//
+		// Floored at 1 rather than 0: a body whose maximum is zero is dead
+		// before the first tick, and gear must never be able to kill its
+		// bearer. MAX_STAT_MOD already bounds how far a legal one can push.
+		if (stat == "maxHP") {
+			maxHP = std::max(1, maxHP + delta);
+			hitpoints = maxHP;
+			return true;
+		}
+		if (stat == "defence") {
+			defence = std::max(0, defence + delta);
+			return true;
+		}
+		// >1 means "try to hold this hex distance"; 0/1 means "advance to
+		// melee". A negative mod can therefore walk an archer INTO the line,
+		// which is a legitimate thing for an item to do.
+		if (stat == "preferredRange") {
+			preferredRange = std::max(0, preferredRange + delta);
+			return true;
+		}
 		if (stat == "armour") {
 			armour = std::max(0, armour + delta);
 			return true;
@@ -744,6 +773,15 @@ void AUnit::restoreForNextBattle()
 		// rather than by any strip step.
 		UnitAbility set = _innateAbilities;
 		if (_squad) set |= _grantedAbilities;
+		// Gear's denial (9-4), applied BEFORE the closure and never after.
+		// The order is the whole safety argument: a row that denies an implied
+		// flag is legal to write and does nothing, because abilityClosure()
+		// below puts it straight back. An undead that leaves a corpse stays
+		// unwritable no matter what any future item says.
+		//
+		// Unscoped by squad, unlike the grant above: gear is worn on the body,
+		// so a man who breaks and runs takes his cursed helm with him.
+		set = withoutAbilities(set, _suppressedAbilities);
 		return abilityClosure(set);
 	}
 

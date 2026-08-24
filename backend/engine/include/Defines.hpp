@@ -69,6 +69,14 @@ constexpr UnitAbility& operator|=(UnitAbility& a, UnitAbility b) { a = a | b; re
 constexpr bool hasAbilityFlag(UnitAbility set, UnitAbility flag) {
     return (static_cast<unsigned>(set) & static_cast<unsigned>(flag)) != 0;
 }
+// Set subtraction, for the SUPPRESSION half of the ability system (slice 9a,
+// decision 9-4): gear may take an ability away as well as give one. Written as
+// a named function rather than operators& and ~ because subtraction is the only
+// thing any caller wants — and `~` on a 4-bit enum in an `unsigned` would set
+// 28 bits nothing has a meaning for.
+constexpr UnitAbility withoutAbilities(UnitAbility set, UnitAbility denied) {
+    return static_cast<UnitAbility>(static_cast<unsigned>(set) & ~static_cast<unsigned>(denied));
+}
 
 // Armour values
 constexpr int LIGHTARMOUR = 2;

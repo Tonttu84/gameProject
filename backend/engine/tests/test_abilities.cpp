@@ -115,3 +115,103 @@ TEST_CASE("a granted ability closes through the table like a declared one") {
     squad.addMember(&s);
     REQUIRE(s.hasAbility(UnitAbility::Fearless));
 }
+
+// ── Suppression (slice 9a, decision 9-4) ────────────────────────────────────
+//
+// Items are fully general: a row may both ADD and REMOVE abilities. What keeps
+// that safe is not a rule about which abilities may be denied — it is the
+// ORDER. Suppression is subtracted first and abilityClosure() runs after, so a
+// denial of an implied flag is representable and INERT. These cases pin the
+// order, because the whole safety argument is the order.
+
+TEST_CASE("suppression removes an ability the creature innately has") {
+    Skeleton bones(REDTEAM);
+    REQUIRE(bones.hasAbility(UnitAbility::Mindless));
+
+    bones.setSuppressedAbilities(UnitAbility::Mindless);
+    REQUIRE_FALSE(bones.hasAbility(UnitAbility::Mindless));
+}
+
+TEST_CASE("suppression removes a granted ability too") {
+    // A cursed helm beats the banner overhead — the subtraction happens after
+    // the grant is folded in, not only against what the creature innately is.
+    Squad squad("Household");  // must outlive its members
+    Soldier s(BLUETEAM);
+    s.setGrantedAbilities(UnitAbility::Fearless);
+    squad.addMember(&s);
+    REQUIRE(s.hasAbility(UnitAbility::Fearless));
+
+    s.setSuppressedAbilities(UnitAbility::Fearless);
+    REQUIRE_FALSE(s.hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("denying an IMPLIED ability is legal to write and does nothing") {
+    // The case 9-4 exists for. Undead => NoCorpse is in the implication table,
+    // so an item denying NoCorpse on a skeleton is authorable — and inert,
+    // because the closure runs afterwards and puts it straight back.
+    //
+    // This is what makes 6-3's invariant survive a fully general item system:
+    // an undead that leaves a corpse stays UNWRITABLE, and no eligibility rule
+    // anywhere had to enumerate which flags are implied.
+    Skeleton bones(REDTEAM);
+    REQUIRE(bones.hasAbility(UnitAbility::NoCorpse));
+
+    bones.setSuppressedAbilities(UnitAbility::NoCorpse);
+    REQUIRE(bones.hasAbility(UnitAbility::NoCorpse));
+}
+
+TEST_CASE("suppressing the SOURCE of an implication removes the implied flag") {
+    // The other side of the same coin, and the reason denial is not simply
+    // ignored: deny Mindless on a skeleton and its Fearless goes with it,
+    // because Fearless was only ever there by implication. Its NoCorpse stays —
+    // that one is implied by Undead, which nothing denied.
+    Skeleton bones(REDTEAM);
+    REQUIRE(bones.hasAbility(UnitAbility::Fearless));
+
+    bones.setSuppressedAbilities(UnitAbility::Mindless);
+    REQUIRE_FALSE(bones.hasAbility(UnitAbility::Fearless));
+    REQUIRE(bones.hasAbility(UnitAbility::NoCorpse));
+}
+
+TEST_CASE("suppression is NOT scoped to squad membership, unlike a grant") {
+    // A banner is flown over a formation and stops covering a man who leaves
+    // it (6-6). Gear is worn on the body: a man who breaks and runs takes his
+    // cursed helm with him.
+    Squad squad("The Barrow");  // must outlive its members
+    Skeleton bones(REDTEAM);
+    squad.addMember(&bones);
+    bones.setSuppressedAbilities(UnitAbility::Mindless);
+    REQUIRE_FALSE(bones.hasAbility(UnitAbility::Fearless));
+
+    bones.leaveSquad();
+    REQUIRE_FALSE(bones.hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("suppressing nothing changes nothing") {
+    Skeleton bones(REDTEAM);
+    bones.setSuppressedAbilities(UnitAbility::None);
+    REQUIRE(bones.hasAbility(UnitAbility::Mindless));
+    REQUIRE(bones.hasAbility(UnitAbility::Undead));
+    REQUIRE(bones.hasAbility(UnitAbility::Fearless));
+    REQUIRE(bones.hasAbility(UnitAbility::NoCorpse));
+}
+
+TEST_CASE("a suppressed Fearless actually breaks under fire") {
+    // Behaviour, not bookkeeping: testMorale() short-circuits on Fearless, so
+    // stripping it has to reach the morale roll. Damage far above any morale
+    // score makes the outcome deterministic.
+    Skeleton bones(REDTEAM);
+    bones.setSuppressedAbilities(UnitAbility::Mindless);
+    REQUIRE_FALSE(bones.testMorale(1000));
+    REQUIRE(bones.getBroken());
+}
+
+TEST_CASE("withoutAbilities: subtracts only the named flags") {
+    constexpr UnitAbility both = UnitAbility::Undead | UnitAbility::Mindless;
+    STATIC_REQUIRE(withoutAbilities(both, UnitAbility::Mindless) == UnitAbility::Undead);
+    STATIC_REQUIRE(withoutAbilities(both, UnitAbility::None) == both);
+    STATIC_REQUIRE(withoutAbilities(both, both) == UnitAbility::None);
+    // Subtracting a flag that was never there is a no-op, not an inversion.
+    STATIC_REQUIRE(withoutAbilities(UnitAbility::Undead, UnitAbility::Fearless)
+                   == UnitAbility::Undead);
+}

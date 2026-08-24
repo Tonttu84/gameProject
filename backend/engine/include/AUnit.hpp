@@ -235,6 +235,28 @@ public:
      // rather than accumulating.
      void setGrantedAbilities(UnitAbility set) { _grantedAbilities = set; }
      UnitAbility getGrantedAbilities() const   { return _grantedAbilities; }
+
+     // ─── Suppression (slice 9a, decision 9-4) ───────────────────────────────
+     // What this body's GEAR takes away. Items are fully general (9-3): a row
+     // may move any stat and may both add and remove abilities.
+     //
+     // Two things about it are load-bearing, and both live in abilities():
+     //
+     //   1. Suppression is applied FIRST and abilityClosure() runs AFTER it, so
+     //      a row that denies an IMPLIED flag is representable but INERT — the
+     //      closure simply puts it back. That is the user's own design
+     //      (2026-08-24): "You might be able to technically remove something but
+     //      it wont actually work". 6-3's invariant — an undead that leaves a
+     //      corpse is unwritable — therefore survives any future edit to the
+     //      implication table, and a NEW implication row turns an old item inert
+     //      rather than dangerous. The eligibility rule is an authoring
+     //      convention; this ORDER is the enforcement.
+     //
+     //   2. It is NOT scoped to squad membership, unlike a grant. A banner is
+     //      flown over a formation and stops covering a man who leaves it (6-6);
+     //      gear is worn on the body and goes where the body goes.
+     void setSuppressedAbilities(UnitAbility set) { _suppressedAbilities = set; }
+     UnitAbility getSuppressedAbilities() const   { return _suppressedAbilities; }
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
     int getFatigueCost() const;
@@ -368,11 +390,21 @@ public:
     void setPreferredRange(int r)    { preferredRange = r; }
 
     // Campaign squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE
-    // CATALOG", 4b): apply one FLAT modifier to a named stat, by the same
-    // names the unit catalog exports ("attack", "armour", "speed",
-    // "ballisticSkill", "formationFighter"). Returns false for a name it does
+    // CATALOG", 4b) and character gear (slice 9a): apply one FLAT modifier to a
+    // named stat, by the same names the unit catalog exports — "maxHP",
+    // "attack", "defence", "armour", "speed", "ballisticSkill",
+    // "preferredRange", "formationFighter". Returns false for a name it does
     // not handle, so an unknown stat is INERT rather than silently mis-applied
     // — the same contract the campaign layer's effect readers use.
+    //
+    // The vocabulary is the CHARACTER SHEET (9-5): what a player sees as a
+    // number. Two deliberate absences —
+    //   • `hitpoints`, because HP is generated FROM maxHP (see the branch), so
+    //     gear can never start its bearer wounded;
+    //   • `reconTag`, which is not a sheet number but a signed fudge term in a
+    //     campaign scouting formula. Making it an ability instead is its own
+    //     future change to how recon value is computed, not a gear one.
+    // Anything trickier than a number is an ABILITY, not a stat.
     //
     // Bounded deliberately: placement JSON is attacker-controlled at the
     // trust boundary (SECURITY_NOTES.md), so the delta is clamped to
@@ -498,6 +530,7 @@ protected:
     bool placed = false;
     UnitAbility _innateAbilities  = UnitAbility::None;
     UnitAbility _grantedAbilities = UnitAbility::None;
+    UnitAbility _suppressedAbilities = UnitAbility::None;
     bool battleSummon = false;
     size_t spentMove = 0; // action recovery in ticks (archer fire), NOT terrain debt:
                           // blocks fireBow and one moveToward call per tick; special()

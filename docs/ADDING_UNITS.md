@@ -86,6 +86,14 @@ A new ability needs: a flag in the `UnitAbility` enum, its wire name in `Abiliti
 `NAMES` table (so the campaign layer can grant it), whatever behaviour reads it, and a row
 in the implication table **only** if it genuinely implies another.
 
+**Abilities can also be taken away** (slice 9a): character gear may deny one, arriving as
+`denied_abilities` on the placement entry and landing in the *suppressed* set.
+`AUnit::abilities()` subtracts it **before** running `abilityClosure()`, which is the whole
+safety argument — a row denying an *implied* flag is legal to write and simply does nothing,
+because the closure puts it back. So you never need an eligibility rule listing which
+abilities may be denied, and adding a new implication row turns an old item inert rather
+than dangerous. Do not "fix" that order.
+
 ## 2. Register it in the catalog (the only hand-maintained list)
 
 `backend/engine/src/UnitCatalog.cpp`, in `unitCatalog()`:

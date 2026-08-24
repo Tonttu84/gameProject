@@ -236,6 +236,30 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             u->setGrantedAbilities(granted);
         }
 
+        // Optional denied_abilities (slice 9a, decision 9-4): an array of
+        // ability names this body's GEAR takes away, attached SERVER-SIDE by
+        // the campaign layer from the items a character carries.
+        //
+        // The counterpart to squad_abilities, and parsed identically — but it
+        // lands in the SUPPRESSED set, which AUnit::abilities() subtracts
+        // BEFORE running the implication closure. That order is what makes a
+        // fully general item system safe: a row denying an implied flag is
+        // legal to author and simply does nothing, because the closure puts it
+        // back. Nothing here needs to know which flags are implied, and nothing
+        // breaks when the implication table grows.
+        //
+        // Same never-throw discipline as everything else at this boundary: a
+        // non-array, a non-string entry or an unknown name is skipped.
+        auto deniedIt = entry.find("denied_abilities");
+        if (deniedIt != entry.end() && deniedIt->is_array()) {
+            UnitAbility denied = UnitAbility::None;
+            for (const auto& name : *deniedIt) {
+                if (!name.is_string()) continue;
+                denied |= abilityFromName(name.get<std::string>());
+            }
+            u->setSuppressedAbilities(denied);
+        }
+
         // Reject if placement would exceed hex capacity — in PACKING size, the
         // room the body takes, which is what a hex measures.
         int packedSize = static_cast<int>(u->getPackingSize());

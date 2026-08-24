@@ -846,6 +846,152 @@ TEST_CASE("buildArmyFromPlacement: unknown or malformed squad_mods are inert") {
     for (const auto& u : army) REQUIRE(u->getAttackPWR() == baseAttack);
 }
 
+// ── The gear stat vocabulary (slice 9a, decision 9-5) ───────────────────────
+//
+// The three names applyStatMod grew for character equipment, and the one rule
+// about them a reader could otherwise undo: maxHP is the sheet number and HP is
+// GENERATED from it, so a suit of armour never starts its wearer wounded.
+
+TEST_CASE("buildArmyFromPlacement: a maxHP mod carries current HP with it") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    const int baseMax = base[0]->getmaxHP();
+
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"maxHP", 4}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getmaxHP() == baseMax + 4);
+    // The whole point of the branch (9-5): full, not four short of it.
+    REQUIRE(army[0]->getHp() == army[0]->getmaxHP());
+}
+
+TEST_CASE("buildArmyFromPlacement: a maxHP mod can never kill its bearer") {
+    // Floored at 1, not 0. MAX_STAT_MOD already bounds a legal delta, but the
+    // floor is what makes the worst case survivable rather than fatal.
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"maxHP", -9999}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getmaxHP() >= 1);
+    REQUIRE(army[0]->getHp() >= 1);
+    REQUIRE(army[0]->getAlive());
+}
+
+TEST_CASE("buildArmyFromPlacement: defence and preferredRange are moddable") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "Archer"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    const int baseDefence = base[0]->getDefence();
+    const int baseRange   = base[0]->getPreferredRange();
+    REQUIRE(baseRange > 1);  // an archer holds distance; the mod below closes it
+
+    json placement = json::array({
+        json{{"unit_type", "Archer"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"defence", 2}, {"preferredRange", -2}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getDefence() == baseDefence + 2);
+    REQUIRE(army[0]->getPreferredRange() == baseRange - 2);
+}
+
+TEST_CASE("buildArmyFromPlacement: reconTag is deliberately NOT a moddable stat") {
+    // 9-5 excludes it on purpose: it is not a sheet number but a signed fudge
+    // term in a campaign scouting formula. Turning it into an ability is its own
+    // future change to how recon value is computed — this case is here so that
+    // change is made deliberately rather than by someone "completing the set".
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "LightCavalry"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    const int baseTag = base[0]->getReconTag();
+
+    json placement = json::array({
+        json{{"unit_type", "LightCavalry"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"reconTag", 5}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getReconTag() == baseTag);
+}
+
+// ── denied_abilities in placement JSON (gear, slice 9a decision 9-4) ─────────
+//
+// The counterpart to squad_abilities, and parsed identically — but it lands in
+// the SUPPRESSED set, which abilities() subtracts BEFORE the closure runs.
+
+TEST_CASE("buildArmyFromPlacement: denied_abilities land in the SUPPRESSED set") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_abilities", json::array({"fearless"})},
+             {"denied_abilities", json::array({"fearless"})}},
+    });
+    // Declared before the army so it outlives its members — see the note on
+    // the squad_abilities cases below. The squad is needed at all because a
+    // GRANT only bites inside one (6-6), and this case is about the grant and
+    // the denial meeting on the same body.
+    Squad sq("Household");
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getSuppressedAbilities() == UnitAbility::Fearless);
+    REQUIRE(hasAbilityFlag(army[0]->getGrantedAbilities(), UnitAbility::Fearless));
+
+    sq.addMember(army[0].get());
+    // Granted and denied at once: the denial wins, because it is subtracted
+    // after the grant is folded in.
+    REQUIRE_FALSE(army[0]->hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("buildArmyFromPlacement: denying an IMPLIED ability is inert") {
+    // 9-4 through the wire. A row denying NoCorpse is authorable and does
+    // nothing, because the closure runs after the subtraction and restores it.
+    // This is what keeps 6-3's invariant true under a fully general item system.
+    //
+    // Granted Undead rather than a naturally undead type on purpose: the
+    // placement API only builds Player/Enemy types, and Zombie and Skeleton are
+    // Summon-only. The squad is what makes the grant bite (6-6).
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_abilities", json::array({"undead"})},
+             {"denied_abilities", json::array({"nocorpse"})}},
+    });
+    Squad sq("The Barrow");  // must outlive its members
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    sq.addMember(army[0].get());
+
+    REQUIRE(army[0]->hasAbility(UnitAbility::Undead));
+    REQUIRE(army[0]->hasAbility(UnitAbility::NoCorpse));
+}
+
+TEST_CASE("buildArmyFromPlacement: unknown or malformed denied_abilities are inert") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"denied_abilities", json::array({"invincible", 7})}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}, {"denied_abilities", "fearless"}},
+        json{{"unit_type", "Soldier"}, {"q", 5}, {"r", 5}, {"denied_abilities", json::array()}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 3);
+    for (const auto& u : army) REQUIRE(u->getSuppressedAbilities() == UnitAbility::None);
+}
+
 // ── squad_abilities in placement JSON (banners, slice 6 decision 6-7) ───────
 //
 // The campaign layer attaches these server-side from the banner bound to the
