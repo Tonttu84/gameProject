@@ -3817,8 +3817,54 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     const { body: c } = await createCampaign()
     const mage = c.characters.find((x) => x.type === 'Mage')
     const view = await getView(c.id)
-    expect(view.characters.find((x) => x.id === mage.id).anatomy)
-      .toEqual({ head: 1, torso: 1, legs: 1, hand: 2, misc: 1 })
+    // Phrased and ordered (9-16), not the raw anatomy map: the client draws
+    // these rows and never names a slot itself.
+    expect(view.characters.find((x) => x.id === mage.id).slots).toEqual([
+      { slot: 'head', label: 'head', count: 1 },
+      { slot: 'torso', label: 'body', count: 1 },
+      { slot: 'legs', label: 'legs', count: 1 },
+      { slot: 'hand', label: 'hand', count: 2 },
+      { slot: 'misc', label: 'kit', count: 1 },
+    ])
+  })
+
+  test('the sheet folds the modifiers into the base numbers (9-16)', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await stockItems(c.id, [HELM])
+    const before = (await getView(c.id)).characters.find((x) => x.id === mage.id)
+    const defenceBefore = before.sheet.find((row) => row.stat === 'defence')
+    expect(defenceBefore).toMatchObject({ delta: 0, value: defenceBefore.base })
+
+    const { body: view } = await equip(c.id, mage.id, { slot: 'head', index: 0, itemId: HELM })
+      .expect(200)
+    const sheet = view.characters.find((x) => x.id === mage.id).sheet
+    const defence = sheet.find((row) => row.stat === 'defence')
+    expect(defence).toEqual({
+      stat: 'defence',
+      label: 'defence',
+      base: defenceBefore.base,
+      delta: 1,
+      value: defenceBefore.base + 1,
+    })
+    // 9-5: the vocabulary is the character sheet, and reconTag is not on it —
+    // it is a signed fudge term in the recon formula, not a number a player
+    // reads. The rest are phrased in the same words the item cards use.
+    expect(sheet.map((row) => row.stat)).not.toContain('reconTag')
+    expect(sheet.map((row) => row.stat)).toEqual(
+      ['maxHP', 'attack', 'defence', 'armour', 'speed', 'ballisticSkill', 'preferredRange'],
+    )
+    expect(sheet.find((row) => row.stat === 'maxHP').label).toBe('stamina')
+  })
+
+  test('the store says which slot a piece needs, so a slot can filter to it', async () => {
+    // Every piece of gear is kind `gear` (6-14 filters on kind), so a head slot
+    // opening the store needs the row's slot too or it offers blades as well.
+    const { body: c } = await createCampaign()
+    await stockItems(c.id, [HELM, BLADE])
+    const view = await getView(c.id)
+    expect(view.items.find((r) => r.id === HELM).slot).toBe('head')
+    expect(view.items.find((r) => r.id === BLADE).slot).toBe('hand')
   })
 
   test('unequipping is the exact inverse', async () => {

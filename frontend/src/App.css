@@ -673,7 +673,8 @@ body {
 .squad-screen h2 { color: var(--gold); font-size: 1.4rem; }
 .squad-screen h3 { color: var(--gold); font-size: 1.05rem; margin: 0.5rem 0 0; }
 .squad-roll,
-.charter-page {
+.charter-page,
+.character-sheet {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -681,12 +682,24 @@ body {
   max-width: 720px;
 }
 .squad-roll p,
-.charter-page p { font-size: 0.85rem; margin: 0; }
+.charter-page p,
+.character-sheet p { font-size: 0.85rem; margin: 0; }
 .squad-roll-note { color: #8888aa; font-style: italic; }
 /* A charter with a draft waiting is MARKED on the roll (13-15) — the cards
    themselves live on the honours screen. */
 .roll-honour-waiting { color: var(--gold); }
-.charter-page h4 { color: #aab; font-size: 0.9rem; margin: 0.6rem 0 0; }
+.charter-page h4,
+.character-sheet h4 { color: #aab; font-size: 0.9rem; margin: 0.6rem 0 0; }
+/* The character sheet (9-16). Same furniture as the charter page — a column of
+   sections and the house card per slot — because they are the same KIND of
+   page one level apart, and a second look would read as a second system.
+   The stat table borrows the muster table's spacing for the same reason. */
+.character-stats { border-collapse: collapse; font-size: 0.85rem; }
+.character-stats td { padding: 0.15rem 0.75rem 0.15rem 0; }
+.character-stats td:nth-child(3) { color: #8888aa; font-style: italic; }
+/* A bearer who is out cannot be re-kitted OR re-posted (9-8/9-9), so the reason
+   is stated once at the top rather than repeated beside every greyed control. */
+.sheet-away { color: var(--gold); }
 .charter-muster { border-collapse: collapse; font-size: 0.85rem; }
 .charter-muster td { padding: 0.15rem 0.75rem 0.15rem 0; }
 /* The forecast is a PREDICTION (13-6): a raid fought this afternoon moves the

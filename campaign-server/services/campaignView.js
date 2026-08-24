@@ -20,7 +20,9 @@ import {
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
 import { squadCaps, squadIntake, looseRoster, forecastRefills } from './squadReinforce.js'
-import { allBodies, wornItems, characterMods, awayBlocker } from './characters.js'
+import {
+  allBodies, wornItems, characterMods, characterSheet, characterSlots, awayBlocker,
+} from './characters.js'
 import {
   squadUpgrades,
   slotsFor,
@@ -420,11 +422,13 @@ export async function campaignView(campaign) {
       // slots as well as the full ones. Sent per character rather than as a
       // per-type table: the client asks "what can THIS person wear", and a
       // lookup table would be a second thing to keep in step.
-      const anatomy = catalog.get(c.type)?.anatomy ?? null
+      const entry = catalog.get(c.type) ?? null
+      const anatomy = entry?.anatomy ?? null
       const plan = anatomy
         ? { head: anatomy.head, torso: anatomy.torso, legs: anatomy.legs,
             hand: anatomy.hand, misc: anatomy.misc }
         : null
+      const mods = characterMods(c, plan)
       return {
         id: c.id,
         name: c.name,
@@ -433,7 +437,10 @@ export async function campaignView(campaign) {
         hangBack: c.hangBack ?? false,
         alive: c.alive,
         diedDay: c.diedDay ?? null,
-        anatomy: plan,
+        // The slots the sheet DRAWS, phrased and in a fixed order (9-16) —
+        // rather than the raw anatomy map, which would leave the client naming
+        // `misc` itself and meeting the engine's vocabulary doing it (17-5).
+        slots: characterSlots(plan),
         // Resolved and PHRASED (17-5), exactly like the store rows below: the
         // client holds no catalog and composes no sentence, so a helm reads the
         // same on the sheet as it does in the store.
@@ -449,7 +456,14 @@ export async function campaignView(campaign) {
         })),
         // The DERIVED stat bag (5-3), so the sheet can show base-plus-modifier
         // without re-deriving it client-side — one canonical computation site.
-        mods: characterMods(c, plan),
+        mods,
+        // …and that fold, done here (9-16). The sheet is base plus the bag in
+        // 9-5's vocabulary, with the arithmetic and the choice of which stats
+        // are sheet numbers both server-side: the client holds no unit catalog
+        // and re-derives no campaign math. Null when the catalog knows nothing
+        // about the type — "nothing is known" is a sentence the screen says
+        // rather than a table of zeroes.
+        sheet: characterSheet(entry?.stats ?? null, mods),
         // Why they cannot be re-kitted right now, or null (9-8/9-9). A phrase
         // rather than a boolean, because the client renders sentences it never
         // composes and "out raiding" and "on a mission" read differently.
@@ -471,6 +485,11 @@ export async function campaignView(campaign) {
       name: row.name,
       blurb: row.blurb,
       target: row.target,
+      // Which anatomy slot it needs, or null (9-16). `kind` alone stopped being
+      // enough the moment a character slot could open this store: every piece
+      // of gear is kind `gear`, and a head slot must offer helms rather than
+      // every helm, blade and satchel in the stores.
+      slot: row.slot ?? null,
       permanent: row.permanent ?? false,
       ...describeItem(row),
     })),

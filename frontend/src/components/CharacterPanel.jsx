@@ -1,40 +1,41 @@
-import React, { useState } from 'react'
+import React from 'react'
 import useCampaignStore from '../stores/useCampaignStore'
+import useUiStore from '../stores/useUiStore'
 import { EMPTY_ARRAY } from '../stores/selectors'
 
 // The company's characters (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS"):
 // named individuals rather than roster counts, each of whom can be posted to a
-// squad, told to hang back, and lost for good.
+// squad, told to hang back, kitted out, and lost for good.
 //
 // A SCREEN OF ITS OWN, reached from the squad screen (13-16). It was not folded
 // into the charter page: 5-9's roll of the dead has nowhere to live there, and
 // doing both would mean two code paths for one mutation. The charter page names
 // who is posted and offers the way through to here.
 //
+// A ROLL, NOT A FORM, since 9b. It named everyone and carried the posting
+// select and the hang-back checkbox while it was the only screen a character
+// had; both moved to the sheet (9-16), which is 13-8's roll-then-page shape one
+// level further in — and the same reason: a company of many wants a list that
+// scales, and every order wants the context the sheet exists to show. What
+// stays here is what a LIST is for: who they are, where they stand, and the way
+// through to each of them.
+//
 // The dead are LISTED, not hidden. Their record survives with everything on it
 // (5-9) because a later recovery — a mummification, a special spell — has to
 // have something to work with, and a name that vanishes from the screen reads
-// as a bug rather than as a loss.
+// as a bug rather than as a loss. Their sheets open too: what a body was still
+// carrying when it was left behind is exactly what such a recovery is for.
 
-const CharacterPanel = ({ onAttach, onSetHangBack }) => {
+const CharacterPanel = () => {
   const characters = useCampaignStore((s) => s.campaign?.characters ?? EMPTY_ARRAY)
   const squads = useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
-  const [busy, setBusy] = useState(false)
+  const showSheet = useUiStore((s) => s.showCharacterPage)
 
   if (characters.length === 0)
     return <p data-testid="character-panel-empty">No characters ride with this army.</p>
 
   const living = characters.filter((c) => c.alive)
   const fallen = characters.filter((c) => !c.alive)
-
-  const run = async (fn) => {
-    setBusy(true)
-    try {
-      await fn()
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const squadName = (id) => squads.find((s) => s.id === id)?.name ?? `squad ${id}`
 
@@ -54,41 +55,19 @@ const CharacterPanel = ({ onAttach, onSetHangBack }) => {
           <p data-testid={`character-posting-${character.id}`}>
             {character.squadId == null ? 'In camp' : `With ${squadName(character.squadId)}`}
           </p>
-
-          <label htmlFor={`character-squad-${character.id}`}>
-            Posting
-            <select
-              id={`character-squad-${character.id}`}
-              data-testid={`character-squad-${character.id}`}
-              value={character.squadId ?? ''}
-              disabled={busy}
-              onChange={(e) =>
-                run(() => onAttach(character.id, e.target.value === '' ? null : Number(e.target.value)))
-              }
-            >
-              <option value="">In camp</option>
-              {squads.map((squad) => (
-                <option value={squad.id} key={squad.id}>
-                  {squad.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {/* Every character carries the toggle whatever their type — a
-              battle-mage can be told to hold the line. Only the default is
-              derived from the unit (5-8). */}
-          <label htmlFor={`character-hangback-${character.id}`}>
-            <input
-              id={`character-hangback-${character.id}`}
-              data-testid={`character-hangback-${character.id}`}
-              type="checkbox"
-              checked={character.hangBack}
-              disabled={busy}
-              onChange={(e) => run(() => onSetHangBack(character.id, e.target.checked))}
-            />
-            Hang back unless the line breaks
-          </label>
+          {/* The roll MARKS who cannot be given orders today and leaves the
+              reason to the sheet, the way the squad roll marks a charter that
+              is out. The phrase is the server's either way (17-5). */}
+          {character.awayBlocker && (
+            <p data-testid={`character-away-${character.id}`}>{character.awayBlocker}.</p>
+          )}
+          <button
+            className="btn-primary"
+            data-testid={`character-open-${character.id}`}
+            onClick={() => showSheet(character.id)}
+          >
+            Their sheet
+          </button>
         </div>
       ))}
 
@@ -96,9 +75,18 @@ const CharacterPanel = ({ onAttach, onSetHangBack }) => {
         <div className="character-fallen" data-testid="character-fallen">
           <h4>The Fallen</h4>
           {fallen.map((character) => (
-            <p key={character.id} data-testid={`character-dead-${character.id}`}>
-              {character.name} — {character.type}, fell on day {character.diedDay}
-            </p>
+            <div className="raid-card" key={character.id}>
+              <p data-testid={`character-dead-${character.id}`}>
+                {character.name} — {character.type}, fell on day {character.diedDay}
+              </p>
+              <button
+                className="btn-secondary"
+                data-testid={`character-open-${character.id}`}
+                onClick={() => showSheet(character.id)}
+              >
+                What they were carrying
+              </button>
+            </div>
           ))}
         </div>
       )}

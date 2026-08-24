@@ -55,16 +55,24 @@ const info = {
   units: [],
 }
 
+// `permanent` rides on every store row the server sends, and the confirm step
+// is keyed on it (9-16) rather than on which kind of slot asked: kit comes off
+// again, so warning that it never can would be a lie. A banner is the permanent
+// case, and this fixture must say so or it stops being one.
 const BANNER = {
   id: 'banner_unbroken_line',
   kind: 'banner',
   name: 'The Unbroken Line',
   blurb: 'While it flies over them, the squad does not break.',
   target: 'squad',
+  permanent: true,
 }
 
-// A helm nobody can put on a banner slot — the store must not offer it.
-const HELM = { id: 'helm_of_ash', kind: 'helm', name: 'Helm of Ash', blurb: 'A grim thing.', target: 'character' }
+// Gear nobody can fly from a banner pole — the store must not offer it.
+const HELM = {
+  id: 'gear_iron_helm', kind: 'gear', slot: 'head', name: 'Iron Helm',
+  blurb: 'A grim thing.', target: 'character', permanent: false,
+}
 
 const atRecruit = (over = {}) => ({
   ...campaignFixture,

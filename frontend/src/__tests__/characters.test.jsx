@@ -5,14 +5,16 @@
  *
  * The panel is a SCREEN of its own now, reached from the squad screen (13-16):
  * the charter page names who is posted and offers the way through, and the
- * whole roll — the living, their postings, and the fallen — lives here. These
- * tests are about what it shows and what it posts, not about layout. The rules
- * live in campaign-server's characters/campaigns tests.
+ * whole roll — the living, their postings, and the fallen — lives here. Since
+ * 9b it is a ROLL and nothing else: the orders it used to carry are given on
+ * each character's own sheet (characterSheet.test.jsx), so what these tests
+ * cover is what it SHOWS and where its buttons LEAD. The rules live in
+ * campaign-server's characters/campaigns tests.
  */
 
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
   advanceCampaignPhase: vi.fn(async (_id, phase) => {
@@ -91,35 +93,29 @@ describe('character panel', () => {
     expect(screen.getByTestId('character-posting-2')).toHaveTextContent('1st Cohort')
   })
 
-  it('posts a character to a squad by id', async () => {
-    attachCharacter.mockResolvedValue(withCharacters())
+  // 9b: the roll LEADS, it no longer acts. The orders moved to the sheet, where
+  // the context that should inform them lives; a form on the list and a form on
+  // the page would be the "managed in three places" 13-1 exists to end.
+  it('leads to each character’s own sheet, and posts nothing itself', async () => {
     await toCompany(withCharacters())
+    expect(screen.queryByTestId('character-squad-1')).toBeNull()
+    expect(screen.queryByTestId('character-hangback-1')).toBeNull()
 
-    fireEvent.change(screen.getByTestId('character-squad-1'), { target: { value: '2' } })
-    await waitFor(() => expect(attachCharacter).toHaveBeenCalledTimes(1))
-    expect(attachCharacter).toHaveBeenCalledWith(campaignFixture.id, 1, 2)
+    fireEvent.click(screen.getByTestId('character-open-1'))
+    expect(await screen.findByTestId('character-sheet-1')).toBeInTheDocument()
+    expect(attachCharacter).not.toHaveBeenCalled()
+    expect(setCharacterHangBack).not.toHaveBeenCalled()
   })
 
-  // Detaching is the thing that makes riding along at full risk fair, so the
-  // way home has to be on the screen, not just in the API.
-  it('brings a character home by choosing camp', async () => {
-    attachCharacter.mockResolvedValue(withCharacters())
-    await toCompany(withCharacters())
-
-    fireEvent.change(screen.getByTestId('character-squad-2'), { target: { value: '' } })
-    await waitFor(() => expect(attachCharacter).toHaveBeenCalledTimes(1))
-    expect(attachCharacter).toHaveBeenCalledWith(campaignFixture.id, 2, null)
-  })
-
-  it('toggles hang-back, whatever the character’s type', async () => {
-    setCharacterHangBack.mockResolvedValue(withCharacters())
-    await toCompany(withCharacters())
-
-    const toggle = screen.getByTestId('character-hangback-1')
-    expect(toggle).toBeChecked()
-    fireEvent.click(toggle)
-    await waitFor(() => expect(setCharacterHangBack).toHaveBeenCalledTimes(1))
-    expect(setCharacterHangBack).toHaveBeenCalledWith(campaignFixture.id, 1, false)
+  // The roll MARKS who is out, the way the squad roll marks a charter that is
+  // away — the reason is the server's phrase, and the sheet carries the rest.
+  it('marks a character who is away, in the server’s words', async () => {
+    await toCompany(withCharacters([
+      { ...CHARACTERS[1], awayBlocker: 'Barnabas is out raiding with 1st Cohort' },
+      CHARACTERS[0],
+    ]))
+    expect(screen.getByTestId('character-away-2')).toHaveTextContent('out raiding')
+    expect(screen.queryByTestId('character-away-1')).toBeNull()
   })
 
   // 5-9: the dead are kept, and shown. A name that vanishes reads as a bug
@@ -128,9 +124,10 @@ describe('character panel', () => {
     await toCompany(withCharacters())
     expect(screen.getByTestId('character-dead-3')).toHaveTextContent('Ceridwen')
     expect(screen.getByTestId('character-dead-3')).toHaveTextContent('4')
-    // …and offers no controls for them: there is nothing to order a dead mage.
-    expect(screen.queryByTestId('character-squad-3')).toBeNull()
-    expect(screen.queryByTestId('character-hangback-3')).toBeNull()
+    // …and their sheet opens too: what a body was still carrying when it was
+    // left behind (5-9) is exactly what a later recovery is for.
+    fireEvent.click(screen.getByTestId('character-open-3'))
+    expect(await screen.findByTestId('character-sheet-3')).toBeInTheDocument()
   })
 
   it('shows no fallen section when nobody has died', async () => {

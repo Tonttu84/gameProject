@@ -55,3 +55,13 @@ export async function openCharter(squadId) {
   fireEvent.click(await screen.findByTestId(`roll-open-${squadId}`))
   await screen.findByTestId(`charter-page-${squadId}`)
 }
+
+// …and on to one character's own sheet (9-16: the company roll, then a page per
+// character). The sheet is where every order and every piece of kit is given
+// now, so most character tests start here rather than at the roll.
+export async function openCharacterSheet(characterId) {
+  await openArmy()
+  fireEvent.click(await screen.findByTestId('roll-to-company'))
+  fireEvent.click(await screen.findByTestId(`character-open-${characterId}`))
+  await screen.findByTestId(`character-sheet-${characterId}`)
+}

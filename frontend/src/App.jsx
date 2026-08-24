@@ -61,7 +61,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, equipCharacterItem, unequipCharacterItem, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -440,7 +440,7 @@ const App = () => {
     return (
       <div className="app">
         {authBar}
-        <ItemStorePanel onBind={guarded(bindSquadBanner)} />
+        <ItemStorePanel onBind={guarded(bindSquadBanner)} onEquip={guarded(equipCharacterItem)} />
       </div>
     )
   }
@@ -449,10 +449,11 @@ const App = () => {
   // stores do, and Back drops the player back on the phase underneath (13-7).
   //
   // BELOW the pending-choices overlay: every action this screen offers —
-  // upgrades, banner binding, attachment, hang-back — is a route that 409s
-  // while a fate is owed (rejectIfChoicePending guards all four), so letting a
-  // player wander in there would offer buttons that can only fail. The HUD
-  // hides its door for the same reason while choices are pending.
+  // upgrades, banner binding, attachment, hang-back, and now equip/unequip on
+  // a character's sheet — is a route that 409s while a fate is owed
+  // (rejectIfChoicePending guards them all), so letting a player wander in
+  // there would offer buttons that can only fail. The HUD hides its door for
+  // the same reason while choices are pending.
   if (squadScreen) {
     return (
       <div className="app">
@@ -462,6 +463,7 @@ const App = () => {
           onTakeUpgrade={guarded(takeSquadUpgrade)}
           onAttach={guarded(attachCharacter)}
           onSetHangBack={guarded(setCharacterHangBack)}
+          onUnequip={guarded(unequipCharacterItem)}
         />
       </div>
     )

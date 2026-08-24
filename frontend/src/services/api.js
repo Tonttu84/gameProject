@@ -117,6 +117,15 @@ export const attachCharacter = (id, characterId, squadId) =>
 // whatever their type; only the default is derived from the unit.
 export const setCharacterHangBack = (id, characterId, hangBack) =>
   axios.post(`/api/campaigns/${id}/characters/${characterId}/hang-back`, { hangBack }, authed()).then(r => r.data)
+// Put a piece of gear from the store onto a character (9-8), and take it off
+// again. Two calls rather than one "set this slot", because they take different
+// arguments and fail for different reasons — and `index` matters on both: kit
+// stacks (9-6), so which of two hands a blade comes off is not a detail.
+// Free and ungated like attachment; the ONE refusal is a bearer who is away.
+export const equipCharacterItem = (id, characterId, { slot, index, itemId }) =>
+  axios.post(`/api/campaigns/${id}/characters/${characterId}/equip`, { slot, index, itemId }, authed()).then(r => r.data)
+export const unequipCharacterItem = (id, characterId, { slot, index }) =>
+  axios.post(`/api/campaigns/${id}/characters/${characterId}/unequip`, { slot, index }, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

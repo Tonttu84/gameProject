@@ -8,6 +8,8 @@ import {
   characterBodies,
   allBodies,
   characterMods,
+  characterSheet,
+  characterSlots,
   hangsBackByDefault,
   nextCharacterId,
   drawCharacterName,
@@ -220,6 +222,65 @@ describe('what gear adds up to', () => {
       items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
     })
     expect(characterMods(kitted)).toEqual({ attack: 1 })
+  })
+})
+
+describe('the character sheet (9-16)', () => {
+  const mage = catalogFixture.units.find((u) => u.name === 'Mage')
+
+  test('base plus the bag, in the vocabulary the item cards use', () => {
+    const sheet = characterSheet(mage.stats, { defence: 1, speed: -1 })
+    const row = (stat) => sheet.find((r) => r.stat === stat)
+    expect(row('defence')).toEqual({
+      stat: 'defence',
+      label: 'defence',
+      base: mage.stats.defence,
+      delta: 1,
+      value: mage.stats.defence + 1,
+    })
+    expect(row('speed').value).toBe(mage.stats.speed - 1)
+    // Untouched stats are still ON the sheet — it is a sheet, not a diff.
+    expect(row('attack')).toMatchObject({ delta: 0, value: mage.stats.attack })
+    expect(row('maxHP').label).toBe('stamina')
+  })
+
+  test('reconTag is not a sheet number (9-5)', () => {
+    // A signed fudge term in the recon formula, not something a player reads.
+    // The exclusion falls out of reusing ITEM_STAT_TEXT as the vocabulary,
+    // which is why there is no second list to keep in step.
+    expect(characterSheet(mage.stats).map((r) => r.stat)).not.toContain('reconTag')
+  })
+
+  test('a stat the type does not carry shows up only once something moves it', () => {
+    // The engine exports formationFighter; the campaign's UnitType does not
+    // store it. A modifier to a stat with no base must still be visible — a
+    // number the player cannot see is worse than a zero they can.
+    expect(characterSheet(mage.stats).map((r) => r.stat)).not.toContain('formationFighter')
+    expect(characterSheet(mage.stats, { formationFighter: 2 }).find(
+      (r) => r.stat === 'formationFighter',
+    )).toMatchObject({ base: 0, delta: 2, value: 2 })
+  })
+
+  test('a type the catalog cannot describe has no sheet at all', () => {
+    // Null, not a table of zeroes: "nothing is known about this creature" and
+    // "every number is zero" are different sentences, and the screen says the
+    // first.
+    expect(characterSheet(null, { attack: 1 })).toBeNull()
+    expect(characterSlots(null)).toBeNull()
+  })
+
+  test('the slots are phrased, ordered, and only the ones that exist', () => {
+    expect(characterSlots(HUMANOID)).toEqual([
+      { slot: 'head', label: 'head', count: 1 },
+      { slot: 'torso', label: 'body', count: 1 },
+      { slot: 'legs', label: 'legs', count: 1 },
+      { slot: 'hand', label: 'hand', count: 2 },
+      { slot: 'misc', label: 'kit', count: 1 },
+    ])
+    // A slot the creature does not have is DROPPED rather than sent as a zero:
+    // an empty row a player can never fill reads as a bug.
+    expect(characterSlots({ head: 1, torso: 1, legs: 1, hand: 0, misc: 0 }).map((r) => r.slot))
+      .toEqual(['head', 'torso', 'legs'])
   })
 })
 

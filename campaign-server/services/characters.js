@@ -11,7 +11,7 @@
 
 import { CHARACTER_NAMES, CHARACTER_TYPES, MAX_CHARACTERS_PER_SQUAD } from '../utils/campaignConfig.js'
 import { getRandom } from '../utils/dice.js'
-import { findItem } from './items.js'
+import { findItem, ITEM_STAT_TEXT, SLOT_TEXT } from './items.js'
 import { onMission } from './missions.js'
 
 // `campaign.characters` reaches here as a Mongoose DocumentArray on a live doc
@@ -104,6 +104,56 @@ export const characterMods = (character, anatomy = null) => {
   void character?.experience
   void character?.wounds
   return mods
+}
+
+// ── The character sheet (9-16) ──────────────────────────────────────────────
+//
+// The sheet is the SERVER's arithmetic, like every other number the campaign
+// screens render: base plus the derived bag, resolved here so the client folds
+// nothing and holds no copy of the unit catalog.
+//
+// The VOCABULARY is 9-5's and it is exactly ITEM_STAT_TEXT's — the stats a
+// character sheet shows as numbers, phrased in the player's words. Reusing that
+// map rather than writing a second list is what stops a helm reading "+1
+// defence" beside a row that calls the same number something else, and it means
+// a stat that gains a sheet line gains an item line with it.
+//
+// `reconTag` is therefore absent, as 9-5 requires: it is a signed fudge term in
+// a campaign formula, not a number on a sheet.
+//
+// A row is shown when the TYPE has the stat or when something MOVED it. That
+// second clause is what keeps a mod to a stat the catalog does not carry (the
+// engine exports formationFighter; the campaign's UnitType does not store it)
+// visible rather than silently dropped — a modifier the player cannot see is
+// worse than a base of zero they can.
+export const characterSheet = (baseStats, mods = {}) => {
+  // No catalog row means we know nothing about this creature's numbers. Null,
+  // not an empty list: "nothing is known" and "everything is zero" are
+  // different sentences and the screen says the first one.
+  if (!baseStats) return null
+  const stats = typeof baseStats.toObject === 'function' ? baseStats.toObject() : baseStats
+  return Object.entries(ITEM_STAT_TEXT)
+    .filter(([stat]) => stats[stat] !== undefined || (mods[stat] ?? 0) !== 0)
+    .map(([stat, label]) => {
+      const base = stats[stat] ?? 0
+      const delta = mods[stat] ?? 0
+      return { stat, label, base, delta, value: base + delta }
+    })
+}
+
+// The body plan as the sheet DRAWS it (5-6): one entry per slot kind, in a
+// fixed order, phrased. The counts are wearing positions, not limbs — a horse
+// has four legs and one `legs` slot, because barding is worn as a set.
+//
+// Sent instead of the raw anatomy map, because the client would otherwise have
+// to name the slots itself and would meet the engine's vocabulary doing it
+// (17-5). A slot the creature does not have is dropped rather than sent as a
+// zero: an empty row a player can never fill reads as a bug.
+export const characterSlots = (anatomy) => {
+  if (!anatomy) return null
+  return Object.entries(SLOT_TEXT)
+    .filter(([slot]) => (anatomy[slot] ?? 0) > 0)
+    .map(([slot, label]) => ({ slot, label, count: anatomy[slot] }))
 }
 
 // What a character's gear GRANTS and what it DENIES, as engine ability words

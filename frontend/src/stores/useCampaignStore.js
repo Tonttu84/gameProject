@@ -19,6 +19,8 @@ import {
   attachCharacter,
   bindSquadBanner,
   setCharacterHangBack,
+  equipCharacterItem,
+  unequipCharacterItem,
 } from '../services/api'
 
 // Server-side campaign state, exposed as the view object plus the actions
@@ -103,6 +105,17 @@ const useCampaignStore = create((set, get) => ({
 
   setCharacterHangBack: async (characterId, hangBack) => {
     set({ campaign: await setCharacterHangBack(get().campaign.id, characterId, hangBack) })
+  },
+
+  // Gear on and gear off (9-16's sheet). Reversible, unlike a bound banner —
+  // which is why the sheet offers a plain "take it off" and the store's
+  // permanence prompt does not appear for kit.
+  equipCharacterItem: async (characterId, where) => {
+    set({ campaign: await equipCharacterItem(get().campaign.id, characterId, where) })
+  },
+
+  unequipCharacterItem: async (characterId, where) => {
+    set({ campaign: await unequipCharacterItem(get().campaign.id, characterId, where) })
   },
 
   fight: async (playerPlacement) => {

@@ -276,23 +276,32 @@ MISSIONS" below and they are the user's. Two things there bind later work: 12-3 
 own instruction about how "busy" is stored (two notions, not one), and the write-up carries a
 CORRECTION to what the assistant claimed about the boss-fight meter during the interview.
 
-**▶ SLICE 9a IS SHIPPED (2026-08-24, schema v40). THE NEXT SLICE IS 9b — THE CHARACTER SHEET.**
+**▶ DECISION 9 IS DONE — 9a SHIPPED 2026-08-24 (schema v40) AND 9b THE SAME DAY (no schema bump).**
 With 12 shipped, the squad overhaul's seventeen decisions are all built except 11 (acquiring squads)
 and 16 (the basic banner's benefit, deliberately deferred until the surrounding systems can be
 played). Decision 9's equipment was the seam 5a shipped empty, and 9a filled it: **its sixteen
 decisions are under "DECISION 9 — CHARACTER EQUIPMENT" below and they are the user's; do not
-re-derive them.** What 9a built, and what 9b must not re-derive, is under "9a SHIPPED" in that
+re-derive them.** What each slice built is under "9a SHIPPED" and "9b SHIPPED" in that
 section. Three things there reach past the slice: gear may both ADD and REMOVE abilities, kept safe
 by ORDER rather than by a rule (9-4); banners sit outside the whole loot and recovery path in both
 directions (9-12); and the user's direction that `reconTag` should become an ability rather than a
 value is still an OPEN future change to the recon formula (9-5), deliberately not folded into gear.
 
-**9b is 9-16: a PAGE PER CHARACTER**, reached from the character roll — base stats with modifiers
-folded in, the five slots and what fills them, equip/unequip against the store, attachment and
-hang-back. Every number and sentence it needs is already on the wire: `campaignView` sends each
-character their `anatomy`, their resolved and PHRASED `items`, their derived `mods`, and an
-`awayBlocker` phrase for when the sheet must be read-only. 17-3 binds assignment to the TARGET's
-screen rather than to the store, and 17-5 means the client composes no sentence of its own.
+**9b was 9-16: a PAGE PER CHARACTER**, and it is built — reached from the company roll, with base
+stats and modifiers folded, every slot and what fills it, equip/unequip against the store, and the
+posting and hang-back orders that used to live on `CharacterPanel`. The handoff above claimed every
+number it needed was already on the wire; that was nearly true and the gap is worth naming, because
+it is the shape of the next such gap: `mods` crossed but the BASE stats never did, so a sheet could
+have shown "+1 defence" and not "defence 5". The fold is server-side now (`characterSheet`), for
+the reason the charter page states — every number on a campaign screen is the server's.
+
+**WHAT THE NEXT SLICE SHOULD KNOW.** Nothing 9 named is outstanding. The open ends are decision 11
+(acquiring squads), decision 16 (the basic banner's benefit), 9-7's purchase and crafting channels
+(each needs prices and a call on what they compete with — their own interview), 9-5's `reconTag`
+rework, and the engine-side scoping bug 9a recorded and 9b left standing: **a gear-granted ability
+on a LOOSE character is silently dropped by the engine**, because granted abilities are scoped to
+squad membership (6-6). 9b did NOT paper over it client-side — the sheet states what the gear
+grants, which is the truth about the item — and the fix still belongs in the engine's scoping.
 
 **⚠️ CORRECTION, ON THE USER'S INSTRUCTION (2026-08-24): THERE IS NO NIGHTLY BATTLE, AND THERE HAS
 NOT BEEN FOR A LONG TIME.** Several older passages in this file still talk about "tonight's battle",
@@ -1769,12 +1778,12 @@ end-of-run listener would never fire; and `std::uniform_int_distribution` is not
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
 
-### DECISION 9 — CHARACTER EQUIPMENT (interviewed 2026-08-24) — 9a SHIPPED, 9b NEXT
+### DECISION 9 — CHARACTER EQUIPMENT (interviewed 2026-08-24) — ✅ BOTH SLICES SHIPPED
 
 The modifier layer 5a shipped empty finally gets filled. **Sixteen decisions, all the user's — do
 not re-derive them.** The spec below was recorded on the user's instruction ("record the spec
-only") and **9a has since been built against it — see "9a SHIPPED" at the end of this section**.
-9b (9-16, the character sheet) is still to come.
+only") and **both slices have since been built against it — see "9a SHIPPED" and "9b SHIPPED" at
+the end of this section**.
 
 What it stands on, already settled and NOT reopened here: 5-2 (the base type is never modified),
 5-3 (sources stored, the stat bag derived), 5-4 (typed slots — head/torso/legs/hand/misc, a
@@ -1983,6 +1992,54 @@ C++ 402 cases, campaign-server 1066, frontend 341, lint clean.
 - **Still deferred, deliberately:** purchase and crafting (9-7 — each needs prices and a call on
   what it competes with, which are decisions rather than details), `reconTag` becoming an ability
   (9-5), and experience and wounds, which `characterMods` still leaves unpriced.
+
+### 9b SHIPPED 2026-08-24 (no schema bump)
+
+9-16's page per character, and with it decision 9 is finished. The sheet is a page of the squad
+screen (`{page: 'character', characterId}`), reached from the company roll: the stats with their
+modifiers folded in, one row per wearing POSITION with what fills it, equip and unequip against the
+store, and the posting and hang-back orders. C++ 402 cases, campaign-server 1073, frontend 356,
+lint clean.
+
+**What a later slice must not re-derive:**
+
+- **The handoff's "everything it needs is already on the wire" was nearly true, and the miss is the
+  useful part.** `mods` crossed; the BASE stats never did, so the sheet could have said "+1 defence"
+  and not "defence 5". `characterSheet(baseStats, mods)` does the fold SERVER-side and ships
+  `[{stat, label, base, delta, value}]` — the charter page's rule ("every number on this page is the
+  server's") applied to a page that is nothing but numbers. **Do not fold base and delta
+  client-side**; the client holds no unit catalog and re-derives no campaign math.
+- **The stat VOCABULARY is `ITEM_STAT_TEXT`, reused rather than rewritten.** 9-5 says the vocabulary
+  is the character sheet, and the item cards were already phrasing exactly that list — so the sheet
+  and a helm's card name the same number the same way by construction, and `reconTag`'s exclusion
+  falls out rather than being remembered. A stat gains a sheet line and an item line together or
+  neither. A stat the TYPE lacks still shows when something moved it (the engine exports
+  `formationFighter`; `UnitType` does not store it), because an invisible modifier is worse than a
+  base of zero.
+- **`characters[].anatomy` became `characters[].slots`** — `[{slot, label, count}]`, phrased and
+  ordered, only the slots that exist. The raw map was shipped by 9a for a consumer that did not yet
+  exist; its consumer wanted slot WORDS, and letting the client map `misc` → "kit" would have been
+  the client meeting the engine's vocabulary (17-5). One shape, not two.
+- **The store row grew `slot`.** 6-14 filters the store on `kind`, which was enough while a banner
+  slot was the only slot; every piece of gear is kind `gear`, so a head slot filtering on kind alone
+  offers blades. The REQUEST carries the slot and the row answers it — the panel still knows nothing
+  about what a helm IS.
+- **The permanence confirm is keyed on the ROW's `permanent`, not on which slot asked.** Kit comes
+  off again, so warning that it never can would be a lie; a banner is unaffected. The day a
+  permanent piece of GEAR is authored, both the store's prompt and the sheet's missing "take it off"
+  button already tell the truth about it with no edit.
+- **The orders MOVED to the sheet; `CharacterPanel` is a roll and nothing else.** 13-1's rule
+  applied one level in: every order wants the context the sheet exists to show, and a form on the
+  list beside a form on the page is the "managed in three places" the squad screen exists to end.
+  The roll still MARKS who is away (the server's phrase), and the fallen's sheets open too — what a
+  body was still carrying is exactly what 5-9 preserves it for.
+- **The page locks WHOLE, never in halves.** Away disables kit and orders together, which is 9-9's
+  amendment to 5-7 made visible: were only the kit locked, detach / re-kit / re-attach would be
+  three clicks. The dead get no orders at all and keep their kit on display.
+- **Left standing, deliberately: the engine drops a gear-granted ability on a LOOSE character**
+  (granted abilities are scoped to squad membership, 6-6). 9a predicted 9b's sheet would make it
+  visible. 9b did not special-case it campaign-side — the sheet states what the ITEM grants, which
+  is true of the item — and the fix still belongs in the engine's scoping.
 
 ### DECISION 12 — MISSIONS ✅ SHIPPED 2026-08-24 (schema v39)
 

@@ -5,6 +5,7 @@ import { EMPTY_ARRAY, EMPTY_OBJECT, availabilityOf } from '../stores/selectors'
 import SquadCharterPage from './SquadCharterPage'
 import SquadUpgradePanel from './SquadUpgradePanel'
 import CharacterPanel from './CharacterPanel'
+import CharacterSheetPage from './CharacterSheetPage'
 
 // THE SQUAD SCREEN (docs/CAMPAIGN_PLAN.md, decision 13) — the hub the whole
 // squad overhaul was built toward, and the screen the other twelve decisions
@@ -127,13 +128,19 @@ const SquadRoll = () => {
 
 // The shell: one back button, one page at a time. `onBack` closes the whole
 // screen and returns to the phase the player opened it from.
-const SquadScreen = ({ onTakeUpgrade, onAttach, onSetHangBack }) => {
+const SquadScreen = ({ onTakeUpgrade, onAttach, onSetHangBack, onUnequip }) => {
   const screen = useUiStore((s) => s.squadScreen)
   const close = useUiStore((s) => s.closeSquadScreen)
   const openRoll = useUiStore((s) => s.openSquadScreen)
+  const showPage = useUiStore((s) => s.showSquadPage)
 
   if (!screen) return null
   const onRoll = screen.page === 'roll'
+  // A character's sheet is the one page reached from a page rather than from
+  // the roll (9-16), so it is the one page whose way back is two steps. Back
+  // out the way you came in, rather than dropping the player somewhere they
+  // were not.
+  const onSheet = screen.page === 'character'
 
   return (
     <div className="squad-screen" data-testid="squad-screen">
@@ -145,10 +152,27 @@ const SquadScreen = ({ onTakeUpgrade, onAttach, onSetHangBack }) => {
           permanence confirm that wants room of its own, and 5-9's roll of the
           dead has nowhere to live on a charter page. */}
       {screen.page === 'honours' && <SquadUpgradePanel onTakeUpgrade={onTakeUpgrade} />}
-      {screen.page === 'company' && (
-        <CharacterPanel onAttach={onAttach} onSetHangBack={onSetHangBack} />
+      {screen.page === 'company' && <CharacterPanel />}
+      {/* One character in full (9-16) — the sheet the company roll leads to,
+          and where the orders that used to live on the roll are now given. */}
+      {onSheet && (
+        <CharacterSheetPage
+          characterId={screen.characterId}
+          onAttach={onAttach}
+          onSetHangBack={onSetHangBack}
+          onUnequip={onUnequip}
+        />
       )}
       <div className="squad-screen-nav">
+        {onSheet && (
+          <button
+            className="btn-secondary"
+            data-testid="squad-screen-company"
+            onClick={() => showPage('company')}
+          >
+            Back to the company
+          </button>
+        )}
         {!onRoll && (
           <button className="btn-secondary" data-testid="squad-screen-roll" onClick={openRoll}>
             Back to the roll
