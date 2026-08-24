@@ -1,6 +1,7 @@
 import { eventValenceFor, eventEligible, GARRISON_SORTIE_EVENTS } from './events.js'
 import { adjustResolve } from './garrison.js'
 import { findItem, grantItem } from './items.js'
+import { rollBearer } from './enemyBearers.js'
 import {
   RAID_BASE_TARGETS,
   RAID_RANGE_JITTER,
@@ -220,12 +221,13 @@ const buildOpportunity = (
         ? forageModifierFlavor(modifier)
         : FLAVOR[type]
   const totalUnits = Object.values(targetForce).reduce((a, b) => a + b, 0)
+  const strengthBand = bandLabel(totalUnits, RAID_STRENGTH_BANDS)
   return {
     id: `d${campaign.day}-${seq}`,
     type,
     ...flavor,
     targetForce, // HIDDEN ground truth
-    strengthBand: bandLabel(totalUnits, RAID_STRENGTH_BANDS),
+    strengthBand,
     capacity: capacityOf(targetForce, catalog),
     reward, // HIDDEN ground truth
     rewardRange: rewardRangeOf(reward),
@@ -240,6 +242,12 @@ const buildOpportunity = (
     // this force and reward intact, and stays until it's actually resolved.
     persistent: Boolean(modifier),
     modifierId: modifier?.id ?? null,
+    // The champion riding with this target (9-12), SEALED here at the moment the
+    // card is dealt rather than rolled at launch — a card advertises what it
+    // carries (9-14), and rolling later would let a reload reroll the reward the
+    // player picked the raid FOR. Scaled by `strengthBand`, the same field
+    // prestige scales on, so a harder card is where the better relic is.
+    bearer: rollBearer(campaign, strengthBand),
     resolved: false,
     outcome: null,
   }

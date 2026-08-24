@@ -171,6 +171,12 @@ const battleResult = ({
   // raid cases keep behaving exactly as before — a missing list means the
   // engine never reported, which kills nobody.
   blue_characters,
+  // Surviving ENEMY character ids (slice 9a). The enemy has exactly one tagged
+  // body — the champion — so this list is really the question "did he walk
+  // away", which decides both whether you loot him and whether he counts as one
+  // of the target force's survivors. Undefined by default, like its blue
+  // sibling, so every existing case behaves exactly as before.
+  red_characters,
 } = {}) => {
   const r = structuredClone(battleResultFixture)
   r.winner = winner
@@ -178,6 +184,7 @@ const battleResult = ({
   r.blue_survivors = sumSurvivors(blue_squads)
   r.red_survivors = red_survivors
   if (blue_characters !== undefined) r.blue_characters = blue_characters
+  if (red_characters !== undefined) r.red_characters = red_characters
   return r
 }
 
@@ -1553,5 +1560,166 @@ describe('characters ride on raids (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     // Still on the rolls with their name — a later recovery needs something left.
     expect(after.name).toBe(mage.name)
     expect(res.body.report ?? JSON.stringify(res.body)).toBeDefined()
+  })
+})
+
+// ── Enemy bearers and loot (docs/CAMPAIGN_PLAN.md DECISION 9, slice 9a) ──────
+//
+// A champion is a full enemy character carrying real gear: he fights with its
+// mods and abilities and drops it when you take the field. "A relic you win is
+// one that hurt you." He decides nothing, which is what keeps him inside
+// standing principle 1 — these cases pin what he DOES, never a reaction.
+
+describe('enemy bearers', () => {
+  const RELIC = 'relic_the_long_watch'
+  const HELM = 'gear_iron_helm'
+  const CHAMPION = { type: 'Soldier', items: [RELIC, HELM] }
+  const entriesOf = (doc) => doc.log.flatMap((l) => l.entries).join(' ')
+  const attach = (id, characterId, squadId) =>
+    auth(api.post(`/api/campaigns/${id}/characters/${characterId}/attach`)).send({ squadId })
+
+  test('a sealed champion takes the field, with his gear translated', () => {
+    // The engine learns `attack` and `fearless` and never the word `item` —
+    // the same line UnitRole drew and slice 6 held for banners.
+    return (async () => {
+      engine.runBattle.mockResolvedValue(battleResult())
+      const { body: c } = await createCampaign()
+      await pinRaid(c.id, [OPP({ bearer: CHAMPION })])
+      await launch(c.id, 'd1-0', [1])
+
+      const input = engine.runBattle.mock.calls[0][0]
+      const champion = input.enemy_placement.at(-1)
+      expect(champion.unit_type).toBe('Soldier')
+      expect(champion.squad_abilities).toEqual(['fearless'])
+      // Tagged into a squad of one, or 6-6's membership scoping would drop the
+      // relic's gift the moment he stood alone.
+      expect(champion.squad_id).toBeGreaterThan(0)
+      expect(champion.character_id).toBeGreaterThan(0)
+      expect(JSON.stringify(input)).not.toContain(RELIC)
+    })()
+  })
+
+  test('a card with no champion places nothing extra', async () => {
+    engine.runBattle.mockResolvedValue(battleResult())
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ bearer: null, targetForce: { Soldier: 5 } })])
+    await launch(c.id, 'd1-0', [1])
+
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.enemy_placement.every((e) => e.character_id == null)).toBe(true)
+  })
+
+  test('beat him and take the field: the unique comes home, ordinary kit rolls', async () => {
+    // 9-11 through the route. The unique is the deterministic half — it is
+    // guaranteed on a win — so it is what the assertion can pin.
+    engine.runBattle.mockResolvedValue(battleResult({ winner: 'blue', red_characters: [] }))
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ bearer: CHAMPION })])
+    await launch(c.id, 'd1-0', [1])
+
+    const doc = await Campaign.findById(c.id)
+    expect([...doc.items]).toContain(RELIC)
+    expect(entriesOf(doc)).toMatch(/champion's body is stripped/i)
+  })
+
+  test('a champion who rides away keeps everything, even on a win', async () => {
+    // Hold the field and he still got out — you loot the DEAD (9-11), and his
+    // surviving id is the only thing that can say which.
+    engine.runBattle.mockResolvedValue(battleResult({ winner: 'blue', red_characters: [1] }))
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ bearer: CHAMPION })])
+    await launch(c.id, 'd1-0', [1])
+
+    const doc = await Campaign.findById(c.id)
+    expect([...doc.items]).not.toContain(RELIC)
+  })
+
+  test('lose the field and nothing is stripped', async () => {
+    engine.runBattle.mockResolvedValue(battleResult({
+      winner: 'red',
+      blue_squads: { 1: { survivors: {}, wiped: true } },
+      red_characters: [],
+    }))
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({ bearer: CHAMPION })])
+    await launch(c.id, 'd1-0', [1])
+
+    const doc = await Campaign.findById(c.id)
+    expect([...doc.items]).not.toContain(RELIC)
+  })
+
+  test('a surviving champion is not counted among the target force’s survivors', async () => {
+    // He is an EXTRA body, not one of targetForce, so counting his survival as
+    // one of theirs would understate the host's real losses by one.
+    engine.runBattle.mockResolvedValue(battleResult({
+      winner: 'blue',
+      red_survivors: { Soldier: 21 }, // 20 of the target + the champion
+      red_characters: [1],            // he lived
+    }))
+    const { body: c } = await createCampaign()
+    await pinRaid(c.id, [OPP({
+      type: 'destroy_detachment',
+      targetForce: { Soldier: 30 },
+      reward: null,
+      capacity: 500,
+      bearer: { type: 'Soldier', items: [] },
+    })])
+    await launch(c.id, 'd1-0', [1])
+
+    const doc = await Campaign.findById(c.id)
+    // 30 sent − 20 of them surviving = 10 real dead, plus the win's pursuit of
+    // the routing remainder, which applyRaidReward removes on top.
+    expect(doc.enemy.army.get('Soldier')).toBe(540 - 30)
+  })
+
+  test('your own fallen give up what can be carried back', async () => {
+    // The same one rule, pointed the other way (9-10). The relic is guaranteed;
+    // what is NOT recovered stays on the body for a later recovery (5-9).
+    engine.runBattle.mockResolvedValue(battleResult({
+      winner: 'blue',
+      blue_squads: { 1: { survivors: { Soldier: 30 }, wiped: false } },
+      blue_characters: [],
+    }))
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await attach(c.id, mage.id, 1).expect(200)
+    const seeded = await Campaign.findById(c.id)
+    seeded.characters.find((x) => x.id === mage.id).items = [
+      { slot: 'misc', index: 0, itemId: RELIC },
+    ]
+    await seeded.save()
+    await pinRaid(c.id, [OPP()])
+    await launch(c.id, 'd1-0', [1])
+
+    const doc = await Campaign.findById(c.id)
+    const fallen = doc.characters.find((x) => x.id === mage.id)
+    expect(fallen.alive).toBe(false)
+    expect([...doc.items]).toContain(RELIC)
+    // It LEFT the record — an item cannot be in two places, and "in the store"
+    // means "on nothing".
+    expect([...fallen.items]).toHaveLength(0)
+    expect(entriesOf(doc)).toMatch(/kit is carried back/i)
+  })
+
+  test('a character who falls on a LOST raid keeps everything', async () => {
+    engine.runBattle.mockResolvedValue(battleResult({
+      winner: 'red',
+      blue_squads: { 1: { survivors: {}, wiped: true } },
+      blue_characters: [],
+    }))
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await attach(c.id, mage.id, 1).expect(200)
+    const seeded = await Campaign.findById(c.id)
+    seeded.characters.find((x) => x.id === mage.id).items = [
+      { slot: 'misc', index: 0, itemId: RELIC },
+    ]
+    await seeded.save()
+    await pinRaid(c.id, [OPP()])
+    await launch(c.id, 'd1-0', [1])
+
+    const doc = await Campaign.findById(c.id)
+    expect([...doc.items]).not.toContain(RELIC)
+    expect([...doc.characters.find((x) => x.id === mage.id).items]).toHaveLength(1)
   })
 })

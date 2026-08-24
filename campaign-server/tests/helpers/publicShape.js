@@ -10,6 +10,13 @@
 //
 // Keep SORTED — both call sites compare against Object.keys(o).sort().
 export const PUBLIC_OPPORTUNITY_KEYS = [
+  // `bearer` (slice 9a, 9-14) is public and is a deliberate widening, on the
+  // same footing as `threat` and `payoff`: a card that may carry a relic cannot
+  // be priced against its party budget without saying so. What crosses is the
+  // GRADUATED view (bearerView), never the sealed record — null at Blind, a
+  // bare present flag at Outmatched, the type at Superior, and only at
+  // Overwhelming the named and phrased items. Every rung is true, just coarser.
+  'bearer',
   'capacity',
   'description',
   'enemy', // per-type RANGES pre-reveal, exact counts once scouting buys them

@@ -29,7 +29,7 @@ import {
   picksAvailable,
   findUpgrade,
 } from './squadUpgrades.js'
-import { bannerTier, describeItem, squadBanner, storedItems } from './items.js'
+import { bannerTier, describeItem, findItem, squadBanner, storedItems } from './items.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
 import { garrisonLevel } from './garrison.js'
@@ -218,6 +218,41 @@ const rewardView = (opp) => {
 // top rung — tests/campaigns.test.js pins the exact key set per band. (Whether
 // the enemy offers battle is the top-level campaign.bossFightDue flag now, not
 // an enemy-view key — the retired stance concept.)
+// The graduated bearer reveal (9-14). Low recon says only that a captain rides
+// with them; higher recon names his type; the top rung says what he carries.
+//
+// It reuses the SAME scouting-band ladder the enemy view and the raid cards
+// already climb, which is the point: bearers give scouting points a payoff the
+// player can see, and one ladder means the answer never contradicts itself. At
+// every rung what the card shows is TRUE, only coarser — "no card shows flavour
+// alone", satisfied without ever lying.
+//
+// Rejected at the interview: always fully visible (scouting gets nothing) and
+// hidden until after the fight (you can never choose a raid FOR its reward).
+//
+// `null` is not "nobody rides with them" — it is "you cannot tell", which at
+// Blind is the honest answer. Above Blind, an absent bearer reads as an explicit
+// `{ present: false }`, so the client can say "no captain" rather than shrug.
+const bearerView = (bearer, band) => {
+  const rank = SCOUTING_BANDS.indexOf(band)
+  if (rank < SCOUTING_BANDS.indexOf('Outmatched')) return null
+  if (!bearer) return { present: false }
+  const view = { present: true }
+  if (rank >= SCOUTING_BANDS.indexOf('Superior')) view.type = bearer.type
+  if (rank >= SCOUTING_BANDS.indexOf('Overwhelming')) {
+    // Named and PHRASED (17-5), like every other item the client sees: the
+    // player must be able to decide whether the relic is worth the fight, and
+    // that needs the sentence, not the id.
+    view.items = (bearer.items ?? []).map(findItem).filter(Boolean).map((row) => ({
+      id: row.id,
+      name: row.name,
+      unique: row.unique ?? false,
+      ...describeItem(row),
+    }))
+  }
+  return view
+}
+
 const enemyView = (enemy, band, level, countBracket, catalog, revealed = false) => {
   const view = {}
   // A free reveal (Stage 4 1c, the anticipated Night Raid's prisoners) opens
@@ -241,6 +276,9 @@ const enemyView = (enemy, band, level, countBracket, catalog, revealed = false) 
     // (Outmatched+) is what decides that. Already computed at end-day, so the
     // view just reports it.
     view.supplies = enemy.supplyState ?? ENEMY_SUPPLY_BANDS[0].label
+    // The champion riding with the host (9-12), on the same ladder as
+    // everything else the scouts bring back.
+    view.bearer = bearerView(enemy.bearer, band)
   }
   if (rank >= SCOUTING_BANDS.indexOf('Superior')) {
     // Category shares by headcount, rounded — "mostly foot, a little horse".
@@ -635,6 +673,11 @@ export async function campaignView(campaign) {
         // headcount (a fantasy roster reads "3 Giants + 20 spearmen").
         enemy: opp.enemyReveal >= 1 ? Object.fromEntries(opp.targetForce) : opp.enemyRange,
         enemyReveal: opp.enemyReveal,
+        // The champion riding with this target (9-14), graduated by the SAME
+        // scouting band the enemy view climbs — not by this card's own
+        // enemyReveal, which buys the target's numbers. One ladder for "what do
+        // the scouts know about them", so the two can never disagree.
+        bearer: bearerView(opp.bearer, band),
         reward: rewardView(opp),
         rewardReveal: opp.rewardReveal,
         // What a counter_event card actually buys you. Its reward is {slot} —

@@ -94,10 +94,15 @@ afterEach(clearRolls)
 // bossFightDue } — the retired stance's replacement.
 const ENEMY_KEYS_BY_BAND = {
   Blind: [],
-  Outmatched: ['count', 'supplies'],
-  Contested: ['count', 'supplies'],
-  Superior: ['composition', 'count', 'supplies'],
-  Overwhelming: ['composition', 'count', 'placements', 'supplies', 'units'],
+  // `bearer` (slice 9a, 9-14) joins at Outmatched and stays: the champion
+  // riding with the host climbs the SAME ladder as everything else the scouts
+  // learn. What it CONTAINS is graduated inside bearerView — a bare present
+  // flag here, his type at Superior, his named kit only at Overwhelming — so
+  // one key covers four rungs of truth and nothing beyond the band ever crosses.
+  Outmatched: ['bearer', 'count', 'supplies'],
+  Contested: ['bearer', 'count', 'supplies'],
+  Superior: ['bearer', 'composition', 'count', 'supplies'],
+  Overwhelming: ['bearer', 'composition', 'count', 'placements', 'supplies', 'units'],
 }
 
 const expectNoHiddenInfo = (body) => {
@@ -384,7 +389,93 @@ describe('scouting-graduated enemy reveal (Stage 4 1b, recon-driven)', () => {
     expect(view.enemy).toEqual({
       count: { low: 721, high: 721 },
       supplies: 'well-provisioned',
+      // The champion (9-14) is on this rung, but only as a fact that he exists:
+      // his type is Superior's rung and his kit is Overwhelming's. `present`
+      // may be either — the roll is sealed at creation — and the point of the
+      // assertion is that NOTHING finer than the flag crosses here.
+      bearer: { present: expect.any(Boolean) },
     })
+  })
+
+  // ── The bearer reveal ladder (slice 9a, decision 9-14) ────────────────────
+  //
+  // Low recon says only that a captain rides with them; higher recon names his
+  // type; the top rung says what he carries. Every rung is TRUE, only coarser —
+  // "no card shows flavour alone", satisfied without ever lying. It reuses the
+  // SAME band ladder the rest of the enemy view climbs, so scouting points get
+  // a payoff the player can actually see.
+
+  const pinBearer = async (id, bearer) => {
+    const doc = await Campaign.findById(id)
+    doc.enemy.bearer = bearer
+    await doc.save()
+  }
+  const CHAMPION = { type: 'Soldier', items: ['relic_the_long_watch'] }
+
+  test('Blind: you cannot even tell whether a captain rides with them', async () => {
+    // null is not "nobody" — it is "you cannot tell", which at Blind is the
+    // honest answer and the only one the band licenses.
+    const { body } = await createCampaign()
+    await pinBearer(body.id, CHAMPION)
+    await pinBand(body.id, 'Blind')
+    expect((await getView(body.id)).enemy.bearer).toBeUndefined()
+  })
+
+  test('Outmatched: that he exists, and nothing else', async () => {
+    const { body } = await createCampaign()
+    await pinBearer(body.id, CHAMPION)
+    await pinBand(body.id, 'Outmatched')
+    expect((await getView(body.id)).enemy.bearer).toEqual({ present: true })
+  })
+
+  test('Superior: his type, still not his kit', async () => {
+    const { body } = await createCampaign()
+    await pinBearer(body.id, CHAMPION)
+    await pinBand(body.id, 'Superior')
+    expect((await getView(body.id)).enemy.bearer).toEqual({ present: true, type: 'Soldier' })
+  })
+
+  test('Overwhelming: what he carries, named and phrased', async () => {
+    // Named AND phrased (17-5): the player has to be able to decide whether the
+    // relic is worth the fight, and that needs the sentence, not the id.
+    const { body } = await createCampaign()
+    await pinBearer(body.id, CHAMPION)
+    await pinBand(body.id, 'Overwhelming')
+    const { bearer } = (await getView(body.id)).enemy
+    expect(bearer.type).toBe('Soldier')
+    expect(bearer.items).toHaveLength(1)
+    expect(bearer.items[0]).toMatchObject({ id: 'relic_the_long_watch', unique: true })
+    expect(bearer.items[0].effect).toMatch(/does not break/i)
+    // The engine's vocabulary stays server-side, here as everywhere else.
+    expect(JSON.stringify(bearer)).not.toContain('fearless')
+  })
+
+  test('above Blind, no champion reads as an explicit "no captain"', async () => {
+    // So the client can SAY "no captain" rather than shrug — a distinction the
+    // null-at-Blind case above exists to preserve.
+    const { body } = await createCampaign()
+    await pinBearer(body.id, null)
+    await pinBand(body.id, 'Superior')
+    expect((await getView(body.id)).enemy.bearer).toEqual({ present: false })
+  })
+
+  test('a raid card climbs the same ladder as the host', async () => {
+    // One ladder for "what do the scouts know about them", so the card and the
+    // host view can never disagree. Note it is the BAND, not the card's own
+    // enemyReveal — that one buys the target's numbers.
+    const { body } = await createCampaign()
+    const doc = await Campaign.findById(body.id)
+    doc.raid.opportunities[0].bearer = CHAMPION
+    doc.markModified('raid.opportunities')
+    await doc.save()
+
+    await pinBand(body.id, 'Outmatched')
+    const coarse = (await getView(body.id)).raid.opportunities[0].bearer
+    expect(coarse).toEqual({ present: true })
+
+    await pinBand(body.id, 'Overwhelming')
+    const fine = (await getView(body.id)).raid.opportunities[0].bearer
+    expect(fine.items[0].name).toBeTruthy()
   })
 
   test('the supply state crosses the wire exactly as stored — accurate, never fuzzed', async () => {
@@ -1007,11 +1098,15 @@ describe('POST /api/campaigns/:id/battles', () => {
     expectNoHiddenInfo(res.body)
 
     // The engine got the campaign's own hidden placement, not a client value.
+    // The host's champion (9-12) rides on the END of it — an extra body, not one
+    // of the plan — so the plan itself must still arrive entry for entry.
     const input = engine.runBattle.mock.calls[0][0]
     expect(input.map).toBe('sample_battle')
-    expect(input.enemy_placement).toEqual(
-      doc.enemy.plannedPlacement.map((p) => expect.objectContaining(p)),
+    const planned = doc.enemy.plannedPlacement
+    expect(input.enemy_placement.slice(0, planned.length)).toEqual(
+      planned.map((p) => expect.objectContaining(p)),
     )
+    expect(input.enemy_placement.length).toBe(planned.length + (doc.enemy.bearer ? 1 : 0))
 
     // The whole 1-Soldier host fielded, 2 came back (fixture).
     expect(res.body.campaign.roster.Soldier).toBe(2)
@@ -1069,11 +1164,18 @@ describe('POST /api/campaigns/:id/battles', () => {
     doc.bossFightDue = true
     doc.garrison = { resolve }
     await doc.save()
-    return { c, preLen: doc.enemy.plannedPlacement.length }
+    return {
+      c,
+      preLen: doc.enemy.plannedPlacement.length,
+      // The host's champion (9-12) rides on top of the plan rather than inside
+      // it: he is an EXTRA body, not one of the host's roster, so a placement
+      // that is one longer than the plan is the host untouched.
+      bearers: doc.enemy.bearer ? 1 : 0,
+    }
   }
 
   test('a determined garrison sends the larger reinforcement wave — enemy untouched', async () => {
-    const { c, preLen } = await setupBossFight(80) // determined (≥ 67)
+    const { c, preLen, bearers } = await setupBossFight(80) // determined (≥ 67)
     await fightSoldiers(c.id)
 
     const input = engine.runBattle.mock.calls[0][0]
@@ -1084,8 +1186,9 @@ describe('POST /api/campaigns/:id/battles', () => {
       unit_type: GARRISON_SALLY_UNIT,
       message: expect.stringMatching(/garrison/i),
     }])
-    // The enemy is no longer pre-thinned — its placement is the full plan.
-    expect(input.enemy_placement.length).toBe(preLen)
+    // The enemy is no longer pre-thinned — its placement is the full plan,
+    // plus the champion who is not part of it.
+    expect(input.enemy_placement.length).toBe(preLen + bearers)
 
     // ...and the sally is narrated in the decisive battle's log.
     const after = await Campaign.findById(c.id)
@@ -1105,12 +1208,12 @@ describe('POST /api/campaigns/:id/battles', () => {
   })
 
   test('a low garrison sends no reinforcements and no sally is narrated', async () => {
-    const { c, preLen } = await setupBossFight(20) // low (1..33)
+    const { c, preLen, bearers } = await setupBossFight(20) // low (1..33)
     await fightSoldiers(c.id)
 
     const input = engine.runBattle.mock.calls[0][0]
     expect(input.reinforcements).toEqual([])
-    expect(input.enemy_placement.length).toBe(preLen)
+    expect(input.enemy_placement.length).toBe(preLen + bearers)
 
     const after = await Campaign.findById(c.id)
     expect(after.log.at(-1).entries.some((e) => /sallies/i.test(e))).toBe(false)

@@ -92,10 +92,15 @@ const endDay = (id) => endTurn(id)
 // and the enemy view's keys are exactly what the scouting band licenses.
 const ENEMY_KEYS_BY_BAND = {
   Blind: [],
-  Outmatched: ['count', 'supplies'],
-  Contested: ['count', 'supplies'],
-  Superior: ['composition', 'count', 'supplies'],
-  Overwhelming: ['composition', 'count', 'placements', 'supplies', 'units'],
+  // `bearer` (slice 9a, 9-14) joins at Outmatched and stays: the champion
+  // riding with the host climbs the SAME ladder as everything else the scouts
+  // learn. What it CONTAINS is graduated inside bearerView — a bare present
+  // flag here, his type at Superior, his named kit only at Overwhelming — so
+  // one key covers four rungs of truth and nothing beyond the band ever crosses.
+  Outmatched: ['bearer', 'count', 'supplies'],
+  Contested: ['bearer', 'count', 'supplies'],
+  Superior: ['bearer', 'composition', 'count', 'supplies'],
+  Overwhelming: ['bearer', 'composition', 'count', 'placements', 'supplies', 'units'],
 }
 
 const expectNoHiddenInfo = (body) => {

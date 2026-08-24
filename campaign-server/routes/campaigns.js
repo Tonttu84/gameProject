@@ -17,7 +17,11 @@ import {
 } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
-import { bindItemToSquad, squadAbilities, findItem, storedItems } from '../services/items.js'
+import { bindItemToSquad, squadAbilities, findItem, grantItem } from '../services/items.js'
+import { recoverItems, stripFallen } from '../services/loot.js'
+import {
+  bearerEntry, rollBearer, BEARER_SQUAD_ID, BEARER_CHARACTER_ID,
+} from '../services/enemyBearers.js'
 import { missionBodies, onMission } from '../services/missions.js'
 import {
   mintCharacter,
@@ -56,6 +60,7 @@ import {
   RECRUITING_FERVOR_START,
   ENEMY_ARMY,
   ENEMY_SUPPLY_BANDS,
+  RAID_STRENGTH_BANDS,
   FORAGE_RINGS,
   ENEMY_DRAIN_KG_PER_TURN,
   DEFAULT_FORAGE_SHARE,
@@ -222,6 +227,10 @@ router.post('/', async (req, res) => {
       // From here it's recomputed every end-day from what it managed to take.
       supplyState: ENEMY_SUPPLY_BANDS[0].label,
       plannedPlacement: await buildEnemyPlacement(ENEMY_ARMY),
+      // The host's champion (9-12), rolled ONCE and carried for the campaign.
+      // Rolled at the TOP strength band, because the shadowing host is not a
+      // detachment — whatever the decisive battle is, it is not "a handful".
+      bearer: rollBearer({}, RAID_STRENGTH_BANDS[0].label),
     },
   })
   res.status(201).json(await campaignView(campaign))
@@ -380,6 +389,30 @@ router.post('/:id/augury/accept', async (req, res) => {
 // Fight today's battle. The server owns the map and the enemy: the client
 // sends only its own placement; enemy_placement is the campaign's hidden
 // plannedPlacement, so the battle matches whatever scouting revealed.
+// Put recovered gear into the store and say what was taken (9-10 / 9-11).
+//
+// Every id goes through grantItem, which is the ONE acquisition chokepoint
+// (6-13) — so a relic that is somehow already held is refused here exactly as
+// it would be from a fate or a raid reward, and the line never claims something
+// the player did not actually gain.
+//
+// `from` names your own fallen; its absence means the loot came off the enemy.
+// Two sentences rather than one, because "her kit comes home" and "you strip
+// the body" are not the same event and the log is what the player reads.
+const grantLoot = (campaign, itemIds, from = null) => {
+  const names = []
+  for (const id of itemIds ?? []) {
+    if (!grantItem(campaign, id)) continue
+    names.push(findItem(id)?.name ?? 'a piece of kit')
+  }
+  if (names.length === 0) return []
+  return [
+    from
+      ? `${from}'s kit is carried back: ${names.join(', ')}.`
+      : `The champion's body is stripped: ${names.join(', ')}.`,
+  ]
+}
+
 router.post('/:id/battles', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
@@ -596,10 +629,22 @@ router.post('/:id/battles', async (req, res) => {
     sentCharacterIds.add(character.id)
   }
 
+  // The host's own champion (user, 2026-08-24: bearers on "raids + boss host,
+  // any battle we dont need a special rule"). Sealed at creation and carried for
+  // the campaign, because the host is ONE host and the decisive battle is fought
+  // once — a per-battle roll would reroll on a reload.
+  const enemyPlacement = [...(campaign.enemy.plannedPlacement ?? [])]
+  if (campaign.enemy.bearer && enemyPlacement.length > 0) {
+    const [head] = enemyPlacement
+    enemyPlacement.push({
+      ...bearerEntry(campaign.enemy.bearer, head, BEARER_SQUAD_ID, findItem),
+      character_id: BEARER_CHARACTER_ID,
+    })
+  }
   const input = {
     map: MAP_NAME,
     player_placement: moddedPlacement,
-    enemy_placement: campaign.enemy.plannedPlacement ?? [],
+    enemy_placement: enemyPlacement,
     // The player's paid-for fortifications for this battle: the map file is
     // static, the level is dynamic, so the walled sides are injected here.
     fortified_sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
@@ -623,8 +668,22 @@ router.post('/:id/battles', async (req, res) => {
   // Asking who we SENT is the load-bearing half: a character sitting in camp
   // must never be killed by a battle they never joined.
   const fallen = reconcileCharacters(campaign, [...sentCharacterIds], summary.blue_characters, campaign.day)
-  for (const character of fallen)
+  for (const character of fallen) {
     campaign.log.push({ day: campaign.day, entries: [`${character.name} fell in battle.`] })
+    // Hold the field and uniques come home; ordinary kit rolls (9-10). What is
+    // NOT recovered stays on the record for a later recovery to find (5-9).
+    // Read `won` before it is used below — it is the same field, won the same
+    // way, and there is no second rule for the decisive battle.
+    const kept = grantLoot(campaign, stripFallen(character, summary.winner === 'blue'), character.name)
+    if (kept.length > 0) campaign.log.push({ day: campaign.day, entries: kept })
+  }
+  // And the host's champion, by the one rule that serves both sides (9-11):
+  // only if he actually fell, and only if the field is yours.
+  if (campaign.enemy.bearer && summary.winner === 'blue'
+      && !(summary.red_characters ?? []).map(Number).includes(BEARER_CHARACTER_ID)) {
+    const spoils = grantLoot(campaign, recoverItems(campaign.enemy.bearer.items, true).recovered)
+    if (spoils.length > 0) campaign.log.push({ day: campaign.day, entries: spoils })
+  }
 
   // Reconcile fielded squads: a squad regroups with its battle survivors
   // (including any stragglers who broke but lived — Stage A's persistent
@@ -839,14 +898,27 @@ router.post('/:id/raids/launch', async (req, res) => {
         raidCharacterIds.push(character.id)
       }
     }
+    // The champion riding with this target (9-12), sealed onto the card when the
+    // board was drawn. He is a real body with real gear: he fights with its mods
+    // and abilities, and drops it when you take the field — "a relic you win is
+    // one that hurt you". He decides nothing, which is what keeps him inside
+    // standing principle 1.
+    const enemyPlacement = spreadPlacement(
+      Object.fromEntries(opportunity.targetForce),
+      zoneOf(info.enemyZone),
+      sizeOf,
+    )
+    if (opportunity.bearer && enemyPlacement.length > 0) {
+      const [head] = enemyPlacement
+      enemyPlacement.push({
+        ...bearerEntry(opportunity.bearer, head, BEARER_SQUAD_ID, findItem),
+        character_id: BEARER_CHARACTER_ID,
+      })
+    }
     const input = {
       map: MAP_NAME,
       player_placement: raidPlacement,
-      enemy_placement: spreadPlacement(
-        Object.fromEntries(opportunity.targetForce),
-        zoneOf(info.enemyZone),
-        sizeOf,
-      ),
+      enemy_placement: enemyPlacement,
       max_turns: RAID_MAX_TURNS,
     }
     const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
@@ -896,9 +968,27 @@ router.post('/:id/raids/launch', async (req, res) => {
     // the real dead; a garrison_sortie is a spoiling attack — no pursuit, only
     // the real casualties. Loot/rescue/counter raids never pre-subtract their
     // (narrative) target force, so a lost one still leaves the host untouched.
+    // Did the champion walk away? The engine reports surviving character ids, so
+    // his fixed tag answers it — and the answer is load-bearing twice over:
+    // it decides whether you loot him, and it keeps him out of the casualty
+    // arithmetic below. He is an EXTRA body, not part of targetForce, so
+    // counting his survival as one of the target's would understate the host's
+    // real losses by one.
+    const bearerLived = Boolean(
+      opportunity.bearer && (summary.red_characters ?? []).map(Number).includes(BEARER_CHARACTER_ID),
+    )
+    // Every figure the HOST's numbers are derived from must have the champion
+    // taken back out of it, in one place rather than at each site that reads
+    // them — the casualty arithmetic below AND applyRaidReward's pursuit of the
+    // routing remainder both work off this.
+    const hostSurvivors = { ...summary.red_survivors }
+    if (bearerLived) {
+      const t = opportunity.bearer.type
+      hostSurvivors[t] = Math.max(0, (hostSurvivors[t] ?? 0) - 1)
+    }
     if (thinsEnemyHost(opportunity))
       for (const [type, n] of opportunity.targetForce) {
-        const casualties = Math.max(0, n - (summary.red_survivors[type] ?? 0))
+        const casualties = Math.max(0, n - (hostSurvivors[type] ?? 0))
         campaign.enemy.army.set(type, Math.max(0, (campaign.enemy.army.get(type) ?? 0) - casualties))
       }
 
@@ -910,8 +1000,18 @@ router.post('/:id/raids/launch', async (req, res) => {
             summary.winner === 'red' ? 'beaten back' : 'fought to a standstill'
           } after ${summary.tickCount} turns.`,
     ]
-    if (won) entries.push(...applyRaidReward(campaign, opportunity, summary.red_survivors))
-    for (const character of fallenOnRaid) entries.push(`${character.name} fell on the raid.`)
+    if (won) entries.push(...applyRaidReward(campaign, opportunity, hostSurvivors))
+    // You loot the enemy's dead by the same rule you recover your own (9-11) —
+    // one function, both sides, because it is one rule. Only a champion who
+    // actually FELL is stripped: hold the field and he still rode off with it.
+    if (won && opportunity.bearer && !bearerLived)
+      entries.push(...grantLoot(campaign, recoverItems(opportunity.bearer.items, won).recovered))
+    for (const character of fallenOnRaid) {
+      entries.push(`${character.name} fell on the raid.`)
+      // What comes home off your own dead, by that same rule (9-10). What does
+      // NOT stays on the record for a later recovery to find (5-9).
+      entries.push(...grantLoot(campaign, stripFallen(character, won), character.name))
+    }
 
     // Squad prestige (docs/CAMPAIGN_PLAN.md slice 1). Every squad that WENT
     // earns, win or lose — a beaten squad has still been blooded — but a win

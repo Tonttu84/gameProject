@@ -61,9 +61,22 @@ async function persistBattleResult(result, { input, userId }) {
       // looked and nobody survived, while a missing field means it never
       // reported, and the reconciliation must be able to tell those apart —
       // defaulting to `[]` here would turn a broken pipeline into a massacre,
-      // and a character's death is permanent. red_characters stays unsurfaced,
-      // like red_squads: the enemy has no characters in this design.
+      // and a character's death is permanent.
       blue_characters: result.blue_characters,
+      // The enemy's, since slice 9a: the host fields BEARERS now — champions
+      // carrying real gear (9-12) — and looting one turns on whether he
+      // actually fell, which is a question only this list can answer.
+      //
+      // It is NOT a hidden-info leak the way red_squads would be: a bearer is
+      // tagged with a fixed id the campaign layer chose itself, and what comes
+      // back is whether that one body walked away. The enemy still has no
+      // persistent characters (9-13) — nothing here survives the encounter.
+      //
+      // Undefined-preserving for the same reason blue_characters is: `[]` means
+      // the engine looked and nobody survived, a missing field means it never
+      // reported, and handing out a relic on a pipeline failure is the wrong
+      // way to be wrong.
+      red_characters: result.red_characters,
       tickCount: replay.ticks.length,
     },
   }
