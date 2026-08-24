@@ -276,17 +276,31 @@ MISSIONS" below and they are the user's. Two things there bind later work: 12-3 
 own instruction about how "busy" is stored (two notions, not one), and the write-up carries a
 CORRECTION to what the assistant claimed about the boss-fight meter during the interview.
 
-**▶ THE NEXT SLICE IS DECISION 9 — CHARACTER EQUIPMENT. SPEC'D 2026-08-24, NOT BUILT.** With 12
-shipped, the squad overhaul's seventeen decisions are all built except 11 (acquiring squads) and 16
-(the basic banner's benefit, deliberately deferred until the surrounding systems can be played), and
-decision 9's equipment is the seam 5a shipped empty. **Its sixteen decisions are under "DECISION 9 —
-CHARACTER EQUIPMENT" below and they are the user's; do not re-derive them.** It ships as two slices,
-server first (9-1), and 9a is expected to bump the schema to **v40** for the bearer sealed onto a
-raid opportunity — nothing else about the document changes. Three things there reach past the slice:
-gear may both ADD and REMOVE abilities, kept safe by ORDER rather than by a rule (9-4); banners sit
-outside the whole loot and recovery path in both directions (9-12); and the user's direction that
-`reconTag` should become an ability rather than a value is recorded as its OWN future change to the
-recon formula (9-5), not folded into gear.
+**▶ SLICE 9a IS SHIPPED (2026-08-24, schema v40). THE NEXT SLICE IS 9b — THE CHARACTER SHEET.**
+With 12 shipped, the squad overhaul's seventeen decisions are all built except 11 (acquiring squads)
+and 16 (the basic banner's benefit, deliberately deferred until the surrounding systems can be
+played). Decision 9's equipment was the seam 5a shipped empty, and 9a filled it: **its sixteen
+decisions are under "DECISION 9 — CHARACTER EQUIPMENT" below and they are the user's; do not
+re-derive them.** What 9a built, and what 9b must not re-derive, is under "9a SHIPPED" in that
+section. Three things there reach past the slice: gear may both ADD and REMOVE abilities, kept safe
+by ORDER rather than by a rule (9-4); banners sit outside the whole loot and recovery path in both
+directions (9-12); and the user's direction that `reconTag` should become an ability rather than a
+value is still an OPEN future change to the recon formula (9-5), deliberately not folded into gear.
+
+**9b is 9-16: a PAGE PER CHARACTER**, reached from the character roll — base stats with modifiers
+folded in, the five slots and what fills them, equip/unequip against the store, attachment and
+hang-back. Every number and sentence it needs is already on the wire: `campaignView` sends each
+character their `anatomy`, their resolved and PHRASED `items`, their derived `mods`, and an
+`awayBlocker` phrase for when the sheet must be read-only. 17-3 binds assignment to the TARGET's
+screen rather than to the store, and 17-5 means the client composes no sentence of its own.
+
+**⚠️ CORRECTION, ON THE USER'S INSTRUCTION (2026-08-24): THERE IS NO NIGHTLY BATTLE, AND THERE HAS
+NOT BEEN FOR A LONG TIME.** Several older passages in this file still talk about "tonight's battle",
+a nightfall departure, or "the day's main battle" as though a pitched battle were fought every turn.
+That was retired ages ago and the phrasing is a leftover figure of speech. **`POST /:id/battles`
+refuses with 400 unless `campaign.bossFightDue` is set** — the ONLY battle is the decisive boss
+fight, and raids are the only other way to fight. Read every "tonight" in the older write-ups as
+"end of turn". This block is the authority; the older wording below is history, not a spec.
 
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
@@ -1755,11 +1769,12 @@ end-of-run listener would never fire; and `std::uniform_int_distribution` is not
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
 
-### DECISION 9 — CHARACTER EQUIPMENT (SPEC'D 2026-08-24, interviewed) — NOT BUILT
+### DECISION 9 — CHARACTER EQUIPMENT (interviewed 2026-08-24) — 9a SHIPPED, 9b NEXT
 
 The modifier layer 5a shipped empty finally gets filled. **Sixteen decisions, all the user's — do
-not re-derive them.** Build TDD against them. Recorded on the user's instruction ("record the spec
-only"), so nothing below is built yet.
+not re-derive them.** The spec below was recorded on the user's instruction ("record the spec
+only") and **9a has since been built against it — see "9a SHIPPED" at the end of this section**.
+9b (9-16, the character sheet) is still to come.
 
 What it stands on, already settled and NOT reopened here: 5-2 (the base type is never modified),
 5-3 (sources stored, the stat bag derived), 5-4 (typed slots — head/torso/legs/hand/misc, a
@@ -1898,14 +1913,76 @@ spanning C++ anatomy, loot and enemy bearers).
   No second modifier system, which is what 5-11 promised.
 - **The bearer must be SEALED onto the raid opportunity when the board is drawn**, exactly as the
   augury slots and 12's mission offer are, or a reload rerolls what the card advertised. That is a
-  new field on `raid.opportunities[]` and therefore **a schema bump — v39 → v40**
+  new field on `raid.opportunities[]` and therefore **a schema bump — v39 → v40** (SHIPPED as
+  exactly that, plus `enemy.bearer` once the open question below was answered)
   (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the authority). Nothing else here changes the
   document: `campaign.items` and `characters[].items` already have the shapes 9a needs.
 - **Bearer generation scales with the opportunity's `strengthBand`**, the field raid prestige
   already scales on, so a harder card is where the better relic is.
-- **9a authors bearers on RAID opportunities only.** Whether the pitched battle and the boss host
-  carry them was never asked and is deliberately NOT decided here — **the first open question for
-  whoever builds 9a**, rather than an answer invented by the assistant.
+- **The open question is ANSWERED (user, 2026-08-24): bearers on raids AND the boss host —
+  *"any battle we dont need a special rule"*.** The spec had authored them on raid opportunities
+  only and left the pitched battle and boss host deliberately undecided. There is no special rule:
+  wherever the enemy fields a force, it may field a champion. The host's is sealed at CREATION
+  rather than per battle, because the host is one host and the decisive battle is fought once — a
+  per-battle roll would reroll on a reload. **The same answer also retired a stale premise: there
+  is no nightly battle** (see the correction in the handoff block at the top of this file).
+
+### 9a SHIPPED 2026-08-24 (schema v40)
+
+Built in four commits: the engine's anatomy, the engine's ability suppression plus the gear stat
+vocabulary, the campaign-side gear layer, and enemy bearers with the loot rule.
+C++ 402 cases, campaign-server 1066, frontend 341, lint clean.
+
+**What 9b must not re-derive, and the calls worth not re-litigating:**
+
+- **`AUnit::anatomy()` is PURE VIRTUAL.** 5-6 said an undeclared body plan is an error rather than
+  a humanoid by omission; a pure virtual makes that a COMPILE error instead of something a CI sweep
+  has to notice, which is stricter than the interview imagined. It earned its keep immediately —
+  three test dummies subclass `AUnit` directly and the build named all three. Plans are declared
+  down the chain (`Human` → HUMANOID for eight subclasses, `Horse` → QUADRUPED for Warhorse,
+  `MountedUnit` delegates to whichever part is actually there, `Scorpion` writes its own two-clawed
+  one), so a new humanoid needs no anatomy edit at all. Counts are WEARING POSITIONS, not limbs: a
+  horse has four legs and one `legs` slot, because barding is worn as a set.
+- **The order in `AUnit::abilities()` is the whole safety argument for 9-4** — grant, then subtract
+  the denial, then `abilityClosure()`. Do not "fix" it. A row denying an implied flag is legal to
+  author and inert, so 6-3's invariant survives a fully general item system and a NEW implication
+  row turns an old item inert rather than dangerous. Nothing anywhere enumerates which flags are
+  implied; `IMPLIED_ABILITIES` in `services/items.js` is a courtesy that lets a catalog sweep tell
+  an author their row does nothing, and it is a MIRROR of `Abilities.cpp`, never a sync.
+- **Suppression is NOT scoped to squad membership, unlike a grant.** A banner stops covering a man
+  who leaves the formation (6-6); gear is worn on the body, so a man who breaks and runs takes his
+  cursed helm with him. The asymmetry is deliberate.
+- **The real bug 9-6 predicted was there.** `bindItemToSquad`'s `filter(id => id !== itemId)`
+  dropped EVERY copy — correct while banners were the only item and every item was unique, and
+  destructive the moment kit stacks. It is remove-one now, and `eventEligible` is gated on the
+  row's `unique` too, so a fate offering a second helm stays drawable.
+- **A gear-granted ability on a LOOSE character is silently dropped by the engine**, because
+  granted abilities are scoped to squad membership (6-6) and a loose character is in no squad.
+  Nothing in 9a can hit it — every gear ability is on a character who must be posted to fight — but
+  **9b's sheet is where it becomes visible**, and the fix belongs in the engine's scoping rather
+  than in a special case campaign-side. Recorded rather than worked around.
+- **The enemy champion's `squad_id` and `character_id` are load-bearing, not decoration.** The
+  squad tag is what makes his relic reach the field at all (a tagged squad is honoured down to one
+  member); the character tag is the only thing that can answer whether he FELL, which decides both
+  whether you loot him (9-11 strips the dead, not the escaped) and whether he counts among the
+  target force's survivors. He is an EXTRA body, so counting him understated the host's real losses
+  until `hostSurvivors` took him back out — in ONE place, feeding both the casualty arithmetic and
+  `applyRaidReward`'s pursuit of the routing remainder.
+- **`red_characters` now crosses from the engine into the battle summary.** It was deliberately
+  unsurfaced while "the enemy has no characters in this design" was true; bearers made it true no
+  longer. It is undefined-preserving like its blue sibling, because handing out a relic on a
+  pipeline failure is the wrong way to be wrong.
+- **The recon ladder for a bearer is the scouting BAND, not a card's own `enemyReveal`.** One
+  ladder for "what do the scouts know about them", so the card and the host view can never
+  disagree. `null` at Blind means "you cannot tell"; above it, an absent bearer is an explicit
+  `{present: false}` so the client can SAY "no captain" rather than shrug.
+- **Assistant's calls that held up:** a recovered item leaves the dead character's list while an
+  unrecovered one stays (which is what finally gives 5-9's preservation rule teeth); `lootable` is
+  a row flag rather than a `kind === 'banner'` test; campaign-side mod names ride the same bag as
+  engine ones and the engine skips what it does not know.
+- **Still deferred, deliberately:** purchase and crafting (9-7 — each needs prices and a call on
+  what it competes with, which are decisions rather than details), `reconTag` becoming an ability
+  (9-5), and experience and wounds, which `characterMods` still leaves unpriced.
 
 ### DECISION 12 — MISSIONS ✅ SHIPPED 2026-08-24 (schema v39)
 
@@ -1955,10 +2032,13 @@ slot locked (spends one of the day's fates on a card that can do nothing) and dr
 the Refuse branch (reads as a bug the first time a demand arrives with no way to meet it).
 
 **12-7. THEY LEAVE AT ONCE, AT THE OMENS.** Gone the moment you choose: missing from the raid board
-that same turn and from tonight's battle. `TURN_PHASES` is `prepare → omens → raids → recruit →
-deploy`, so a nightfall departure would hand the player one free sortie out of every mission and the
-cost would not bite until the following day. It also makes the turn count honest — "gone 3 turns"
-means three turns the player feels. Rejected: departing at nightfall after one last sortie.
+that same turn, and from the decisive battle if it happens to fall on it. `TURN_PHASES` is
+`prepare → omens → raids → recruit → deploy`, so an end-of-turn departure would hand the player one
+free sortie out of every mission and the cost would not bite until the following day. It also makes
+the turn count honest — "gone 3 turns" means three turns the player feels. Rejected: departing at
+the end of the turn after one last sortie. *(Wording corrected 2026-08-24: this decision was
+written as "tonight's battle", a leftover from a nightly-battle design retired long ago. See the
+correction in the handoff block above.)*
 
 **Assistant's calls, flagged as overturnable:**
 - Storage is `squads[].mission` — `{untilDay, eventId}` or null — ON THE CHARTER rather than a

@@ -48,6 +48,13 @@ If `player_placement`/`enemy_placement` is absent or empty, a hardcoded default 
 (`buildDefaultPlayerArmy`/`buildDefaultEnemyArmy`) is randomly placed in the map's deployment
 zone instead.
 
+A placement entry accepts more OPTIONAL fields than the two shown — `squad_id`/`squad_name`,
+`squad_mods`, `squad_abilities`, `denied_abilities`, `character_id`, `avoids_melee`, `hold_turns` —
+all attached server-side by the campaign layer and none of them trusted from a browser. The
+authoritative list, with the never-throw parsing rule each one follows, is
+`buildArmyFromPlacement` in `backend/server/src/UnitRegistry.cpp`; it is not duplicated here
+because a second list is a list that goes stale.
+
 Implementation: the server does **not** run the battle in-process. It writes the request body
 to a PID-named temp file under `/tmp`, shells out to `./game battle < in.json > out.json`, and
 streams the subprocess's stdout back as the response.
