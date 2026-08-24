@@ -271,7 +271,10 @@ it lands with the event that requires a squad, not before), and decision 17's st
 its seven decisions are spec'd in full under "SLICE 17 — THE STORAGE PAGE" below, and they are the
 user's; do not re-derive them.** Two of them reach past the slice: assignment always happens at the
 TARGET's screen (17-3), and a read-only screen stays open while a fate is owed (17-6). So the only
-thing 13 named that is still unbuilt is decision 12.
+thing 13 named that is still unbuilt is decision 12 — **whose interview is now DONE (2026-08-24):
+seven decisions under "DECISION 12 — MISSIONS" below, NOT YET BUILT. They are the user's; do not
+re-derive them.** It has a name now: the mechanic is called a MISSION, and 12-3 amends decision 12's
+own instruction about how "busy" is stored.
 
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
@@ -1739,6 +1742,75 @@ Two caveats: the startup line is printed BEFORE the run because ASan/UBSan abort
 end-of-run listener would never fire; and `std::uniform_int_distribution` is not specified to map
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
+
+### DECISION 12 — MISSIONS (SPEC'D 2026-08-24, interviewed; NOT YET BUILT)
+
+The last thing decision 13 named as unbuilt, and the other half of prestige. **Seven decisions, all
+the user's — do not re-derive them.** Build TDD. **Schema bump: v38 → v39** (`squads[].mission`).
+
+**12-1. YOU PICK, FROM A DRAWN OFFER OF TWO** (user, 2026-08-24: *"lets make it more roguelite and
+you get a pick from two (if you have two that fit requirements) otherwise just 1 and 1 locked out
+choice"*). Not the whole roll and not the server's choice: the card offers TWO eligible charters,
+and where only one qualifies it offers that one plus a LOCKED slot. The draft pattern already in
+the codebase (`SQUAD_UPGRADE_DRAW`) offers fewer rows when fewer are eligible; this one deliberately
+SHOWS the slot it cannot fill. Rejected: the player picking from every charter (the trade stops
+being a draw and becomes an inventory), and the server picking by rule (the cost becomes arbitrary
+and you cannot deliberately spend your worst charter).
+
+**12-2. THE WORD IS MISSION** (user, 2026-08-24: *"we will call them missions, and say that it is on
+a mission"*). A charter away is **on a mission**; the locked slot says the same. "Tied up", the
+phrase decision 12 and 13-11 were written with, is retired — it was never player-facing vocabulary.
+
+**12-3. MISSIONS AND RAIDS ARE TWO STATES, TWO WORDS — this AMENDS decision 12's own text.** 12 said
+`raid.squadAssignment` already tracks "spent on a raid today" and a tie-up should "extend it rather
+than inventing a parallel notion of busy". The user chose two notions (2026-08-24): raiding today
+and being away for turns are different things and read differently, so missions get their own
+storage and their own line. **The consequence, and it is 13-11's third state arriving:** the squad
+screen now renders free / out raiding today / on a mission, and every availability check asks two
+questions rather than one. Recorded as an amendment rather than applied silently, because the
+original wording is still in this file above.
+
+**12-4. FLAT: THEY GO, THEY RETURN, PRESTIGE PAID.** A fixed number of turns away, a fixed prestige
+gain, no roll and no return card. The trade is already complete without one — you sold turns of a
+charter's raiding for a rung on the ladder — and a failure roll would mean paying the cost and
+getting nothing, which is how a card stops being worth taking. Rejected: a return card that rolls an
+outcome (doubles the content per mission and makes the card's worth unknowable at the moment you
+must decide) and a flavour-only return card (a card per mission that changes nothing).
+
+**12-5. AWAY MEANS OFF THE BATTLEFIELD, OFF THE BOSS-FIGHT METER, AND OFF THE RAID BOARD — BUT THEY
+STILL EAT.** They are not in camp, so they cannot be placed and the "whole army must take the field"
+gate stops counting them; they are still your men on your errand, so the food bill is unchanged.
+**The consequence the user accepted, flagged here because it is a lever and not only a cost:
+sending charters away SLOWS THE METER**, so missions move the decisive battle later. That is the
+first thing to look at if missions feel too strong.
+
+**12-6. IF NO CHARTER CAN GO, THE FATE IS NEVER DRAWN.** A `requires` clause ("at least one charter
+free") makes it ineligible, exactly as `horse_sickness` needs Cavalry and the garrison fates need
+resolve — so the augur can show it neither as truth nor as decoy. Rejected: drawing it with every
+slot locked (spends one of the day's fates on a card that can do nothing) and drawing it with only
+the Refuse branch (reads as a bug the first time a demand arrives with no way to meet it).
+
+**12-7. THEY LEAVE AT ONCE, AT THE OMENS.** Gone the moment you choose: missing from the raid board
+that same turn and from tonight's battle. `TURN_PHASES` is `prepare → omens → raids → recruit →
+deploy`, so a nightfall departure would hand the player one free sortie out of every mission and the
+cost would not bite until the following day. It also makes the turn count honest — "gone 3 turns"
+means three turns the player feels. Rejected: departing at nightfall after one last sortie.
+
+**Assistant's calls, flagged as overturnable:**
+- Storage is `squads[].mission` — `{untilDay, eventId}` or null — ON THE CHARTER rather than a
+  campaign-level list, because 12-3 made it a per-squad state and every reader already holds the
+  squad. Schema **v39**.
+- **The offered PAIR is drawn when the pending choice is SEALED** and stored on the pending, so a
+  reload cannot reroll which charters were offered. Same reasoning as the augury slots.
+- `POST /:id/choices/:slot` grows an optional `squadId`, VALIDATED against that stored pair — the
+  client may not name an arbitrary charter, matching the existing rule that the option set comes
+  from `EVENT_POOL` and never from the request.
+- A new `mission` effect type in the tagged union; `describeEffect` learns it, and so does
+  `services/balanceSheet.js` (whose tripwire test fails if a new effect escapes the sheet).
+- Returns resolve at `newDay`: a mission whose `untilDay` has arrived ends, prestige is paid, and
+  the day report says so.
+- One authored mission event to start. **The numbers (turns away, prestige) are BALANCE-DEFERRED**
+  per the standing pass — plausible values, not tuned ones.
 
 ### SLICE 17 — THE STORAGE PAGE ✅ SHIPPED 2026-08-23 (no schema bump)
 
