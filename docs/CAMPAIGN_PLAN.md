@@ -270,11 +270,11 @@ it lands with the event that requires a squad, not before), and decision 17's st
 `ItemStorePanel` was the deliberately-plain placeholder for. **17 HAS SINCE SHIPPED (2026-08-23) —
 its seven decisions are spec'd in full under "SLICE 17 — THE STORAGE PAGE" below, and they are the
 user's; do not re-derive them.** Two of them reach past the slice: assignment always happens at the
-TARGET's screen (17-3), and a read-only screen stays open while a fate is owed (17-6). So the only
-thing 13 named that is still unbuilt is decision 12 — **whose interview is now DONE (2026-08-24):
-seven decisions under "DECISION 12 — MISSIONS" below, NOT YET BUILT. They are the user's; do not
-re-derive them.** It has a name now: the mechanic is called a MISSION, and 12-3 amends decision 12's
-own instruction about how "busy" is stored.
+TARGET's screen (17-3), and a read-only screen stays open while a fate is owed (17-6). **Decision 12 has since SHIPPED too (2026-08-24, schema v39), so nothing 13 named is
+outstanding.** The mechanic is called a MISSION; its seven decisions are under "DECISION 12 —
+MISSIONS" below and they are the user's. Two things there bind later work: 12-3 amends decision 12's
+own instruction about how "busy" is stored (two notions, not one), and the write-up carries a
+CORRECTION to what the assistant claimed about the boss-fight meter during the interview.
 
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
@@ -1743,7 +1743,7 @@ end-of-run listener would never fire; and `std::uniform_int_distribution` is not
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
 
-### DECISION 12 — MISSIONS (SPEC'D 2026-08-24, interviewed; NOT YET BUILT)
+### DECISION 12 — MISSIONS ✅ SHIPPED 2026-08-24 (schema v39)
 
 The last thing decision 13 named as unbuilt, and the other half of prestige. **Seven decisions, all
 the user's — do not re-derive them.** Build TDD. **Schema bump: v38 → v39** (`squads[].mission`).
@@ -1811,6 +1811,51 @@ means three turns the player feels. Rejected: departing at nightfall after one l
   the day report says so.
 - One authored mission event to start. **The numbers (turns away, prestige) are BALANCE-DEFERRED**
   per the standing pass — plausible values, not tuned ones.
+
+**12 SHIPPED 2026-08-24, all seven decisions, and with it the last thing decision 13 named as
+unbuilt.** `services/missions.js` (which imports NOTHING — events.js owns the pool and needs the
+predicates, so the event lookup is passed in and the dependency runs one way); the `mission` effect
+type through `applyEffect`/`describeEffect`/`eventValence`/the balance sheet; `requires.freeSquads`;
+`squads[].mission` and the sealed `pendingChoices[].missionOffer`; the picker on the choice card;
+the third availability state on both squad screens; and the `ford_watch` fate. campaign-server
+961, frontend 341, lint clean.
+
+**A CORRECTION TO THE INTERVIEW, and the reason it is written here rather than quietly fixed.**
+During the interview the assistant told the user that excluding a charter from the boss-fight meter
+would SLOW the decisive battle, and 12-5 was agreed with that on the table. It is the wrong
+direction. `meterFillAtShare` is `CEILING − FLOOR × (inCamp / total)`, so a HIGHER in-camp fraction
+means a SLOWER meter. Taking a mission's bodies out of `total` leaves the raiders weighing against a
+smaller army, which lowers that fraction:
+
+- with nobody raiding, a mission is meter-NEUTRAL (the ratio is unchanged);
+- with raiders out, a mission makes the meter run slightly FASTER, because the army that remains is
+  proportionally more exposed.
+
+Both directions are pinned by tests in `missions.test.js` ("the boss-fight meter stops counting a
+charter that is away" / "an away charter does not make the meter treat the rest as raiders") so the
+next reader meets the real behaviour rather than the claim. **The decision itself stands** — a
+charter that is not in the valley should not be counted by a gauge measuring the army in the valley
+— but the balancing note in 12-5 above should be read as "missions do not buy time", not as a lever
+on when the boss fight lands.
+
+**What the build settled that the spec did not:**
+- **A DEFERRED mission cannot leave at once, and that is not a violation of 12-7.** A deferred fate
+  (its slot targeted by an unresolved counter-raid) has not come to pass yet, so the charter cannot
+  already be gone. The pick rides on `augury.slots[].chosenSquadId` and the mission begins when the
+  FATE does, at end-day. A charter that went elsewhere in between sends nobody rather than being
+  double-booked.
+- **The offer is resolved by ONE function on the server** (`missionOfferView`, exported from
+  `campaignView.js`), because the same offer appears on two screens — the tent's reveal card and the
+  choices-only overlay — and two resolvers would drift the first time the wording changed.
+- **`availabilityOf` in `selectors.js` is the one phrasing site** for free / raiding / on a mission,
+  read by both the roll and the charter page. The store convention: one canonical computation site.
+- **An away charter is DROPPED from the raid board, not greyed.** A slot it cannot fill for three
+  turns is clutter; the squad screen is where the absence is explained.
+- **FORAGING was never asked about and is deliberately UNCHANGED.** A charter away still counts in
+  `forage.pool`'s field points, exactly as it still eats. The interview offered battlefield / food /
+  meter / raids and nothing else, so extending the exclusion to foraging would have been the
+  assistant deciding it. **Open question for whoever tunes this**: men three days' march away
+  plausibly should not be foraging the valley either.
 
 ### SLICE 17 — THE STORAGE PAGE ✅ SHIPPED 2026-08-23 (no schema bump)
 

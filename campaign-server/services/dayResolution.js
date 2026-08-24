@@ -22,7 +22,10 @@ import {
   rosterTotal,
   optionCard,
   describeEffect,
+  missionEffectFor,
 } from './events.js'
+import { drawMissionOffer, onMission, returnMissions } from './missions.js'
+import { missionOfferView } from './campaignView.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyHost.js'
 import { meterFillAmount, meterBand } from './meter.js'
@@ -94,14 +97,27 @@ const attachFired = (revealSlot, fired) => {
 // branch's cost through the one formatter instead) onto a reveal slot and
 // record the owed decision — shared by acceptance and the end-day fallback.
 const pendChoice = (campaign, revealSlot, i, slotDoc, fired, day, deferred) => {
+  // A mission fate offers CHARTERS as well as branches (12-1), and the pair is
+  // drawn ONCE, here, then sealed on the decision. Drawing it at view time
+  // instead would let a reload reshuffle which two were offered until the
+  // player liked them — the same reason the upgrade draft is sealed at newDay.
+  const offersMission = fired.choices.some((c) => c.effect?.type === 'mission')
+  const missionOffer = offersMission ? drawMissionOffer(campaign) : undefined
   campaign.pendingChoices.push({
     slot: i,
     eventId: slotDoc.trueEvent.id,
     rung: fired.rung,
     day,
     deferred,
+    missionOffer,
   })
-  revealSlot.pendingChoice = { options: fired.choices.map(optionCard) }
+  // The reveal card needs the offer as much as the choices-only overlay does —
+  // the tent is where most players will meet this fate. Resolved through the
+  // same one function the view uses, so the two cards cannot disagree.
+  revealSlot.pendingChoice = {
+    options: fired.choices.map(optionCard),
+    missionOffer: missionOfferView(campaign, missionOffer),
+  }
 }
 
 // Fates come to pass at the tent (2026-07-18): once the player accepts the
@@ -235,7 +251,14 @@ export async function endDay(campaign) {
         const option = fired.choices.find((c) => c.id === slot.chosenChoice)
         if (option) {
           entries.push(`${fired.title}: your decision comes to pass — ${option.label}.`)
-          entries.push(...applyEffect(campaign, option.effect))
+          // The charter picked when this deferred decision was made (decision
+          // 12). It survived on the slot precisely so the mission has a target
+          // now, a turn after the player chose it; a charter that has since gone
+          // elsewhere sends nobody rather than being double-booked.
+          const squad = slot.chosenSquadId != null
+            ? campaign.squads.find((sq) => sq.id === slot.chosenSquadId && !onMission(sq))
+            : null
+          entries.push(...applyEffect(campaign, option.effect, { squad, eventId: slot.trueEvent?.id }))
         }
         revealed.push(card)
         return
@@ -380,6 +403,13 @@ export async function endDay(campaign) {
     campaign.phase = 'prepare'
     campaign.raid.assignment = new Map()
     campaign.raid.squadAssignment = []
+    // Homecomings (decision 12), BEFORE anything below reads availability: a
+    // charter whose mission ends today is free for this turn's raids and this
+    // turn's battle, not the next one. The prestige it earned lands here too,
+    // which is why this sits above the upgrade draw — a charter that ranks up
+    // by coming home finds its draft waiting on the same turn, exactly as one
+    // that ranked up by raiding does.
+    entries.push(...returnMissions(campaign, missionEffectFor))
     // Slice 4a: a charter that ranked up on this turn's raids finds its draft
     // waiting at the top of the next one. Drawn HERE, after the prestige those
     // raids paid has already landed, rather than lazily when the panel is

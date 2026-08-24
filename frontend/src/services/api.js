@@ -126,8 +126,12 @@ export const postAcceptFates = (id) =>
   axios.post(`/api/campaigns/${id}/augury/accept`, {}, authed()).then(r => r.data)
 // Resolve a pending choice-fate (events with choices): pick one option of the
 // decision owed on `slot`. Returns { campaign, resolved: {slot, choice, label} }.
-export const postCampaignChoice = (id, slot, choice) =>
-  axios.post(`/api/campaigns/${id}/choices/${slot}`, { choice }, authed()).then(r => r.data)
+// `squadId` rides along only for a mission branch (docs/CAMPAIGN_PLAN.md 12-1),
+// where choosing the option and choosing the charter are one decision. The
+// server validates it against the pair IT sealed, so this is a courtesy, not a
+// grant of trust.
+export const postCampaignChoice = (id, slot, choice, squadId) =>
+  axios.post(`/api/campaigns/${id}/choices/${slot}`, { choice, squadId }, authed()).then(r => r.data)
 
 // Submit a player bug report. The server stamps the trusted reproduction
 // context (active campaign, day, build) itself; the client only claims which

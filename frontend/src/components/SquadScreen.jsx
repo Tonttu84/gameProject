@@ -1,7 +1,7 @@
 import React from 'react'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
-import { EMPTY_ARRAY, EMPTY_OBJECT } from '../stores/selectors'
+import { EMPTY_ARRAY, EMPTY_OBJECT, availabilityOf } from '../stores/selectors'
 import SquadCharterPage from './SquadCharterPage'
 import SquadUpgradePanel from './SquadUpgradePanel'
 import CharacterPanel from './CharacterPanel'
@@ -60,11 +60,13 @@ const SquadRoll = () => {
             <p data-testid={`roll-strength-${squad.id}`}>
               {squad.rank} — {strength} of {cap} at muster
             </p>
-            {/* 13-11: free, or out raiding today. The third state (tied up for
-                X turns) is decision 12's and does not exist yet — a branch
-                nothing in the game can reach is how a stale reader survives. */}
+            {/* 13-11 said this renders only states that EXIST — free or out
+                raiding — and that the third would arrive with decision 12. It
+                has: a charter away on a mission says so, and says when it is
+                back. Phrased in ONE place (availabilityOf) so the roll and the
+                charter page cannot describe the same charter two ways. */}
             <p data-testid={`roll-availability-${squad.id}`}>
-              {raidingIds.has(squad.id) ? 'Out raiding today' : 'In camp, ready'}
+              {availabilityOf(squad, raidingIds)}
             </p>
             {/* 13-15: the roll MARKS the charters with a draft waiting; the
                 cards themselves live on the honours screen. */}

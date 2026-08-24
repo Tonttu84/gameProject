@@ -1,7 +1,7 @@
 import React from 'react'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
-import { EMPTY_ARRAY } from '../stores/selectors'
+import { EMPTY_ARRAY, availabilityOf } from '../stores/selectors'
 
 // ONE CHARTER, in full (docs/CAMPAIGN_PLAN.md, decision 13-10): troop types as
 // ROWS against their caps, the rank and what the next rung costs, the banner,
@@ -52,7 +52,6 @@ const SquadCharterPage = ({ squadId }) => {
   const composition = squad.composition ?? {}
   const refill = squad.refill ?? { outputs: {}, cost: {}, bodies: 0, blocked: 'none' }
   const posted = characters.find((c) => c.alive && c.squadId === squad.id)
-  const outRaiding = raiding.includes(squad.id)
   // Types the charter musters, plus any it happens to hold and can never
   // replace (a type an old archetype named, or one an upgrade swapped away).
   // The second kind has no cap, and saying so is better than hiding bodies that
@@ -75,7 +74,7 @@ const SquadCharterPage = ({ squadId }) => {
       </p>
 
       <p data-testid={`charter-availability-${squad.id}`}>
-        {outRaiding ? 'Out raiding today — it will not stand in the line.' : 'In camp, ready.'}
+        {availabilityOf(squad, raiding, { long: true })}
       </p>
 
       <h4>Muster</h4>

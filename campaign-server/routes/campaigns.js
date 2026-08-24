@@ -18,6 +18,7 @@ import {
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
 import { bindItemToSquad, squadAbilities } from '../services/items.js'
+import { missionBodies, onMission } from '../services/missions.js'
 import {
   mintCharacter,
   planAttach,
@@ -474,10 +475,17 @@ router.post('/:id/battles', async (req, res) => {
   // Battle commits the WHOLE army (user, 2026-07-05): every unit not out
   // raiding must take the field — no reserves skulking in camp. Foraging is
   // passive since S2 and no longer holds anyone back (decision 2).
+  // A charter away on a mission is not in camp and cannot be placed (12-5), so
+  // it must not be counted as skulking either. `roster` holds the WHOLE army and
+  // squad compositions are a subset of it, so without this subtraction the gate
+  // would demand the player field men who are three days' march away — an
+  // unpassable battle for as long as the mission runs.
+  const away = missionBodies(campaign)
   let inCamp = 0
   for (const [type, n] of campaign.roster)
     inCamp += n
       - (campaign.raid.assignment.get(type) ?? 0)
+      - (away.get(type) ?? 0)
       - (placed.get(type) ?? 0)
   if (inCamp > 0)
     return res.status(400).json({
@@ -706,6 +714,13 @@ router.post('/:id/raids/launch', async (req, res) => {
       if (!squad) return res.status(400).json({ error: `not one of your squads: squad_id ${sid}` })
       if (committedSquads.has(sid))
         return res.status(400).json({ error: `squad ${sid} is already committed to a raid today` })
+      // Away on a mission (12-5): the raid board greys these out, and the server
+      // refuses them for the same reason it refuses an empty charter — the UI is
+      // a courtesy and this is the trust boundary. A DIFFERENT refusal from the
+      // raid-today one on purpose (12-3): two states, two words, so the message
+      // tells the player which kind of busy they have run into.
+      if (onMission(ownSquads.get(sid)))
+        return res.status(400).json({ error: `squad ${sid} is away on a mission` })
       if (batchSquads.has(sid))
         return res.status(400).json({ error: `squad ${sid} is assigned to two raids at once` })
       batchSquads.add(sid)
@@ -1246,11 +1261,36 @@ router.post('/:id/choices/:slot', async (req, res) => {
   const option = def.choices.find((c) => c.id === req.body?.choice)
   if (!option) return res.status(400).json({ error: 'choice required' })
 
+  // A mission branch needs its charter (12-1). The pick must be one of the TWO
+  // this decision offered — sealed on the pending when it was pended — never
+  // any charter the client cares to name: the option set already comes from
+  // EVENT_POOL rather than the request, and the target is part of the same
+  // sealed decision. Re-checked for availability too, because the offer was
+  // drawn before the player answered and a charter can leave in between.
+  const ctx = { eventId: pending.eventId }
+  if (option.effect?.type === 'mission') {
+    const offered = [...(pending.missionOffer?.picks ?? [])]
+    const squadId = Number(req.body?.squadId)
+    if (!offered.includes(squadId))
+      return res.status(400).json({ error: 'choose one of the charters this fate offered' })
+    const squad = campaign.squads.find((sq) => sq.id === squadId)
+    if (!squad) return res.status(404).json({ error: 'no such squad' })
+    if (onMission(squad)) return res.status(400).json({ error: 'that charter is already away' })
+    ctx.squad = squad
+  }
+
   // A deferred pending (its slot is counter-raid-targeted): record the pick
   // on the slot — it comes to pass at end-day unless the raid unmakes it.
   if (pending.deferred) {
     const slotDoc = campaign.augury.slots[slot]
-    if (slotDoc) slotDoc.chosenChoice = option.id
+    if (slotDoc) {
+      slotDoc.chosenChoice = option.id
+      // The one place 12-7's "they leave at once" cannot hold: a deferred fate
+      // has not come to pass yet — a counter-raid may still unmake it — so the
+      // charter cannot already be gone. The mission begins when the FATE does,
+      // at end-day, and the pick rides on the slot until then.
+      if (ctx.squad) slotDoc.chosenSquadId = ctx.squad.id
+    }
     campaign.pendingChoices.splice(idx, 1)
     campaign.log.push({
       day: campaign.day,
@@ -1264,7 +1304,7 @@ router.post('/:id/choices/:slot', async (req, res) => {
   }
 
   const entries = [`${def.title}: you chose "${option.label}".`]
-  entries.push(...applyEffect(campaign, option.effect))
+  entries.push(...applyEffect(campaign, option.effect, ctx))
   campaign.pendingChoices.splice(idx, 1)
   entries.push(...checkAnnihilation(campaign))
   // A campaign ended by the branch takes its remaining decisions with it

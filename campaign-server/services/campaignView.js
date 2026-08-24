@@ -31,6 +31,7 @@ import {
 } from './squadUpgrades.js'
 import { bannerTier, describeItem, squadBanner, storedItems } from './items.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
+import { missionBlocker } from './missions.js'
 import { garrisonLevel } from './garrison.js'
 import { displayBracket } from './recon.js'
 import {
@@ -38,6 +39,28 @@ import {
 } from './forage.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
 import { eventValenceFor, choiceRung, describeEffect, optionCard, rungOf } from './events.js'
+
+// The charters a mission fate offered, resolved for display: a name and rank
+// for each pick, and for the LOCKED slot the name plus the one word for why it
+// cannot go (12-1/12-2). ONE resolver, exported, because the same offer has to
+// appear on two screens — the tent's reveal card and the choices-only overlay —
+// and two of these would drift the first time the wording changed.
+//
+// Nothing here is redrawn: it reads the sealed offer off the decision.
+export const missionOfferView = (campaign, offer) => {
+  if (!offer) return null
+  const find = (id) => (campaign.squads ?? []).find((sq) => sq.id === id)
+  const locked = find(offer.locked)
+  return {
+    picks: [...(offer.picks ?? [])]
+      .map(find)
+      .filter(Boolean)
+      .map((sq) => ({ id: sq.id, name: sq.name, rank: squadRank(sq.prestige) })),
+    locked: locked
+      ? { id: locked.id, name: locked.name, blocker: missionBlocker(locked) }
+      : null,
+  }
+}
 
 // Has the turn's true/false uncertainty finished doing its job? ONE predicate,
 // because the augur's cards and the raid board must never disagree about what
@@ -392,6 +415,13 @@ export async function campaignView(campaign) {
       // and promises nothing about what the rung is worth.
       nextRank: nextRank(squad.prestige),
       archetype: squad.archetype ?? null,
+      // Away on a mission, or null (decision 12). The DAY it is back rather
+      // than turns remaining: the client re-derives nothing about the calendar,
+      // and a stored countdown would need decrementing every turn — one more
+      // thing to get wrong. A raid is a separate state and stays in
+      // raid.squadAssignment (12-3), so the screen renders three states from
+      // two fields.
+      mission: squad.mission ? { untilDay: squad.mission.untilDay } : null,
       // Caps and intake already carry the squad's upgrades (squadReinforce
       // resolves the archetype row THROUGH them), so what the screen shows is
       // what the end-of-turn refill will actually work to.
@@ -645,7 +675,7 @@ export async function campaignView(campaign) {
     // only — branch effects, the pool id, and the fired rung stay server-side
     // (looked up again at choose time). An entry whose event has left the
     // pool is dropped, the same degrade-safely convention as elsewhere.
-    pendingChoices: (campaign.pendingChoices ?? []).flatMap(({ slot, eventId, rung }) => {
+    pendingChoices: (campaign.pendingChoices ?? []).flatMap(({ slot, eventId, rung, missionOffer }) => {
       const def = choiceRung(eventId, rung)
       if (!def) return []
       return [{
@@ -656,6 +686,10 @@ export async function campaignView(campaign) {
         // the thing an option most needs to state, and the tent's reveal beat
         // builds its cards the same way so the two screens cannot disagree.
         options: def.choices.map(optionCard),
+        // The charters this fate offered (12-1), resolved to what the card must
+        // show. Sent from the SEALED offer, never redrawn here — a view that
+        // redrew it would hand the player a reroll every screen refresh.
+        missionOffer: missionOfferView(campaign, missionOffer),
       }]
     }),
     // Scouting: derived at view time (like foodNeedPerTurn), no schema field.

@@ -181,8 +181,11 @@ describe('EventRevealScreen: one card per click', () => {
     await screen.findByTestId('choice-outcome-1')
     expect(screen.getByTestId('reveal-next')).toBeEnabled()
 
-    expect(onChoose).toHaveBeenCalledWith(0, 'quarantine')
-    expect(onChoose).toHaveBeenCalledWith(1, 'buy_provisions')
+    // The third argument is the CHARTER a mission fate spends (decision 12).
+    // Null here, and on every fate that does not ask for one — which is most of
+    // them; the picker only appears when the server sends an offer.
+    expect(onChoose).toHaveBeenCalledWith(0, 'quarantine', null)
+    expect(onChoose).toHaveBeenCalledWith(1, 'buy_provisions', null)
   })
 
   // Every card states what it does (user, 2026-08-10). A branch used to carry
@@ -256,7 +259,7 @@ describe('EventRevealScreen: one card per click', () => {
     fireEvent.click(await screen.findByTestId('choice-mount_veterans'))
     await screen.findByTestId('choice-outcome-2')
     expect(screen.getByTestId('reveal-next')).toBeEnabled()
-    expect(onChoose).toHaveBeenCalledWith(2, 'mount_veterans')
+    expect(onChoose).toHaveBeenCalledWith(2, 'mount_veterans', null)
   })
 
   it('shows the tutorial intro only when the flag is on', () => {

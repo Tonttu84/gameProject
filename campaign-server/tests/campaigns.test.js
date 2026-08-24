@@ -137,7 +137,15 @@ const expectNoHiddenInfo = (body) => {
   expect(raw).not.toContain('"eventId"')
   for (const c of [body, body.campaign]) {
     for (const p of c?.pendingChoices ?? []) {
-      expect(Object.keys(p).sort()).toEqual(['description', 'options', 'slot', 'title'])
+      // `missionOffer` (decision 12) is a DELIBERATE widening, and it discloses
+      // nothing hidden: the charters are the player's OWN, named with their own
+      // rank, and the locked slot's blocker is a fact about their own army. It
+      // is null on every fate that is not a mission, which is most of them.
+      expect(Object.keys(p).sort()).toEqual(['description', 'missionOffer', 'options', 'slot', 'title'])
+      for (const pick of p.missionOffer?.picks ?? [])
+        expect(Object.keys(pick).sort()).toEqual(['id', 'name', 'rank'])
+      if (p.missionOffer?.locked)
+        expect(Object.keys(p.missionOffer.locked).sort()).toEqual(['blocker', 'id', 'name'])
       for (const o of p.options) expect(Object.keys(o).sort()).toEqual(OPTION_KEYS)
     }
   }
@@ -1329,11 +1337,15 @@ describe('POST /api/campaigns/:id/battles', () => {
       // the reason differs by charter: the Vanguard is at its caps in both its
       // types, while the other two have room they cannot fill because the loose
       // pool holds none of the type that would fill it.
+      // Decision 12 added `mission`: null on a fresh charter, and the day it is
+      // back once one is away. NULL rather than absent for the same reason the
+      // upgrade fields read as zero — the state exists from turn one, the
+      // charter simply is not in it.
       const fresh = {
         prestige: 0, rank: 'Untested', nextRank: { label: 'Blooded', at: 10 },
         upgrades: [], upgradeSlots: 0, upgradeSlotsUsed: 0, upgradePicks: 0,
         banner: 'plain', bannerItem: null,
-        upgradeOffer: null,
+        upgradeOffer: null, mission: null,
       }
       const takesNobody = (blocked) => ({ refill: { outputs: {}, cost: {}, bodies: 0, blocked } })
       expect(c.squads).toEqual([
@@ -2571,6 +2583,151 @@ describe('augury acceptance (fates at the tent)', () => {
 // — options come from EVENT_POOL at view/choose time, the sealed-fate rule)
 // and every other mutating action 409s until the player has chosen. The
 // choose route applies the picked branch and re-checks annihilation.
+// Missions (docs/CAMPAIGN_PLAN.md "DECISION 12 — MISSIONS") — the whole loop
+// through the real routes: the fate offers charters, the pick sends one, the
+// board and the battlefield lose it, and the turn it is due it comes home paid.
+describe('missions', () => {
+  const FORD = EVENT_POOL.find((e) => e.id === 'ford_watch')
+  const choose = (id, slot, body) =>
+    auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send(body)
+
+  // Fire the mission fate and answer slot 0 with `body`.
+  const pendFord = async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, FORD)
+    const res = await endTurn(c.id)
+    return { id: c.id, res }
+  }
+
+  test('the fate offers charters, named, with the rank the player judges them by', async () => {
+    const { res } = await pendFord()
+    const offer = res.body.campaign.pendingChoices[0].missionOffer
+    // Three starting charters, all free: two are offered and nothing is locked.
+    expect(offer.picks).toHaveLength(2)
+    expect(offer.picks.every((p) => p.name && p.rank)).toBe(true)
+    expect(offer.locked).toBe(null)
+  })
+
+  test('the offer is SEALED: reading the view again never reshuffles it', async () => {
+    // The upgrade-draft lesson. A redrawn offer is a reroll the player gets for
+    // free by refreshing until they like the pair.
+    const { id } = await pendFord()
+    const first = (await getView(id)).pendingChoices[0].missionOffer
+    for (let i = 0; i < 5; i++) {
+      const again = (await getView(id)).pendingChoices[0].missionOffer
+      expect(again.picks.map((p) => p.id)).toEqual(first.picks.map((p) => p.id))
+    }
+  })
+
+  test('choosing a charter sends it, and the report says so', async () => {
+    const { id, res } = await pendFord()
+    const [pick] = res.body.campaign.pendingChoices[0].missionOffer.picks
+    const out = await choose(id, 0, { choice: 'hold_the_ford', squadId: pick.id })
+    expect(out.status).toBe(200)
+    const squad = out.body.campaign.squads.find((s) => s.id === pick.id)
+    // Chosen on day 2, gone 3 turns, home on day 5.
+    expect(squad.mission).toEqual({ untilDay: out.body.campaign.day + 3 })
+    expectNoHiddenInfo(out.body)
+  })
+
+  test('a charter the fate did not offer is refused', async () => {
+    // The option set already comes from EVENT_POOL rather than the request; the
+    // target is part of the same sealed decision and gets the same treatment.
+    const { id, res } = await pendFord()
+    const offered = res.body.campaign.pendingChoices[0].missionOffer.picks.map((p) => p.id)
+    const notOffered = [1, 2, 3].find((sid) => !offered.includes(sid))
+    const out = await choose(id, 0, { choice: 'hold_the_ford', squadId: notOffered })
+    expect(out.status).toBe(400)
+    expect(out.body.error).toMatch(/charters this fate offered/)
+  })
+
+  test('a mission branch with no charter named is refused', async () => {
+    const { id } = await pendFord()
+    const out = await choose(id, 0, { choice: 'hold_the_ford' })
+    expect(out.status).toBe(400)
+  })
+
+  test('refusing the fate sends nobody', async () => {
+    const { id } = await pendFord()
+    const out = await choose(id, 0, { choice: 'leave_it_unwatched' })
+    expect(out.status).toBe(200)
+    expect(out.body.campaign.squads.every((s) => s.mission === null)).toBe(true)
+  })
+
+  test('an away charter cannot raid — and is refused in ITS OWN words (12-3)', async () => {
+    const { id, res } = await pendFord()
+    const [pick] = res.body.campaign.pendingChoices[0].missionOffer.picks
+    await choose(id, 0, { choice: 'hold_the_ford', squadId: pick.id })
+    // Answer the other two slots so the pending gate lifts.
+    for (const slot of [1, 2]) await choose(id, slot, { choice: 'leave_it_unwatched' })
+
+    const view = await getView(id)
+    const opp = view.raid.opportunities.find((o) => !o.resolved)
+    await Campaign.findByIdAndUpdate(id, { phase: 'raids' })
+    const out = await auth(api.post(`/api/campaigns/${id}/raids/launch`))
+      .send({ parties: { [opp.id]: [pick.id] } })
+    expect(out.status).toBe(400)
+    // Not "already committed to a raid today" — a different kind of busy.
+    expect(out.body.error).toMatch(/away on a mission/)
+  })
+
+  test('an away charter is not counted as skulking in camp at deploy', async () => {
+    // Without the subtraction the take-the-field gate demands the player field
+    // men who are three days away — an unpassable battle for the whole mission.
+    const { id, res } = await pendFord()
+    const [pick] = res.body.campaign.pendingChoices[0].missionOffer.picks
+    await choose(id, 0, { choice: 'hold_the_ford', squadId: pick.id })
+    for (const slot of [1, 2]) await choose(id, slot, { choice: 'leave_it_unwatched' })
+
+    const view = await getView(id)
+    const squad = view.squads.find((s) => s.id === pick.id)
+    const awayBodies = Object.values(squad.composition).reduce((a, b) => a + b, 0)
+    expect(awayBodies).toBeGreaterThan(0)
+    // Place the whole army EXCEPT the away charter; the gate must be satisfied.
+    const placement = []
+    let col = 0
+    for (const [type, n] of Object.entries(view.roster)) {
+      const here = n - (squad.composition[type] ?? 0)
+      if (here > 0) placement.push({ type, count: here, col: col++, row: 0 })
+    }
+    await Campaign.findByIdAndUpdate(id, { phase: 'deploy' })
+    const out = await auth(api.post(`/api/campaigns/${id}/battles`)).send({ placement })
+    // Whatever else the battle stub does, it must not be the camp gate.
+    expect(out.body.error ?? '').not.toMatch(/must take the field/)
+  })
+
+  test('the charter comes home on its day, paid, and free to raid again', async () => {
+    const { id, res } = await pendFord()
+    const [pick] = res.body.campaign.pendingChoices[0].missionOffer.picks
+    await choose(id, 0, { choice: 'hold_the_ford', squadId: pick.id })
+    for (const slot of [1, 2]) await choose(id, slot, { choice: 'leave_it_unwatched' })
+
+    const before = (await getView(id)).squads.find((s) => s.id === pick.id)
+    const prestigeBefore = before.prestige
+    // Run turns until the day it is due, answering nothing else along the way.
+    for (let i = 0; i < 3; i++) {
+      await Campaign.findByIdAndUpdate(id, { pendingChoices: [] })
+      await pinAugury(id, QUIET)
+      await endTurn(id)
+    }
+    const after = (await getView(id)).squads.find((s) => s.id === pick.id)
+    expect(after.mission).toBe(null)
+    expect(after.prestige).toBe(prestigeBefore + FORD.choices.find((c) => c.effect?.type === 'mission').effect.prestige)
+  })
+
+  test('the fate is not drawn at all when every charter is already away', async () => {
+    // 12-6, at the level that matters: the augur cannot lay down a demand the
+    // player has no way to meet.
+    const { body: c } = await createCampaign()
+    const doc = await Campaign.findById(c.id)
+    for (const squad of doc.squads) squad.mission = { untilDay: 99, eventId: 'ford_watch' }
+    await doc.save()
+    const fresh = await Campaign.findById(c.id)
+    const { eventEligible } = await import('../services/events.js')
+    expect(eventEligible(FORD, fresh)).toBe(false)
+  })
+})
+
 describe('events with choices', () => {
   const REFUGEES = EVENT_POOL.find((e) => e.id === 'refugees')
   const BAGGAGE_PLAGUE = EVENT_POOL.find((e) => e.id === 'baggage_plague')

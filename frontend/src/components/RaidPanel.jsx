@@ -98,7 +98,11 @@ const RaidPanel = ({ units, onLaunchAll, onScout, onWatch, locked }) => {
   // Squads already sent on a raid today are spent — they can't ride again this
   // turn (the server enforces the same via raid.squadAssignment).
   const committedToday = new Set(raid?.squadAssignment ?? [])
-  const raidableSquads = squads.filter((sq) => !committedToday.has(sq.id))
+  // A charter away on a mission is not on the board at all (12-5), and it is
+  // DROPPED rather than shown greyed: a raid slot it cannot fill for three
+  // turns is clutter, and the squad screen is where its absence is explained.
+  // The server refuses it independently — this is the courtesy half.
+  const raidableSquads = squads.filter((sq) => !committedToday.has(sq.id) && !sq.mission)
 
   // A squad's raid cost: the sum of its troops' per-unit capacity cost.
   const squadCost = (squad) =>

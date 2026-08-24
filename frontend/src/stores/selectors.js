@@ -91,3 +91,22 @@ export const useInCamp = () => {
   const squadPlacedCount = useSquadPlacedCount()
   return totalAvailableCount - placedCount - squadPlacedCount
 }
+
+// A charter's availability, in one sentence (docs/CAMPAIGN_PLAN.md 12-2/13-11).
+// THREE states now that decision 12 has landed: in camp, out raiding today, or
+// away on a mission until a named day. Two fields, because a raid and a mission
+// are deliberately different things (12-3) — a raid is spent-today and wiped at
+// newDay, a mission spans turns and lives on the charter.
+//
+// One canonical phrasing site, per the store convention: the roll and the
+// charter page both read it, so the army cannot describe itself two ways.
+// `long` is the charter page's fuller line, which also says what it costs you.
+export const availabilityOf = (squad, raidingIds, { long = false } = {}) => {
+  if (squad?.mission)
+    return long
+      ? `Away on a mission — back on day ${squad.mission.untilDay}. It will not raid or stand in the line until then.`
+      : `On a mission until day ${squad.mission.untilDay}`
+  if (raidingIds.has?.(squad?.id) ?? raidingIds.includes?.(squad?.id))
+    return long ? 'Out raiding today — it will not stand in the line.' : 'Out raiding today'
+  return long ? 'In camp, ready.' : 'In camp, ready'
+}

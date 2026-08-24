@@ -3,9 +3,13 @@ import {
   GARRISON_RESOLVE_START,
   GARRISON_BANNER_RESOLVE,
   ITEM_CATALOG,
+  STARTING_SQUADS,
 } from '../utils/campaignConfig.js'
 import { adjustResolve } from './garrison.js'
 import { findItem, grantItem, holdsItem } from './items.js'
+// One-way by design: missions.js imports nothing, so this file can own the pool
+// and still ask it what "free" means. See the note at the top of missions.js.
+import { availableSquads, beginMission } from './missions.js'
 
 // Fortnightly event pool + effect application. Events reach the player only
 // as the augur's prophecy (services/augury.js): each turn one TRUE event and
@@ -163,6 +167,23 @@ export const EVENT_POOL = [
     choices: [
       { id: 'answer_the_call', label: 'Send provisions and a working party to the walls', description: 'Spend from your own stores to stiffen the threatened stretch. The garrison marks who stood with them when the wall shook — and stands the taller for it.', effect: { type: 'multi', effects: [{ type: 'food', delta: -1500 }, { type: 'garrison', delta: +15 }] } },
       { id: 'tend_your_own',   label: 'Keep your men and stores at their own work', description: 'The wall is theirs to hold. You keep every sack and every hand for your own column.', effect: { type: 'none' } },
+    ],
+  },
+  // ── missions (decision 12) ── The fate that ASKS FOR A CHARTER, and the same
+  // fate that takes it away — 12 is explicit that these are one card, or the
+  // cost lands uncompensated and no such fate is ever worth taking. `freeSquads`
+  // keeps it out of the draw entirely when nobody can go (12-6), and the option
+  // names the trade in full because 12-4 made both halves flat and certain.
+  //
+  // The numbers are BALANCE-DEFERRED per the standing pass — three turns and 12
+  // prestige are plausible, not tuned. Prestige is read back off this row when
+  // the charter returns, so retuning it reaches missions already under way.
+  {
+    id: 'ford_watch', title: 'The Ford Must Be Held', description: 'Riders from the western steadings bring word that the enemy has been probing the fords below the mill — unwatched, they are a road straight into your rear. Holding one is a fortnight of cold pickets, far from the camp and from any glory.', severity: 2,
+    effect: { type: 'choice' }, valence: 'neutral', requires: { freeSquads: 1 },
+    choices: [
+      { id: 'hold_the_ford', label: 'Send a charter to hold the ford', description: 'They will be gone a good while, and the camp will feel their absence — but a company trusted with the army\'s back comes home knowing its own worth.', effect: { type: 'mission', turns: 3, prestige: 12 } },
+      { id: 'leave_it_unwatched', label: 'Leave the fords unwatched', description: 'Every man stays where you can use him. The steadings must look to themselves.', effect: { type: 'none' } },
     ],
   },
   { id: 'garrison_lookout', title: 'Word from the Ramparts', description: 'Trusting the banner that has stood with them, Karrowgate\'s watch signal down what they can see from the high walls — the enemy\'s dispositions, laid plain.', severity: 2, effect: { type: 'enemy_reveal' }, requires: { minResolve: 60 } },
@@ -404,6 +425,16 @@ export const eventEligible = (event, ctx = {}) => {
   // the day someone writes it rather than failing silently.
   if (req.hasUnit && bagGet(ctx.roster, req.hasUnit) + livingCharactersOfType(ctx, req.hasUnit) <= 0)
     return false
+  // "Do you have a charter to send?" (12-6). A mission fate with nobody free is
+  // not drawn AT ALL — neither as the truth nor as the decoy — so the augur
+  // never lays down a demand the player has no way to meet. Absent squad context
+  // (the creation-time draw, before the document exists) reads as a fresh
+  // campaign's charters, all of them in camp: the same convention the resolve
+  // gate uses when there is no garrison block yet.
+  if (req.freeSquads != null) {
+    const free = ctx.squads ? availableSquads(ctx).length : STARTING_SQUADS.length
+    if (free < req.freeSquads) return false
+  }
   // Garrison Resolve gate: the standing track opens high-trust garrison fates
   // and closes them (or unlocks soured-relationship ones) as the relationship
   // shifts. Absent garrison context reads as the starting resolve, so a
@@ -459,6 +490,12 @@ export const eventValence = (effect) => {
     // this classifier guess from the row.
     case 'item':
       return 'good'
+    // A mission is a TRADE, not a gain or a loss (decision 12): a charter goes
+    // away for turns and comes back with prestige. Calling it good would have
+    // the augur's header promise a boon while the card takes your best cohort
+    // off the board; calling it bad would hide the rung it buys.
+    case 'mission':
+      return 'neutral'
     // A standing forage pressure (S3). The two targets read in OPPOSITE
     // directions: more of the player's own capacity is a gain, but more enemy
     // drain strips the shared rings faster, so it's a loss. Both levers point
@@ -554,6 +591,12 @@ export const describeEffect = (effect) => {
       if (!row) return ['A magic item']
       return [`${row.name} — ${row.blurb}`]
     }
+    // A mission (decision 12). BOTH halves of the trade, always: the turns away
+    // are the price and the prestige is what it buys, and 12-4 made them flat
+    // and certain precisely so the card can state them before you commit. The
+    // charter is not named here — the player picks that when they answer.
+    case 'mission':
+      return [`A charter marches out for ${effect.turns} turns — +${effect.prestige} prestige when it returns`]
     case 'forage_modifier': {
       if (effect.target === 'enemyDrain')
         return [
@@ -626,8 +669,29 @@ export const choiceRung = (eventId, rung) => {
   return { title: def.title, description: def.description, choices: def.choices }
 }
 
+// The mission effect an event offers, wherever it sits on its row. A mission
+// rides on a CHOICE option — accepting it is the point — so this looks there
+// first and tolerates a bare effect for a later scripted beat with no branch.
+// returnMissions() takes this as its lookup: the numbers live on the event row,
+// never on the charter, so retuning a mission reaches the ones already away.
+export const missionEffectFor = (eventId) => {
+  const event = EVENT_POOL.find((e) => e.id === eventId)
+  if (!event) return null
+  if (event.effect?.type === 'mission') return event.effect
+  for (const choice of event.choices ?? [])
+    if (choice.effect?.type === 'mission') return choice.effect
+  return null
+}
+
 // Mutates the campaign in place; caller saves. Returns log lines.
-export function applyEffect(campaign, effect) {
+//
+// `ctx` carries what an effect cannot read off the campaign alone. Today that is
+// only the mission's TARGET (12-1: the player picked a charter, and the pick is
+// part of answering the fate, not part of the fate). It is optional and every
+// other branch ignores it, so the structural sweeps that push the whole pool
+// through this function keep working unchanged — a mission with no squad in ctx
+// is inert rather than a throw.
+export function applyEffect(campaign, effect, ctx = {}) {
   const log = []
   if (effect.type === 'food') {
     campaign.resources.food = Math.max(0, campaign.resources.food + effect.delta)
@@ -755,9 +819,20 @@ export function applyEffect(campaign, effect) {
       eventId: effect.event,
       day: (campaign.day ?? 1) + (effect.delay ?? 1),
     })
+  } else if (effect.type === 'mission') {
+    // A charter marches out (decision 12). The TARGET is the player's pick,
+    // handed in on ctx by the choice route — this effect names how long and
+    // what it pays, never who goes, because which charter you can spare is the
+    // decision the card exists to pose.
+    //
+    // No squad in ctx means nothing happens, deliberately: the structural tests
+    // sweep every authored fate through applyEffect against skeleton campaigns,
+    // and a scheduled mission beat with no picker in front of it must not throw
+    // either. The route is what guarantees a real pick reaches here.
+    if (ctx.squad) log.push(beginMission(campaign, ctx.squad, { turns: effect.turns, eventId: ctx.eventId }))
   } else if (effect.type === 'multi') {
     // A bundled fate: every part lands, in order.
-    for (const part of effect.effects) log.push(...applyEffect(campaign, part))
+    for (const part of effect.effects) log.push(...applyEffect(campaign, part, ctx))
   } else if (effect.type === 'none') {
     // A neutral fate: it passes without tipping the scales.
     log.push('The fortnight passes without consequence.')

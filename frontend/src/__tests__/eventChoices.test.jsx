@@ -128,7 +128,9 @@ describe('a choice-fate in the day report', () => {
     await endDayWithChoice()
 
     fireEvent.click(screen.getByTestId('choice-take_in'))
-    await waitFor(() => expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'take_in'))
+    // Fourth argument: the charter a mission fate spends (decision 12),
+    // undefined on a fate that asks for none.
+    await waitFor(() => expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'take_in', null))
 
     // The chosen branch is on record; the buttons are gone, the reveal moves.
     const outcome = await screen.findByTestId('choice-outcome-0')
@@ -158,7 +160,7 @@ describe('reload with a decision owed', () => {
     expect(card).toHaveTextContent('Refugees at the Palisade')
 
     fireEvent.click(screen.getByTestId('choice-turn_away'))
-    await waitFor(() => expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'turn_away'))
+    await waitFor(() => expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'turn_away', null))
 
     // Nothing pending anymore: the overlay yields back to the council.
     await screen.findByText(/Turn 2 — War Council/)

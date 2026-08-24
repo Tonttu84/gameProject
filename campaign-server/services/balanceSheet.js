@@ -113,6 +113,16 @@ const addInto = (acc, effect) => {
       )
       break
     }
+    case 'mission': {
+      // A mission (decision 12). Priced as a NOTE, like an item, because its
+      // two halves are denominated in different things: turns a charter is off
+      // the board, against prestige when it comes home. Neither converts to
+      // food or bodies, so a number here would be invented — and BOTH belong on
+      // the sheet, because the balancing pass's question about a mission is
+      // exactly whether the rung is worth the absence.
+      acc.notes.push(`mission: ${effect.turns} turns away, +${effect.prestige} prestige`)
+      break
+    }
     case 'multi':
       for (const sub of effect.effects ?? []) addInto(acc, sub)
       break

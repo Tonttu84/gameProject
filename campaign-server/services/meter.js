@@ -6,6 +6,7 @@ import {
 } from '../utils/campaignConfig.js'
 import { rosterTotal } from './events.js'
 import { allBodies } from './characters.js'
+import { missionBodies } from './missions.js'
 
 // How much the boss-fight meter fills this end-of-day. S2 "effort slider"
 // (docs/CAMPAIGN_PLAN.md, decision 11): foraging no longer pulls named units
@@ -20,7 +21,13 @@ export function meterFillAtShare(campaign, share) {
   // Characters are bodies in camp like any other (docs/CAMPAIGN_PLAN.md
   // 5-0/5-10) — if they stopped counting when they left the roster in slice 5,
   // the idle fraction this reads would have shifted for free.
-  const total = rosterTotal(allBodies(campaign))
+  // Charters away on a mission leave this arithmetic ENTIRELY (12-5) — out of
+  // the total, not merely out of `inCamp`. They are neither exposed nor keeping
+  // watch, because they are not here: the meter measures the army that is
+  // actually in the valley. Subtracted from the TOTAL rather than treated like
+  // raiders on purpose; a hard subtraction like the raiders' would say they are
+  // out on the enemy's ground tonight, which is a different claim.
+  const total = rosterTotal(allBodies(campaign)) - rosterTotal(missionBodies(campaign))
   if (total <= 0) return BOSS_FIGHT_METER_FLOOR
   const raiders = rosterTotal(campaign.raid.assignment)
   const inCamp = (total - raiders) * (1 - share)
