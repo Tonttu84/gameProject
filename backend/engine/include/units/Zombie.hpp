@@ -19,6 +19,9 @@ class Zombie : public AUnit
         
         Zombie(int team);
 
+        // Body plan (5-6): humanoid, for the same reason Skeleton's is.
+        const Anatomy& anatomy() const override { return anatomy::HUMANOID; }
+
     protected:
 
         

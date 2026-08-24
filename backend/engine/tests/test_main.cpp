@@ -604,6 +604,12 @@ public:
         movementSpeed = 0;   // stays in place
         printSymbol   = 'D';
     }
+
+    // A test dummy is still a body: AUnit::anatomy() is pure virtual (5-6), so
+    // declaring one is not optional even here. Humanoid — nothing in this file
+    // reads it, and the point of the pure virtual is that "nothing reads it"
+    // is not an excuse to leave it vague.
+    const Anatomy& anatomy() const override { return anatomy::HUMANOID; }
 };
 
 TEST_CASE("archer exhausts ammo against unkillable target and switches to melee range") {

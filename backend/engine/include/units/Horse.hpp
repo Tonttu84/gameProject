@@ -17,4 +17,8 @@ public:
 
     explicit Horse(int setTeam);
     ~Horse() noexcept override = default;
+
+    // Body plan (5-6): barding, a chamfron, one harness for four legs, no
+    // hands. Inherited by Warhorse.
+    const Anatomy& anatomy() const override { return anatomy::QUADRUPED; }
 };

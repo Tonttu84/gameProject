@@ -75,6 +75,84 @@ TEST_CASE("unit catalog: every entry has the full field set") {
     }
 }
 
+// ── Anatomy (5-4 / 5-6) ──────────────────────────────────────────────────────
+//
+// The "no default, an undeclared type is an error" rule is enforced by the
+// COMPILER — AUnit::anatomy() is pure virtual, so a type that declares nothing
+// does not build and can never reach this test. What is left for a test is the
+// part a compiler cannot check: that the export carries the layout, and that
+// every count sits inside the cap decision 5-4 set.
+TEST_CASE("unit catalog: every type exports an anatomy inside the slot cap") {
+    auto j = json::parse(unitCatalogJson());
+    REQUIRE(!j["units"].empty());
+    for (const auto& u : j["units"]) {
+        INFO("unit: " << u.value("name", "<missing>"));
+        REQUIRE(u.contains("anatomy"));
+        const auto& a = u["anatomy"];
+        int total = 0;
+        for (const char* k : {"head", "torso", "legs", "hand", "misc"}) {
+            INFO("slot: " << k);
+            REQUIRE(a.contains(k));
+            REQUIRE(a[k].is_number_integer());
+            const int n = a[k].get<int>();
+            REQUIRE(n >= 0);
+            REQUIRE(n <= MAX_SLOTS_PER_KIND);
+            total += n;
+        }
+        // A body with nowhere at all to wear anything is not a body plan, it
+        // is a forgotten one — and the pure virtual cannot tell the two apart.
+        REQUIRE(total > 0);
+    }
+}
+
+TEST_CASE("unit catalog: anatomy is declared down the inheritance chain") {
+    auto j = json::parse(unitCatalogJson());
+
+    // Human declares HUMANOID once; its subclasses inherit it rather than
+    // repeating the numbers. If someone gives one of them its own plan, this
+    // is where the intent gets re-examined.
+    const json humanoid = {{"head", 1}, {"torso", 1}, {"legs", 1},
+                           {"hand", 2}, {"misc", 1}};
+    for (const char* name : {"Soldier", "RoyalGuard", "Pikeman", "Militia",
+                             "Archer", "Mage", "Priest", "Necromancer",
+                             "Zombie", "Skeleton"}) {
+        INFO("unit: " << name);
+        REQUIRE(findUnit(j, name)["anatomy"] == humanoid);
+    }
+
+    // A horse has no hands, and Warhorse inherits that from Horse.
+    const json quadruped = {{"head", 1}, {"torso", 1}, {"legs", 1},
+                            {"hand", 0}, {"misc", 1}};
+    REQUIRE(findUnit(j, "Horse")["anatomy"] == quadruped);
+    REQUIRE(findUnit(j, "Warhorse")["anatomy"] == quadruped);
+
+    // A MountedUnit wears what its RIDER wears — the composite delegates to
+    // effectTarget(), so a Cavalry reads as the humanoid on top of the horse
+    // rather than as the horse.
+    REQUIRE(findUnit(j, "Cavalry")["anatomy"] == humanoid);
+    REQUIRE(findUnit(j, "LightCavalry")["anatomy"] == humanoid);
+
+    // Scorpion writes its own: two CLAWS in the hand slots. This is the
+    // "4 armed monsters" case 5-4 kept the counts flexible for, at two — and
+    // the reason nothing here defaults to humanoid.
+    const json scorpion = findUnit(j, "Scorpion")["anatomy"];
+    REQUIRE(scorpion["hand"].get<int>() == 2);
+    REQUIRE(scorpion["legs"].get<int>() == 1);
+}
+
+TEST_CASE("slots(): clamps a layout into the per-kind cap") {
+    // The factory is the only documented way to write a plan, and it clamps at
+    // COMPILE time so a typo'd literal is a legal layout rather than a number
+    // the campaign layer has to defend against downstream.
+    constexpr Anatomy over = slots(99, 1, 1, 1, 1);
+    STATIC_REQUIRE(over.head == MAX_SLOTS_PER_KIND);
+    constexpr Anatomy under = slots(-3, 1, 1, 1, 1);
+    STATIC_REQUIRE(under.head == 0);
+    // Everything the roster actually uses passes through unchanged.
+    STATIC_REQUIRE(anatomy::HUMANOID.hand == 2);
+    STATIC_REQUIRE(anatomy::QUADRUPED.hand == 0);
+}
+
 // The core single-source-of-truth guarantee: every exported value is read off a
 // freshly constructed unit, so a stat changed in a constructor is exported with
 // no other edit. This test re-instantiates each type and compares.

@@ -13,4 +13,13 @@ public:
 
     explicit Scorpion(int setTeam);
     ~Scorpion() noexcept override = default;
+
+    // Body plan (5-6): its own, because it is not a humanoid and not a horse.
+    // Two CLAWS ride the `hand` slots — this is exactly the "4 armed monsters"
+    // case decision 5-4 kept the counts flexible for, at two — and its eight
+    // legs share one harness, the same way a horse's four do.
+    const Anatomy& anatomy() const override { return CHELICERATE; }
+
+private:
+    static constexpr Anatomy CHELICERATE = slots(1, 1, 1, 2, 1);
 };

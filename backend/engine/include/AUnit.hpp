@@ -9,6 +9,7 @@
 #include <vector>
 #include "Defines.hpp"
 #include "Abilities.hpp"
+#include "Anatomy.hpp"
 #include "Battlefield.hpp"
 #include "Utility.hpp"
 
@@ -211,6 +212,18 @@ public:
      // flags imply through each other rather than only within their own set.
      UnitAbility abilities() const;
      bool hasAbility(UnitAbility flag) const { return hasAbilityFlag(abilities(), flag); }
+
+     // ─── Anatomy (5-4 / 5-6) ────────────────────────────────────────────────
+     // Where this creature can wear things. PURE VIRTUAL and deliberately so:
+     // the user's rule is that an undeclared body plan is an ERROR, never a
+     // humanoid by omission, and a pure virtual makes that a COMPILE error
+     // rather than something a test has to notice. See Anatomy.hpp.
+     //
+     // The engine declares the plan and nothing more — it never learns what an
+     // item is, which slot one fills, or that gear exists at all. Only
+     // unitCatalogJson() reads this, to export the layout for the campaign
+     // layer's UnitType sync.
+     virtual const Anatomy& anatomy() const = 0;
 
      // Declared abilities of the type. Constructors use this; it is closed on
      // read, so a constructor declares only what the creature IS.

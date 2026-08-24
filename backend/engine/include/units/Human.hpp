@@ -18,6 +18,12 @@ class Human : public AUnit
         
         Human(int team, Weapon weapon);
 
+        // Body plan (5-6): the shared humanoid layout, declared ONCE here and
+        // inherited by Soldier, RoyalGuard, Pikeman, Militia, Archer, Mage,
+        // Priest and Necromancer. A humanoid subclass that wants a different
+        // plan overrides this; none does today.
+        const Anatomy& anatomy() const override { return anatomy::HUMANOID; }
+
     protected:
         Hittable HitTable();
         BodyPart Head;

@@ -82,7 +82,8 @@ std::string unitNameForSymbol(char symbol);
 const char* categoryName(UnitCategory cat);
 
 // Full catalog as JSON: {"units":[{name, symbol, size, category,
-// forbiddenTerrain, roles, stats{maxHP, attack, defence,
+// forbiddenTerrain, roles, anatomy{head, torso, legs, hand, misc},
+// stats{maxHP, attack, defence,
 // armour, speed, ballisticSkill, preferredRange, reconTag}}, ...]}.
 // Printed by `./game dump-units`;
 // the campaign server imports it into the DB at startup.

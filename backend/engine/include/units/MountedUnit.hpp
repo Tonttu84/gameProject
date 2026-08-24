@@ -29,6 +29,21 @@ public:
     MountedUnit(int setTeam, std::unique_ptr<AUnit> rider, std::unique_ptr<AUnit> mount);
     ~MountedUnit() override = default;
 
+    // Body plan (5-6): the RIDER's, because the rider is the body that wears
+    // things — and once the rider is dead the mount's, by the same rule, since
+    // effectTarget() is already "whichever part is actually here".
+    //
+    // The `this` fallback (a composite with neither part left) needs a real
+    // answer rather than a delegation: AUnit::anatomy() is pure virtual, so
+    // `t->anatomy()` on `this` would recurse into THIS override forever — the
+    // stack overflow documented over getHp() in MountedUnit.cpp, with no base
+    // implementation to escape into. A headless composite is a corpse and
+    // nothing reads its slots; it answers HUMANOID so the question is total.
+    const Anatomy& anatomy() const override {
+        const AUnit* t = effectTarget();
+        return (t == this) ? anatomy::HUMANOID : t->anatomy();
+    }
+
     bool hasRider() const { return _rider && _rider->getAlive(); }
     bool hasMount() const { return _mount && _mount->getAlive(); }
 

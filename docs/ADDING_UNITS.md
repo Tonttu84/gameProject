@@ -3,6 +3,7 @@
 ## TL;DR
 
 1. Write the unit class; **all stats go in its constructor** (`backend/engine/src/units/`).
+   If it does not inherit one, it must **declare an anatomy** — see §1 — or it will not compile.
 2. Add **one line** to the catalog table in `backend/engine/src/UnitCatalog.cpp`.
 3. `make` → restart the campaign server. Everything downstream regenerates itself.
 4. Update the expected-names list in `backend/engine/tests/test_unit_catalog.cpp`
@@ -31,6 +32,37 @@ the stat sheet:
 
 Change a stat here later and it propagates everywhere on rebuild + server restart — that is
 the whole point of the design. Don't copy stats anywhere else.
+
+### Anatomy: where the creature can wear things (slice 9a)
+
+**A body plan is a fact about the creature, like its size**, so it lives in the engine
+(`backend/engine/include/Anatomy.hpp`) and is exported by `unitCatalogJson()` beside
+`size` and `category`. The campaign layer syncs it into `UnitType` and decides what fills a
+slot; the engine never learns what an item is.
+
+`AUnit::anatomy()` is **pure virtual — there is no default**. A type that declares no body
+plan does not compile (user, 2026-08-19: *"no type is an error it doesn't default to
+anything. Better to be strict than vague"*). That is stricter than a CI check: an
+undeclared creature cannot reach a test run, let alone a player.
+
+You almost never need to write one. The plans are declared **down the inheritance chain**:
+
+| Declared on   | Plan                        | Inherited by                                                              |
+| ------------- | --------------------------- | ------------------------------------------------------------------------- |
+| `Human`       | `anatomy::HUMANOID`         | Soldier, RoyalGuard, Pikeman, Militia, Archer, Mage, Priest, Necromancer   |
+| `Horse`       | `anatomy::QUADRUPED`        | Warhorse                                                                  |
+| `MountedUnit` | the **rider's**, delegated  | Cavalry, LightCavalry                                                     |
+| `Zombie` / `Skeleton` | `anatomy::HUMANOID` | —                                                                         |
+| `Scorpion`    | its own — two claws in `hand` | —                                                                       |
+
+So: subclass `Human` and you are done. Write a new creature straight off `AUnit` and the
+compiler will tell you what you forgot.
+
+Write a new plan with the `slots(head, torso, legs, hand, misc)` factory, never a raw
+aggregate — it clamps each count into `[0, MAX_SLOTS_PER_KIND]` at compile time. The cap of
+10 is headroom for odd bodies (*"hydra could have 2 or more head slots. we might have 4
+armed monsters"*), not a number our roster comes near. Counts are **wearing positions, not
+limbs**: a horse has four legs and one `legs` slot, because barding is worn as a set.
 
 ### Abilities: the third axis (slice 6)
 

@@ -138,6 +138,18 @@ std::string unitCatalogJson()
             {"category",         categoryName(u->getCategory())},
             {"forbiddenTerrain", forbidden},
             {"roles",            roleNames(entry.roles)},
+            // Where this creature can wear things (5-6). Exported beside size
+            // and category because a body plan is the same kind of fact, and
+            // synced into the campaign's UnitType at boot — so adding a hydra
+            // in C++ brings its anatomy along rather than needing a second
+            // table someone has to remember to edit.
+            {"anatomy", {
+                {"head",  u->anatomy().head},
+                {"torso", u->anatomy().torso},
+                {"legs",  u->anatomy().legs},
+                {"hand",  u->anatomy().hand},
+                {"misc",  u->anatomy().misc},
+            }},
             {"stats", {
                 {"maxHP",          u->getmaxHP()},
                 {"attack",         u->getAttackPWR()},
