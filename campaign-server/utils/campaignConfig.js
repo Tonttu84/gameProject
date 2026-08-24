@@ -195,9 +195,34 @@ export const SQUAD_BANNER_RANK = 'Seasoned'
 //                individual rank-and-file troop, and nothing should.
 //   permanent  – true means assignment is one-way: it leaves the store and
 //                never returns (decision 10, for banners).
-//   abilities  – the UnitAbility wire names this item grants every body in the
-//                squad, sent as `squad_abilities` on each placement entry.
-//                Banners grant ABILITIES, never flat stats (user, 2026-08-20).
+//   abilities  – the UnitAbility wire names this item GRANTS, sent as
+//                `squad_abilities` on each placement entry. Banners grant
+//                ABILITIES, never flat stats (user, 2026-08-20).
+//   slot       – gear only: which anatomy slot it occupies ('head' | 'torso' |
+//                'legs' | 'hand' | 'misc'). The count per slot is a fact about
+//                the CREATURE and lives in the engine catalog (5-6); the row
+//                only says which kind of place it needs.
+//   mods       – gear only: a {stat: delta} bag, in the character-sheet
+//                vocabulary applyStatMod knows (9-5). A row may carry mods, or
+//                abilities, or both (9-2) — the way SQUAD_UPGRADE_POOL rows
+//                already bundle several effects. This does NOT overturn the
+//                banner rule above: that was a rule about banners, and gear is
+//                the other kind of thing.
+//   denies     – gear only: ability wire names the item takes AWAY (9-3/9-4).
+//                Authoring rule: name only NON-IMPLIED abilities. Denying an
+//                implied one is not forbidden and not dangerous — the engine
+//                subtracts denials BEFORE running the implication closure, so
+//                such a row is simply inert — but it does nothing, and
+//                items.test.js fails it so the author finds out.
+//   unique     – true means the campaign may hold at most one (6-9/9-6).
+//                Banners are unique; ordinary kit stacks, and `campaign.items`
+//                is a [String] that may simply repeat.
+//   lootable   – false takes the row out of the loot and recovery path in BOTH
+//                directions (9-12): never stripped from an enemy, never lost
+//                when your own bearer falls. A ROW FLAG rather than a
+//                `kind === 'banner'` test inside the loot code, because the row
+//                already declares its kind, target, permanence and uniqueness —
+//                this is the house pattern, not a new one.
 export const ITEM_CATALOG = [
   {
     id: 'banner_unbroken_line',
@@ -208,7 +233,105 @@ export const ITEM_CATALOG = [
       'While it flies over them, the squad does not break.',
     target: 'squad',
     permanent: true,
+    unique: true,
+    // Banners sit outside the loot path in both directions (user, 2026-08-24):
+    // "we dont loot banners (mainly for thematic reasons, it would be showing
+    // enemy colors etc)", and our own charters survive being wiped, so they
+    // keep theirs. Written down because it is exactly the kind of asymmetry a
+    // later reader would "fix".
+    lootable: false,
     abilities: ['fearless'],
+  },
+
+  // ── Gear (slice 9a, decision 9-15) ─────────────────────────────────────────
+  //
+  // One mundane piece per slot plus one unique relic, so every slot, both
+  // uniqueness paths and both effect kinds (stats and abilities) carry real
+  // content rather than only tests.
+  //
+  // THE NUMBERS ARE BALANCE-DEFERRED, per the standing pass: plausible values,
+  // not tuned ones. Do not read a design intent into a +1.
+  {
+    id: 'gear_iron_helm',
+    kind: 'gear',
+    slot: 'head',
+    name: 'Iron Helm',
+    blurb: 'Plain, heavy and dented in three places. It has been worn before.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { defence: 1 },
+  },
+  {
+    id: 'gear_mail_hauberk',
+    kind: 'gear',
+    slot: 'torso',
+    name: 'Mail Hauberk',
+    blurb: 'Riveted rings to the knee. It turns a blade and it slows a man down.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    // The first item in the game with a real cost as well as a benefit.
+    mods: { armour: 1, speed: -1 },
+  },
+  {
+    id: 'gear_boiled_greaves',
+    kind: 'gear',
+    slot: 'legs',
+    name: 'Boiled Greaves',
+    blurb: 'Hardened leather, strapped at the calf. Cheap, and better than nothing.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { armour: 1 },
+  },
+  {
+    id: 'gear_soldiers_blade',
+    kind: 'gear',
+    slot: 'hand',
+    name: "Soldier's Blade",
+    blurb: 'An arming sword off the muster rolls. Nothing special, and always sharp.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { attack: 1 },
+  },
+  {
+    id: 'gear_field_satchel',
+    kind: 'gear',
+    slot: 'misc',
+    name: 'Field Satchel',
+    blurb: 'Bandages, a flask, a folded blanket. It is the difference some nights.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    // maxHP, never `hitpoints` (9-5): the engine regenerates HP from the
+    // maximum, so this cannot make its bearer start a battle already wounded.
+    mods: { maxHP: 2 },
+  },
+  {
+    id: 'relic_the_long_watch',
+    kind: 'gear',
+    slot: 'misc',
+    name: 'The Long Watch',
+    blurb:
+      'A sentry\'s horn of blackened brass, from a wall that did not fall. '
+      + 'Whoever carries it does not run.',
+    target: 'character',
+    permanent: false,
+    // The unique path, and the reason 9-6 puts uniqueness on the ROW: this is
+    // the one item in the catalog the campaign may hold only one of, and
+    // recovery is guaranteed on a win where ordinary kit rolls (9-10).
+    unique: true,
+    lootable: true,
+    abilities: ['fearless'],
+    // A relic that gives should also cost: it is a horn, not a shield.
+    mods: { defence: -1 },
   },
 ]
 

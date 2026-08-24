@@ -17,7 +17,7 @@ import {
 } from '../services/recruit.js'
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
-import { bindItemToSquad, squadAbilities } from '../services/items.js'
+import { bindItemToSquad, squadAbilities, findItem, storedItems } from '../services/items.js'
 import { missionBodies, onMission } from '../services/missions.js'
 import {
   mintCharacter,
@@ -29,6 +29,8 @@ import {
   characterMods,
   characterEntryFor,
   reconcileCharacters,
+  planEquip,
+  planUnequip,
 } from '../services/characters.js'
 import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
@@ -537,6 +539,11 @@ router.post('/:id/battles', async (req, res) => {
   // 13-17: and their squad's upgrades, by the same membership rule.
   const modsFor = (character) =>
     character?.squadId == null ? {} : (modsBySquad.get(character.squadId) ?? {})
+  // The body plan of the character's type (5-6), so gear worn in a slot the
+  // creature does not have is dropped on the way to the field rather than
+  // silently counted. Read from the synced engine catalog, never from the
+  // request — the same rule everything else about a character follows.
+  const anatomyFor = (character) => catalog.get(character?.type)?.anatomy ?? null
   const moddedPlacement = placement.map((entry) => {
     const mods = entry.squad_id == null ? null : modsBySquad.get(entry.squad_id)
     const abilities = entry.squad_id == null ? null : abilitiesBySquad.get(entry.squad_id)
@@ -545,9 +552,15 @@ router.post('/:id/battles', async (req, res) => {
       : { ...entry, squad_mods: mods }
     // Same treatment for a forged squad_abilities: overwritten when the squad
     // has one, stripped when it does not.
-    const base = !abilities || abilities.length === 0
+    const withAbilities = !abilities || abilities.length === 0
       ? (() => { const { squad_abilities: _forgedAbilities, ...clean } = withoutMods; return clean })()
       : { ...withoutMods, squad_abilities: abilities }
+    // denied_abilities (9-4) is stripped UNCONDITIONALLY here. Nothing but a
+    // character's own gear may deny an ability, and characterEntryFor below
+    // builds that entry from the record — so any denial arriving in the request
+    // is forged by definition. Stripped rather than overwritten because there is
+    // no legitimate value to overwrite it WITH on an ordinary troop.
+    const { denied_abilities: _forgedDenials, ...base } = withAbilities
     // A character's own fields are stamped from the RECORD, never taken from
     // the request — the same rule squad_mods follows. Otherwise a client could
     // send avoids_melee for someone it does not own, or modifiers nobody earned.
@@ -556,7 +569,10 @@ router.post('/:id/battles', async (req, res) => {
       return noFlag
     }
     const character = livingCharacters(campaign).find((c) => c.id === entry.character_id)
-    return characterEntryFor(character, { q: entry.q, r: entry.r }, abilitiesFor(character), modsFor(character))
+    return characterEntryFor(
+      character, { q: entry.q, r: entry.r },
+      abilitiesFor(character), modsFor(character), anatomyFor(character),
+    )
   })
 
   // Attached characters ride along AUTOMATICALLY (5-8) — no separate placement
@@ -570,7 +586,10 @@ router.post('/:id/battles', async (req, res) => {
     if (!hex) continue
     const squad = campaign.squads.find((s) => s.id === character.squadId)
     moddedPlacement.push({
-      ...characterEntryFor(character, { q: hex.q, r: hex.r }, abilitiesFor(character), modsFor(character)),
+      ...characterEntryFor(
+        character, { q: hex.q, r: hex.r },
+        abilitiesFor(character), modsFor(character), anatomyFor(character),
+      ),
       squad_id: character.squadId,
       ...(squad?.name ? { squad_name: squad.name } : {}),
     })
@@ -809,7 +828,11 @@ router.post('/:id/raids/launch', async (req, res) => {
         const hex = raidPlacement.find((e) => e.squad_id === squad.id)
         if (!hex) continue
         raidPlacement.push({
-          ...characterEntryFor(character, { q: hex.q, r: hex.r }, squadAbilities(squad), statMods(squad)),
+          ...characterEntryFor(
+            character, { q: hex.q, r: hex.r },
+            squadAbilities(squad), statMods(squad),
+            catalog.get(character.type)?.anatomy ?? null,
+          ),
           squad_id: squad.id,
           squad_name: squad.name,
         })
@@ -1218,6 +1241,84 @@ router.post('/:id/characters/:characterId/hang-back', async (req, res) => {
     return res.status(400).json({ error: `not one of your living characters: ${req.params.characterId}` })
 
   character.hangBack = hangBack
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// ── Character equipment (docs/CAMPAIGN_PLAN.md DECISION 9, slice 9a) ─────────
+//
+// Equip: body `{ slot, index, itemId }`. Unequip: body `{ slot, index }`.
+// Two routes rather than one toggling endpoint, because they take different
+// arguments and fail for different reasons — and a single "set this slot" call
+// would make "put nothing there" and "put this there" the same request.
+//
+// FREE, like attachment: no phase gate, no per-turn limit, no cost (9-8, 5-7's
+// rule). Deliberately NOT phase-guarded, unlike every route that spends
+// something — moving a helm between two of your own people decides nothing the
+// one-way march needs to protect.
+//
+// The ONE restriction is availability (9-8/9-9): a character whose squad is out
+// raiding today or away on a mission cannot be re-kitted, because they are not
+// here. planAttach enforces the same thing, which is what stops the restriction
+// being advisory — without it, detach / re-kit / re-attach is three clicks.
+router.post('/:id/characters/:characterId/equip', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const character = livingCharacters(campaign).find((c) => c.id === Number(req.params.characterId))
+  // The body plan comes from the synced ENGINE catalog (5-6), never from the
+  // request: where a creature can wear things is a fact about the creature.
+  const catalog = await getCatalog()
+  const anatomy = character ? (catalog.get(character.type)?.anatomy ?? null) : null
+
+  const plan = planEquip(campaign, req.params.characterId, {
+    slot: req.body?.slot,
+    index: req.body?.index,
+    itemId: req.body?.itemId,
+  }, anatomy)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  // Out of the store and onto the body. "In the store" means "on nothing"
+  // (slice 6), so the two halves are one move and must not be separable.
+  const at = campaign.items.indexOf(plan.worn.itemId)
+  campaign.items.splice(at, 1)
+  plan.character.items.push(plan.worn)
+
+  campaign.log.push({
+    day: campaign.day,
+    entries: [`${plan.character.name} takes up ${plan.item.name}.`],
+  })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+router.post('/:id/characters/:characterId/unequip', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const plan = planUnequip(campaign, req.params.characterId, {
+    slot: req.body?.slot,
+    index: req.body?.index,
+  })
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  // Off the body and back to the store, the exact inverse of the equip above.
+  // Matched on slot+index rather than on itemId, because ordinary kit stacks
+  // (9-6) and two identical helms in two hand slots must not both come off.
+  const at = plan.character.items.findIndex(
+    (w) => w?.slot === plan.worn.slot && Number(w?.index ?? 0) === Number(plan.worn.index ?? 0),
+  )
+  plan.character.items.splice(at, 1)
+  campaign.items.push(plan.worn.itemId)
+
+  campaign.log.push({
+    day: campaign.day,
+    entries: [`${plan.character.name} sets aside ${plan.item?.name ?? 'their kit'}.`],
+  })
   await campaign.save()
   res.json(await campaignView(campaign))
 })

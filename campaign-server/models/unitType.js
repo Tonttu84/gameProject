@@ -22,6 +22,26 @@ const statsSchema = new mongoose.Schema(
   { _id: false },
 )
 
+// Where this creature can wear things (docs/CAMPAIGN_PLAN.md 5-4 / 5-6). A
+// mirror of the engine's Anatomy (backend/engine/include/Anatomy.hpp), which is
+// the source of truth: a body plan is a fact about the creature, like its size,
+// so it is DECLARED in C++ and only validated here.
+//
+// Every count is required — the engine's anatomy() is pure virtual, so a type
+// that declares nothing does not compile and can never reach this sync. A
+// missing key here therefore means the EXPORT drifted, not that a creature was
+// forgotten, and failing the boot is the right answer to that.
+const anatomySchema = new mongoose.Schema(
+  {
+    head:  { type: Number, required: true, min: 0, max: 10 },
+    torso: { type: Number, required: true, min: 0, max: 10 },
+    legs:  { type: Number, required: true, min: 0, max: 10 },
+    hand:  { type: Number, required: true, min: 0, max: 10 },
+    misc:  { type: Number, required: true, min: 0, max: 10 },
+  },
+  { _id: false },
+)
+
 const unitTypeSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   symbol: { type: String, required: true, minlength: 1, maxlength: 1 },
@@ -53,6 +73,7 @@ const unitTypeSchema = new mongoose.Schema({
     },
   },
   stats: { type: statsSchema, required: true },
+  anatomy: { type: anatomySchema, required: true },
 })
 
 unitTypeSchema.set('toJSON', {

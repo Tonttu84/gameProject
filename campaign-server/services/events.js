@@ -409,7 +409,13 @@ export const eventEligible = (event, ctx = {}) => {
   // uniqueness belongs to the ITEM, not to the channel offering it. Absent item
   // context (the creation-time draw) reads as holding nothing, which is exactly
   // what a campaign that does not exist yet holds.
-  if (event.effect?.type === 'item' && holdsItem(ctx, event.effect.itemId)) return false
+  // Gated on the ROW's uniqueness since 9a (9-6): ordinary kit STACKS, so a
+  // fate offering a second Iron Helm is a perfectly good fate and must stay
+  // drawable. Only a unique row is withdrawn once held — which is the same rule
+  // grantItem defends, and for the same reason.
+  if (event.effect?.type === 'item'
+      && findItem(event.effect.itemId)?.unique
+      && holdsItem(ctx, event.effect.itemId)) return false
   const req = event.requires
   if (!req) return true
   const day = ctx.day ?? 1

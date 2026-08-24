@@ -15,6 +15,12 @@ import {
   planAttach,
   characterEntryFor,
   reconcileCharacters,
+  wornItems,
+  characterAbilities,
+  characterIsAway,
+  awayBlocker,
+  planEquip,
+  planUnequip,
 } from '../services/characters.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { catalogFixture } from './fixtures/catalog.js'
@@ -133,16 +139,306 @@ describe('the modifier seam', () => {
     expect(characterMods(character())).toEqual({})
   })
 
-  test('the seam holds its shape for a character carrying sources', () => {
-    const decorated = character({ items: [{ id: 'staff' }], experience: 40, wounds: [{ id: 'limp' }] })
-    // Still {} — items/experience/wounds are RECORDED but not yet priced. When
-    // that changes, this test changes with it, deliberately.
+  test('experience and wounds are still unpriced', () => {
+    // 9a filled the ITEMS half of the seam and deliberately left the other two:
+    // they are later slices. When that changes, this test changes with it.
+    const decorated = character({ experience: 40, wounds: [{ id: 'limp' }] })
     expect(characterMods(decorated)).toEqual({})
   })
 
   test('it never throws on a half-built character', () => {
     expect(characterMods({})).toEqual({})
     expect(characterMods(undefined)).toEqual({})
+  })
+})
+
+// ── Gear (slice 9a) ─────────────────────────────────────────────────────────
+//
+// The seam 5a shipped empty, filled. What these cases guard is the promise 5-3
+// made and 9a has to keep: SOURCES are stored and the bag is DERIVED, so
+// retuning an item re-prices every character that already owns one.
+
+const HUMANOID = { head: 1, torso: 1, legs: 1, hand: 2, misc: 1 }
+
+describe('what gear adds up to', () => {
+  test('one item is its own bag', () => {
+    const kitted = character({
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    expect(characterMods(kitted, HUMANOID)).toEqual({ attack: 1 })
+  })
+
+  test('deltas ADD across items, including negative ones', () => {
+    // The hauberk pays for its armour in speed. Two items touching two stats
+    // and one item touching two stats at once, all in one bag.
+    const kitted = character({
+      items: [
+        { slot: 'torso', index: 0, itemId: 'gear_mail_hauberk' },  // +1 armour, -1 speed
+        { slot: 'legs',  index: 0, itemId: 'gear_boiled_greaves' }, // +1 armour
+      ],
+    })
+    expect(characterMods(kitted, HUMANOID)).toEqual({ armour: 2, speed: -1 })
+  })
+
+  test('the bag is DERIVED, so a retuned catalog re-prices an old save', () => {
+    // 5-3's whole promise, as a test: nothing about the modifier is stored on
+    // the character, so this cannot go stale. The document holds an id.
+    const kitted = character({
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    expect(kitted.items[0]).not.toHaveProperty('mods')
+    expect(characterMods(kitted, HUMANOID)).toEqual({ attack: 1 })
+  })
+
+  test('an id whose row has left the catalog is dropped, not thrown on', () => {
+    const kitted = character({
+      items: [
+        { slot: 'hand', index: 0, itemId: 'gear_of_a_previous_build' },
+        { slot: 'head', index: 0, itemId: 'gear_iron_helm' },
+      ],
+    })
+    expect(characterMods(kitted, HUMANOID)).toEqual({ defence: 1 })
+  })
+
+  test('gear worn in a slot the creature does not have is stranded, not counted', () => {
+    // 5-5: a creature that loses a limb changes its LAYOUT only. The save is
+    // never surgically rewritten, so this is a read-time filter — and the item
+    // comes back if the limb does.
+    const horseLike = { head: 1, torso: 1, legs: 1, hand: 0, misc: 1 }
+    const kitted = character({
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    expect(characterMods(kitted, horseLike)).toEqual({})
+    expect(wornItems(kitted, horseLike)).toHaveLength(0)
+    // Still on the record, untouched.
+    expect(kitted.items).toHaveLength(1)
+    expect(characterMods(kitted, HUMANOID)).toEqual({ attack: 1 })
+  })
+
+  test('with no anatomy in hand, nothing is stranded', () => {
+    const kitted = character({
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    expect(characterMods(kitted)).toEqual({ attack: 1 })
+  })
+})
+
+describe('what gear grants and denies', () => {
+  test('a relic hands over its ability word', () => {
+    const kitted = character({
+      items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }],
+    })
+    expect(characterAbilities(kitted, HUMANOID).granted).toEqual(['fearless'])
+    expect(characterAbilities(kitted, HUMANOID).denied).toEqual([])
+  })
+
+  test('two items granting the same word grant it once', () => {
+    const kitted = character({
+      items: [
+        { slot: 'misc', index: 0, itemId: 'relic_the_long_watch' },
+        { slot: 'head', index: 0, itemId: 'relic_the_long_watch' },
+      ],
+    })
+    expect(characterAbilities(kitted, HUMANOID).granted).toEqual(['fearless'])
+  })
+
+  test('a character with nothing on them grants and denies nothing', () => {
+    expect(characterAbilities(character())).toEqual({ granted: [], denied: [] })
+    expect(characterAbilities(undefined)).toEqual({ granted: [], denied: [] })
+  })
+})
+
+describe('being away (9-8 / 9-9)', () => {
+  const withSquads = (chars, squads, raiding = []) => ({
+    characters: chars,
+    squads,
+    raid: { squadAssignment: raiding },
+  })
+
+  test('a loose character is never away', () => {
+    const c = character({ squadId: null })
+    const campaign = withSquads([c], [{ id: 1, name: '1st Cohort' }], [1])
+    expect(characterIsAway(campaign, c)).toBe(false)
+    expect(awayBlocker(campaign, c)).toBeNull()
+  })
+
+  test('a character in camp with their squad is not away', () => {
+    const c = character({ squadId: 1 })
+    const campaign = withSquads([c], [{ id: 1, name: '1st Cohort' }])
+    expect(characterIsAway(campaign, c)).toBe(false)
+  })
+
+  test('a squad out raiding today takes its character with it', () => {
+    const c = character({ squadId: 1 })
+    const campaign = withSquads([c], [{ id: 1, name: '1st Cohort' }], [1])
+    expect(characterIsAway(campaign, c)).toBe(true)
+    expect(awayBlocker(campaign, c)).toMatch(/out raiding with 1st Cohort/)
+  })
+
+  test('a squad away on a mission does too, and reads differently', () => {
+    // 12-3 stores TWO notions of busy, not one, and 12-2 gave the second its
+    // own word. The blocker says which — "on a mission" and "out raiding" are
+    // different facts about where someone is.
+    const c = character({ squadId: 1 })
+    const campaign = withSquads(
+      [c], [{ id: 1, name: '1st Cohort', mission: { untilDay: 5, eventId: 'x' } }],
+    )
+    expect(characterIsAway(campaign, c)).toBe(true)
+    expect(awayBlocker(campaign, c)).toMatch(/away on a mission with 1st Cohort/)
+  })
+})
+
+describe('equipping (9-8)', () => {
+  const store = (ids, chars, squads = [{ id: 1, name: '1st Cohort' }], raiding = []) => ({
+    items: ids,
+    characters: chars,
+    squads,
+    raid: { squadAssignment: raiding },
+  })
+
+  test('a piece goes on, and the plan says exactly where', () => {
+    const c = character({ id: 1, type: 'Soldier' })
+    const campaign = store(['gear_iron_helm'], [c])
+    const plan = planEquip(campaign, 1, { slot: 'head', index: 0, itemId: 'gear_iron_helm' }, HUMANOID)
+    expect(plan.error).toBeUndefined()
+    expect(plan.worn).toEqual({ slot: 'head', index: 0, itemId: 'gear_iron_helm' })
+    // Pure: nothing moved. The route applies the plan.
+    expect(campaign.items).toEqual(['gear_iron_helm'])
+    expect(c.items).toEqual([])
+  })
+
+  test('an item not in the store cannot be worn', () => {
+    // "In the store" means "on nothing" (slice 6). An item already on someone
+    // is not available, and neither is one never won.
+    const c = character({ id: 1, type: 'Soldier' })
+    const campaign = store([], [c])
+    expect(planEquip(campaign, 1, { slot: 'head', index: 0, itemId: 'gear_iron_helm' }, HUMANOID).error)
+      .toMatch(/not in the store/)
+  })
+
+  test('a piece only goes in its own kind of slot', () => {
+    const c = character({ id: 1, type: 'Soldier' })
+    const campaign = store(['gear_iron_helm'], [c])
+    expect(planEquip(campaign, 1, { slot: 'hand', index: 0, itemId: 'gear_iron_helm' }, HUMANOID).error)
+      .toMatch(/worn in a head slot/)
+  })
+
+  test('a slot the creature does not have refuses by name', () => {
+    const horseLike = { head: 1, torso: 1, legs: 1, hand: 0, misc: 1 }
+    const c = character({ id: 1, type: 'Warhorse' })
+    const campaign = store(['gear_soldiers_blade'], [c])
+    expect(planEquip(campaign, 1, { slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }, horseLike).error)
+      .toMatch(/no hand slot/)
+  })
+
+  test('an index past the count refuses, and names how many there are', () => {
+    const c = character({ id: 1, type: 'Soldier' })
+    const campaign = store(['gear_soldiers_blade'], [c])
+    // A humanoid has two hands: index 1 is the second, index 2 is nobody's.
+    expect(planEquip(campaign, 1, { slot: 'hand', index: 1, itemId: 'gear_soldiers_blade' }, HUMANOID).error)
+      .toBeUndefined()
+    expect(planEquip(campaign, 1, { slot: 'hand', index: 2, itemId: 'gear_soldiers_blade' }, HUMANOID).error)
+      .toMatch(/only 2 hand slots/)
+  })
+
+  test('a filled slot refuses', () => {
+    const c = character({
+      id: 1, type: 'Soldier',
+      items: [{ slot: 'head', index: 0, itemId: 'gear_iron_helm' }],
+    })
+    const campaign = store(['gear_iron_helm'], [c])
+    expect(planEquip(campaign, 1, { slot: 'head', index: 0, itemId: 'gear_iron_helm' }, HUMANOID).error)
+      .toMatch(/already filled/)
+  })
+
+  test('two identical pieces fit two different hands', () => {
+    // Ordinary kit STACKS (9-6): the store may hold two, and they are the same
+    // row, so nothing needs telling them apart.
+    const c = character({
+      id: 1, type: 'Soldier',
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    const campaign = store(['gear_soldiers_blade'], [c])
+    expect(planEquip(campaign, 1, { slot: 'hand', index: 1, itemId: 'gear_soldiers_blade' }, HUMANOID).error)
+      .toBeUndefined()
+  })
+
+  test('a squad item cannot be worn by a person', () => {
+    const c = character({ id: 1, type: 'Soldier' })
+    const campaign = store(['banner_unbroken_line'], [c])
+    expect(planEquip(campaign, 1, { slot: 'misc', index: 0, itemId: 'banner_unbroken_line' }, HUMANOID).error)
+      .toMatch(/does not go to a character/)
+  })
+
+  test('an away character cannot be re-kitted', () => {
+    const c = character({ id: 1, type: 'Soldier', squadId: 1 })
+    const campaign = store(['gear_iron_helm'], [c], [{ id: 1, name: '1st Cohort' }], [1])
+    expect(planEquip(campaign, 1, { slot: 'head', index: 0, itemId: 'gear_iron_helm' }, HUMANOID).error)
+      .toMatch(/out raiding/)
+  })
+
+  test('a dead character cannot be re-kitted', () => {
+    // Their gear is preserved (5-9) for a later recovery to find; that is not
+    // the same as being able to move it now.
+    const c = character({ id: 1, type: 'Soldier', alive: false, diedDay: 3 })
+    const campaign = store(['gear_iron_helm'], [c])
+    expect(planEquip(campaign, 1, { slot: 'head', index: 0, itemId: 'gear_iron_helm' }, HUMANOID).error)
+      .toMatch(/is dead/)
+  })
+
+  test('an unknown body plan refuses rather than guessing humanoid', () => {
+    // 5-6's rule reaching the campaign layer: an undeclared anatomy is an
+    // ERROR, never a humanoid by omission. Here it can only mean a drifted
+    // sync, and answering "no slots" is the safe direction.
+    const c = character({ id: 1, type: 'Soldier' })
+    const campaign = store(['gear_iron_helm'], [c])
+    expect(planEquip(campaign, 1, { slot: 'head', index: 0, itemId: 'gear_iron_helm' }, null).error)
+      .toMatch(/nothing is known about where/)
+  })
+})
+
+describe('unequipping', () => {
+  const store = (ids, chars, squads = [{ id: 1, name: '1st Cohort' }], raiding = []) => ({
+    items: ids,
+    characters: chars,
+    squads,
+    raid: { squadAssignment: raiding },
+  })
+
+  test('a worn piece comes off by slot and index', () => {
+    const c = character({
+      id: 1, type: 'Soldier',
+      items: [{ slot: 'hand', index: 1, itemId: 'gear_soldiers_blade' }],
+    })
+    const plan = planUnequip(store([], [c]), 1, { slot: 'hand', index: 1 })
+    expect(plan.error).toBeUndefined()
+    expect(plan.worn.itemId).toBe('gear_soldiers_blade')
+  })
+
+  test('an empty slot refuses', () => {
+    const c = character({ id: 1, type: 'Soldier' })
+    expect(planUnequip(store([], [c]), 1, { slot: 'hand', index: 0 }).error)
+      .toMatch(/nothing is worn there/)
+  })
+
+  test('a permanent item cannot be taken back', () => {
+    // Nothing character-targeted is permanent today; the check exists because
+    // the ROW declares permanence (17's flexibility rule) and a future one may.
+    const c = character({
+      id: 1, type: 'Soldier',
+      items: [{ slot: 'misc', index: 0, itemId: 'banner_unbroken_line' }],
+    })
+    expect(planUnequip(store([], [c]), 1, { slot: 'misc', index: 0 }).error)
+      .toMatch(/cannot be taken back/)
+  })
+
+  test('an away character cannot be stripped either', () => {
+    const c = character({
+      id: 1, type: 'Soldier', squadId: 1,
+      items: [{ slot: 'head', index: 0, itemId: 'gear_iron_helm' }],
+    })
+    const campaign = store([], [c], [{ id: 1, name: '1st Cohort' }], [1])
+    expect(planUnequip(campaign, 1, { slot: 'head', index: 0 }).error).toMatch(/out raiding/)
   })
 })
 
@@ -245,6 +541,31 @@ describe('attaching', () => {
     planAttach(c, 1, 1)
     expect(c.characters[0].squadId).toBeNull()
   })
+
+  // ── 9-9 AMENDS 5-7 ────────────────────────────────────────────────────────
+  test('an away character can be neither detached nor re-attached', () => {
+    // Without this, 9-8's equip restriction is advisory: detach, re-kit,
+    // re-attach is three clicks. THAT is why the amendment exists, so the
+    // detach half matters as much as the attach half.
+    const away = {
+      characters: [character({ id: 1, squadId: 1 })],
+      squads: [{ id: 1, name: '1st Cohort' }, { id: 2, name: 'Skirmishers' }],
+      raid: { squadAssignment: [1] },
+    }
+    expect(planAttach(away, 1, null).error).toMatch(/out raiding/)
+    expect(planAttach(away, 1, 2).error).toMatch(/out raiding/)
+  })
+
+  test('attachment stays free for everyone who is actually in camp', () => {
+    // The amendment narrows 5-7, it does not repeal it: "away" is simply not a
+    // state you can act on, and every other phase and count is untouched.
+    const home = {
+      characters: [character({ id: 1, squadId: 1 })],
+      squads: [{ id: 1, name: '1st Cohort' }, { id: 2, name: 'Skirmishers' }],
+      raid: { squadAssignment: [2] },
+    }
+    expect(planAttach(home, 1, 2).error).toBeUndefined()
+  })
 })
 
 describe('the placement entry', () => {
@@ -273,10 +594,8 @@ describe('the placement entry', () => {
   })
 
   // The squad's bag is COPIED, not handed through: the entry must not alias the
-  // caller's modsBySquad value, or one character's future modifiers would write
-  // themselves into every other member's. This is the half of "the two bags
-  // add" that is observable while characterMods() still returns {} — the sum
-  // itself has nothing to sum until 5-4/5-5/5-6 fill that seam.
+  // caller's modsBySquad value, or one character's gear would write itself into
+  // every other member's bag.
   test('the squad’s bag is copied into the entry, never aliased', () => {
     const squadBag = { attack: 1 }
     const entry = characterEntryFor(character(), { q: 0, r: 0 }, [], squadBag)
@@ -286,6 +605,67 @@ describe('the placement entry', () => {
 
   test('a loose character is in no squad, so no squad mods reach them', () => {
     expect(characterEntryFor(character(), { q: 0, r: 0 }, [], {}).squad_mods).toBeUndefined()
+  })
+
+  // ── Gear on the wire (slice 9a) ──────────────────────────────────────────
+  test('a character’s own gear reaches the field as squad_mods', () => {
+    const kitted = character({
+      type: 'Soldier',
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    expect(characterEntryFor(kitted, { q: 0, r: 0 }, [], {}, HUMANOID).squad_mods)
+      .toEqual({ attack: 1 })
+  })
+
+  test('the two bags ADD rather than override', () => {
+    // A squad's +1 on top of a character's own +1 is +2, by the only arithmetic
+    // either side means. Nothing observed this until gear filled the seam.
+    const kitted = character({
+      type: 'Soldier',
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    const entry = characterEntryFor(kitted, { q: 0, r: 0 }, [], { attack: 1, armour: 1 }, HUMANOID)
+    expect(entry.squad_mods).toEqual({ attack: 2, armour: 1 })
+  })
+
+  test('a relic’s ability joins the squad’s on the same wire field', () => {
+    // The engine has ONE granted set and does not care which campaign-side
+    // thing filled it (6-7): it learns the word `fearless` and never the words
+    // `banner` or `horn`.
+    const kitted = character({
+      type: 'Soldier',
+      items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }],
+    })
+    const entry = characterEntryFor(kitted, { q: 0, r: 0 }, [], {}, HUMANOID)
+    expect(entry.squad_abilities).toEqual(['fearless'])
+  })
+
+  test('a banner and a relic granting the same word send it once', () => {
+    const kitted = character({
+      type: 'Soldier',
+      items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }],
+    })
+    const entry = characterEntryFor(kitted, { q: 0, r: 0 }, ['fearless'], {}, HUMANOID)
+    expect(entry.squad_abilities).toEqual(['fearless'])
+  })
+
+  test('nothing worn means no gear fields at all on the entry', () => {
+    // The JSON for an unkitted character is byte-identical to what 5a sent, so
+    // an old placement and a new one cannot diverge for a person with no gear.
+    const entry = characterEntryFor(character(), { q: 3, r: 5 }, [], {}, HUMANOID)
+    expect(entry.squad_abilities).toBeUndefined()
+    expect(entry.denied_abilities).toBeUndefined()
+    expect(entry.squad_mods).toBeUndefined()
+  })
+
+  test('stranded gear never reaches the field', () => {
+    const horseLike = { head: 1, torso: 1, legs: 1, hand: 0, misc: 1 }
+    const kitted = character({
+      type: 'Soldier',
+      items: [{ slot: 'hand', index: 0, itemId: 'gear_soldiers_blade' }],
+    })
+    expect(characterEntryFor(kitted, { q: 0, r: 0 }, [], {}, horseLike).squad_mods)
+      .toBeUndefined()
   })
 })
 

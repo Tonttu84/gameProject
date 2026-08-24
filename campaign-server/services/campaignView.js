@@ -20,7 +20,7 @@ import {
 } from '../utils/campaignConfig.js'
 import { armyTotal } from './enemyHost.js'
 import { squadCaps, squadIntake, looseRoster, forecastRefills } from './squadReinforce.js'
-import { allBodies } from './characters.js'
+import { allBodies, wornItems, characterMods, awayBlocker } from './characters.js'
 import {
   squadUpgrades,
   slotsFor,
@@ -371,20 +371,53 @@ export async function campaignView(campaign) {
     // here rather than shipped as an id for the client to look up, which is
     // what keeps SQUAD_ARCHETYPES single-sourced (and is why the document
     // stores the bare id).
-    // Characters (slice 5). All own info, so the whole list ships — including
-    // the DEAD, who stay on the rolls (5-9) and whom the panel shows as a roll
-    // of honour. `items`/`experience`/`wounds` are deliberately NOT projected:
-    // they are empty seams this slice, and shipping an empty array would invite
-    // a client to render a system that does not exist yet.
-    characters: (campaign.characters ?? []).map((c) => ({
-      id: c.id,
-      name: c.name,
-      type: c.type,
-      squadId: c.squadId ?? null,
-      hangBack: c.hangBack ?? false,
-      alive: c.alive,
-      diedDay: c.diedDay ?? null,
-    })),
+    // Characters (slice 5, kitted out by 9a). All own info, so the whole list
+    // ships — including the DEAD, who stay on the rolls (5-9) and whom the panel
+    // shows as a roll of honour, still carrying whatever they were not stripped
+    // of. `experience`/`wounds` stay unprojected: they are still empty seams,
+    // and shipping an empty array invites a client to render a system that does
+    // not exist yet.
+    characters: (campaign.characters ?? []).map((c) => {
+      // The body plan (5-6) and what fills it, so 9b's sheet can draw the empty
+      // slots as well as the full ones. Sent per character rather than as a
+      // per-type table: the client asks "what can THIS person wear", and a
+      // lookup table would be a second thing to keep in step.
+      const anatomy = catalog.get(c.type)?.anatomy ?? null
+      const plan = anatomy
+        ? { head: anatomy.head, torso: anatomy.torso, legs: anatomy.legs,
+            hand: anatomy.hand, misc: anatomy.misc }
+        : null
+      return {
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        squadId: c.squadId ?? null,
+        hangBack: c.hangBack ?? false,
+        alive: c.alive,
+        diedDay: c.diedDay ?? null,
+        anatomy: plan,
+        // Resolved and PHRASED (17-5), exactly like the store rows below: the
+        // client holds no catalog and composes no sentence, so a helm reads the
+        // same on the sheet as it does in the store.
+        items: wornItems(c, plan).map(({ slot, index, row }) => ({
+          slot,
+          index: index ?? 0,
+          id: row.id,
+          name: row.name,
+          blurb: row.blurb,
+          permanent: row.permanent ?? false,
+          unique: row.unique ?? false,
+          ...describeItem(row),
+        })),
+        // The DERIVED stat bag (5-3), so the sheet can show base-plus-modifier
+        // without re-deriving it client-side — one canonical computation site.
+        mods: characterMods(c, plan),
+        // Why they cannot be re-kitted right now, or null (9-8/9-9). A phrase
+        // rather than a boolean, because the client renders sentences it never
+        // composes and "out raiding" and "on a mission" read differently.
+        awayBlocker: c.alive ? awayBlocker(campaign, c) : null,
+      }
+    }),
     // The item STORE (slice 6): everything held that is on nothing. Rows are
     // sent RESOLVED, like upgrades, because the client has no copy of the
     // catalog — and `kind`/`target` ride along because the slot the player

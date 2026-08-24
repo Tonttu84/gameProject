@@ -3675,4 +3675,183 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     const { body } = await attach(c.id, mage.id, 1).expect(400)
     expect(body.error).toMatch(/dead/)
   })
+
+  // ── Equipment (docs/CAMPAIGN_PLAN.md DECISION 9, slice 9a) ────────────────
+  //
+  // The route is the trust boundary and the UI is a courtesy, so every refusal
+  // is asserted against the server. What the cases really guard is the store
+  // invariant: "in the store" means "on nothing", so the two halves of a move
+  // must never come apart.
+
+  const HELM = 'gear_iron_helm'
+  const BLADE = 'gear_soldiers_blade'
+  const RELIC = 'relic_the_long_watch'
+
+  const equip = (id, characterId, body) =>
+    auth(api.post(`/api/campaigns/${id}/characters/${characterId}/equip`)).send(body)
+  const unequip = (id, characterId, body) =>
+    auth(api.post(`/api/campaigns/${id}/characters/${characterId}/unequip`)).send(body)
+  const stockItems = (id, items) => Campaign.findByIdAndUpdate(id, { items })
+
+  test('a piece leaves the store and lands on the body, phrased', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await stockItems(c.id, [HELM])
+
+    const { body: view } = await equip(c.id, mage.id, { slot: 'head', index: 0, itemId: HELM })
+      .expect(200)
+    expect(view.items).toEqual([])
+    const worn = view.characters.find((x) => x.id === mage.id)
+    expect(worn.items).toHaveLength(1)
+    expect(worn.items[0]).toMatchObject({ id: HELM, slot: 'head', index: 0 })
+    // 17-5: the client composes no sentence, so the sheet gets the same lines
+    // the store gives — and never the engine's vocabulary.
+    expect(worn.items[0].effect).toMatch(/defence/)
+    expect(worn.mods).toEqual({ defence: 1 })
+  })
+
+  test('the sheet carries the body plan, so empty slots can be drawn', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    const view = await getView(c.id)
+    expect(view.characters.find((x) => x.id === mage.id).anatomy)
+      .toEqual({ head: 1, torso: 1, legs: 1, hand: 2, misc: 1 })
+  })
+
+  test('unequipping is the exact inverse', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await stockItems(c.id, [HELM])
+    await equip(c.id, mage.id, { slot: 'head', index: 0, itemId: HELM }).expect(200)
+
+    const { body: view } = await unequip(c.id, mage.id, { slot: 'head', index: 0 }).expect(200)
+    expect(view.items.map((r) => r.id)).toEqual([HELM])
+    expect(view.characters.find((x) => x.id === mage.id).items).toEqual([])
+  })
+
+  test('two identical blades fill two hands, and one comes off at a time', async () => {
+    // Ordinary kit stacks (9-6). This is the case the old remove-every-copy
+    // filter would have destroyed.
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await stockItems(c.id, [BLADE, BLADE])
+    await equip(c.id, mage.id, { slot: 'hand', index: 0, itemId: BLADE }).expect(200)
+    const { body: two } = await equip(c.id, mage.id, { slot: 'hand', index: 1, itemId: BLADE })
+      .expect(200)
+    expect(two.items).toEqual([])
+    expect(two.characters.find((x) => x.id === mage.id).mods).toEqual({ attack: 2 })
+
+    const { body: one } = await unequip(c.id, mage.id, { slot: 'hand', index: 0 }).expect(200)
+    expect(one.items.map((r) => r.id)).toEqual([BLADE])
+    const left = one.characters.find((x) => x.id === mage.id)
+    expect(left.items).toHaveLength(1)
+    expect(left.items[0].index).toBe(1)
+  })
+
+  test('an item cannot be in two places at once', async () => {
+    const { body: c } = await createCampaign()
+    const [first, second] = c.characters
+    await stockItems(c.id, [HELM])
+    await equip(c.id, first.id, { slot: 'head', index: 0, itemId: HELM }).expect(200)
+    // The store is empty now, so the second mage has nothing to take.
+    const { body } = await equip(c.id, second.id, { slot: 'head', index: 0, itemId: HELM })
+      .expect(400)
+    expect(body.error).toMatch(/not in the store/)
+  })
+
+  test('a slot the creature does not have is refused by the SERVER', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await stockItems(c.id, [HELM])
+    const { body } = await equip(c.id, mage.id, { slot: 'head', index: 1, itemId: HELM })
+      .expect(400)
+    expect(body.error).toMatch(/only 1 head slot/)
+  })
+
+  test('gear reaches the battle as squad_mods stamped from the record', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await stockItems(c.id, [BLADE])
+    await equip(c.id, mage.id, { slot: 'hand', index: 0, itemId: BLADE }).expect(200)
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: {}, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Mage', q: 4, r: 4, character_id: mage.id }],
+    })
+    const input = engine.runBattle.mock.calls[0][0]
+    const entry = input.player_placement.find((e) => e.character_id === mage.id)
+    expect(entry.squad_mods).toEqual({ attack: 1 })
+    // The engine is never told what an ITEM is, exactly as it is never told
+    // what a banner is (6-7).
+    expect(JSON.stringify(input)).not.toContain(BLADE)
+  })
+
+  test("a relic's ability reaches the battle as squad_abilities", async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+    await stockItems(c.id, [RELIC])
+    await equip(c.id, mage.id, { slot: 'misc', index: 0, itemId: RELIC }).expect(200)
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: {}, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{ unit_type: 'Mage', q: 4, r: 4, character_id: mage.id }],
+    })
+    const entry = engine.runBattle.mock.calls[0][0].player_placement
+      .find((e) => e.character_id === mage.id)
+    expect(entry.squad_abilities).toEqual(['fearless'])
+  })
+
+  test('a forged denied_abilities never reaches the engine', async () => {
+    // Nothing but a character's own gear may deny an ability, and that entry is
+    // built from the record — so a denial in the request is forged by
+    // definition and is stripped rather than overwritten.
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, denied_abilities: ['fearless'] },
+      ],
+    })
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].denied_abilities).toBeUndefined()
+  })
+
+  test('a character away on a raid can be neither re-kitted nor detached', async () => {
+    // 9-8 and its amendment 9-9 together: without the attach half, the equip
+    // restriction is three clicks away from being nothing at all.
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await stockItems(c.id, [HELM])
+    await auth(api.post(`/api/campaigns/${c.id}/characters/${mage.id}/attach`))
+      .send({ squadId: 1 }).expect(200)
+    await Campaign.updateOne({ _id: c.id }, { $set: { 'raid.squadAssignment': [1] } })
+
+    const { body: kit } = await equip(c.id, mage.id, { slot: 'head', index: 0, itemId: HELM })
+      .expect(400)
+    expect(kit.error).toMatch(/out raiding/)
+    const { body: off } = await attach(c.id, mage.id, null).expect(400)
+    expect(off.error).toMatch(/out raiding/)
+  })
+
+  test('a character away on a mission reads as a mission, not a raid', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters[0]
+    await stockItems(c.id, [HELM])
+    await auth(api.post(`/api/campaigns/${c.id}/characters/${mage.id}/attach`))
+      .send({ squadId: 1 }).expect(200)
+    await Campaign.updateOne(
+      { _id: c.id, 'squads.id': 1 },
+      { $set: { 'squads.$.mission': { untilDay: 9, eventId: 'x' } } },
+    )
+    const { body } = await equip(c.id, mage.id, { slot: 'head', index: 0, itemId: HELM })
+      .expect(400)
+    expect(body.error).toMatch(/on a mission/)
+    // And the view says so too, so 9b can grey the sheet out without guessing.
+    const view = await getView(c.id)
+    expect(view.characters.find((x) => x.id === mage.id).awayBlocker).toMatch(/on a mission/)
+  })
 })

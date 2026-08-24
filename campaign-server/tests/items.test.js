@@ -13,6 +13,8 @@ import {
   bindItemToSquad,
   describeItem,
   ITEM_ABILITY_TEXT,
+  ITEM_STAT_TEXT,
+  inertDenials,
 } from '../services/items.js'
 import {
   ITEM_CATALOG,
@@ -161,6 +163,19 @@ describe('the abilities a banner grants', () => {
 })
 
 describe('binding', () => {
+  test('binding takes ONE copy out of the store, not every match', () => {
+    // The bug 9-6 turned up. `filter(id => id !== itemId)` was correct while
+    // banners were the only item and every item was unique; with stacking kit
+    // it would destroy the other copies on the first bind.
+    const campaign = campaignWith({
+      items: ['gear_iron_helm', BANNER.id, 'gear_iron_helm'],
+      squads: [seasoned()],
+    })
+    const bound = bindItemToSquad(campaign, campaign.squads[0], BANNER.id)
+    expect(bound.error).toBeUndefined()
+    expect(campaign.items).toEqual(['gear_iron_helm', 'gear_iron_helm'])
+  })
+
   test('binding moves the item out of the store, for good', () => {
     const target = seasoned()
     const campaign = campaignWith({ items: [BANNER.id], squads: [target] })
@@ -224,10 +239,56 @@ describe('acquisition (6-13) — channel-agnostic', () => {
     expect(entries.join(' ')).toContain(BANNER.name)
   })
 
-  test('a second grant of the same item is refused through EITHER channel', () => {
+  test('a second grant of a UNIQUE item is refused through EITHER channel', () => {
     const campaign = campaignWith({ items: [BANNER.id] })
     applyEffect(campaign, { type: 'item', itemId: BANNER.id })
     expect(campaign.items).toEqual([BANNER.id])
+  })
+
+  // ── Uniqueness is a property of the ROW (9-6) ─────────────────────────────
+  test('ordinary kit STACKS — a second helm is a second helm', () => {
+    // Before 9a every item was unique and the refusal was unconditional. It is
+    // now gated on the row, because `campaign.items` is a [String] that may
+    // simply repeat and two copies of one row ARE identical.
+    const campaign = campaignWith()
+    expect(grantItem(campaign, 'gear_iron_helm')).toBe(true)
+    expect(grantItem(campaign, 'gear_iron_helm')).toBe(true)
+    expect(campaign.items).toEqual(['gear_iron_helm', 'gear_iron_helm'])
+  })
+
+  test('a unique relic is refused a second time', () => {
+    const campaign = campaignWith()
+    expect(grantItem(campaign, 'relic_the_long_watch')).toBe(true)
+    expect(grantItem(campaign, 'relic_the_long_watch')).toBe(false)
+    expect(campaign.items).toEqual(['relic_the_long_watch'])
+  })
+
+  test('a relic already WORN counts as held', () => {
+    // heldItemIds has to see the store, squads AND characters, or a relic on a
+    // champion could be won again while he wears it.
+    const campaign = campaignWith({
+      characters: [{ id: 1, items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }] }],
+    })
+    expect(holdsItem(campaign, 'relic_the_long_watch')).toBe(true)
+    expect(grantItem(campaign, 'relic_the_long_watch')).toBe(false)
+  })
+
+  test('a relic on a DEAD character still counts as held', () => {
+    // Their gear is preserved on the record (5-9) so a recovery has something
+    // to find — which means it is still held. A relic on a body in a ditch must
+    // not also drop from the next enemy captain.
+    const campaign = campaignWith({
+      characters: [{
+        id: 1, alive: false,
+        items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }],
+      }],
+    })
+    expect(holdsItem(campaign, 'relic_the_long_watch')).toBe(true)
+  })
+
+  test('a fate offering ordinary kit stays drawable when one is already held', () => {
+    const fate = { id: 'x', effect: { type: 'item', itemId: 'gear_iron_helm' } }
+    expect(eventEligible(fate, campaignWith({ items: ['gear_iron_helm'] }))).toBe(true)
   })
 
   test('a fate granting an item already held is never DRAWN', () => {
@@ -296,10 +357,59 @@ describe('describeItem', () => {
     // The escape hatch describeItem has (drop what it cannot phrase) is only
     // safe because this fails first. Without it a new ability would silently
     // vanish from the store and the item would read as doing nothing.
+    //
+    // Phrased PER TARGET (9a): the same ability reads differently on a standard
+    // and on a horn, so a row must have the line for the thing IT is worn by.
     for (const row of ITEM_CATALOG) {
-      for (const ability of row.abilities ?? []) {
-        expect(ITEM_ABILITY_TEXT[ability]).toBeTruthy()
+      const target = row.target === 'squad' ? 'squad' : 'character'
+      for (const ability of [...(row.abilities ?? []), ...(row.denies ?? [])]) {
+        expect(ITEM_ABILITY_TEXT[ability]?.[target]).toBeTruthy()
       }
+    }
+  })
+
+  test('every stat a catalog row moves has a player-facing word', () => {
+    // Same contract as the ability sweep, and the same reason: describeItem
+    // drops what it cannot phrase, so without this a new stat would leave the
+    // card silently understating what the item does.
+    for (const row of ITEM_CATALOG) {
+      for (const stat of Object.keys(row.mods ?? {})) {
+        expect(ITEM_STAT_TEXT[stat]).toBeTruthy()
+      }
+    }
+  })
+
+  test('no row denies an ability that only arrives by implication (9-4)', () => {
+    // The AUTHORING rule. Such a row is not dangerous — the engine subtracts
+    // denials before running the implication closure, so it is merely inert —
+    // but inert is not what an author meant, and this is how they find out.
+    for (const row of ITEM_CATALOG) {
+      expect(inertDenials(row)).toEqual([])
+    }
+  })
+
+  test('every gear row names a slot, and every slotted row is gear', () => {
+    // The slot is what the anatomy check matches on (5-6). A gear row without
+    // one has nowhere to go and would be unequippable.
+    for (const row of ITEM_CATALOG) {
+      if (row.target === 'character') expect(typeof row.slot).toBe('string')
+      if (row.slot) expect(row.target).toBe('character')
+    }
+  })
+
+  test('every row declares uniqueness and lootability', () => {
+    // Both are ROW flags rather than kind tests (9-6, 9-12), so the loot code
+    // and the store both ask the item instead of inferring from what it is.
+    for (const row of ITEM_CATALOG) {
+      expect(typeof (row.unique ?? false)).toBe('boolean')
+      expect(typeof (row.lootable ?? true)).toBe('boolean')
+    }
+  })
+
+  test('banners are unique and never lootable, in both directions', () => {
+    for (const row of ITEM_CATALOG.filter((r) => r.kind === 'banner')) {
+      expect(row.unique).toBe(true)
+      expect(row.lootable).toBe(false)
     }
   })
 
@@ -313,6 +423,51 @@ describe('describeItem', () => {
 
   test('names the rung a banner needs, from the same constant that gates it', () => {
     expect(describeItem(BANNER).where).toContain(SQUAD_BANNER_RANK)
+  })
+
+  // ── Gear (slice 9a) ──────────────────────────────────────────────────────
+  test('a stat row states its numbers, signed', () => {
+    const helm = findItem('gear_iron_helm')
+    expect(describeItem(helm).effect).toContain('+1 defence')
+  })
+
+  test('a row with a cost states both halves', () => {
+    // The hauberk pays for its armour in speed, and the card must say so —
+    // otherwise the player finds out by losing a race.
+    const { effect } = describeItem(findItem('gear_mail_hauberk'))
+    expect(effect).toContain('+1 armour')
+    expect(effect).toContain('\u22121 speed')
+  })
+
+  test('a row carrying BOTH stats and an ability says both (9-2)', () => {
+    const { effect } = describeItem(findItem('relic_the_long_watch'))
+    expect(effect).toContain('defence')
+    expect(effect).toMatch(/does not break/)
+  })
+
+  test('the same ability reads differently on a banner and on a person', () => {
+    // The reason ITEM_ABILITY_TEXT is keyed per target: "the squad does not
+    // break" printed on a horn would be a lie the player cannot check.
+    expect(describeItem(BANNER).effect).toMatch(/squad/i)
+    expect(describeItem(findItem('relic_the_long_watch')).effect).toMatch(/bearer/i)
+  })
+
+  test('gear names the slot it needs', () => {
+    expect(describeItem(findItem('gear_iron_helm')).where).toMatch(/head slot/)
+    expect(describeItem(findItem('gear_mail_hauberk')).where).toMatch(/body slot/)
+  })
+
+  test('a stat the phrasing does not know is dropped, not printed raw', () => {
+    const { effect } = describeItem({
+      target: 'character', slot: 'misc', mods: { charisma: 3 },
+    })
+    expect(effect).not.toContain('charisma')
+    expect(effect).toMatch(/no power of its own/)
+  })
+
+  test('a zero delta is not a sentence', () => {
+    const { effect } = describeItem({ target: 'character', slot: 'misc', mods: { attack: 0 } })
+    expect(effect).toMatch(/no power of its own/)
   })
 
   test('states permanence both ways', () => {
