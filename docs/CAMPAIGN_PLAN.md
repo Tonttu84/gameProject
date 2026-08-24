@@ -267,11 +267,11 @@ know:
 
 **What 13 did NOT ship, deliberately:** decision 12's "tied up for X turns" availability (13-11 —
 it lands with the event that requires a squad, not before), and decision 17's storage page, which
-`ItemStorePanel` remains the deliberately-plain placeholder for. **17 is next, and its INTERVIEW
-IS DONE (2026-08-23) — seven decisions, spec'd in full under "SLICE 17 — THE STORAGE PAGE" below
-and NOT YET BUILT. They are the user's; do not re-derive them.** Two of them reach past the slice:
-assignment always happens at the TARGET's screen (17-3), and a read-only screen stays open while a
-fate is owed (17-6).
+`ItemStorePanel` was the deliberately-plain placeholder for. **17 HAS SINCE SHIPPED (2026-08-23) —
+its seven decisions are spec'd in full under "SLICE 17 — THE STORAGE PAGE" below, and they are the
+user's; do not re-derive them.** Two of them reach past the slice: assignment always happens at the
+TARGET's screen (17-3), and a read-only screen stays open while a fate is owed (17-6). So the only
+thing 13 named that is still unbuilt is decision 12.
 
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
