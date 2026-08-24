@@ -85,7 +85,7 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-22) — START HERE
+### Where the work stands (2026-08-24) — START HERE
 
 Everything below this block is history; this is the live front. Schema version **35**
 (this block read 34 until 2026-08-18; `CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
@@ -275,6 +275,18 @@ outstanding.** The mechanic is called a MISSION; its seven decisions are under "
 MISSIONS" below and they are the user's. Two things there bind later work: 12-3 amends decision 12's
 own instruction about how "busy" is stored (two notions, not one), and the write-up carries a
 CORRECTION to what the assistant claimed about the boss-fight meter during the interview.
+
+**▶ THE NEXT SLICE IS DECISION 9 — CHARACTER EQUIPMENT. SPEC'D 2026-08-24, NOT BUILT.** With 12
+shipped, the squad overhaul's seventeen decisions are all built except 11 (acquiring squads) and 16
+(the basic banner's benefit, deliberately deferred until the surrounding systems can be played), and
+decision 9's equipment is the seam 5a shipped empty. **Its sixteen decisions are under "DECISION 9 —
+CHARACTER EQUIPMENT" below and they are the user's; do not re-derive them.** It ships as two slices,
+server first (9-1), and 9a is expected to bump the schema to **v40** for the bearer sealed onto a
+raid opportunity — nothing else about the document changes. Three things there reach past the slice:
+gear may both ADD and REMOVE abilities, kept safe by ORDER rather than by a rule (9-4); banners sit
+outside the whole loot and recovery path in both directions (9-12); and the user's direction that
+`reconTag` should become an ability rather than a value is recorded as its OWN future change to the
+recon formula (9-5), not folded into gear.
 
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
@@ -1742,6 +1754,158 @@ Two caveats: the startup line is printed BEFORE the run because ASan/UBSan abort
 end-of-run listener would never fire; and `std::uniform_int_distribution` is not specified to map
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
+
+### DECISION 9 — CHARACTER EQUIPMENT (SPEC'D 2026-08-24, interviewed) — NOT BUILT
+
+The modifier layer 5a shipped empty finally gets filled. **Sixteen decisions, all the user's — do
+not re-derive them.** Build TDD against them. Recorded on the user's instruction ("record the spec
+only"), so nothing below is built yet.
+
+What it stands on, already settled and NOT reopened here: 5-2 (the base type is never modified),
+5-3 (sources stored, the stat bag derived), 5-4 (typed slots — head/torso/legs/hand/misc, a
+per-creature count, capped at 10), 5-5 (the sparse `{slot, index, itemId}` list), 5-6 (the layout is
+declared in the ENGINE catalog down the inheritance chain, with NO DEFAULT — an undeclared type is
+an error), 6-1 (a unit is stats + anatomy + abilities), 6-3/6-4 (the implication closure), 17-3
+(assignment happens at the TARGET's screen) and 17-5 (the server phrases every item).
+
+**9-1. TWO SLICES, SERVER FIRST.** 9a is the engine and the server: anatomy in the unit catalog,
+the ability-suppression path, the catalog rows, `characterMods()` deriving for real, equip/unequip,
+loot, enemy bearers. It is playable through the API alone. 9b is the UI. This is 13-12's split and
+its reason: a diff spanning C++, the schema and the largest new screen makes a red CI a bisect
+across three unrelated kinds of change. Rejected: one big slice, and engine-first (which ships
+nothing observable — what 6-0 rejected).
+
+**9-2. GEAR GRANTS BOTH STATS AND ABILITIES, bundled on one row.** A row may carry a `{stat: delta}`
+bag, an ability list, or both, the way `SQUAD_UPGRADE_POOL` rows already bundle several effects.
+**This does not overturn "banners grant abilities, never flat stats" (user, 2026-08-20)** — that was
+a rule about BANNERS, and gear is the other kind of thing. Rejected: abilities only (which would
+leave `characterMods()` a function that can never return anything, after 5-2/5-3 built the whole
+layer for deltas) and stats only (the first interesting item reopens it).
+
+**9-3. ITEMS ARE FULLY GENERAL** (user, 2026-08-24: *"We will try to make items flexible and edit
+every stat or add or remove any ability that exists in the game"*). An item may move any stat and
+may both ADD and REMOVE abilities. Removal is new: the granted set has been additive-only since
+slice 6.
+
+**9-4. REMOVAL IS RESTRICTED BY RULE TO NON-IMPLIED ABILITIES, AND MADE SAFE BY ORDER** (user:
+*"We can make the implied add the non-implied so that the adding happens after removal phase. Thus
+the system will be robust regardless of changes. You might be able to technically remove something
+but it wont actually work"*). Suppression is applied FIRST and `abilityClosure()` runs AFTER it, so
+a row that denies an implied flag is representable but inert — the closure simply puts it back.
+6-3's invariant (an undead that leaves a corpse is unwritable) therefore survives any future edit to
+the implication table, and a new implication row turns an old item inert rather than dangerous.
+The eligibility rule is an authoring convention; the ORDER is the enforcement. Rejected: literal
+removal winning over the closure (reopens exactly the bug 6-3 exists to make unrepresentable) and
+suppression before the closure with no authoring rule (same behaviour, but nothing tells an author
+their item does nothing).
+
+**9-5. THE STAT VOCABULARY IS THE CHARACTER SHEET** (user: *"Values should be the stuff that we show
+as numbers on a character sheet. Anything tricky is an ability"*). `maxHP`, `attack`, `defence`,
+`armour`, `speed`, `ballisticSkill`, `preferredRange`, `formationFighter` — `applyStatMod` grows the
+branches it lacks. **`hitpoints` is NOT a stat: items move `maxHP` and HP is GENERATED from it**
+(user: *"maxHP should of course be the one that gets changed, not the HP"*), which is what stops
+gear making a character start every battle already wounded. **`reconTag` is excluded** — it is not a
+sheet number but a signed fudge term in a campaign formula (`reconValue = speed² + ⌊ballisticSkill/2⌋
++ reconTag`; LightCavalry +4, Warhorse −2). **The user's direction, recorded as its own future
+change and NOT smuggled in here: reconTag should really be an ability rather than a value**, which
+means reworking how recon value is computed — a scouting-balance change, not a gear one.
+**Behavioural flags are expected later** (user: *"Behavioral flags likely in the future but dont need
+right now, just try to make it as flexible as possible"*).
+
+**9-6. A ROW DECLARES ITS OWN UNIQUENESS.** Banners are unique; ordinary kit stacks. The cost the
+interview feared (two storage shapes) turned out not to exist: `campaign.items` is already `[String]`
+and may simply repeat, and two copies of one row ARE identical, so nothing needs telling them apart.
+`unique: true` on the row, `grantItem` gating on it, **and one real fix — `assignItem`'s
+`filter(id => id !== itemId)` drops EVERY copy and must become remove-one.** A per-instance uid
+arrives only if items ever gain per-instance state, and for that reason rather than this one.
+
+**9-7. FOUR CHANNELS EVENTUALLY; TWO IN 9a** (user: *"Loot, purchase, crafting, events"*). Every
+channel goes through `grantItem`, which is already the one chokepoint and already channel-agnostic
+(6-13), so a channel is a caller and never a subsystem. 9a wires the two that exist — raid rewards
+and event effects. **Purchase and crafting are their own slice with their own interview**, because
+each needs prices and a call on what it competes with for gold or materials, and those are decisions
+rather than details.
+
+**9-8. EQUIPPING IS FREE — EXCEPT WHILE THE BEARER IS AWAY.** No phase gate and no per-turn limit
+(5-7's rule), but a character whose squad is out raiding today or on a mission cannot be re-kitted:
+they are not here. Availability is exactly the state 12-3 already stores in two notions and
+`availabilityOf` already phrases.
+
+**9-9. AN AWAY CHARACTER IS UNTOUCHABLE — this AMENDS 5-7.** Attach/detach is refused while the
+squad is away too, because otherwise 9-8 is advisory: detach, re-kit, re-attach is three clicks.
+5-7's "free in any phase" still holds; "away" is simply not a state you can act on. Rejected:
+accepting the bypass (shipping a restriction that does not restrict) and letting a detached
+character stay away under their own away state (a third notion of busy beside the squad's two).
+
+**9-10. ON DEATH: HOLD THE FIELD AND UNIQUES COME HOME; ORDINARY KIT ROLLS 50%** (user: *"You have
+50% chance of recovering it if it is lost and you win, uniques are always recovered if you win"*).
+Lose the field and it all goes down with the bearer. The roll is per item and uses 9-6's `unique`
+flag, so the two decisions carry each other.
+
+**9-11. YOU LOOT THE ENEMY'S DEAD BY THE SAME RULE** (user: *"You also gain 50% of looting items
+from dead enemies if you win, guaranteed for uniques"*). One recovery function serves both sides —
+your fallen and theirs — because it is one rule.
+
+**9-12. ENEMY BEARERS ARE REAL: full enemy characters carrying real gear**, fighting with its mods
+and abilities and dropping it when you take the field. A relic you win is one that hurt you.
+**This stays inside standing principle 1**: the enemy still decides nothing — a champion with a
+blade is DATA, not behaviour. **BANNERS ARE NEVER LOOTED, in either direction** (user: *"we dont
+loot banners (mainly for thematic reasons, it would be showing enemy colors etc)"*, and *"as our
+squads survive even if destroyed they can keep their banner, so no need to loot our own banners
+either"*). So banners sit outside the whole loot and recovery path: not stripped from the enemy, not
+lost when your own charter is wiped (decision 14 already keeps the charter and its banner).
+**Written down explicitly because it is exactly the kind of asymmetry a later reader would "fix".**
+
+**9-13. ENEMY CHARACTERS ARE GENERATED PER ENCOUNTER**, not persisted. No enemy roster, no name to
+remember, nothing that survives a fight. Rejected: persistent enemy captains (a named enemy who
+returns is the beginning of an opponent) and bearers only in the boss host (two mechanisms for one
+idea, and a raid that never yields a relic with a story).
+
+**9-14. THE BEARER IS REVEALED BY RECON.** Low recon says only that a captain rides with them;
+higher recon names the champion's type and what he carries. It reuses the graduated-reveal machinery
+from scouting sub-pieces 1b/1c, gives scouting points a payoff the player can see, and satisfies "no
+card shows flavour alone" at every rung — what the card shows is always true, only coarser.
+Rejected: always fully visible (scouting gets nothing) and hidden until after the fight (you can
+never choose a raid FOR its reward).
+
+**9-15. 9a AUTHORS ONE PIECE PER SLOT PLUS ONE UNIQUE RELIC.** Five mundane stackable pieces
+(head/torso/legs/hand/misc) with plain numbers, and one named unique granting an ability — so every
+slot, both uniqueness paths and both effect kinds carry real content rather than only tests.
+**The numbers are BALANCE-DEFERRED** per the standing pass: plausible values, not tuned ones.
+
+**9-16. 9b IS A PAGE PER CHARACTER.** The character roll gains a way through to a sheet: base stats
+with modifiers folded in, the five slots and what fills them, equip/unequip against the store,
+attachment and hang-back. It is 13-8's roll-then-page shape, chosen there on scaling grounds that
+apply identically here, and 17-3 already binds assignment to the target's screen rather than to the
+store. Rejected: growing `CharacterPanel` in place (it was called deliberately plain because a real
+screen would absorb it) and adding a compare view (a second view to keep true, in a slice already
+spanning C++ anatomy, loot and enemy bearers).
+
+**Assistant's calls, flagged as overturnable:**
+- **A recovered item LEAVES the dead character's list; an unrecovered one STAYS on the record.** The
+  store's invariant is that "in the store" means "on nothing", and an item cannot be in two places.
+  This is also what finally gives 5-9's preservation rule teeth: the gear you did NOT recover is
+  still on the body for a future recovery spell to find.
+- **`lootable` is a ROW FLAG (default true, false on banners)** rather than a `kind === 'banner'`
+  test inside the loot code — the row already declares its kind, target, permanence and uniqueness,
+  so this is the house pattern rather than a new one.
+- **A catalog sweep test fails an authored denial of an implied ability**, so an author learns at CI
+  time that their row is inert (9-4). Same spirit as `items.test.js`'s ability-phrasing sweep.
+- **Campaign-side mod names ride the same bag as engine ones** (9-2 / the user's "one bag, two
+  vocabularies"): `characterMods()` returns everything, `characterEntryFor` sends it, and the
+  engine's parser skips names it does not know — its documented never-throw discipline, already
+  relied on. Campaign formulas (5-11's scrying item) read the names they care about server-side.
+  No second modifier system, which is what 5-11 promised.
+- **The bearer must be SEALED onto the raid opportunity when the board is drawn**, exactly as the
+  augury slots and 12's mission offer are, or a reload rerolls what the card advertised. That is a
+  new field on `raid.opportunities[]` and therefore **a schema bump — v39 → v40**
+  (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the authority). Nothing else here changes the
+  document: `campaign.items` and `characters[].items` already have the shapes 9a needs.
+- **Bearer generation scales with the opportunity's `strengthBand`**, the field raid prestige
+  already scales on, so a harder card is where the better relic is.
+- **9a authors bearers on RAID opportunities only.** Whether the pitched battle and the boss host
+  carry them was never asked and is deliberately NOT decided here — **the first open question for
+  whoever builds 9a**, rather than an answer invented by the assistant.
 
 ### DECISION 12 — MISSIONS ✅ SHIPPED 2026-08-24 (schema v39)
 
