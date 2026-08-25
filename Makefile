@@ -71,8 +71,20 @@ INC_FLAGS    = -I$(BACKEND_DIR)/engine/include \
 # workflow on purpose — baked into the binary it also covers a bare
 # `./run_tests`, which is how the suite is often actually invoked, and it keeps
 # local and CI runs identical instead of giving CI the stricter build.
+#
+# _GLIBCXX_ASSERTIONS turns libstdc++'s own preconditions into checks: an
+# out-of-range vector::operator[], a front()/back() on an empty container, a bad
+# iterator range. ASan catches those only when the bad index happens to land
+# outside the allocation — an off-by-one INSIDE a vector's own buffer reads
+# valid memory and passes silently. Cheap enough for the sanitized build (this
+# is not _GLIBCXX_DEBUG, which changes container ABI and is far heavier).
+#
+# The runtime sanitizer OPTIONS that go with these live in
+# backend/engine/src/debug/SanitizerDefaults.cpp, compiled in for the same
+# reason the flag above is.
 CFLAGS  = -std=c++20 -Wall -Wextra -Werror -g2 -fPIE $(INC_FLAGS) \
           -Wshadow -Wnull-dereference -Wformat=2 -fstack-protector-strong \
+          -D_GLIBCXX_ASSERTIONS \
           -fsanitize=address -fsanitize=undefined -fsanitize=leak \
           -fsanitize=float-divide-by-zero -fno-sanitize-recover=undefined
 
