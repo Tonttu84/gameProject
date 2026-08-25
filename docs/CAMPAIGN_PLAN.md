@@ -339,7 +339,7 @@ fight, and raids are the only other way to fight. Read every "tonight" in the ol
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
 **▶ THE MAGIC SYSTEM IS SPEC'D AND NOT BUILT (interviewed 2026-08-25).** The next design front,
-and the biggest system the project has taken on: **twenty-three decisions under "THE MAGIC SYSTEM" below,
+and the biggest system the project has taken on: **twenty-five decisions under "THE MAGIC SYSTEM" below,
 all the user's — do not re-derive them.** Modelled deliberately on Dominions, with the source
 checked rather than recalled. Recorded on the user's instruction to spec only, so nothing is built.
 **Read the "WHAT EXISTS TODAY" paragraph there first: magic is DEAD CODE, not half-built** — `mana`
@@ -1821,7 +1821,7 @@ may not replay on a different libstdc++.
 ### THE MAGIC SYSTEM (interviewed 2026-08-25) — SPEC'D, NOT BUILT
 
 Modelled deliberately on the **Dominions** series (user, 2026-08-25), with the source checked rather
-than recalled. **Twenty-three decisions, all the user's — do not re-derive them.** Recorded on the
+than recalled. **Twenty-five decisions, all the user's — do not re-derive them.** Recorded on the
 user's instruction ("record the spec only"), so nothing below is built yet. It supersedes
 `[[todo-spell-paths-research]]` in the deferred backlog, which recorded the ask and listed the
 questions this interview answers, and it is what `docs/UNITS_AS_DATA_PLAN.md` **Stage R4 — Spell
@@ -2014,7 +2014,7 @@ M-12/M-13 for the stronger FORM of a spell. The first path is therefore **PRIMAR
 not reintroduce "major path": one word with two meanings inside one system is how a later reader
 mis-implements it.
 
-**M-21. LOW'S BARGAIN: HALF THE FATIGUE, AND A PRICE IN BLOOD.** A spell whose PRIMARY path is Low
+**M-21. LOW'S BARGAIN: HALF THE FATIGUE, AND A PRICE IN BLOOD.** *(Sharpened by M-24: the price is a second effect.)* A spell whose PRIMARY path is Low
 costs **half fatigue** — the shortcut Low exists to offer — **and carries an ADDITIONAL authored cost
 that is thematically a sacrifice**: damage to the caster, damage to allies, or the outright death of
 an ally (user: *"low spells will have some additional cost, might make allies take damage, caster
@@ -2062,14 +2062,39 @@ automatic loss — a struck caster may hold the spell together. **What the throw
 BALANCE-DEFERRED** like every other number here; what is decided is that damage threatens a channel
 and does not simply end it.
 
-**AN OPEN CONSEQUENCE, RAISED BY THE USER AND NOT YET DECIDED: how a passed-out mage moves now that
-casters are squad members.** The user's instinct is movement zero plus the existing help-the-slow
+**A CONSEQUENCE RAISED HERE AND CLOSED BY M-25 BELOW: how a passed-out mage moves now that
+casters are squad members.** The answer is movement zero plus the existing help-the-slow
 mechanic ("carry them"). That mechanic is real — `Battlefield.cpp`'s squad pre-pass pools movement
 points, and a blocked squad spends `SQUAD_AID_COST = 3` points to buy the most-drained straggler +1,
 described in its own comment as "faster members finding the path for a slow one and carrying his
-gear". **The edge to weigh when deciding:** that same comment records that "a member at zero or below
+gear". **The edge, weighed and accepted in M-25:** that same comment records that "a member at zero or below
 blocks the whole squad", and a unit at `movementSpeed` 0 never regains points on its own, so aid at
 3:1 becomes the only thing moving him and the squad hauls him at roughly a third speed.
+
+**M-24. LOW'S PRICE IS A SECOND EFFECT THAT FIRES ALONGSIDE THE SPELL** (user: *"just basically
+casting a double spell"*). This SHARPENS M-21 rather than replacing it: a Low-primary spell is
+authored as **two effects that both resolve** — the intended one aimed outward, and a harmful one
+aimed at your own side (the caster bleeds, allies burn, an ally dies). Low is literally casting
+twice, once against them and once against yourself.
+
+**Why this is the cheap answer as well as the thematic one:** M-2's data model already carries a
+cast function per form, so the price is simply a second one. No new machinery, and **each Low spell
+states its own sacrifice in data** rather than inheriting one rule — which is what M-21 asked for
+when it said the additional cost is *authored*. Rejected: sizing the price as a second casting's
+fatigue converted to damage (uniform, so every Low spell pays the same KIND of price), and doubling
+Low's casting time instead (which would replace the blood price rather than sharpen it).
+
+**M-25. A PASSED-OUT CASTER MOVES AT ZERO AND THE SQUAD CARRIES HIM** (user), closing the question
+M-23 left open. No new mechanic: `Battlefield.cpp`'s squad pre-pass already pools movement points and
+spends `SQUAD_AID_COST = 3` of them to lift the most-drained straggler, in its own words "faster
+members finding the path for a slow one and carrying his gear". A caster at `movementSpeed` 0 never
+regains points on his own, so that aid is the only thing that moves him — which is exactly the
+picture wanted.
+
+**The slowdown is accepted and deliberately not pinned to a number** (user: *"there is no real number
+as it depends on the squad size but it is fine in any case"*). It falls out of squad size and terrain
+cost together — many members make the pool that pays for one unconscious body — and it is a cost
+worth paying rather than one to engineer away.
 
 **Assistant's calls, flagged as overturnable:**
 - **A script line the caster cannot currently cast is SKIPPED, not stalled on** — they fall through
