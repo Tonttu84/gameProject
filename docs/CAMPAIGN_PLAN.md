@@ -338,6 +338,19 @@ refuses with 400 unless `campaign.bossFightDue` is set** — the ONLY battle is 
 fight, and raids are the only other way to fight. Read every "tonight" in the older write-ups as
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
+**▶ THE MAGIC SYSTEM IS SPEC'D AND NOT BUILT (interviewed 2026-08-25).** The next design front,
+and the biggest system the project has taken on: **nineteen decisions under "THE MAGIC SYSTEM" below,
+all the user's — do not re-derive them.** Modelled deliberately on Dominions, with the source
+checked rather than recalled. Recorded on the user's instruction to spec only, so nothing is built.
+**Read the "WHAT EXISTS TODAY" paragraph there first: magic is DEAD CODE, not half-built** — `mana`
+is never seeded outside tests, so no spell has ever fired in a real battle, and a 15 MB sample replay
+proves it. Four things there reach past the system: **mana is deleted and casting costs FATIGUE**
+(M-1), which runs past the ceiling into real damage (M-2); **banners become the army-wide magical
+allowance** (M-11), which AMENDS decision 10's per-squad wording and finally ANSWERS decision 16's
+deferred benefit; **there is no player magic and enemy magic, only one system** (M-17), with the
+enemy's research level declared by the ENCOUNTER (M-19); and paths run 1-9 because **the current
+campaign is only act one** (M-16) and the design is not to be trimmed to fit it.
+
 **13-12. IT SHIPS AS TWO SLICES, THE REFILL FIRST.** Slice A is server-side and playable on its
 own — the end-of-turn refill, the treasury spend, the report line, `POST /reinforce` and
 `SquadReinforcePanel` deleted — and nothing is lost in the gap, because the mechanic it removes is
@@ -1804,6 +1817,199 @@ Two caveats: the startup line is printed BEFORE the run because ASan/UBSan abort
 end-of-run listener would never fire; and `std::uniform_int_distribution` is not specified to map
 identically across standard libraries, so a seed reproduces on the same toolchain but a CI failure
 may not replay on a different libstdc++.
+
+### THE MAGIC SYSTEM (interviewed 2026-08-25) — SPEC'D, NOT BUILT
+
+Modelled deliberately on the **Dominions** series (user, 2026-08-25), with the source checked rather
+than recalled. **Nineteen decisions, all the user's — do not re-derive them.** Recorded on the
+user's instruction ("record the spec only"), so nothing below is built yet. It supersedes
+`[[todo-spell-paths-research]]` in the deferred backlog, which recorded the ask and listed the
+questions this interview answers, and it is what `docs/UNITS_AS_DATA_PLAN.md` **Stage R4 — Spell
+paths** must be read against.
+
+**WHAT EXISTS TODAY, established by reading and by running the binary — magic is DEAD CODE, not
+half-built.** Three spells (`fireball`/`bless`/`raise_dead`) sit in `Spells::roster()`, each gated
+by exact unit-type name, chosen by "first castable in roster order" (which `SpellList.cpp` itself
+calls deliberately dumb). **`mana` is never seeded anywhere outside tests**: every caster is built
+with `mana = 0` and `chooseSpellToCast` requires `mana >= manaCost`, so no spell has ever fired in a
+real battle. A 15 MB `./game sample` replay contains no spell activity at all. Nothing here is
+being taken away from a working system.
+
+**THE DOMINIONS BASELINE, verified 2026-08-25** (sources at the end of this section): ten paths
+(nine arcane requiring research, plus Holy which needs only priestly authority); a mage's path level
+gates what they may cast; **fatigue is the cost**, a spell's fatigue divided by (excess path levels
++ 1) with spellcasting encumbrance added after, and a mage at 100+ fatigue cannot cast; gems are
+per-path, found by site-searching, and in battle a mage may spend up to their path level in gems to
+cut fatigue or to raise their effective level by one; research is 7 schools x 9 levels; and in
+battle a mage is scripted with five spells, after which the combat AI chooses for itself, weighing
+things like enemy resistances.
+
+**M-1. MANA IS DELETED OUTRIGHT; CASTING COSTS FATIGUE** (user: *"We will remove the whole mana
+thing and change to spells creating fatigue"*). This removes a stat that never held a value and
+replaces it with one that is already first-class and already tuned: `fatigue` gates action
+(`> FATIGUE_MAX` -> `recover()`), costs defence (`defence - fatiguelvl * 2`), and decides
+engagement ranks (fresh fill the line before tired). `Spell::manaCost`, `AUnit::mana`, `getMana`,
+`setMana` and the mana clause in `chooseSpellToCast` all go.
+
+**M-2. THE SAME POOL, AND IT RUNS PAST THE CEILING INTO BLOOD.** Casting fills the ordinary fatigue
+pool with the ordinary consequences. Beyond that, a NEW universal rule (user): fatigue may run to
+**2 x FATIGUE_MAX**, where it CLAMPS, and everything past that point converts at **4 fatigue -> 1
+damage**, with the fraction rolled — 1 point over is a 25% chance of a wound. **It applies to every
+unit, not only casters**: ordinary troops will never reach it by marching and fighting, but a spell
+can put them there. At 2 x MAX a body is at `fatiguelvl` 10, i.e. **-20 defence** — an overcast mage
+is not asleep, he is a free kill. `AUnit::addFatigue` is the single mutation site and already floors
+at 0, so the ceiling and the overflow land in one place and reach every unit for free.
+
+**M-3. TEN PATHS: Fire, Earth, Water, Air, High, Low, Nature, Death, Holy, Unholy.** The four
+elements are the spine. Blood and Glamour are NOT adopted: in Dominions each is a subsystem rather
+than a name, and a path with no subsystem behind it is empty content.
+
+**M-4. HIGH IS STUDIED, LOW IS BARGAINED.** Holy/Unholy already own the light-versus-dark axis, so
+High/Low differ in where the power COMES FROM, not in whether it is wicked. **High** is formal,
+celestial magic that acts on magic itself — stars, mind, wards, dispelling. **Low** is hedge-craft
+and old bargains — curses, hexes, sacrifice. And the difference is mechanical, not only flavour:
+**Low may pay a spell's cost in LIFE where every other path pays fatigue**, making it the path that
+cheats the cost system. Rejected: High/Low as a tier axis (greater ritual vs lesser battle magic),
+and High/Low as order vs chaos (which would restate Holy/Unholy).
+
+**M-5. PATH LEVELS ARE ROLLED AT HIRE AND THEN FIXED.** A caster's paths are their identity, as in
+Dominions, and with one Mage type and one Priest type the roll is what makes one hire differ from
+the next — a real gamble on a named individual who can be lost for good (5-9). **Rare events and
+items may change a path**; items do it through 9's existing mod bag, which already carries two
+vocabularies, so a path is one more name in it rather than a new system. **EMPOWERMENT IS
+DELIBERATELY UNRESOLVED — the user will decide after playtesting** — and when it comes it belongs
+to **Low**, the path that is thematically about cheating the system (user). Rejected: paths that
+advance with use, which makes every surviving mage converge on the same sheet and the hire stop
+mattering.
+
+**M-6. THE ARMY KNOWS; THE CASTER QUALIFIES.** Research unlocks a spell campaign-wide; whether a
+given caster can cast it is decided by their path levels alone. Dominions' exact model. A fresh
+hire is instantly as capable as a veteran of the same paths — losing a caster costs you talent,
+never knowledge. **The fluff licenses the pacing** (user): our mages are not experienced battlemages
+but other kinds of mage catching up, and they are *"not actually researching new spells but tapping
+into existing systems, thus we can justify relatively fast speed"*. Rejected: per-character
+spellbooks (which need teaching, copying and last-knower rules) and a two-gate learn-it-yourself
+model.
+
+**M-7. EVERY LIVING MAGE CONTRIBUTES EQUALLY, POSTED OR NOT — the choice is WHICH SCHOOL, not how
+much.** Research has **multiple sources** and is deliberately not just mages idling in camp:
+**garrison relations** feed it (which hangs off the existing `garrison.resolve` track, so "they
+teach us what they know" is a resolve-gated fate rung rather than a new system), and **allies and
+events** can lend a friendly mage who contributes every turn. **No research institutions** — an ad
+hoc army has none, and the user rejected them explicitly. **A known oddity, accepted with eyes
+open:** a mage who spent the battle hurling fire learns no more Fire than one who stayed home. The
+alternative considered was "study steers, practice teaches what you cast"; the user chose the simple
+rule.
+
+**M-8/M-9. RESEARCH IS BY SCHOOL, CUTTING ACROSS PATHS — four of them: EVOCATION, CONJURATION,
+ENCHANTMENT, CONSTRUCTION.** Fewer than Dominions' seven, but genuinely orthogonal to paths, so a
+spell is gated TWICE: by the army's school level and by the caster's path level. Harm, summoning,
+what is laid on a unit, and making things. All three existing spells file cleanly (fireball ->
+Evocation, raise_dead -> Conjuration, bless -> Enchantment), which is a sign the cut is at a real
+joint. **Construction ships with the set even though it is empty today** (user's call over holding
+it back): it is the natural home for magic-item crafting, which 9-7 already defers to its own
+interview.
+
+**M-10. THE COST FORMULA IS DOMINIONS' OWN:** `spellFatigue / (casterLevel - spellLevel + 1) +
+encumbrance`. The second term is the unit's existing `fatigueCost` (4 by default) — Dominions'
+encumbrance under a name we already have. A path level therefore buys a real price curve rather than
+mere access: a Fire 5 casting a Fire 1 spell pays a fifth of what a Fire 1 pays. Rejected: a flat
+cost (no reason to want depth), and the divide with no additive floor (a high-level caster spamming
+a cheap spell would pay almost nothing).
+
+**M-11. BANNERS ARE THE ALLOWANCE, AND A CASTER DRAWS FROM EVERY BANNER ON THEIR SIDE.** There is
+NO separate gem currency: gem management is *"kept simpler but works basically the same way"*
+(user). A banner tier contributes channels; the channels form an **ARMY-WIDE POOL** any caster may
+draw on to push past their own fatigue, which is Dominions' burn-a-gem-for-fatigue use delivered
+through the vessel decision 10 already named.
+**THIS AMENDS DECISION 10**, which said banners limit what *a squad* may cast — the limit is
+army-wide, not per-squad. Recorded as an amendment rather than applied silently, because 10's
+original wording is still in this file (the 12-3 precedent).
+**AND IT ANSWERS DECISION 16**, the basic banner's benefit, deferred since 2026-08-10 until the
+surrounding systems could be played. This is that moment: a basic banner's benefit is its channel.
+Mechanically the pool is a new TOP-LEVEL field on the battle input rather than a per-placement one.
+Rejected: real per-path gems (an acquisition system with no province map behind it) and gems as
+consumable store items (a new shape for a store built around permanent kit).
+
+**M-12. SCRIPT, THEN AI — and a compact spell list with MINOR AND MAJOR FORMS rather than ladders.**
+An ordered list of preferred spells per caster; when it runs out the engine chooses for itself.
+Stances — biasing the AI toward a type of spell — are wanted but come **afterwards**, not in the
+first slices. And unlike Dominions there are deliberately FEWER spells, with **one spell carrying a
+minor and a major form** instead of a ladder of near-duplicates: *"less outdated clutter"*, and the
+minor form keeps a low-path caster useful exactly as Dominions' early-generation spells do.
+
+**M-13. THE SCRIPT NAMES THE FORM; THE AI TAKES THE BEST ONE.** In a script the player chooses minor
+or major deliberately — a strong mage can be told to spend cheap and conserve fatigue — while the
+engine, once the script is exhausted, uses the most powerful form the caster qualifies for.
+
+**M-14. HOLY AND UNHOLY ARE GRANTED, NOT RESEARCHED.** A Priest's Holy level alone gates their
+blessings; no school level is involved, as in Dominions. **But a spell requiring BOTH Holy and an
+arcane path DOES carry a school gate, possibly at level 0** (user) — on the books, but needing no
+depth. **The consequence for the data model, and it is built in from the start rather than
+retrofitted: a spell's requirement is a SET of path requirements** (Dominions' `F2A1` shape), plus
+an optional school requirement which pure-Holy spells simply lack.
+
+**M-15. FOUR SLICES: ENGINE -> CAMPAIGN -> RESEARCH UI -> SCRIPTING.**
+1. **Engine** — mana deleted, fatigue costs with M-10's divide and M-2's overflow, paths as unit
+   data, multi-path requirements, minor/major forms, and a real selection policy replacing "first
+   castable in roster order".
+2. **Campaign** — paths rolled at hire, the research track and its sources, unlocks, the army-wide
+   banner channel pool. **At the end of this slice a spell fires in a real battle for the first
+   time in the project's history.** Schema bump (research state, per-character paths, scripts).
+3. **The research screen** — directing the school, seeing what is unlocked.
+4. **Scripting** — storage plus the script editor on 9b's character sheet.
+Same reasoning as 9-1 and 13-12: each slice is playable and reviewable alone, and the largest UI
+piece sits on a settled server.
+
+**M-16. PATHS RUN 1-9, Dominions' full scale.** The user's reason overrides the "fit the campaign"
+argument the assistant made from the boss meter (which fills 50-100/turn toward 1000, i.e. a 10-20
+turn act): ***"Our current campaign is just the first act, so dont worry about balancing it to fit
+this."*** Act one reaching only the low end is **headroom, not dead range**.
+
+**M-17. ONE SYSTEM — THERE IS NO PLAYER MAGIC AND ENEMY MAGIC** (user). The enemy uses the same
+paths, the same fatigue rules, the same spells. This falls out naturally from putting the spell
+layer in the ENGINE, which knows nothing about who owns a unit: path levels ride the placement entry
+for both sides exactly as `squad_mods` and `squad_abilities` already do, and the engine never learns
+the word "research".
+
+**M-18. AUTHOR ONE MINOR SPELL PER PATH — ALL TEN — PLUS MAJOR FORMS FOR THE THREE THAT EXIST.**
+Coverage here is CORRECTNESS, not polish: paths are rolled at hire (M-5), so a path with no castable
+level-1 spell makes that roll a dud and the player hires a Water 2 mage who can do nothing. The
+three existing spells are reworked into the model rather than kept beside it. Numbers are
+**BALANCE-DEFERRED** per the standing pass.
+
+**M-19. THE ENEMY'S SCHOOL LEVEL IS DECLARED BY THE ENCOUNTER** (user: *"the research can be limited
+by the encounter"*). Both sides pass the identical two gates; only the source of each number
+differs. The player's school level is campaign state grown by research; the enemy's is written on
+the encounter, and their paths are authored like their gear (9-12/9-13 already ship enemy champions
+generated per encounter). **This gives the designer a dial to escalate enemy magic across a campaign
+— later acts fight at a higher level — with the enemy never REACTING to anything, so standing
+principle 1 is untouched.**
+
+**Assistant's calls, flagged as overturnable:**
+- **A script line the caster cannot currently cast is SKIPPED, not stalled on** — they fall through
+  to the next line. That is Dominions' own behaviour when a spell has no legal target, and it is
+  what stops a stale script from freezing a caster for a whole battle.
+- **`AUnit::addFatigue` is the one place M-2 lands.** It already floors at 0; it gains the 2 x MAX
+  ceiling and the 4:1 overflow, and every unit inherits the rule with no per-caller change.
+- **The three existing spells lose their exact-name gate.** R4 reserved exact-name requirements for
+  genuinely unique spells; fireball, bless and raise_dead are not unique, they are the first three
+  entries of a real roster.
+- **Research numbers, spell fatigue values and hire path spreads are all balance-deferred.**
+- **The campaign slice needs a schema bump** (research state, per-character path levels, scripts) —
+  `CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the authority, and v40 is current.
+
+**Deliberately left open, and not to be invented while building:** empowerment (M-5, after
+playtest); stances (M-12, after scripting); Construction's content (waits on crafting's own
+interview, 9-7); exactly how Low pays in life (design it when Low's spells are authored); and
+whether the player may ever wield Unholy (M-14 leaves the door as a Low-style bargain or a dark
+event, never a research track).
+
+**Sources for the Dominions baseline** (checked 2026-08-25):
+[Magic — illwiki](https://illwiki.com/dom5/dom6/magic) ·
+[Getting Started with Magic (Steam guide)](https://steamcommunity.com/sharedfiles/filedetails/?id=3319144156) ·
+[Dominions 6 manual (PDF)](http://ulm.illwinter.com/dom6/dom6manual.pdf) ·
+[Combat Magic — illwiki](https://illwiki.com/dom5/combat-magic)
 
 ### DECISION 9 — CHARACTER EQUIPMENT (interviewed 2026-08-24) — ✅ BOTH SLICES SHIPPED
 
@@ -6250,6 +6456,9 @@ narrative siege reframe remain.
 
 **TODO — more spells, spell paths, and research to unlock them (user, 2026-08-25 — idea only,
 no plan yet).** [[todo-spell-paths-research]]
+**✅ SUPERSEDED 2026-08-25 — THE INTERVIEW HAS HAPPENED.** See "THE MAGIC SYSTEM" above: nineteen
+decisions, all the user's. Every question this entry lists as open is answered there. What follows is
+kept as the record of the ask and of what was true before the interview.
 The ask, in the user's words: *"more spells, spell paths, some kind of research to unlock more
 spells"*. Recorded rather than designed, on the user's call — the interview has NOT happened, and
 nothing below is a decision.

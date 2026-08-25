@@ -176,6 +176,15 @@ Only after R0–R2 have hollowed the subclasses out:
 
 ## Stage R4 — Spell paths (later, with the character system)
 
+> **✅ THE INTERVIEW HAS HAPPENED (2026-08-25) — this stage is now spec'd, under "THE MAGIC SYSTEM"
+> in `docs/CAMPAIGN_PLAN.md`.** Nineteen decisions, all the user's; read them before touching this
+> stage, because several overturn what is written below. In particular: **mana is deleted entirely
+> and casting costs FATIGUE** (so `Spell::manaCost` and `AUnit::mana` go rather than gaining paths
+> beside them); a requirement becomes a **set** of path requirements plus an optional school gate;
+> spells gain **minor and major forms** instead of ladders; and R4's own reserved question — what
+> picks the spell when several qualify — is answered as **script, then AI**, with the AI taking the
+> best form the caster qualifies for.
+
 > **The user has since asked for more than this stage covers** (2026-08-25): more spells, spell
 > paths, and *research to unlock spells* — the last of which is a new CAMPAIGN system this plan
 > never contemplated. Idea-stage and un-interviewed; the entry that captures it is
