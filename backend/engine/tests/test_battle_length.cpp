@@ -2,30 +2,13 @@
 #include "Battlefield.hpp"
 #include "BattleSetup.hpp"
 #include "Utility.hpp"
+#include "TestDummies.hpp"
 
 // ── Battle length ("the day is over") ─────────────────────────────────────────
 // Battlefield::tick() returns false once setMaxTicks() turns have run, and
-// extractResult() scores both-sides-alive as a draw. Tested with immobile
-// dummies (movementSpeed = 0, same pattern as test_main's HighArmorDummy) so
-// the two sides can never engage — without the limit these battles would tick
-// forever.
-
-namespace {
-class ImmobileDummy : public AUnit {
-public:
-    explicit ImmobileDummy(int t) : AUnit(t) {
-        movementSpeed = 0;   // never moves — can never reach the enemy
-        morale        = 99;  // never breaks/flees
-        printSymbol   = 'D';
-    }
-
-    // A test dummy is still a body: AUnit::anatomy() is pure virtual (5-6), so
-    // declaring one is not optional even here. Humanoid — nothing in this file
-    // reads it, and the point of the pure virtual is that "nothing reads it"
-    // is not an excuse to leave it vague.
-    const Anatomy& anatomy() const override { return anatomy::HUMANOID; }
-};
-} // namespace
+// extractResult() scores both-sides-alive as a draw. Tested with the shared
+// ImmobileDummy (TestDummies.hpp) so the two sides can never engage — without
+// the limit these battles would tick forever.
 
 // Two dummies at opposite ends of the field, out of everything's reach.
 static Battlefield& setupStandoff()

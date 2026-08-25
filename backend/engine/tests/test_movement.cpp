@@ -10,27 +10,7 @@
 #include "Utility.hpp"
 #include "BattleSetup.hpp"
 #include "Squad.hpp"
-
-namespace {
-// Enemy that just sits tight. Convention: use an immobile dummy (movementSpeed
-// = 0) when a test needs the opposing side stationary, rather than holding a
-// real unit — the intent reads straight off the type. Mirrors
-// test_battle_length's ImmobileDummy.
-class ImmobileDummy : public AUnit {
-public:
-    explicit ImmobileDummy(int t) : AUnit(t) {
-        movementSpeed = 0;   // never moves
-        morale        = 99;  // never breaks/flees
-        printSymbol   = 'D';
-    }
-
-    // A test dummy is still a body: AUnit::anatomy() is pure virtual (5-6), so
-    // declaring one is not optional even here. Humanoid — nothing in this file
-    // reads it, and the point of the pure virtual is that "nothing reads it"
-    // is not an excuse to leave it vague.
-    const Anatomy& anatomy() const override { return anatomy::HUMANOID; }
-};
-} // namespace
+#include "TestDummies.hpp"
 
 // ── Basic approach ────────────────────────────────────────────────────────────
 // Grid: buildRect(16,30). Axial: q = col - r/2.

@@ -209,6 +209,13 @@ const HexGrid = ({ info, map }) => {
       const hexSquads  = squadsAt(col, row)
       const hexCharacters = charactersAt(col, row)
       const hexData    = getHexData(col, row)
+      // Everything drawn inside a hex — loose types, squads, characters —
+      // shares ONE stack, 9px a row and centred on the hex. Each group used to
+      // centre on its own count, so a hex holding loose units AND a squad drew
+      // them 4.5px apart, and one loose type under two squads put two glyphs on
+      // the same y. Three groups, one row counter.
+      const hexRows    = stack.length + hexSquads.length + hexCharacters.length
+      const rowY       = (k) => y + (k - (hexRows - 1) / 2) * 9
       const baseColor  = terrainColorMap[hexData.terrain] ?? '#5a6441'
 
       let fill
@@ -231,29 +238,26 @@ const HexGrid = ({ info, map }) => {
           style={{ cursor: inPlayer && !disabled && !hexData.impassable ? 'pointer' : 'default' }}
         >
           <polygon points={hexPoints(x, y)} fill={fill} stroke="#222" strokeWidth="0.8" />
-          {stack.map((p, i) => {
-            const rowY = y + (i - (stack.length - 1) / 2) * 9
-            return (
-              <text
-                key={p.type}
-                x={x}
-                y={rowY}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fontSize="8"
-                fill="#88aaff"
-              >
-                {p.type[0]}{p.count}
-              </text>
-            )
-          })}
+          {stack.map((p, i) => (
+            <text
+              key={p.type}
+              x={x}
+              y={rowY(i)}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="8"
+              fill="#88aaff"
+            >
+              {p.type[0]}{p.count}
+            </text>
+          ))}
           {/* One hold badge for the whole square — loose units share a single
               order (only a squad carries its own, drawn separately below). */}
           {stack.length > 0 && stack[0].holdTurns > 0 && (
             <text
               data-testid={`hold-badge-${col}-${row}`}
               x={x + HEX_SIZE * 0.55}
-              y={y + (0 - (stack.length - 1) / 2) * 9}
+              y={rowY(0)}
               textAnchor="start"
               dominantBaseline="middle"
               fontSize="7"
@@ -263,14 +267,14 @@ const HexGrid = ({ info, map }) => {
             </text>
           )}
           {hexSquads.map((sq, i) => {
-            const rowY = y + (stack.length + i - (stack.length + hexSquads.length - 1) / 2) * 9
+            const markerY = rowY(stack.length + i)
             const holdTurns = squadPlacements[sq.id]?.holdTurns ?? 0
             return (
               <React.Fragment key={`squad-${sq.id}`}>
                 <text
                   data-testid={`squad-marker-${col}-${row}-${sq.id}`}
                   x={x}
-                  y={rowY}
+                  y={markerY}
                   textAnchor="middle"
                   dominantBaseline="middle"
                   fontSize="8"
@@ -281,7 +285,7 @@ const HexGrid = ({ info, map }) => {
                 {holdTurns > 0 && (
                   <text
                     x={x + HEX_SIZE * 0.55}
-                    y={rowY}
+                    y={markerY}
                     textAnchor="start"
                     dominantBaseline="middle"
                     fontSize="7"
@@ -294,15 +298,13 @@ const HexGrid = ({ info, map }) => {
             )
           })}
           {hexCharacters.map((character, i) => {
-            const rowY = y
-              + (stack.length + hexSquads.length + i
-                - (stack.length + hexSquads.length + hexCharacters.length - 1) / 2) * 9
+            const markerY = rowY(stack.length + hexSquads.length + i)
             return (
               <text
                 key={`character-${character.id}`}
                 data-testid={`character-marker-${col}-${row}-${character.id}`}
                 x={x}
-                y={rowY}
+                y={markerY}
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fontSize="8"

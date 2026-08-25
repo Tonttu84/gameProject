@@ -38,6 +38,7 @@ CATCH_REGISTER_LISTENER(SeedReporter)
 #include "Utility.hpp"
 #include "BattleSetup.hpp"
 #include "scenarios/SampleBattle.hpp"
+#include "TestDummies.hpp"
 
 
 // ── AUnit::takeDamage ────────────────────────────────────────────────────────
@@ -589,28 +590,9 @@ TEST_CASE("extractResult excludes battleSummon units and includes real survivors
 }
 
 // ── Archer ammo depletion ─────────────────────────────────────────────────────
-// An unkillable, immobile dummy gives the archer a permanent target.
-// After enough ticks all 30 arrows are spent and the archer switches to melee.
-
-// Cannot be harmed by bow fire (armour=200 >> BOWDAMAGE=5) and never moves.
-// Used only in the ammo-depletion test below.
-class HighArmorDummy : public AUnit {
-public:
-    explicit HighArmorDummy(int t) : AUnit(t) {
-        armour        = 200;
-        hitpoints     = 9999;
-        maxHP         = 9999;
-        morale        = 99;
-        movementSpeed = 0;   // stays in place
-        printSymbol   = 'D';
-    }
-
-    // A test dummy is still a body: AUnit::anatomy() is pure virtual (5-6), so
-    // declaring one is not optional even here. Humanoid — nothing in this file
-    // reads it, and the point of the pure virtual is that "nothing reads it"
-    // is not an excuse to leave it vague.
-    const Anatomy& anatomy() const override { return anatomy::HUMANOID; }
-};
+// The shared HighArmorDummy (TestDummies.hpp) — unkillable by bow fire and
+// immobile — gives the archer a permanent target. After enough ticks all 30
+// arrows are spent and the archer switches to melee.
 
 TEST_CASE("archer exhausts ammo against unkillable target and switches to melee range") {
     Battlefield& field = Utility::getBattlefield();
