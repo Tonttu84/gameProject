@@ -40,6 +40,7 @@ import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
 } from '../services/raid.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
+import { magicBlock, planResearchFocus, withCasterPaths } from '../services/magic.js'
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
 import { getCatalog } from '../utils/catalog.js'
@@ -59,6 +60,8 @@ import {
   STARTING_HORSES,
   RECRUITING_FERVOR_START,
   ENEMY_ARMY,
+  ENEMY_CHANNELS,
+  ENEMY_SCHOOLS,
   ENEMY_SUPPLY_BANDS,
   RAID_STRENGTH_BANDS,
   FORAGE_RINGS,
@@ -231,6 +234,12 @@ router.post('/', async (req, res) => {
       // Rolled at the TOP strength band, because the shadowing host is not a
       // detachment — whatever the decisive battle is, it is not "a handful".
       bearer: rollBearer({}, RAID_STRENGTH_BANDS[0].label),
+      // What the host knows (S2-9): ONE SEALED NUMBER PER ENCOUNTER, written on
+      // at creation like the bearer above. Their conjuration is what keeps
+      // eleven Necromancers raising skeletons from the first battle while the
+      // player starts at nothing — M-6's fluff made mechanical. The host never
+      // reacts to anything; a later act simply authors higher numbers.
+      magic: { schools: ENEMY_SCHOOLS, channels: ENEMY_CHANNELS },
     },
   })
   res.status(201).json(await campaignView(campaign))
@@ -313,6 +322,34 @@ router.post('/:id/effort', async (req, res) => {
 
   campaign.forage.share = share
   campaign.raid.scoutingPoints = campaign.forage.pool * (1 - share)
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// Choose which school this fortnight's study goes into (docs/CAMPAIGN_PLAN.md
+// "▶ SLICE 2", S2-12).
+//
+// A CAMP decision, gated to `prepare` exactly like the effort slider above and
+// for the same kind of reason: ungated, study could be re-aimed after seeing
+// the omens and the raid board, which is information the choice is not supposed
+// to get. Within the phase it is FREELY RE-SETTABLE — no metering, no drawnDay
+// stamp, no once-per-turn rule to remember — because nothing is spent by
+// changing it: the points bank per school, so switching parks progress where it
+// was earned and picks it up untouched later (S2-7). A once-per-turn rule would
+// punish a misclick on a decision that costs nothing.
+//
+// This ships in slice 2 rather than with slice 3's screen (S2-1), so the UI
+// slice arrives at a server that already answers every question it will ask.
+router.post('/:id/research', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfPhasePassed(campaign, res, 'prepare')) return
+
+  const { error, school } = planResearchFocus(req.body?.school)
+  if (error) return res.status(400).json({ error })
+
+  campaign.research.focus = school
   await campaign.save()
   res.json(await campaignView(campaign))
 })
@@ -594,8 +631,13 @@ router.post('/:id/battles', async (req, res) => {
     // so either one arriving in the request is forged by definition. Stripped
     // rather than overwritten because there is no legitimate value to overwrite
     // them WITH on an ordinary troop: a rank-and-file body wears no gear.
+    // `paths` joins them (S2-3): a caster's paths come from the RECORD via
+    // characterEntryFor below, so one arriving in the request is forged by
+    // definition — and a rank-and-file body has none to overwrite it with.
+    // Stripped unconditionally for the same reason the two ability fields are.
     const {
-      denied_abilities: _forgedDenials, carried_abilities: _forgedCarried, ...base
+      denied_abilities: _forgedDenials, carried_abilities: _forgedCarried,
+      paths: _forgedPaths, ...base
     } = withAbilities
     // A character's own fields are stamped from the RECORD, never taken from
     // the request — the same rule squad_mods follows. Otherwise a client could
@@ -653,6 +695,19 @@ router.post('/:id/battles', async (req, res) => {
     fortified_sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
     // The garrison's sally, if any: allied reinforcements at the enemy rear.
     reinforcements,
+    // What each side's ARMY knows, and what its banners channel (M-11/M-19).
+    // Top-level rather than per-placement because both things it carries are
+    // army-wide, and built HERE from the campaign rather than taken from the
+    // body — the same rule squad_mods follows, so a forged `magic` in the
+    // request is overwritten rather than trusted.
+    //
+    // Only the squads TAKING THE FIELD channel (S2-8): a banner sitting in camp
+    // channels nothing. For the pitched battle that is every charter with a
+    // placement, which is what `fieldedSquadIds` already holds.
+    magic: magicBlock(
+      campaign,
+      campaign.squads.filter((squad) => fieldedSquadIds.has(squad.id)),
+    ),
   }
   const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
   if (error) return res.status(400).json({ error })
@@ -906,10 +961,16 @@ router.post('/:id/raids/launch', async (req, res) => {
     // and abilities, and drops it when you take the field — "a relic you win is
     // one that hurt you". He decides nothing, which is what keeps him inside
     // standing principle 1.
-    const enemyPlacement = spreadPlacement(
-      Object.fromEntries(opportunity.targetForce),
-      zoneOf(info.enemyZone),
-      sizeOf,
+    // The casters on this target field the roll the CARD was dealt with (S2-10),
+    // not a fresh one: the raid the player chose is the raid they get, and a
+    // reload cannot reroll what they are walking into.
+    const enemyPlacement = withCasterPaths(
+      spreadPlacement(
+        Object.fromEntries(opportunity.targetForce),
+        zoneOf(info.enemyZone),
+        sizeOf,
+      ),
+      [...(opportunity.casterPaths ?? [])],
     )
     if (opportunity.bearer && enemyPlacement.length > 0) {
       const [head] = enemyPlacement
@@ -923,6 +984,12 @@ router.post('/:id/raids/launch', async (req, res) => {
       player_placement: raidPlacement,
       enemy_placement: enemyPlacement,
       max_turns: RAID_MAX_TURNS,
+      // The same block the pitched battle sends, and the same rule behind it: a
+      // squad fights with what it has wherever it fights (6-7). What differs is
+      // only which charters are present — a two-squad raid channels what two
+      // squads carry, which is exactly what makes taking your bannered charters
+      // out a real decision (S2-8).
+      magic: magicBlock(campaign, squads),
     }
     const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
     if (error) return res.status(400).json({ error })

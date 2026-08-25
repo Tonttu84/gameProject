@@ -30,6 +30,7 @@ import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyHost.js'
 import { meterFillAmount, meterBand } from './meter.js'
 import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.js'
+import { accrueResearch } from './magic.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging, ageForageModifiers } from './forage.js'
@@ -363,6 +364,23 @@ export async function endDay(campaign) {
   // paid for it. The refill moves bodies from loose to charter rather than
   // creating them, so it cannot rescue an army from annihilation.
   entries.push(...refillSquads(campaign, new Map([...catalog].map(([name, type]) => [name, type.size]))))
+
+  // 5.7. The fortnight's study (docs/CAMPAIGN_PLAN.md "▶ SLICE 2", S2-6/S2-7):
+  // every living Mage, plus any lent ally, banks RESEARCH_POINTS_PER_MAGE into
+  // the FOCUSED school. Priests study nothing — Holy needs no research and
+  // priesthood is formal (S2-4) — which is the whole trade between the two hire
+  // lanes: Priests give you day-1 castings, Mages give you the future.
+  //
+  // AFTER the fates and the battle's reckoning have marked the dead, so a mage
+  // who fell this fortnight does not study it; and after replacements, which
+  // move bodies rather than create casters and so cannot change this. BEFORE
+  // the end conditions, so a school opened tonight is reported in the turn that
+  // paid for it — the first unlock is meant to be an event the player feels.
+  //
+  // A mage away on a MISSION still studies: any living Mage counts wherever
+  // they are (S2-6), because a second thing that changes the rate would reopen
+  // exactly what M-7 closed when it made every mage contribute equally.
+  entries.push(...accrueResearch(campaign))
 
   // 6. End conditions
   entries.push(...checkAnnihilation(campaign))

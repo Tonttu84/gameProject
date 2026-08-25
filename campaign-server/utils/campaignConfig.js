@@ -1030,3 +1030,94 @@ export const GARRISON_BANDS = [
   { min: 34, label: 'normal' },
   { min: 0, label: 'low' },
 ]
+
+// ── THE MAGIC SYSTEM, SLICE 2 (docs/CAMPAIGN_PLAN.md "▶ SLICE 2 — THE CAMPAIGN
+// LAYER") ────────────────────────────────────────────────────────────────────
+//
+// The engine's vocabulary, repeated here because the campaign layer has to name
+// a path and a school to send one. Kept in the ENGINE'S SPELLING (lowercase,
+// backend/engine/src/SpellList.cpp kPathNames/kSchoolNames): these strings go
+// out on the wire and a mismatch is skipped in silence at the JSON boundary, so
+// the only safe copy is a verbatim one. tests/magic.test.js pins them against
+// `./game info`'s catalog the same way dice.test.js pins the exploding d6.
+export const SPELL_PATHS = [
+  'fire', 'earth', 'water', 'air', 'high', 'low', 'nature', 'death', 'holy', 'unholy',
+]
+export const SPELL_SCHOOLS = ['evocation', 'conjuration', 'enchantment', 'construction']
+
+// The player's words for them — the campaign layer phrases everything the
+// client renders (17-5), so "Fire 2 · Water 1" is composed server-side from
+// this map rather than by a client that would have to hold a copy of it.
+export const SPELL_PATH_TEXT = {
+  fire: 'Fire', earth: 'Earth', water: 'Water', air: 'Air', high: 'High',
+  low: 'Low', nature: 'Nature', death: 'Death', holy: 'Holy', unholy: 'Unholy',
+}
+export const SPELL_SCHOOL_TEXT = {
+  evocation: 'Evocation', conjuration: 'Conjuration',
+  enchantment: 'Enchantment', construction: 'Construction',
+}
+
+// S2-3: the EIGHT paths a hire's roll may draw from. Holy is out because a
+// Priest is the Holy lane and it is flat (S2-4); Unholy is out because M-14
+// leaves the player's Unholy a Low-style bargain or a dark event, never a hire.
+export const HIRE_PATH_POOL = SPELL_PATHS.filter((p) => p !== 'holy' && p !== 'unholy')
+
+// S2-3: a primary at level 2, then ONE 25% check. A new path enters at 1; a
+// repeat is +1, so Fire 2 becomes Fire 3 — the only way a fresh hire reaches
+// the majors' level-3 gate, which is what makes the check worth wanting. Not a
+// repeating loop: the user chose the single check, so there is no lottery tail.
+export const HIRE_PRIMARY_LEVEL = 2
+export const HIRE_SECOND_PATH_PERCENT = 25
+
+// A caster type whose path is DECLARED by what they are rather than drawn
+// (S2-4, extended to the Necromancer by S2-14). A Priest is Holy because
+// priesthood is formal; a necromancer is Death because that is the craft he
+// practises. Everything else — the Mage lane — rolls its primary out of the
+// pool above, and that difference IS the gamble the two lanes trade.
+export const DECLARED_CASTER_PATH = { Priest: 'holy', Necromancer: 'death' }
+
+// …and which of those declared types still takes the 25% check (S2-14). The
+// Priest does NOT: S2-4 makes priesthood flat and certain, and that certainty
+// is the whole of what the Priest lane offers against the Mage lane's gamble.
+// The Necromancer DOES, because necromancy is skill and not an ordination —
+// which is also what lets the occasional enemy raiser reach the major form.
+export const DECLARED_CASTERS_ROLL_SECOND = ['Necromancer']
+
+// S2-7 (bd): what one living Mage studies per turn, and what level `n` costs.
+// Three Mages therefore open a school at the end of turn 1 (3 × 10 = 30) and
+// reach the majors' level 3 around turn 6 (30 + 60 + 90 = 180 at 30/turn).
+// Levels run to 9 like paths — act one reaching only the low end is headroom,
+// not dead range (M-16).
+export const RESEARCH_POINTS_PER_MAGE = 10
+export const RESEARCH_LEVEL_COST = 30
+export const RESEARCH_MAX_LEVEL = 9
+
+// S2-2: a fresh campaign starts with ALL FOUR SCHOOLS AT 0, so the three
+// starting Mages can cast nothing on day 1 while the three Priests bless from
+// the first battle (Holy carries no school gate, M-14). The dead first turn is
+// deliberate; if it reads badly the lever is RESEARCH_LEVEL_COST, not this.
+export const RESEARCH_START_LEVEL = 0
+
+// The school the focus points at before the player has said anything. Something
+// has to be there for turn 1 to accrue into, and unlike a free LEVEL (which
+// S2-2 rejected for exactly this reason) a default focus declares nothing and
+// costs nothing: it is re-settable for free in `prepare`, before any battle,
+// and moving it parks no progress (S2-7).
+export const RESEARCH_DEFAULT_FOCUS = 'evocation'
+
+// S2-8 (bd): the channel a banner tier is worth, army-wide (M-11) — the basic
+// banner's long-deferred benefit (decision 16) finally made concrete. Keyed by
+// services/items.js bannerTier(), so a retuned rank ladder moves these with it.
+export const CHANNELS_BY_BANNER_TIER = { plain: 0, basic: 1, item: 2 }
+
+// S2-9 (bd): what the shadowing host knows, as ONE sealed number per encounter.
+// Conjuration 2 is what keeps their eleven Necromancers raising skeletons while
+// the player starts at nothing — the story M-6's fluff already tells. The host
+// never reacts to anything; a later act simply authors higher numbers, which is
+// the dial M-19 asked for.
+export const ENEMY_SCHOOLS = {
+  evocation: 1, conjuration: 2, enchantment: 1, construction: 0,
+}
+// S2-9 (bd): the host's army-wide channel pool. A flat number rather than a
+// tier lookup, because the enemy has no banners and no charters to hang them on.
+export const ENEMY_CHANNELS = 3

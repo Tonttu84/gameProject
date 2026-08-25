@@ -6,6 +6,7 @@ import {
   STARTING_SQUADS,
 } from '../utils/campaignConfig.js'
 import { adjustResolve } from './garrison.js'
+import { freshResearch, grantResearchPoints } from './magic.js'
 import { findItem, grantItem, holdsItem } from './items.js'
 // One-way by design: missions.js imports nothing, so this file can own the pool
 // and still ask it what "free" means. See the note at the top of missions.js.
@@ -87,6 +88,12 @@ export const EVENT_POOL = [
   // horse_sickness is the proof: a murrain among the mounts that can only
   // befall an army that actually fields cavalry.
   { id: 'horse_sickness', title: 'Horse Sickness', description: 'Murrain runs the picket lines; your mounts sicken and the worst must be put down.', severity: 2, effect: { type: 'roster', unit: 'Cavalry', factor: 0.9 }, requires: { hasUnit: 'Cavalry' } },
+  // Slice 2's ally source (S2-11): a mage lent to your studies, PERMANENTLY.
+  // Ungated and ordinary on purpose — this is meant to be the quiet background
+  // source, the one that makes the research rate something the campaign moves
+  // rather than something only your hires decide. `research.allies` only ever
+  // goes up, so there is nothing to age out and no expiry to walk at newDay.
+  { id: 'wandering_adept', title: 'A Wandering Adept', description: 'A road-worn adept walks into camp asking for nothing but a place by the fire and leave to read what your mages have. He is neither soldier nor servant, and he does not speak of leaving.', severity: 2, effect: { type: 'research', allies: 1 } },
   // ── event chains (part 2) ── An outcome may `schedule` a guaranteed
   // follow-up fate N turns out (applyEffect `schedule` → campaign.scheduledEvents;
   // drawAugury drains it into a forced slot when its day arrives). The
@@ -213,6 +220,15 @@ export const EVENT_POOL = [
   // be drawn again, because eventEligible drops any fate granting an item the
   // campaign already holds.
   { id: 'garrison_standard', title: 'The Standard Comes Down', description: 'At first light the defenders lower their own standard from the gatehouse — the one they have fought under since the lines closed — and send it out to you. It is not a gift they can make twice, and they make it without being asked.', severity: 3, effect: { type: 'item', itemId: ITEM_CATALOG.find((r) => r.kind === 'banner').id }, requires: { minResolve: GARRISON_BANNER_RESOLVE } },
+  // Slice 2's resolve-gated source (S2-11), and M-7's own example made real:
+  // the wardens teaching what they know. It hangs off `garrison.resolve` rather
+  // than off a system of its own, which is what an effect with no source would
+  // have needed — and an effect nothing grants is untestable in play.
+  //
+  // Gated at the same 67 the other determined-band gifts sit at: what a
+  // garrison shares once it trusts you is stores, coin, a sally — and, if their
+  // wall-wards have anything your mages have not met, the notebooks too.
+  { id: 'garrison_lorebooks', title: 'The Warders\' Notebooks', description: 'Karrowgate\'s own wall-warders have kept the wards alight through every night of the siege, and they send out what they have written down for it — a bundle of water-stained notebooks, passed to your mages with the air of men handing over a relic.', severity: 2, effect: { type: 'research', points: 40 }, requires: { minResolve: 67 } },
   { id: 'garrison_night_sally', title: 'A Sally in the Night', description: 'Needing no prompting from you, the garrison throws open a postern in the small hours and falls on the sleeping siege lines; by dawn the enemy\'s forward works are a shambles of cut ropes and dead men.', severity: 3, effect: { type: 'enemy_losses', factor: 0.92 }, requires: { minResolve: 67 } },
   {
     id: 'garrison_recovery', title: 'A Chance to Mend the Bond', description: 'The garrison\'s trust has worn thin, but a grey-haired captain sends word over the wall: stand with them now, and the old faith might be rekindled.', severity: 2,
@@ -511,6 +527,12 @@ export const eventValence = (effect) => {
       const forPlayer = effect.target === 'enemyDrain' ? -lift : lift
       return forPlayer > 0 ? 'good' : forPlayer < 0 ? 'bad' : 'neutral'
     }
+    // Study is a gain, in both its halves (S2-11): points are progress toward a
+    // school the army does not have yet, and a lent mage is a standing one.
+    // Neither has a losing direction — an effect that TOOK research away would
+    // be a different type, not a negative number in this one.
+    case 'research':
+      return 'good'
     // A bundle reads as its parts' shared mood; genuinely mixed bundles
     // (a gain and a loss in one fate) net out to neutral.
     case 'multi': {
@@ -612,6 +634,21 @@ export const describeEffect = (effect) => {
         ]
       if (effect.deltaKg) return [`Your foraging ${signedTons(effect.deltaKg)}/turn`]
       return [`Your foraging ×${effect.factor ?? 1}`]
+    }
+    // Research is the PLAYER'S OWN state, so the number crosses (S2-2 puts the
+    // whole block in campaignView). Nothing here is recon-gated or hidden the
+    // way `garrison` and `flag` below are: what your own mages know is yours to
+    // read, and a fate that advances it should be priceable before you take it.
+    case 'research': {
+      const lines = []
+      if (effect.points) lines.push(`+${effect.points} toward the school you are studying`)
+      if (effect.allies)
+        lines.push(
+          effect.allies === 1
+            ? 'A mage joins your studies for good'
+            : `${effect.allies} mages join your studies for good`,
+        )
+      return lines
     }
     case 'garrison':
       // Direction, never the delta — the resolve TRACK is what minResolve /
@@ -805,6 +842,39 @@ export function applyEffect(campaign, effect, ctx = {}) {
     // play. An enemyDrain one is enemy-side fact — campaignView recon-gates even
     // the label, so no line here (it would leak past the gate into the log).
     if (effect.target === 'playerYield') log.push(`${effect.label} — your foraging suffers for it.`)
+  } else if (effect.type === 'research') {
+    // Study, from a source that is not the turn's own (S2-11). Two halves, and
+    // a fate may carry either or both:
+    //
+    //   {points} — a one-off gift of study, landing in the FOCUSED school
+    //     exactly like the turn's own accrual, and levelling it up through the
+    //     same door. Anywhere else and a gift would need its own idea of which
+    //     school it advances, which is the decision S2-7 already made.
+    //   {allies} — a lent mage, a PERMANENT standing contributor to the rate.
+    //     It only goes up, barring an event that takes one away, which is how
+    //     forage.modifiers already reads. An `untilDay` was considered and
+    //     rejected (S2-11): a per-ally expiry to walk at newDay is machinery
+    //     for the source that is meant to be the quiet background one.
+    //
+    // Degrade safely on a campaign with no research block, the same convention
+    // the `flag` and `forage_modifier` branches use — the structural tests
+    // sweep every authored fate through here against skeleton campaigns.
+    if (!campaign.research) campaign.research = freshResearch()
+    if (effect.allies) {
+      campaign.research.allies = (campaign.research.allies ?? 0) + effect.allies
+      log.push(
+        effect.allies === 1
+          ? 'A mage takes a place at your studies, and does not ask when they may leave.'
+          : `${effect.allies} mages take their places at your studies.`,
+      )
+    }
+    if (effect.points) {
+      // Through grantResearchPoints rather than by hand, so a gift that carries
+      // a school over a rung announces it in the player's words exactly as the
+      // turn's own study does — one level-up sentence, written once.
+      log.push(`Your mages are the wiser for it — ${effect.points} points of study.`)
+      log.push(...grantResearchPoints(campaign, effect.points))
+    }
   } else if (effect.type === 'garrison') {
     // Garrison Resolve delta (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): move
     // the standing track by `delta`, clamped to [MIN, MAX]. Hidden state like

@@ -98,6 +98,20 @@ const addInto = (acc, effect) => {
     case 'flag':
       acc.notes.push(`flag ${effect.flag ?? ''}`.trim())
       break
+    case 'research':
+      // A NOTE rather than a number, like an item or a mission, and for the
+      // same reason: study converts to no food and no bodies, so any figure in
+      // those columns would be invented. Both halves are shown because they
+      // price differently — points are a one-off shove down a track, an ally is
+      // a permanent change to the RATE, and the balancing pass's question is
+      // exactly how many turns of the second the first is worth.
+      acc.notes.push(
+        [
+          effect.points ? `research +${effect.points} pts` : null,
+          effect.allies ? `research +${effect.allies} mage/turn, permanent` : null,
+        ].filter(Boolean).join(', '),
+      )
+      break
     case 'item': {
       // A magic item (slice 6). Priced as a NOTE rather than a number, and
       // deliberately: it grants no resource and no bodies, so any figure here

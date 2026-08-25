@@ -12,6 +12,7 @@
 import { CHARACTER_NAMES, CHARACTER_TYPES, MAX_CHARACTERS_PER_SQUAD } from '../utils/campaignConfig.js'
 import { getRandom } from '../utils/dice.js'
 import { findItem, ITEM_STAT_TEXT, SLOT_TEXT } from './items.js'
+import { enginePaths, isCasterType, rollPaths } from './magic.js'
 import { onMission } from './missions.js'
 
 // `campaign.characters` reaches here as a Mongoose DocumentArray on a live doc
@@ -333,6 +334,19 @@ export const mintCharacter = (campaign, type, catalog, overrides = {}) => ({
   items: [],
   experience: 0,
   wounds: [],
+  // The hire roll (docs/CAMPAIGN_PLAN.md "▶ SLICE 2", S2-3/S2-4/S2-14), made
+  // HERE because this is where characters are already minted and because
+  // hiding the roll until hire is the point (S2-5): the recruit card offers "a
+  // Mage", and the log names what actually took service. Sealing a rolled
+  // caster onto the day's offer instead — the machinery raid bearers use —
+  // would turn hiring into shopping, and M-5 asks for a real gamble on a named
+  // individual.
+  //
+  // Unlike the name above, this DOES draw from the shared dice queue for the
+  // starting six: their paths are the campaign's opening hand and rolling them
+  // is the whole point, where their names are fixed so a fresh campaign is
+  // reproducible.
+  paths: rollPaths(type),
   ...overrides,
 })
 
@@ -439,6 +453,15 @@ export const characterEntryFor = (
     q,
     r,
     character_id: character.id,
+    // The paths they command (S2-3), from the RECORD like everything else here.
+    //
+    // The FULL map, zeros included (services/magic.js enginePaths), and only
+    // for a caster. AUnit::setPathLevel writes what it is handed and nothing
+    // else, and the engine's Mage() seeds Fire 1 of its own — so a hire who
+    // rolled Air must arrive carrying fire: 0, or he quietly commands Fire
+    // anyway and the roll that is the whole of the Mage lane's gamble means
+    // less than it says.
+    ...(isCasterType(character.type) ? { paths: enginePaths(character.paths) } : {}),
     // The engine's name for the toggle. Defaulted false rather than left
     // undefined so the entry always states the intent explicitly.
     avoids_melee: character.hangBack ?? false,

@@ -117,6 +117,10 @@ const character = (over = {}) => ({
   items: [],
   mods: {},
   sheet: SHEET,
+  paths: [
+    { path: 'fire', label: 'Fire', level: 2 },
+    { path: 'water', label: 'Water', level: 1 },
+  ],
   awayBlocker: null,
   ...over,
 })
@@ -144,6 +148,25 @@ beforeEach(() => {
   )
   getInfo.mockResolvedValue(info)
   getMap.mockResolvedValue({ hexes: [] })
+})
+
+describe('the paths a caster commands (docs/CAMPAIGN_PLAN.md "▶ SLICE 2", S2-13)', () => {
+  it('names them beside the character, so the hire gamble pays off the turn you take it', async () => {
+    await open(withCharacter())
+    // Phrased and ordered by the SERVER (17-5) — this page joins the rows it is
+    // handed and holds no copy of the engine's vocabulary to name a path with.
+    expect(await screen.findByTestId('sheet-paths-1')).toHaveTextContent('Fire 2 · Water 1')
+  })
+
+  it('a caster who commands nothing says so rather than showing an empty line', async () => {
+    await open(withCharacter({ paths: [] }))
+    expect(await screen.findByTestId('sheet-nopaths-1')).toBeInTheDocument()
+  })
+
+  it('a character the server sent no paths for is treated as commanding nothing', async () => {
+    await open(withCharacter({ paths: undefined }))
+    expect(await screen.findByTestId('sheet-nopaths-1')).toBeInTheDocument()
+  })
 })
 
 describe('the sheet', () => {

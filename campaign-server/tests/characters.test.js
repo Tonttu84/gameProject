@@ -24,6 +24,7 @@ import {
   planEquip,
   planUnequip,
 } from '../services/characters.js'
+import { enginePaths } from '../services/magic.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import {
@@ -632,9 +633,23 @@ describe('attaching', () => {
 describe('the placement entry', () => {
   test('carries identity and the toggle, built from the record', () => {
     const entry = characterEntryFor(character({ id: 4, hangBack: true }), { q: 3, r: 5 })
-    expect(entry).toEqual({
+    // Slice 2 adds `paths` to a CASTER's entry — the full map, zeros included
+    // (services/magic.js enginePaths), because the engine's own Mage()
+    // constructor seeds Fire 1 and a hire who did not roll Fire must arrive
+    // saying so. Pulled out of the exact-shape check below and asserted
+    // separately so this case stays about identity and the toggle.
+    const { paths, ...identity } = entry
+    expect(identity).toEqual({
       unit_type: 'Mage', q: 3, r: 5, character_id: 4, avoids_melee: true,
     })
+    expect(paths).toEqual(enginePaths(character().paths))
+  })
+
+  test('an ordinary trooper is no caster, so no paths ride their entry', () => {
+    // The wire says what the engine must not ASSUME about a caster; a body that
+    // was never going to be assumed anything is left alone.
+    expect(characterEntryFor(character({ type: 'Soldier' }), { q: 0, r: 0 }).paths)
+      .toBeUndefined()
   })
 
   test('states the toggle explicitly even when it is off', () => {

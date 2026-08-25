@@ -89,6 +89,26 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onUnequip })
         </p>
       )}
 
+      {/* The paths they command (docs/CAMPAIGN_PLAN.md "▶ SLICE 2", S2-13) —
+          the whole of slice 2's UI, and above the stats because it is the
+          answer to what a caster IS. A Mage's are rolled at hire and a Priest's
+          are the same for every Priest, so this is where the gamble pays off on
+          the turn you take it.
+
+          The rows arrive PHRASED and in order (17-5): this joins them and
+          composes nothing. A caster with none says so in a sentence rather than
+          showing an empty line, the same way an unknown sheet does below. */}
+      <h4>Paths</h4>
+      {character.paths?.length ? (
+        <p data-testid={`sheet-paths-${character.id}`}>
+          {character.paths.map((row) => `${row.label} ${row.level}`).join(' · ')}
+        </p>
+      ) : (
+        <p data-testid={`sheet-nopaths-${character.id}`}>
+          {character.name} commands no path of magic.
+        </p>
+      )}
+
       <h4>The Sheet</h4>
       {character.sheet ? (
         <table className="character-stats">

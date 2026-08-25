@@ -1,5 +1,6 @@
 import { getInfo } from './engine.js'
 import UnitType from '../models/unitType.js'
+import { withCasterPaths } from './magic.js'
 
 // Capacity-aware random spread of an army over a deployment zone — the shared
 // auto-placement core (Stage 4 Part 2 extraction): the enemy's daily plan and
@@ -149,9 +150,22 @@ export async function buildEnemyPlacement(army) {
   const types = await UnitType.find({})
   const sizeOf = new Map(types.map((t) => [t.name, t.size]))
 
-  return spreadPlacement(
+  const placement = spreadPlacement(
     army,
     { ...info.enemyZone, width: info.grid.width, hexCapacity: info.grid.hexCapacity },
     sizeOf,
   )
+
+  // The host's casters roll the same spread the player's hires do (S2-10), and
+  // are SEALED HERE — onto the placement the campaign stores — rather than at
+  // launch. That is the whole point of the seal: the plan is written down once
+  // and the engine receives exactly it, so a reload cannot reroll the enemy,
+  // which is precisely the bug the v40 bearer sealing exists to prevent.
+  //
+  // PER ENTRY, not per type: eleven Necromancers are eleven individuals, and
+  // one of them coming up Death 3 is one of them reaching the major raise.
+  // Their Death is declared by the craft (S2-14) — that is what keeps the host
+  // raising skeletons from the first battle while the player starts at nothing
+  // (S2-9), which is the story M-6's fluff already tells.
+  return withCasterPaths(placement)
 }

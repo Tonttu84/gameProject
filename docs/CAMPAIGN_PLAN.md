@@ -346,11 +346,13 @@ end of that section for what landed and what is still stubbed. Next up is **slic
 layer** (M-15): paths rolled at hire, the research track, the schema bump — and the slice at whose
 end a spell fires from campaign state rather than from an engine default.
 
-**SLICE 2 IS INTERVIEWED AND READY TO BUILD (2026-08-25).** A second interview settled the thirteen
-things M-15's one-line "campaign" bullet left open — the hire roll, where a fresh campaign's
-research starts, what feeds it, the channel table, the enemy's declared level, and the phase the
-focus is chosen in. **See "SLICE 2 — THE CAMPAIGN LAYER" at the end of the magic section; those
-decisions are the user's too, and the build follows them rather than re-deciding.**
+**SLICE 2 IS BUILT AND SHIPPED (2026-08-25).** A second interview settled the thirteen things
+M-15's one-line "campaign" bullet left open — the hire roll, where a fresh campaign's research
+starts, what feeds it, the channel table, the enemy's declared level, and the phase the focus is
+chosen in — and a fourteenth (S2-14) came out of building it. **See "SLICE 2 — THE CAMPAIGN LAYER"
+at the end of the magic section for the decisions and for what landed against each.** Slice 3 is
+next, and it is a PURE UI slice: the research screen, against a server that already answers every
+question it will ask (S2-1).
 
 **A CORRECTION TO WHAT THIS FILE USED TO SAY, established by running the binary while building slice
 1: magic was NOT dead code.** The "WHAT EXISTS TODAY" paragraph below claimed `mana` is never seeded
@@ -2320,6 +2322,57 @@ campaign.raid.opportunities[].casterPaths                     // S2-10, sealed w
 - **Accrual runs at end of turn** in `dayResolution.js`, into the focused school only.
 - **Nothing migrates.** A save from another schema version is deleted on listing, so v41 needs no
   backfill for the six starting casters — they are minted fresh with their rolls.
+
+**▶ WHAT SLICE 2 ACTUALLY LANDED (2026-08-25).** All thirteen decisions built as written. Schema
+**v41**. `services/magic.js` is the new home for everything here — the hire roll, the research
+arithmetic, the channel table and the block each side is sent — and it is the ONE place the
+campaign layer knows what a path or a school is.
+
+**S2-14 IS A NEW DECISION, taken with the user while building.** S2-10 says the enemy's casters
+"roll the same spread the player's hires do", but S2-9 asserts their eleven Necromancers **keep
+raising skeletons**. A Mage-style roll (a primary drawn from the eight non-Holy paths) could hand a
+Necromancer Fire 2 and no Death at all, which contradicts S2-9 outright — so the two could not both
+be taken literally. The user's call: **a Necromancer's TYPE declares his primary — Death 2, exactly
+as a Priest's declares Holy 2 — and he then takes the same single 25% check a Mage does.** Skeletons
+are guaranteed, S2-10's roll still does something, and the occasional Death 3 raiser reaches the
+major form (~1 in 32). The asymmetry with the Priest, who takes no check at all, is deliberate and
+is the reason each way: **priesthood is formal, necromancy is a craft.**
+
+**Three things the build learned by running the binary, recorded because a later reader will
+otherwise re-derive them:**
+
+- **`channels` is a FATIGUE-RELIEF POOL, not a gate on casting** (`Battlefield::drawChannels` — a
+  caster draws on it to push past their own fatigue, and a dry pool simply grants 0). This matters
+  because a fresh campaign's charters are all *plain* tier and therefore channel **nothing** — and
+  if channels gated casting, S2-2's "the three Priests bless from the first battle" would have been
+  false on day 1. Verified against the real `./game battle`: at all four schools 0 and channels 0, a
+  minted Priest blesses. S2-2 stands.
+- **The zeros in the wire's path map are load-bearing, and this was measured, not assumed.**
+  `AUnit::setPathLevel` writes only the paths it is handed, and all three caster constructors seed
+  one of their own (Mage → Fire 1, Priest → Holy 1, Necromancer → Death 1). Sending a hire's rolled
+  paths *sparsely* would leave that seed standing beside them. Against the real binary, one Priest
+  in three otherwise identical battles: `paths` **omitted** → he blesses (the constructor's Holy 1
+  survives); `paths` **fully zeroed** → he casts nothing; `paths` as the campaign now mints him
+  (`holy: 2`) → he blesses more often than the omitted case, because a higher primary divides the
+  fatigue. So `enginePaths()` sends **every path the engine knows, zeros included**, and the RECORD
+  is the whole truth about a caster.
+- **`castEmber` and the other damage spells log nothing** (they resolve as a `RangedShot`), so a
+  replay-log grep is no evidence a damage spell did or did not fire. The school gate was verified
+  through `stoneskin` instead, which does log: enchantment 0 → no cast, enchantment 1 → it fires.
+
+**ONE SEAM LEFT OPEN ON PURPOSE, and it is not in the thirteen decisions: an enemy BEARER rolls no
+paths.** `rollBearer` draws his type from `ENEMY_ARMY`, so a champion can be a Necromancer — and
+because `bearerEntry` builds him from his GEAR and nothing else, he reaches the field with the
+engine constructor's Death 1 while the rank-and-file raisers beside him now carry the rolled Death 2
+of S2-14. He is therefore slightly *weaker* at magic than the ordinary casters he leads, which reads
+oddly. It was left rather than fixed because S2-10 speaks of the casters on `plannedPlacement` and on
+a raid card, and a bearer is neither — giving him paths means a new field on `enemyBearerSchema` and
+a decision about whether a champion rolls better than his men, which is a decision nobody has taken.
+**Take it in the slice that next touches bearers, not silently.**
+
+**What is deliberately NOT here, and is slice 3's:** every screen for research. `campaignView` ships
+the whole `research` block now (S2-1) but only ONE thing renders — the paths on the character sheet
+(S2-13), so the hire gamble pays off on the turn you take it.
 
 **Sources for the Dominions baseline** (checked 2026-08-25):
 [Magic — illwiki](https://illwiki.com/dom5/dom6/magic) ·

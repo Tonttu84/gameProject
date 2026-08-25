@@ -2,6 +2,7 @@ import { eventValenceFor, eventEligible, GARRISON_SORTIE_EVENTS } from './events
 import { adjustResolve } from './garrison.js'
 import { findItem, grantItem } from './items.js'
 import { rollBearer } from './enemyBearers.js'
+import { rollCasterPathsFor } from './magic.js'
 import {
   RAID_BASE_TARGETS,
   RAID_RANGE_JITTER,
@@ -248,6 +249,12 @@ const buildOpportunity = (
     // player picked the raid FOR. Scaled by `strengthBand`, the same field
     // prestige scales on, so a harder card is where the better relic is.
     bearer: rollBearer(campaign, strengthBand),
+    // The target's casters, rolled the same way the player's hires are and
+    // SEALED HERE for the same reason the bearer beside them is (S2-10): a card
+    // advertises what it carries, and rolling at launch would let a reload
+    // reroll the enemy the raid was chosen against. One bag per caster BODY, in
+    // the order the launch-time spread will lay them out.
+    casterPaths: rollCasterPathsFor(targetForce),
     resolved: false,
     outcome: null,
   }

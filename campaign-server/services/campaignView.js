@@ -35,6 +35,8 @@ import { bannerTier, describeItem, findItem, squadBanner, storedItems } from './
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
 import { garrisonLevel } from './garrison.js'
+import { pathEntries, schoolOf } from './magic.js'
+import { SPELL_SCHOOLS, SPELL_SCHOOL_TEXT } from '../utils/campaignConfig.js'
 import { displayBracket } from './recon.js'
 import {
   forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
@@ -385,6 +387,25 @@ export async function campaignView(campaign) {
     // wall-slow/sally/surrender read); the level is the player's read. Defaults
     // to the starting level for a campaign that predates the field.
     garrison: { level: garrisonLevel(campaign.garrison?.resolve) },
+    // What the army knows about magic (docs/CAMPAIGN_PLAN.md "▶ SLICE 2").
+    // OWN INFO, projected whole: unlike the enemy's sealed schools beside it,
+    // the player's research is theirs to read. Shipped now, in the slice that
+    // grows it, so slice 3 is a pure UI slice against a server that already
+    // answers every question its screen will ask (S2-1) — the same server-first
+    // shape 13-12 and 9-1 used.
+    //
+    // The four schools are named and phrased here rather than left as keys,
+    // for the same reason the character sheet's stats are.
+    research: {
+      focus: campaign.research?.focus ?? null,
+      allies: campaign.research?.allies ?? 0,
+      schools: Object.fromEntries(
+        SPELL_SCHOOLS.map((school) => {
+          const { level, points } = schoolOf(campaign, school)
+          return [school, { label: SPELL_SCHOOL_TEXT[school], level, points }]
+        }),
+      ),
+    },
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,
@@ -437,6 +458,12 @@ export async function campaignView(campaign) {
         hangBack: c.hangBack ?? false,
         alive: c.alive,
         diedDay: c.diedDay ?? null,
+        // The paths they command (S2-13), PHRASED and in the engine's canonical
+        // order — the sheet prints "Fire 2 · Water 1" by joining these, and
+        // holds no copy of the vocabulary to name a path itself (17-5). This is
+        // the whole of slice 2's UI: the hire gamble pays off on the turn you
+        // take it, and everything else about research waits for slice 3.
+        paths: pathEntries(c.paths),
         // The slots the sheet DRAWS, phrased and in a fixed order (9-16) —
         // rather than the raw anatomy map, which would leave the client naming
         // `misc` itself and meeting the engine's vocabulary doing it (17-5).

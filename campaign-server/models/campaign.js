@@ -5,6 +5,9 @@ import {
   RECRUITING_FERVOR_START,
   DEFAULT_FORAGE_SHARE,
   ENEMY_SUPPLY_BANDS,
+  RESEARCH_DEFAULT_FOCUS,
+  RESEARCH_START_LEVEL,
+  SPELL_SCHOOLS,
 } from '../utils/campaignConfig.js'
 
 // One roguelite campaign run per document. HIDDEN INFORMATION lives here in
@@ -113,6 +116,11 @@ const raidOpportunitySchema = new mongoose.Schema(
     // already scales on, so a harder card is where the better relic is.
     // HIDDEN ground truth: campaignView reveals it by recon band (9-14).
     bearer: { type: enemyBearerSchema, default: null },
+    // The paths the target's casters command (S2-10), one bag per caster body
+    // in `targetForce`, in the order the launch-time spread lays them out.
+    // SEALED when the board is dealt, exactly like `bearer` above and for the
+    // same reason — HIDDEN ground truth, never projected by campaignView.
+    casterPaths: { type: [mongoose.Schema.Types.Mixed], default: () => [] },
     resolved: { type: Boolean, default: false },
     outcome: { type: mongoose.Schema.Types.Mixed, default: null }, // {winner, battleId} once resolved
   },
@@ -156,6 +164,49 @@ const ringSchema = new mongoose.Schema(
   { _id: false },
 )
 
+// One school of magic's standing (docs/CAMPAIGN_PLAN.md "▶ SLICE 2", S2-7):
+// the level the army has reached, and the part-finished progress toward the
+// next one. Both are stored PER SCHOOL, which is the whole of what makes
+// switching focus free — a school parks its partial where it was earned and
+// picks it up untouched later.
+const researchSchoolSchema = new mongoose.Schema(
+  {
+    level:  { type: Number, default: RESEARCH_START_LEVEL },
+    points: { type: Number, default: 0 },
+  },
+  { _id: false },
+)
+
+// The four schools as named fields rather than a Map, built from SPELL_SCHOOLS
+// so that list stays the single source of which four there are. Named because
+// the engine's set is fixed and declared — `research.schools.evocation.level`
+// is a plain path mongoose tracks like any other leaf, where a Map of
+// sub-documents would need `.get()` at every call site for nothing gained.
+const researchSchoolsSchema = new mongoose.Schema(
+  Object.fromEntries(
+    SPELL_SCHOOLS.map((school) => [
+      school,
+      { type: researchSchoolSchema, default: () => ({}) },
+    ]),
+  ),
+  { _id: false },
+)
+
+// What the host knows (S2-9): ONE SEALED NUMBER PER ENCOUNTER, written onto the
+// campaign at creation exactly like its bearer. The host never reacts to
+// anything — a later act simply authors higher numbers, which is the dial M-19
+// asked for, and a value that moved with the day would be a difficulty curve
+// nobody designed.
+//
+// HIDDEN, like everything else under `enemy`: campaignView never projects it.
+const enemyMagicSchema = new mongoose.Schema(
+  {
+    schools:  { type: Map, of: Number, default: () => new Map() },
+    channels: { type: Number, default: 0 },
+  },
+  { _id: false },
+)
+
 // Bump this whenever the campaign document shape changes incompatibly (new
 // required fields, changed semantics). There is NO backwards compatibility:
 // a roguelite run is disposable, so any stored campaign whose version differs
@@ -170,7 +221,7 @@ const ringSchema = new mongoose.Schema(
 // to the server — 'deploy' is the server's name for all of the battle ones.
 export const TURN_PHASES = ['prepare', 'omens', 'raids', 'recruit', 'deploy']
 
-export const CAMPAIGN_SCHEMA_VERSION = 40 // v40: enemy bearers, decision 9 slice 9a (docs/CAMPAIGN_PLAN.md "DECISION 9 — CHARACTER EQUIPMENT") — `raid.opportunities[].bearer` and `enemy.bearer`, the champion carrying real gear on a raid target and with the shadowing host. SEALED where it is dealt (the board at newDay, the host at creation) for the reason every other drawn thing is: a card advertises what it carries, and rolling at launch would let a reload reroll the reward the raid was chosen FOR. Generated per encounter and never a roster (9-13) — no enemy captain has a name to remember, because a named enemy who returns is the beginning of an opponent and standing principle 1 rules that out. Nothing else about the document changed for 9a: `campaign.items` and `characters[].items` already had the shapes gear needed; v39: missions, decision 12 (docs/CAMPAIGN_PLAN.md "DECISION 12 — MISSIONS") — squads[].mission, the {untilDay, eventId} a charter is away under, which is the SECOND notion of busy beside raid.squadAssignment rather than an extension of it (12-3): a raid is spent-today and wiped at newDay, a mission spans turns and lives on the charter. A charter on one is off the raid board, off the battlefield and out of the boss-fight meter, but still eats (12-5), and it leaves the moment the fate is answered at the omens rather than at nightfall (12-7); v38: automatic reinforcement, 13-2 (docs/CAMPAIGN_PLAN.md "NEXT UP: DECISION 13") — squads[].reinforcedDay is GONE with the mechanic it metered: the player no longer drafts replacements, so there is no once-per-turn action to stamp. Every charter now refills at end of turn from the loose pool, up to its archetype's intake, paying the same recipe prices out of the treasury (13-3) and clamping at every gate instead of refusing (13-2); v37: banners and the item store, slice 6 (docs/CAMPAIGN_PLAN.md "SLICE 6 — BANNERS, ITEMS AND THE ABILITY SYSTEM") — `items`, the store holding every item NOT currently on something, and `squads[].banner`, the ITEM_CATALOG id bound permanently to a charter; the banner TIER (plain/basic/item) stays derived from the rank ladder plus that one field, and the ability the banner grants reaches the battlefield as `squad_abilities` on each placement entry, so the engine learns the word `fearless` and never the word `banner`; v36: characters, slice 5a (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS") — the singular `character` Mixed placeholder becomes `characters`, an array of real entities, and Mage/Priest leave `roster` ENTIRELY (5-1): a caster is now an individual with a name, an attachment, a hang-back toggle, a permanent death that keeps its record, and an empty modifier layer (items/experience/wounds) for the later slices to fill; the same six bodies still eat, fill the meter and cost raid capacity, because a character is a special kind of troop (5-0); v35: squad overhaul slice 4a (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE CATALOG") — squads[].upgrades, the PERMANENT ids a charter has taken, and squads[].upgradeOffer, the three-row draft drawn at newDay for any charter with a free slot and consumed by the pick; slots and the Seasoned banner are DERIVED from prestige through the rank ladder and deliberately not stored, so this is the first slice where prestige gates anything; v34: squad overhaul slice 3 (docs/CAMPAIGN_PLAN.md "SLICE 3 — reinforcement") — squads[].reinforcedDay, the once-per-turn ledger for the new POST /:id/squads/:squadId/reinforce; the slice gives slice 2's caps their teeth (a pooled per-squad intake metered on the output side, a hex size-budget gate, and SQUAD_REINFORCE_POOL recipes whose inputs are DESTROYED and outputs CREATED, never matched); v33: squad overhaul slice 2 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL", decisions 2-4) — squads[].archetype, the id of a SQUAD_ARCHETYPES row carrying the charter's permitted troop types, its per-type caps and its intake rate; the row is looked up, never copied onto the document, and nothing reads it until reinforcement (slice 3); v32: squad overhaul slice 1 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL") — squads[].prestige, the PERMANENT rank that gates squad upgrades and is never spent, earned from raids scaled by the target's strength band; the same slice stops the raid/battle reconciliations DISBANDING a wiped squad (a charter now stays on the rolls at composition {} carrying its prestige, per decision 14) and refuses to send an empty one; v31: "starve the enemy" S1 (docs/CAMPAIGN_PLAN.md) — enemy.supplies (a stockpile seeded once, drained by upkeep forever, never replenished, with no consequence at zero) is REPLACED by enemy.supplyState, the per-turn verdict of income ÷ consumption; the host now feeds itself from the rings it drains, so stripping the inner rings starves it; v30: effort slider S3 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.modifiers (standing pressures on the player's capacity / the enemy's drain, granted by the new `forage_modifier` effect, permanent by default) plus raid.opportunities.persistent/modifierId, the carried-over card that lifts one by being beaten; v29: effort slider S2 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.assignment/enemyPlan are GONE, replaced by forage.pool (the day's field-points snapshot), forage.share (the player's slider split, sticky across turns) and forage.enemyDrainKg (a flat abstract number, no longer derived from the enemy's army); forager clashes and services/skirmish.js are deleted; v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
+export const CAMPAIGN_SCHEMA_VERSION = 41 // v41: the magic system slice 2, the campaign layer (docs/CAMPAIGN_PLAN.md "▶ SLICE 2 — THE CAMPAIGN LAYER") — `research` (the focus, the lent allies and the four schools' banked level/points), `characters[].paths` (the hire roll, S2-3/S2-4, rolled inside mintCharacter so a recruit card offers "a Mage" and the log names what took service), and `enemy.magic` + `paths` on the sealed enemy placements (S2-9/S2-10). NOTHING MIGRATES and nothing needs to: a save from another schema version is deleted on listing, so the six starting casters are minted fresh with their rolls rather than backfilled. The banner CHANNEL pool (S2-8) is deliberately absent from this list — it is set at battle start from the fielded squads, drained by the engine and never persisted, so it needs no field at all; v40: enemy bearers, decision 9 slice 9a (docs/CAMPAIGN_PLAN.md "DECISION 9 — CHARACTER EQUIPMENT") — `raid.opportunities[].bearer` and `enemy.bearer`, the champion carrying real gear on a raid target and with the shadowing host. SEALED where it is dealt (the board at newDay, the host at creation) for the reason every other drawn thing is: a card advertises what it carries, and rolling at launch would let a reload reroll the reward the raid was chosen FOR. Generated per encounter and never a roster (9-13) — no enemy captain has a name to remember, because a named enemy who returns is the beginning of an opponent and standing principle 1 rules that out. Nothing else about the document changed for 9a: `campaign.items` and `characters[].items` already had the shapes gear needed; v39: missions, decision 12 (docs/CAMPAIGN_PLAN.md "DECISION 12 — MISSIONS") — squads[].mission, the {untilDay, eventId} a charter is away under, which is the SECOND notion of busy beside raid.squadAssignment rather than an extension of it (12-3): a raid is spent-today and wiped at newDay, a mission spans turns and lives on the charter. A charter on one is off the raid board, off the battlefield and out of the boss-fight meter, but still eats (12-5), and it leaves the moment the fate is answered at the omens rather than at nightfall (12-7); v38: automatic reinforcement, 13-2 (docs/CAMPAIGN_PLAN.md "NEXT UP: DECISION 13") — squads[].reinforcedDay is GONE with the mechanic it metered: the player no longer drafts replacements, so there is no once-per-turn action to stamp. Every charter now refills at end of turn from the loose pool, up to its archetype's intake, paying the same recipe prices out of the treasury (13-3) and clamping at every gate instead of refusing (13-2); v37: banners and the item store, slice 6 (docs/CAMPAIGN_PLAN.md "SLICE 6 — BANNERS, ITEMS AND THE ABILITY SYSTEM") — `items`, the store holding every item NOT currently on something, and `squads[].banner`, the ITEM_CATALOG id bound permanently to a charter; the banner TIER (plain/basic/item) stays derived from the rank ladder plus that one field, and the ability the banner grants reaches the battlefield as `squad_abilities` on each placement entry, so the engine learns the word `fearless` and never the word `banner`; v36: characters, slice 5a (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS") — the singular `character` Mixed placeholder becomes `characters`, an array of real entities, and Mage/Priest leave `roster` ENTIRELY (5-1): a caster is now an individual with a name, an attachment, a hang-back toggle, a permanent death that keeps its record, and an empty modifier layer (items/experience/wounds) for the later slices to fill; the same six bodies still eat, fill the meter and cost raid capacity, because a character is a special kind of troop (5-0); v35: squad overhaul slice 4a (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE CATALOG") — squads[].upgrades, the PERMANENT ids a charter has taken, and squads[].upgradeOffer, the three-row draft drawn at newDay for any charter with a free slot and consumed by the pick; slots and the Seasoned banner are DERIVED from prestige through the rank ladder and deliberately not stored, so this is the first slice where prestige gates anything; v34: squad overhaul slice 3 (docs/CAMPAIGN_PLAN.md "SLICE 3 — reinforcement") — squads[].reinforcedDay, the once-per-turn ledger for the new POST /:id/squads/:squadId/reinforce; the slice gives slice 2's caps their teeth (a pooled per-squad intake metered on the output side, a hex size-budget gate, and SQUAD_REINFORCE_POOL recipes whose inputs are DESTROYED and outputs CREATED, never matched); v33: squad overhaul slice 2 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL", decisions 2-4) — squads[].archetype, the id of a SQUAD_ARCHETYPES row carrying the charter's permitted troop types, its per-type caps and its intake rate; the row is looked up, never copied onto the document, and nothing reads it until reinforcement (slice 3); v32: squad overhaul slice 1 (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL") — squads[].prestige, the PERMANENT rank that gates squad upgrades and is never spent, earned from raids scaled by the target's strength band; the same slice stops the raid/battle reconciliations DISBANDING a wiped squad (a charter now stays on the rolls at composition {} carrying its prestige, per decision 14) and refuses to send an empty one; v31: "starve the enemy" S1 (docs/CAMPAIGN_PLAN.md) — enemy.supplies (a stockpile seeded once, drained by upkeep forever, never replenished, with no consequence at zero) is REPLACED by enemy.supplyState, the per-turn verdict of income ÷ consumption; the host now feeds itself from the rings it drains, so stripping the inner rings starves it; v30: effort slider S3 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.modifiers (standing pressures on the player's capacity / the enemy's drain, granted by the new `forage_modifier` effect, permanent by default) plus raid.opportunities.persistent/modifierId, the carried-over card that lifts one by being beaten; v29: effort slider S2 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — forage.assignment/enemyPlan are GONE, replaced by forage.pool (the day's field-points snapshot), forage.share (the player's slider split, sticky across turns) and forage.enemyDrainKg (a flat abstract number, no longer derived from the enemy's army); forager clashes and services/skirmish.js are deleted; v28: effort slider S1 (docs/CAMPAIGN_PLAN.md "Effort slider — one points pool") — the new `phase` field makes the turn a server-owned one-way march (every mutating route asserts its phase), generalising and replacing the ad-hoc recruit lock; v27: Recruit phase S8 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the offer is drawn LAZILY at POST /:id/recruit/open instead of at creation/end-day, sealed by the new recruit.drawnDay, which doubles as the phase lock (every other turn action 400s once it's stamped); the free-Militia auto-grant is gone, replaced by the always-affordable Travellers card that pads the offer to two, and skipping is gone with it — the hire is the only exit; v26: Recruit phase S4 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — the old ad-hoc militia purchase is GONE (POST /:id/spend {action:'militia'}, the MILITIA_* constants, CampPanel's slider); Militia is the base tier of RECRUIT_POOL now, so `militiaBoughtToday` (its per-turn cap counter) is dropped from the document; v25: Recruit phase S2 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — recruit.dailyOptions/boosted/hiredToday (the day's offer + one-hire cadence), drawn at creation and redrawn at end-day like augury/raid.opportunities; v24: Recruit phase S1 (docs/CAMPAIGN_PLAN.md "Recruit phase — hiring troops") — new required resources.gold/resources.horses + recruit.fervor; the bump ensures fresh campaigns carry them (pre-existing docs would otherwise fail the resources required-field validation); v23: garrison-support S8 (scripted siege spine — three GUARANTEED chained choice beats seeded onto scheduledEvents at creation, turns 2/5/8: siege_lines_close / breach_threatens / wardens_van, forced into their day's augury by the schedule drain; the bump ensures fresh campaigns carry the spine); v22: Garrison Resolve slice 4 (garrison_sortie raid type — a resolve-gated coordinated sally spawned onto the raid board by GARRISON_SORTIE_EVENTS; a raid.opportunities.thinsEnemy flag lets a sortie inflict real casualties like destroy_detachment); v21: Garrison Resolve slice 1 (garrison.resolve standing track — awarded by the `garrison` effect, read as a `requires` minResolve/maxResolve event gate; wall-slow + sally hang off it in later slices); v20: squad-only raiding (raid.squadAssignment ledger — raids launch whole squads, not loose troop counts); v19: removed enemy.stance (the boss-fight meter + bossFightDue now drive everything stance did; withdraw-win is a direct near-annihilation check); v18 was event chains (scheduledEvents queue — `schedule` effect drains into forced augury slots; `chained` events out of the random pool); v17 was event prerequisites (eventFlags state + `requires`-gated draws)
 
 const campaignSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -640,6 +691,34 @@ const campaignSchema = new mongoose.Schema({
     // fought once. Revealed by the same recon ladder as everything else the
     // scouts learn about them.
     bearer: { type: enemyBearerSchema, default: null },
+    // What the host knows (S2-9) — see enemyMagicSchema above. Sealed at
+    // creation and carried for the campaign, like the bearer beside it.
+    magic: { type: enemyMagicSchema, default: () => ({}) },
+  },
+
+  // The four schools of magic (docs/CAMPAIGN_PLAN.md "▶ SLICE 2 — THE
+  // CAMPAIGN LAYER"). ALL FOUR START AT 0 (S2-2), so on day 1 the three
+  // starting Mages can cast nothing at all while the three Priests bless from
+  // the first battle — Holy carries no school gate (M-14). That dead first
+  // turn is deliberate: research is immediately the most valuable thing on the
+  // board and the first unlock is an event the player feels. If it reads badly
+  // the lever is RESEARCH_LEVEL_COST, not this.
+  //
+  // OWN INFO, not hidden — campaignView projects the whole block. What the
+  // army knows about magic is the army's to know.
+  research: {
+    // Where this turn's study lands (S2-12). A camp decision: `prepare` only,
+    // and freely re-settable, because nothing is spent by changing it. It is
+    // gated to that phase rather than open in every one so that study cannot be
+    // re-aimed after seeing the omens and the raid board — information the
+    // choice is not supposed to get.
+    focus: { type: String, enum: SPELL_SCHOOLS, default: RESEARCH_DEFAULT_FOCUS },
+    // Mages lent by a fate (S2-11), each studying like one of your own. PERMANENT
+    // — this only goes up, barring an event that takes one away, which is how
+    // forage.modifiers already reads. A per-ally expiry was considered and
+    // rejected: this is meant to be the quiet background source.
+    allies: { type: Number, default: 0 },
+    schools: { type: researchSchoolsSchema, default: () => ({}) },
   },
 
   // Characters (docs/CAMPAIGN_PLAN.md "SLICE 5 — CHARACTERS"). This REPLACES
@@ -700,6 +779,27 @@ const campaignSchema = new mongoose.Schema({
           items:      { type: [mongoose.Schema.Types.Mixed], default: () => [] },
           experience: { type: Number, default: 0 },
           wounds:     { type: [mongoose.Schema.Types.Mixed], default: () => [] },
+
+          // The paths this caster commands (docs/CAMPAIGN_PLAN.md "▶ SLICE 2",
+          // S2-3/S2-4): engine path name → level, e.g. {fire: 2, water: 1}.
+          //
+          // ROLLED ONCE, AT HIRE, and fixed from then on — services/magic.js
+          // rollPaths, called from mintCharacter so the roll happens at the one
+          // place characters are already minted (S2-5). A Mage draws a primary
+          // at 2 from the eight non-Holy paths plus one 25% check; a Priest is
+          // flat Holy 2, because priesthood is formal and not skill. That
+          // asymmetry IS the difference between the two hire lanes.
+          //
+          // Sparse: only what they actually have. The zeros the engine needs
+          // are added on the way out (services/magic.js enginePaths), never
+          // stored — the document says what a caster IS, and the wire says
+          // what the engine must not assume.
+          //
+          // NOT modified by items or experience, unlike the stat bag above.
+          // Moving a path is what a rare event or a relic is for (M-5), and
+          // when one lands it will move THIS number, because a character's
+          // paths are who they are rather than what they are carrying.
+          paths:      { type: Map, of: Number, default: () => new Map() },
         },
         { _id: false },
       ),

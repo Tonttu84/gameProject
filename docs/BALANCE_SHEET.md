@@ -18,8 +18,8 @@ exists to inform, not to make.
 | Starting stores | 50.0 t food, 200 materials, 0 gold, 0 horses |
 | Starting army eats | ~12.4 t / turn |
 | Fates per turn | 3 slots, each a uniform draw |
-| Ungated draw pool | 26 events → each ~11.5% of a slot, 0.115 appearances/turn |
-| With every gate open | 34 events → 0.088 appearances/turn each |
+| Ungated draw pool | 27 events → each ~11.1% of a slot, 0.111 appearances/turn |
+| With every gate open | 37 events → 0.081 appearances/turn each |
 | Enemy host | 721 units → a raid target is 22–50 units (mean 36) |
 | Scouting costs | 200 pts a new target, 50 pts a reveal |
 
@@ -50,6 +50,7 @@ one row per rung. Food in tonnes; blank means the outcome does not touch that co
 | Camp Fever `plague` | draw | 3 | — |  |  |  |  | all ×0.95 |  |  |
 | A Workable Seam `quarry` | draw | 1 | — |  | +25 |  |  |  |  |  |
 | Damp Ruins the Stores `tool_rot` | draw | 2 | — |  | −15 |  |  |  |  |  |
+| A Wandering Adept `wandering_adept` | draw | 2 | — |  |  |  |  |  |  | research +1 mage/turn, permanent |
 | Horse Sickness `horse_sickness` | gated draw (has Cavalry) | 2 | — |  |  |  |  | Cavalry ×0.9 |  |  |
 | A Captured Courier `captured_courier` | draw | 2 | Read the dispatches and lay a trap |  |  |  |  |  |  | schedules sprung_ambush (+1 turn) |
 | A Captured Courier `captured_courier` | draw | 2 | Ransom him back to the enemy | +2 |  |  |  |  |  |  |
@@ -66,11 +67,14 @@ one row per rung. Food in tonnes; blank means the outcome does not touch that co
 | The Warden's Van Arrives `relief_van_arrives` | chain (scheduled only) | 2 | — |  |  |  |  | Soldier +25 |  |  |
 | The Garrison Calls `garrison_call` | draw | 2 | Send provisions and a working party to the walls | −1.5 |  |  |  |  |  | resolve +15 |
 | The Garrison Calls `garrison_call` | draw | 2 | Keep your men and stores at their own work |  |  |  |  |  |  |  |
+| The Ford Must Be Held `ford_watch` | draw | 2 | Send a charter to hold the ford |  |  |  |  |  |  | mission: 3 turns away, +12 prestige |
+| The Ford Must Be Held `ford_watch` | draw | 2 | Leave the fords unwatched |  |  |  |  |  |  |  |
 | Word from the Ramparts `garrison_lookout` | gated draw (resolve ≥60) | 2 | — |  |  |  |  |  |  | enemy reveal (1 turn) |
 | The Garrison Turns Its Back `garrison_spurned` | gated draw (resolve ≤33) | 2 | — |  |  |  |  | Soldier ×0.97 |  |  |
 | Stores from the Wall `garrison_stores` | gated draw (resolve ≥67) | 1 | — | +2 |  |  |  |  |  |  |
 | The Garrison's Paychest `garrison_paychest` | gated draw (resolve ≥67) | 1 | — |  |  | +75 |  |  |  |  |
 | The Standard Comes Down `garrison_standard` | gated draw (resolve ≥75) | 3 | — |  |  |  |  |  |  | item: The Unbroken Line (fearless) |
+| The Warders' Notebooks `garrison_lorebooks` | gated draw (resolve ≥67) | 2 | — |  |  |  |  |  |  | research +40 pts |
 | A Sally in the Night `garrison_night_sally` | gated draw (resolve ≥67) | 3 | — |  |  |  |  |  | 0.92 |  |
 | A Chance to Mend the Bond `garrison_recovery` | gated draw (resolve ≤33) | 2 | Send stores and stand the watch with them | −2 |  |  |  |  |  | resolve +15 |
 | A Chance to Mend the Bond `garrison_recovery` | gated draw (resolve ≤33) | 2 | Turn away — you have your own to feed |  |  |  |  |  |  | resolve -10 |
@@ -98,7 +102,7 @@ one row per rung. Food in tonnes; blank means the outcome does not touch that co
 
 ## What a turn of fates is worth
 
-Expected value over the **26 ungated** events, at 0.115 appearances
+Expected value over the **27 ungated** events, at 0.111 appearances
 per event per turn. Choice and recon-sensitive events resolve to one of several
 outcomes, so they contribute a band — the columns are the worst and best the turn can
 do, not a prediction of play. Gated fates are excluded (they widen the pool and dilute
@@ -110,15 +114,15 @@ multiplier, and adding them to a per-turn resource total would be inventing a ra
 
 | Resource | Worst for the player / turn | Best for the player / turn |
 | --- | --- | --- |
-| Food | −2.19 t | 1.67 t |
-| Materials | −6.35 | 7.50 |
+| Food | −2.11 t | 1.61 t |
+| Materials | −6.11 | 7.22 |
 | Gold | 0.00 | 0.00 |
-| Horses | 0.00 | 2.88 |
-| Soldier (headcount) | 6.92 | 13.27 |
-| Militia (headcount) | 0.00 | 2.31 |
-| Soldier (drift) | −1.73% | −1.15% |
-| every unit (drift) | −0.81% | −0.58% |
-| Enemy host (drift) | 0.00% | −1.38% |
+| Horses | 0.00 | 2.78 |
+| Soldier (headcount) | 6.67 | 12.78 |
+| Militia (headcount) | 0.00 | 2.22 |
+| Soldier (drift) | −1.67% | −1.11% |
+| every unit (drift) | −0.78% | −0.56% |
+| Enemy host (drift) | 0.00% | −1.33% |
 
 Drift rows are linearized (Σ p × (factor − 1)) — the multiplicative fates all sit within
 a few percent of 1, so summing them is exact enough to compare, and compounding them
