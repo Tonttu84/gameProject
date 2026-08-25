@@ -205,8 +205,10 @@ Only after R0–R2 have hollowed the subclasses out:
 
 - **Nothing before the user's playtest** (feature freeze). R0 is a good first
   post-playtest engine session: small blast radius, pins everything with existing tests.
-- Independent of the `Battlefield.cpp` tick-phase split (CAMPAIGN_PLAN restructuring
-  item 1) — either order works; don't do both in one session.
+- The `Battlefield.cpp` tick-phase split (CAMPAIGN_PLAN restructuring item 1) has
+  **shipped 2026-08-25**, so R1's ranged work lands in a file that is already three:
+  movement in `BattlefieldMovement.cpp`, seating in `BattlefieldEngagements.cpp`, the
+  lifecycle in `Battlefield.cpp`.
 - R2 and campaign Stage 4 (scouting `reconTag`) share export plumbing — sequence
   whichever is ready first, the other rides along cheaply.
 - Engine-backed skirmishes + the `Utility::getBattlefield()` global retirement

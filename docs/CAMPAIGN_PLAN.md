@@ -7443,10 +7443,25 @@ capability tags (flying) on AUnit, and finally a UnitSpec table replacing the su
 zoo. Staged R0–R4 in that doc; first candidate for a post-playtest engine session.
 
 **Restructuring candidates (assessed 2026-07-05; none scheduled — all post-playtest).**
-1. *Split `Battlefield.cpp` by tick phase* — movement / engagements / combat into separate
-   translation units with `Battlefield` staying the owner/coordinator. Mechanical and fully
-   pinned by the engine suite + `make clang`; do it BEFORE the DESIGN.md frontage/formation
-   system lands there, since that work will otherwise bloat one already-large file.
+1. *Split `Battlefield.cpp` by tick phase* — **✅ SHIPPED 2026-08-25.** 1475 lines became
+   three translation units along `tick()`'s own phase order: `BattlefieldMovement.cpp`
+   (the terrain-cost/passability statics, the reserve-gradient reinforcement scan, squad
+   entry and direction choice, plus `moveUnits`/`moveTeam`/`moveSquad`/`moveUnitStep`/
+   `moveToward`/`flee`/`retreatToRange`), `BattlefieldEngagements.cpp`
+   (`resolveEngagements` and its whole seating machinery — `markEngagedSides`,
+   `buildHexSideMap`, `allocateSidesToGroups`, the ranked squad/loner fill passes) and
+   `Battlefield.cpp`, which keeps the lifecycle and the state both phases read
+   (ctor/reset, `loadArmies`/`extractResult`, `tick` and its turn hooks, the special
+   phase, `makeBattle`/`cleanup`, `findTarget`, corpses, the per-side magic state).
+   **A pure move: not one line of code changed** — verified line-by-line against the
+   pre-split file, and the only new text is each file's header comment. The one helper
+   the two phases share, `sideIsEngagedNow`, went to the engagement file because it is
+   the predicate `markEngagedSides` sets `HexSide::engaged` from; movement calls it live
+   (the flag is a tick stale by the time movement runs) and its comment says so. No
+   header change, no Makefile change (source discovery is recursive). Green: `make`
+   (-Werror), `test-fast` 442 cases, `test-serial` 442 cases sanitized. **Done for the
+   stated reason** — DESIGN.md's frontage/formation system now lands in a file that is
+   only the engagement phase.
 2. *Retire the `Utility::getBattlefield()` process-global* (pass `Battlefield&`/context
    explicitly; same for the RNG queue). This global is why tests shard across processes
    instead of threads and why a process can only ever host one battle. Sizeable, engine-wide —
