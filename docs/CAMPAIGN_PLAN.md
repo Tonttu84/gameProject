@@ -7525,7 +7525,36 @@ work — gone for good" (dropped "& militia" — only fort labour lives in `used
 
   **Two things came out of writing it.** (1) The last block pins ReplayView.jsx's *"Same geometry as HexGrid.jsx (kept in sync — extract if a third user appears)"* comment: both renderers are now asserted to place every hex at the same points in the same order, and to resolve an axial map entry to the same cell. Two copies kept in sync by a comment is exactly the pair that drifts, and a drift would mean the replay of a battle no longer lines up with the map it was fought on. (2) **A real layout bug, fixed in the same commit**: the three things drawn inside a hex — loose types, squads, characters — each centred on its OWN count, so a hex holding loose units and a squad drew them 4.5px apart instead of 9, and one loose type under two squads put two glyphs on the identical y. Only the character block (added last) used the full total. `HexGrid` now hoists one `hexRows`/`rowY(k)` counter that all three groups and the hold badge share.
 
-  **Still open:** the integration half — a full campaign loop through the campaign-server routes, or a battle → recorded replay → `ReplayView` round-trip.
+  **The integration half — ✅ DONE 2026-08-25 (the battle → recorded replay → `ReplayView` round-trip).**
+  Both ends of the pipeline, pinned against ONE real battle rather than against
+  hand-written ticks: `frontend/src/__tests__/fixtures/recordedReplay.json` is a genuine
+  31-tick fight (17 units, a squad a side, cavalry, a Mage who really casts, a unit that
+  really routs) recorded by the binary and stored in exactly the shape
+  `GET /api/battles/:id/ticks` serves.
+  - `frontend/src/__tests__/replayRoundTrip.test.jsx` (6 cases) renders it: every tick of the
+    recording draws one glyph per recorded unit; each glyph sits at centre + the engine's own
+    `ox/oy` (which is what pins the axis transpose — get it backwards and a real battle renders
+    sideways, a bug two units on one row cannot show); the two recorded squads take two distinct
+    palette colours while loners keep team colours and a broken unit beats both; the seated ranks
+    dim behind the front; the log filters by depth and casts are Basic at every depth (L-2); and
+    a unit that leaves the roster between ticks always has a line saying so.
+  - `campaign-server/tests/replayRoundTrip.test.js` (5 cases) runs the fixture's own input through
+    the REAL binary, persists it through the real `battleRunner`, reads it back through the real
+    route, and asserts every unit field and log line survives **field-for-field**. That is the
+    guard the pipeline never had: `Tick.units` is a strict schema, so a field the engine emits and
+    the schema does not declare is dropped on write with no error anywhere — the browser just
+    stops drawing something (it has happened; `ox/oy/sz` carry a schema comment saying so). Its
+    fifth case is a fixture tripwire: a unit key the live engine emits that the fixture has never
+    seen fails with the regeneration instruction, so the browser test can't quietly render a
+    shape the recorder has moved on from. One direction only — a field the fixture has and this
+    run didn't produce is just a draw that went differently. Lives campaign-side for the standing
+    reason: only that layer sees both the binary and the wire.
+  - The run is seeded (`GAME_RNG_SEED`, the seed stored in the fixture) so a CI failure is the
+    same fight twice; every assertion is still about SHAPE, never an outcome, because the same
+    seed reproduces only on the same toolchain (`resolveSeed()` in `Utility.cpp`).
+
+  **Still open:** the other integration candidate — a full campaign loop driven through the
+  campaign-server routes end to end.
 
 ## Independent assessment: weapons in C++ vs DB
 **Keep weapons as C++ `constexpr` source of truth — do not move to DB.** Unit ctors reference weapons by identity (`addWeapon(MeleeWeapons::Pike)`); the engine is a self-contained stdin/stdout subprocess, and the DB is *populated from* the engine — a DB-sourced weapon table would invert that into a cycle and complicate the trust boundary. SSOT is about direction, not location: nothing downstream duplicates weapon data today, so there is no drift risk. Worthwhile later & cheap: extend `dump-units` to export each unit's weapon list read off a live instance (name, reach, shield, pen) for UI tooltips, optionally a `weaponCatalog()` + tripwire mirroring the unit pattern, synced to a display-only collection. No engine behaviour change.
