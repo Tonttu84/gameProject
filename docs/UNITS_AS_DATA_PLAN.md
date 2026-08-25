@@ -176,6 +176,13 @@ Only after R0–R2 have hollowed the subclasses out:
 
 ## Stage R4 — Spell paths (later, with the character system)
 
+> **The user has since asked for more than this stage covers** (2026-08-25): more spells, spell
+> paths, and *research to unlock spells* — the last of which is a new CAMPAIGN system this plan
+> never contemplated. Idea-stage and un-interviewed; the entry that captures it is
+> `[[todo-spell-paths-research]]` in `docs/CAMPAIGN_PLAN.md`'s deferred backlog. Read it before
+> building this stage, and note that the character-system half of R4's gate is now open while the
+> R1–R3 half is not.
+
 - Casters gain `paths` as data (bitmask/list on UnitSpec, exported if the campaign layer
   wants it); `SpellRequirement` gains a path mask; name-gated stopgaps are replaced
   except for genuinely unique spells, which keep the exact-name requirement — both

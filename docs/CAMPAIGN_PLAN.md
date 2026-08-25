@@ -6248,6 +6248,44 @@ army + a "final battle" meter.** Grilled, designed, and shipped — see the "Bos
 A–D + the recon rework + the stance removal are all in `main`; only Stage E (hiring troops) and the
 narrative siege reframe remain.
 
+**TODO — more spells, spell paths, and research to unlock them (user, 2026-08-25 — idea only,
+no plan yet).** [[todo-spell-paths-research]]
+The ask, in the user's words: *"more spells, spell paths, some kind of research to unlock more
+spells"*. Recorded rather than designed, on the user's call — the interview has NOT happened, and
+nothing below is a decision.
+
+**Where it lands, so the next session need not re-derive it.** This ask has a seam waiting for it,
+and one unbuilt prerequisite chain:
+
+- **Three spells exist, total**: `fireball` (Mage), `bless` (Priest), `raise_dead` (Necromancer),
+  in `Spells::roster()` in `backend/engine/src/SpellList.cpp`. Each is gated by EXACT unit-type
+  name, and selection is "first castable in roster order" — `SpellList.cpp` calls that deliberately
+  dumb and says so.
+- **Paths are already a reserved stage**: `docs/UNITS_AS_DATA_PLAN.md` **Stage R4 — Spell paths**,
+  which also reserves the "which spell when several qualify" question for that stage. `Spell.hpp`'s
+  `SpellRequirement` carries a comment saying the exact-name gate is a stopgap until paths exist and
+  that paths will EXTEND the struct rather than replace it — genuinely unique spells keep their
+  exact-name requirement by design. So the engine half has a shape waiting; it does not have a
+  design.
+- **R4's own prerequisites are unshipped.** R0 landed 2026-07-06; R1 (ranged joins the weapon
+  pipeline), R2 (capability tags) and R3 (units as pure data) have NOT — `Archer::special()` and
+  `AUnit::special()` are both still there. R4 was sequenced after them and gated on "later, with the
+  character system". The character system HAS since shipped (5a/9a/9b), so that half of the gate is
+  open and the R1–R3 half is not. **Whether paths must wait for R1–R3 is itself an open question**,
+  not a settled no.
+- **The campaign layer knows nothing about spells or mana** — no spell, path or mana field anywhere
+  in `campaignConfig.js` or the campaign document. Research would therefore be a NEW campaign
+  system, not an extension of one, and the engine→campaign export plumbing for it does not exist.
+
+**What the interview will have to settle** (questions, deliberately not answered here): whether a
+spell is known by the CHARACTER or by the army; whether research unlocks a spell for everyone or
+teaches one person; what research spends and what it competes with for that resource (the same
+"what does it compete with" call 9-7's purchase and crafting channels are waiting on); whether a
+path is a caster's identity chosen once or a track advanced over a campaign; how a path interacts
+with the Mage/Priest type split that `CHARACTER_TYPES` already draws; and what picks the spell when
+several qualify, which is R4's own reserved question. Note also standing principle 1 — whatever
+research is, the enemy does not react to it.
+
 **TODO — squads as the persistent campaign unit (user, 2026-07-20 — idea only, no plan yet).**
 [[todo-squads-persistent-unit]]
 Direction sketched: squads (already persistent + named, see the 2026-07-13 campaign-squads
