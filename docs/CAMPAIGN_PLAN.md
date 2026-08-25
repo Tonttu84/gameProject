@@ -339,7 +339,7 @@ fight, and raids are the only other way to fight. Read every "tonight" in the ol
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
 **▶ THE MAGIC SYSTEM IS SPEC'D AND NOT BUILT (interviewed 2026-08-25).** The next design front,
-and the biggest system the project has taken on: **twenty-one decisions under "THE MAGIC SYSTEM" below,
+and the biggest system the project has taken on: **twenty-two decisions under "THE MAGIC SYSTEM" below,
 all the user's — do not re-derive them.** Modelled deliberately on Dominions, with the source
 checked rather than recalled. Recorded on the user's instruction to spec only, so nothing is built.
 **Read the "WHAT EXISTS TODAY" paragraph there first: magic is DEAD CODE, not half-built** — `mana`
@@ -1821,7 +1821,7 @@ may not replay on a different libstdc++.
 ### THE MAGIC SYSTEM (interviewed 2026-08-25) — SPEC'D, NOT BUILT
 
 Modelled deliberately on the **Dominions** series (user, 2026-08-25), with the source checked rather
-than recalled. **Twenty-one decisions, all the user's — do not re-derive them.** Recorded on the
+than recalled. **Twenty-two decisions, all the user's — do not re-derive them.** Recorded on the
 user's instruction ("record the spec only"), so nothing below is built yet. It supersedes
 `[[todo-spell-paths-research]]` in the deferred backlog, which recorded the ask and listed the
 questions this interview answers, and it is what `docs/UNITS_AS_DATA_PLAN.md` **Stage R4 — Spell
@@ -2022,6 +2022,29 @@ take damage, even sacrifice an ally or something to make it thematic"*). **This 
 first recorded**, which had Low paying in life INSTEAD of fatigue. Low is never simply cheaper: it is
 cheaper in the currency that limits casting and dearer in the one that cannot be recovered
 mid-battle.
+
+**M-22. CAST SELECTION IS A PRIORITY WALK, AND FATIGUE NEVER BLOCKS IT.** Each caster carries an
+ordered default list of the spells they know. The engine walks it: skip a line the caster's paths or
+the army's school level does not allow, take the most powerful FORM they qualify for (M-13), and
+**fall through to the next line when a spell finds no legal target** rather than stalling. This
+replaces `chooseSpellToCast`'s "first castable in roster order", which `SpellList.cpp` itself calls
+deliberately dumb.
+
+**FATIGUE IS NOT A GATE ON CASTING** (user, 2026-08-25: *"fatigue is not a cost, as noted you can get
+unlimited fatigue, it will just be turned into damage so it should not block for now"*). The old
+`mana >= manaCost` clause has no successor: nothing checks affordability, because under M-2 there is
+no such thing as unaffordable — a caster may cast himself into the overflow and bleed for it. **The
+interaction to resolve at build time, flagged rather than decided here:** `Battlefield` already makes
+a unit past `FATIGUE_MAX` spend its turn recovering, so whether an exhausted caster still reaches the
+special phase is a real question about the tick, not about spell selection.
+
+**THE WALK IS ALREADY A SCRIPT**, which is why slice 4 is cheap: the player's list replaces the
+default one, and there is no second code path to write or reconcile.
+
+**DEFERRED, AND EXPLICITLY NOT THIS SLICE** (user): a **simulated cast** of every option, scored on
+its outcome, best score winning — *"to make it a bit more dynamic but not for this slice
+certainly"*. Do not build scoring hooks in anticipation; the targeting split it would need is real
+work and belongs to the slice that uses it.
 
 **Assistant's calls, flagged as overturnable:**
 - **A script line the caster cannot currently cast is SKIPPED, not stalled on** — they fall through
