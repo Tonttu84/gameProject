@@ -346,6 +346,12 @@ end of that section for what landed and what is still stubbed. Next up is **slic
 layer** (M-15): paths rolled at hire, the research track, the schema bump — and the slice at whose
 end a spell fires from campaign state rather than from an engine default.
 
+**SLICE 2 IS INTERVIEWED AND READY TO BUILD (2026-08-25).** A second interview settled the thirteen
+things M-15's one-line "campaign" bullet left open — the hire roll, where a fresh campaign's
+research starts, what feeds it, the channel table, the enemy's declared level, and the phase the
+focus is chosen in. **See "SLICE 2 — THE CAMPAIGN LAYER" at the end of the magic section; those
+decisions are the user's too, and the build follows them rather than re-deciding.**
+
 **A CORRECTION TO WHAT THIS FILE USED TO SAY, established by running the binary while building slice
 1: magic was NOT dead code.** The "WHAT EXISTS TODAY" paragraph below claimed `mana` is never seeded
 outside tests and no spell had ever fired. In fact `Mage`, `Priest` and `Necromancer` all seeded
@@ -2187,6 +2193,133 @@ bless under Enchantment, but M-14 says a Priest's Holy level ALONE gates their b
 school level involved. Holy and Unholy spells therefore carry `SpellSchool::None` and pass no school
 gate — M-14 wins because it speaks directly to the gate, while M-9's filing is about where the
 conceptual cut falls. A tripwire test pins it.
+
+**▶ SLICE 2 — THE CAMPAIGN LAYER: INTERVIEWED 2026-08-25, NOT YET BUILT.** Thirteen more decisions,
+all the user's, taken in a second interview once slice 1 had shipped. They settle what M-15's
+one-line "campaign" bullet left open. **Numbers marked (bd) are BALANCE-DEFERRED** per the standing
+pass — plausible values chosen by the assistant, not tuned ones, and free to move without reopening
+a decision.
+
+**S2-1. THE DIRECTION ROUTE SHIPS WITH THE SERVER, NOT WITH THE SCREEN.** Slice 2 lands
+`campaign.research` AND `POST /:id/research {school}` and exposes both through `campaignView`, so
+slice 3 is a pure UI slice against a settled server. Same reasoning as 13-12 and 9-1, and the same
+shape: the largest UI piece sits on a server that already answers every question it will ask.
+Rejected: state-only with a hardcoded focus (slice 3 then grows a server half), and no focus at all
+with points split evenly (which throws away M-7's *"the choice is WHICH SCHOOL, not how much"* — the
+one decision research exists to offer).
+
+**S2-2. A FRESH CAMPAIGN STARTS WITH ALL FOUR SCHOOLS AT 0.** Every arcane minor needs school 1
+(ward 2, the majors 3), so on day 1 the three starting Mages can cast **nothing at all**, while the
+three Priests bless from the first battle because Holy carries no school gate (M-14). The
+consequence is stated rather than softened: research is immediately the most valuable thing on the
+board, and the first unlock is an event the player feels. **If the dead first turn reads badly, the
+lever is the level-1 cost, not the design.** Rejected: all four at 1 (research becomes a top-up
+rather than a lifeline, and the first-unlock moment is spent before it happens) and Evocation 1 with
+the rest at 0 (silently declares a default school and makes a Fire hire luckier than the others).
+
+**S2-3. THE HIRE ROLL: A PRIMARY AT LEVEL 2, THEN ONE 25% CHECK** (user: *"primary level2, then 25%
+to get a new path (can end up being the same)"*). A Mage's primary is drawn from the **eight
+non-Holy paths** at level 2; a **single** 25% check then draws once more from the same pool — a new
+path enters at **1**, a repeat is **+1**, so Fire 2 becomes Fire 3. That repeat is the only way a
+fresh hire reaches the majors' level-3 gate, which is what makes it worth wanting. **Not a repeating
+loop** (the user chose the single check): no lottery tail, and a distribution with two shapes rather
+than an open-ended one. **Unholy is NOT in the pool** — M-14 leaves the player's Unholy a Low-style
+bargain or a dark event, never a hire.
+
+**S2-4. A PRIEST IS ALWAYS HOLY 2 — FLAT, NO ROLL** (user: *"priest just get lvl2. Being a priest is
+very formal, not related to skill"*). The Mage lane is the gamble and the Priest lane is the
+certainty, and that is the whole difference between the two hires. It also means a Priest never
+reaches the major bless at hire; moving a path is what items and rare events are for (M-5).
+
+**S2-5. PATHS ARE HIDDEN UNTIL HIRE.** The recruit card offers "a Mage"; the roll happens inside
+`mintCharacter()` and the log names what took service. M-5's *"a real gamble on a named individual"*,
+and the roll site stays the one place characters are already minted. Rejected: sealing a rolled
+caster onto the day's offer (the machinery raid bearers use), which turns hiring into shopping.
+
+**S2-6. MAGES ALONE FEED RESEARCH — NOT PRIESTS.** Holy needs no research and priesthood is formal
+(S2-4), so the two lanes trade against each other: **Priests give day-1 castings, Mages give the
+future.** And **a Mage away on a mission still studies** — any living Mage counts wherever they are,
+because a second thing that changes the rate re-opens exactly what M-7 closed when it made every
+mage contribute equally, posted or not.
+
+**S2-7. POINTS BANK PER SCHOOL, AND SWITCHING FOCUS COSTS NOTHING.** Each school holds its own level
+and its own part-finished progress; the focus decides only where this turn's points land. Switching
+parks progress where it was earned and picks it up untouched later, so **the focus is a plan rather
+than a commitment you get punished for revising.** Rejected: one loose pool spent on demand (no
+focus at all, contradicting S2-1) and forfeiting the partial on a switch (a punishment, plus a decay
+number to tune, attached to a choice that is supposed to be about direction).
+
+**The numbers (bd):** 10 points per living Mage per turn, a lent ally the same; level *n* costs
+`30 × n`. Three Mages therefore open a school at the end of turn 1 and reach the majors' level 3
+around turn 6. Levels run to 9 like paths — act one reaching only the low end is headroom, not dead
+range (M-16).
+
+**S2-8. CHANNELS BY TIER — PLAIN 0, BASIC 1, ITEM 2 (bd) — AND ONLY THE FIELDED SQUADS COUNT.**
+Three numbers in one place, and **decision 16's long-deferred answer made concrete: the basic
+banner's benefit IS its channel.** A banner sitting in camp channels nothing, so a two-squad raid
+draws on less than the whole army — *"army-wide"* (M-11) means not per-squad, never regardless of
+presence, and carrying your bannered charters becomes a real decision. The pool is set at battle
+start, drained by the engine and never persisted, so it needs **no schema at all**. Rejected:
+authoring the count per `ITEM_CATALOG` row (two mechanisms for one number, plus a fallback for a
+banner that authors none) — do that the day a banner actually wants to be special.
+
+**S2-9. THE ENEMY'S SCHOOLS ARE ONE SEALED NUMBER PER ENCOUNTER:** `evocation 1, conjuration 2,
+enchantment 1, construction 0` (bd), written onto the host at creation exactly like its bearer.
+Their eleven Necromancers therefore **keep raising skeletons while the player starts at nothing** —
+which is the story the fluff already tells (M-6: our mages are other kinds of mage catching up). The
+host never reacts to anything, and a later act simply authors higher numbers, which is the dial M-19
+asked for. Rejected: schools climbing with the day (a difficulty curve nobody designed, and it edges
+toward an enemy that reacts) and all-zero enemy schools (which would silently remove something that
+happens in every battle today, and waste eleven casters already in the host).
+
+**S2-10. ENEMY CASTERS ROLL THE SAME SPREAD THE PLAYER'S HIRES DO — SO THEY ARE SEALED WHERE THEY
+ARE DEALT.** The host's roll goes onto `enemy.plannedPlacement` at creation; a raid target's goes
+onto the opportunity when the board is drawn. Rolling at launch instead would let a reload reroll
+the enemy, which is precisely the bug the v40 bearer sealing exists to prevent.
+
+**S2-11. SLICE 2 AUTHORS ITS SOURCES, NOT ONLY THE PLUMBING.** A new `research` effect granting
+`{points}` or `{allies}`, one **resolve-gated garrison fate** (the wardens teaching what they know —
+M-7's own example, hanging off `garrison.resolve` rather than a new system) and one **ally fate**
+lending a mage. **A lent mage is a PERMANENT standing contributor** — `research.allies` only goes
+up, barring an event that takes one away — which is how `forage.modifiers` already reads. M-15 lists
+"the research track AND ITS SOURCES" as this slice's job, and an effect nothing grants is untestable
+in play. Both land in `docs/BALANCE_SHEET.md`, whose test fails if an effect escapes the sheet.
+Rejected: a lent mage with an `untilDay` (a per-ally expiry to walk at newDay, for the source that
+is meant to be the quiet background one).
+
+**S2-12. THE FOCUS IS A CAMP DECISION — `prepare` ONLY, FREELY RE-SETTABLE.** It belongs beside
+forage and the camp actions, and changing your mind is free because nothing is spent: no metering,
+no `drawnDay` stamp, no once-per-turn rule to remember. Rejected: ungated in every phase (the
+attach/detach rule, 5-7), because that would let study be re-aimed after seeing the omens and the
+raid board — information the choice should not get — and once-per-turn, which punishes a misclick on
+a decision that costs nothing.
+
+**S2-13. THE ONLY UI IS PATHS ON THE CHARACTER SHEET.** `campaignView` exposes each character's
+paths (and the research state, for slice 3 to render); the existing character screen prints
+`Fire 2 · Water 1`, so the hire gamble pays off on the turn you take it. Everything else about
+research waits for slice 3 — which is what keeps that slice pure UI rather than a screen reconciling
+with a HUD line built early.
+
+**What slice 2 builds, in one place** (schema **v40 → v41**):
+
+```
+campaign.research = {
+  focus:   'evocation',                    // S2-12: set in `prepare`, freely re-settable
+  allies:  0,                              // S2-11: lent mages, permanent
+  schools: { evocation: {level, points}, conjuration: …, enchantment: …, construction: … },
+}
+campaign.characters[].paths      = Map{ fire: 2, water: 1 }   // S2-3/S2-4, rolled in mintCharacter
+campaign.enemy.magic             = { schools: {…}, channels: 3 (bd) }   // S2-9, sealed at creation
+campaign.enemy.plannedPlacement[].paths                       // S2-10, sealed at creation
+campaign.raid.opportunities[].casterPaths                     // S2-10, sealed when the board is drawn
+```
+
+- **Both battle-input builders** gain the `magic` block and `paths` on caster entries: the pitched
+  battle and the raid in `routes/campaigns.js`. The engine's default-open 9 stops applying to
+  campaign battles the moment a real block is sent; `./game sample` sends none and is untouched.
+- **Accrual runs at end of turn** in `dayResolution.js`, into the focused school only.
+- **Nothing migrates.** A save from another schema version is deleted on listing, so v41 needs no
+  backfill for the six starting casters — they are minted fresh with their rolls.
 
 **Sources for the Dominions baseline** (checked 2026-08-25):
 [Magic — illwiki](https://illwiki.com/dom5/dom6/magic) ·
