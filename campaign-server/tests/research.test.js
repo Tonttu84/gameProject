@@ -9,6 +9,7 @@ import {
   CHANNELS_BY_BANNER_TIER,
   ENEMY_SCHOOLS,
   RESEARCH_DEFAULT_FOCUS,
+  RESEARCH_LEVEL_COST,
   RESEARCH_POINTS_PER_MAGE,
   SPELL_PATHS,
   SPELL_SCHOOLS,
@@ -174,10 +175,19 @@ describe('the fortnight\'s study (S2-6 / S2-7)', () => {
     await endTurn(body.id)
     const after = await auth(api.get(`/api/campaigns/${body.id}`))
     const mages = STARTING_CHARACTERS.filter((c) => c.type === 'Mage').length
-    const gained = mages * RESEARCH_POINTS_PER_MAGE
+    // Read the ALLIES the turn actually ended with rather than assuming none.
+    // `wandering_adept` is in the ordinary draw pool and lends a mage
+    // permanently (S2-11), and the accrual runs AFTER the fates — so a turn that
+    // drew it studies at a higher rate, correctly. Hardcoding three mages here
+    // made this case fail roughly whenever that fate came up.
+    const gained = (mages + after.body.research.allies) * RESEARCH_POINTS_PER_MAGE
     const school = after.body.research.schools.conjuration
-    // Three Mages open a school at the end of turn 1: the points bought level 1.
-    expect(school.level * 30 + school.points).toBe(gained)
+    // The whole fortnight's study landed in the focused school: whatever bought
+    // levels plus whatever is still banked adds back up to what was earned.
+    // Level n costs 30 × n and they are bought in turn, so reaching level L has
+    // cost 30 × L(L+1)/2 — not 30 × L, which only happens to agree at L ≤ 1.
+    const spent = RESEARCH_LEVEL_COST * (school.level * (school.level + 1)) / 2
+    expect(spent + school.points).toBe(gained)
     expect(after.body.research.schools.evocation).toMatchObject({ level: 0, points: 0 })
   })
 
@@ -285,6 +295,13 @@ describe('what the engine is told (S2-8 / S2-9 / M-19)', () => {
     stored.raid.opportunities[0].targetForce = new Map([['Soldier', 10], ['Necromancer', 2]])
     stored.raid.opportunities[0].casterPaths = [{ death: 4 }, { death: 5 }]
     stored.raid.opportunities[0].capacity = 100000
+    // No champion on this card. `rollBearer` draws his TYPE from ENEMY_ARMY, so
+    // he can come up a Necromancer — and a bearer carries no `paths` (the seam
+    // recorded in the plan: he is built from his GEAR alone). Left in, he joins
+    // the Necromancers this case counts and the assertion below depends on a
+    // dice roll. Cleared so the case tests what it says it tests; the seam
+    // itself is pinned by its own case below.
+    stored.raid.opportunities[0].bearer = null
     await stored.save()
     const res = await auth(api.post(`/api/campaigns/${body.id}/raids/launch`))
       .send({ parties: { [opp.id]: [stored.squads[0].id] } })
@@ -293,5 +310,32 @@ describe('what the engine is told (S2-8 / S2-9 / M-19)', () => {
     expect(input.magic.red.schools).toEqual(ENEMY_SCHOOLS)
     const casters = input.enemy_placement.filter((e) => e.unit_type === 'Necromancer')
     expect(casters.map((c) => c.paths.death).sort()).toEqual([4, 5])
+  })
+
+  test('a champion carries no paths — the seam slice 2 left open, pinned', async () => {
+    engine.runBattle.mockResolvedValue(battleResultFixture)
+    const { body } = await createCampaign()
+    const stored = await Campaign.findById(body.id)
+    const opp = stored.raid.opportunities[0]
+    stored.raid.opportunities[0].targetForce = new Map([['Soldier', 10]])
+    stored.raid.opportunities[0].casterPaths = []
+    stored.raid.opportunities[0].capacity = 100000
+    // A champion who IS a caster type. He is built from his gear alone
+    // (services/enemyBearers.js bearerEntry), so he reaches the field with no
+    // `paths` and the engine's own Necromancer() seed stands — which makes him
+    // weaker at magic than the raisers he leads, now that they roll Death 2.
+    //
+    // Asserted rather than left to chance because it is a DECISION nobody has
+    // taken yet (see docs/CAMPAIGN_PLAN.md, "ONE SEAM LEFT OPEN ON PURPOSE").
+    // When someone gives bearers paths, this case is what tells them they are
+    // changing something deliberate rather than fixing an oversight.
+    stored.raid.opportunities[0].bearer = { type: 'Necromancer', items: [] }
+    await stored.save()
+    const res = await auth(api.post(`/api/campaigns/${body.id}/raids/launch`))
+      .send({ parties: { [opp.id]: [stored.squads[0].id] } })
+    expect(res.status).toBe(201)
+    const champion = battleInput().enemy_placement.find((e) => e.squad_name === 'Champion')
+    expect(champion).toBeTruthy()
+    expect(champion.paths).toBeUndefined()
   })
 })
