@@ -85,9 +85,27 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-24) — START HERE
+### Where the work stands (2026-08-25) — START HERE
 
-Everything below this block is history; this is the live front. Schema version **35**
+**▶▶ THE LIVE FRONT IS THE MAGIC SYSTEM, AND IT IS NOT IN THIS BLOCK — it is under "THE MAGIC
+SYSTEM" further down.** Schema is **v41** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
+authority; the v35/v36 talk below is 2026-08-24 history that was true when it was written). Read
+this order to pick the work up cold:
+
+1. **"THE MAGIC SYSTEM"** — twenty-six decisions (M-1..M-26), then "SLICE 2 — THE CAMPAIGN LAYER"
+   (S2-1..S2-14) and "SLICE 3 — THE STUDY" (S3-1..S3-6). **All forty-six are the user's; do not
+   re-derive them.**
+2. **Slices 1, 2 and 3 are SHIPPED and on `main`, CI green** (2026-08-25). Spells fire in real
+   battles from campaign research state, and The Study renders what that research has bought.
+3. **Slice 4 — SCRIPTING — is next and is NOT yet interviewed.** The user's sketch of it, and
+   everything it inherits, is in the "NEXT UP IS SLICE 4" block at the top of the magic section.
+   **Interview before building** (CLAUDE.md's standing rule, and the sketch is not a decision).
+
+Everything in the rest of this block is the squad/character/items front, which is FINISHED —
+decision 13 and slice 17 both shipped. It is kept as the record of how those systems got their
+shape, and it is still the place to look before touching a squad, a charter or an item.
+
+The rest of this block, as written on 2026-08-24. Schema version **35**
 (this block read 34 until 2026-08-18; `CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
 authority, and 4a bumped it. 4b, 4c and 4d needed no bump — none of them changed the document
 shape). **Slice 5a bumps it to 36** — `campaign.character` (singular, Mixed, a placeholder)
@@ -2486,6 +2504,27 @@ S2-1 held for the half it actually covered.
   sweeps over the whole roster (every form has a label, a description, at least one path requirement,
   a casting time ≥ 1). The sweeps are the point: a spell authored next month is covered the day it is
   written, the same shape `tests/describeEffect.test.js` uses on the campaign side.
+
+**A TRAP SLICE 3 FELL INTO AND SLICE 4 WILL MEET AGAIN — a takeover screen's phase gate must read
+`campaign.phase`, never the UI store's `phase`.** The Study's focus button first read the UI phase,
+which is the SCREEN the player is looking at, while `POST /:id/research` answers to
+`rejectIfPhasePassed(campaign, …)` — the phase the turn is actually in. For a screen mounted BY the
+phase router those two agree, which is why every panel before this one got away with `locked`. **A
+takeover does not agree, because it is reachable from every phase**, and the two come apart in two
+ordinary ways: a back-step is pure looking and the sync is forward-only, so the screen can say
+`prepare` while the turn is in `raids`; and a UI-only screen (report/placement/battling/result/
+replay) has rank **−1**, so `phaseRank(phase) > phaseRank('prepare')` is FALSE there and the gate
+read as open on the day report. Both rendered a live button that could only answer 409. Fixed in
+`8c3ba1c`.
+
+**The testing half of that lesson is the sharper one.** The first three tests written for the gate
+set the campaign's phase, opened the screen and asserted the button was disabled — and they passed
+against the BUG, because App syncs the UI phase forward to the server's and the two readings then
+agree. **A gate test has to put the screen and the server deliberately out of step** (set
+`campaign.phase` to a later phase, then `useUiStore.setState({phase})` back to an earlier or a
+UI-only one) or it is testing nothing. The replacements were checked by reverting the fix and
+watching them fail. Slice 4's script editor is another takeover with a phase-gated action; it
+inherits both halves of this.
 
 **The dice-flake trap slice 2 left is still live and still worth heeding** (it bit slice 2 twice —
 tests that passed locally and failed in CI, fixed in `90562b1`). `rollBearer` can make an enemy
