@@ -1,7 +1,8 @@
 #include "units/Priest.hpp"
 
 // Stats + weapon + symbol only — bless lives in the spell roster
-// (SpellList.cpp), name-gated to "Priest". See docs/UNITS_AS_DATA_PLAN.md R0.
+// (SpellList.cpp), reached through Holy 1 rather than a
+// name gate (M-18). See "THE MAGIC SYSTEM" in docs/CAMPAIGN_PLAN.md.
 
 Priest::Priest(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::MaceAndShield)
 {
@@ -10,12 +11,12 @@ Priest::Priest(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::MaceAn
     preferredRange = 3;
     setBallisticSkill(4);
     size = SIZE;
-    mana = 99;
+    setPathLevel(SpellPath::Holy, 1);
     assignSpells("Priest");
 }
 
 Priest::Priest() noexcept {
     setSpellcaster(true);
-    mana = 99;
+    setPathLevel(SpellPath::Holy, 1);
     assignSpells("Priest");
 }

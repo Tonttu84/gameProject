@@ -338,13 +338,23 @@ refuses with 400 unless `campaign.bossFightDue` is set** — the ONLY battle is 
 fight, and raids are the only other way to fight. Read every "tonight" in the older write-ups as
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
-**▶ THE MAGIC SYSTEM IS SPEC'D AND NOT BUILT (interviewed 2026-08-25).** The next design front,
-and the biggest system the project has taken on: **twenty-five decisions under "THE MAGIC SYSTEM" below,
+**▶ THE MAGIC SYSTEM — SLICE 1 (THE ENGINE) IS BUILT; SLICES 2-4 ARE NOT (interviewed 2026-08-25).**
+The biggest system the project has taken on: **twenty-six decisions under "THE MAGIC SYSTEM" below,
 all the user's — do not re-derive them.** Modelled deliberately on Dominions, with the source
-checked rather than recalled. Recorded on the user's instruction to spec only, so nothing is built.
-**Read the "WHAT EXISTS TODAY" paragraph there first: magic is DEAD CODE, not half-built** — `mana`
-is never seeded outside tests, so no spell has ever fired in a real battle, and a 15 MB sample replay
-proves it. Four things there reach past the system: **mana is deleted and casting costs FATIGUE**
+checked rather than recalled. **The engine slice shipped 2026-08-25** — see "SLICE 1 SHIPPED" at the
+end of that section for what landed and what is still stubbed. Next up is **slice 2, the campaign
+layer** (M-15): paths rolled at hire, the research track, the schema bump — and the slice at whose
+end a spell fires from campaign state rather than from an engine default.
+
+**A CORRECTION TO WHAT THIS FILE USED TO SAY, established by running the binary while building slice
+1: magic was NOT dead code.** The "WHAT EXISTS TODAY" paragraph below claimed `mana` is never seeded
+outside tests and no spell had ever fired. In fact `Mage`, `Priest` and `Necromancer` all seeded
+`mana = 99` in their constructors, and `./game sample` — which fields 7 Mages, 7 Priests and 11
+Necromancers — logged bless casts on every run. Slice 1 was therefore a **live balance change to
+battles that already happened**, not a no-op on dead code. The paragraph is kept below as the record
+of what was believed, because the belief is what justified M-1's "nothing is being taken away".
+
+Four things in the spec reach past the system: **mana is deleted and casting costs FATIGUE**
 (M-1), which runs past the ceiling into real damage (M-2); **banners become the army-wide magical
 allowance** (M-11), which AMENDS decision 10's per-squad wording and finally ANSWERS decision 16's
 deferred benefit; **there is no player magic and enemy magic, only one system** (M-17), with the
@@ -1821,7 +1831,7 @@ may not replay on a different libstdc++.
 ### THE MAGIC SYSTEM (interviewed 2026-08-25) — SPEC'D, NOT BUILT
 
 Modelled deliberately on the **Dominions** series (user, 2026-08-25), with the source checked rather
-than recalled. **Twenty-five decisions, all the user's — do not re-derive them.** Recorded on the
+than recalled. **Twenty-six decisions, all the user's — do not re-derive them.** Recorded on the
 user's instruction ("record the spec only"), so nothing below is built yet. It supersedes
 `[[todo-spell-paths-research]]` in the deferred backlog, which recorded the ask and listed the
 questions this interview answers, and it is what `docs/UNITS_AS_DATA_PLAN.md` **Stage R4 — Spell
@@ -2096,6 +2106,29 @@ as it depends on the squad size but it is fine in any case"*). It falls out of s
 cost together — many members make the pool that pays for one unconscious body — and it is a cost
 worth paying rather than one to engineer away.
 
+**M-26. A FORM THAT FAILS FALLS THROUGH TO A WEAKER ONE OF THE SAME SPELL** (user, 2026-08-25:
+*"You can make the major need more corpses but then also try minor if the major fails"*, and
+*"Just cycle through them, try major if gate closed for any reason, try minor"*). Selection takes the
+most powerful form the caster qualifies for (M-13); if that form then fails to fire, the engine
+cycles DOWN through the same spell's weaker forms and casts the first that succeeds.
+
+**Why the fallback lives at casting time and not in selection:** a form can fail for reasons the
+gates cannot see. `raise_dead`'s major wants corpses the field has not produced yet — corpses are
+not a path level or a school level, so `chooseSpellToCast` is blind to the shortage and only the
+attempt reveals it. **The price charged is the price of the form that ACTUALLY fired**, never the one
+first chosen.
+
+**This is also what licenses a hungry major.** The major form is free to demand more than the spell it
+replaced, precisely because coming up short is no longer a wasted turn — it degrades to the minor
+instead. So `raise_dead`'s major no longer carries its own internal skeleton fallback: **the minor form
+IS the fallback**, and there is exactly one of it.
+
+**LEFT OPEN, RAISED BY THE USER AND NOT INVENTED HERE** (*"I guess the major and minor might have
+different priority"*): whether a caster might prefer one spell's MINOR form over another spell's
+major — i.e. whether priority is really per-form rather than per-spell. Today the walk is per-spell
+and takes the strongest qualifying form within each. Decide it when scripting (slice 4) gives the
+player a way to express the preference, since that is where it would first be felt.
+
 **Assistant's calls, flagged as overturnable:**
 - **A script line the caster cannot currently cast is SKIPPED, not stalled on** — they fall through
   to the next line. That is Dominions' own behaviour when a spell has no legal target, and it is
@@ -2114,6 +2147,46 @@ playtest); stances (M-12, after scripting); Construction's content (waits on cra
 interview, 9-7); exactly how Low pays in life (design it when Low's spells are authored); and
 whether the player may ever wield Unholy (M-14 leaves the door as a Low-style bargain or a dark
 event, never a research track).
+
+
+**✅ SLICE 1 SHIPPED (the engine, 2026-08-25).** What landed, against M-15's list:
+
+- **Mana is gone** — `Spell::manaCost`, `AUnit::mana`, `getMana`/`setMana` and the `mana = 99` seeds
+  in all three caster constructors. Casting costs FATIGUE, paid on completion (M-23).
+- **`AUnit::addFatigue` is the single site for M-2**, as predicted: the `2 x FATIGUE_MAX` clamp and
+  the 4:1 overflow with the fraction rolled land there and reach every unit, caster or not.
+- **Ten paths and four schools as real types** (`SpellPath`, `SpellSchool` in `Spell.hpp`), path
+  levels on `AUnit`, and the ordered multi-path requirement list with the primary leading (M-14/M-20).
+- **Minor/major forms** as `Spell::forms`, weakest-first so "the last one that qualifies" IS "the
+  most powerful form" (M-13), with M-26's fall-through when the chosen form fails.
+- **The priority walk** replacing "first castable in roster order", with no affordability test at all
+  (M-22).
+- **Casting time replacing cooldown**, minimum one tick, plus the concentration throw on being
+  wounded mid-channel (M-23).
+- **Thirteen forms across ten spells** — one minor per path so no hire roll is a dud, plus major
+  forms for fireball, bless and raise_dead, all three of which lost their exact-unit-type gate (M-18).
+- **The JSON boundary**: `paths` on a placement entry (both sides, M-17) and a top-level `magic`
+  block carrying per-side school levels and banner channels, both on the same never-throw discipline
+  as `squad_mods`.
+- **M-25**: a body past `FATIGUE_MAX` regains no movement points in the squad pre-pass, so the aid
+  pool carries it.
+
+**Deliberately still stubbed, and NOT to be mistaken for finished work:**
+
+- **The school gate and the channel pool DEFAULT OPEN.** With no `magic` block on the battle input
+  every school sits at 9 and there are no channels. This was the user's call (all three gates in the
+  engine, values default open) so slice 1 could never remove magic from a battle that already had
+  it. **Slice 2's job is to start sending real — and lower — numbers.**
+- **Path levels are seeded from the unit type**: Mage Fire 1, Priest Holy 1, Necromancer Death 1.
+  M-5 rolls them at hire, and that is campaign state, so it belongs to slice 2.
+- **Every number is balance-deferred**, in `Defines.hpp` next to the spell constants.
+- **Construction has no spells**, as M-9 said it would not.
+
+**An assistant's call worth knowing about, since M-9 and M-14 pull opposite ways here:** M-9 files
+bless under Enchantment, but M-14 says a Priest's Holy level ALONE gates their blessings with no
+school level involved. Holy and Unholy spells therefore carry `SpellSchool::None` and pass no school
+gate — M-14 wins because it speaks directly to the gate, while M-9's filing is about where the
+conceptual cut falls. A tripwire test pins it.
 
 **Sources for the Dominions baseline** (checked 2026-08-25):
 [Magic — illwiki](https://illwiki.com/dom5/dom6/magic) ·

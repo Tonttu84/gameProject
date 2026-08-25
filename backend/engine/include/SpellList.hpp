@@ -2,6 +2,8 @@
 #include "Spell.hpp"
 #include <vector>
 
+class AUnit;
+
 class Battlefield;
 struct Reinforcement;
 
@@ -13,9 +15,18 @@ namespace Spells
 {
     const std::vector<Spell>& roster();
 
-    // Every roster spell whose requirements `unitTypeName` satisfies, in
-    // roster order. Resolved once at unit construction (AUnit::assignSpells).
-    std::vector<const Spell*> forUnitType(std::string_view unitTypeName);
+    // Can this caster cast this form right now? Checks BOTH gates a spell
+    // passes (M-9): every path requirement against the caster's own levels, and
+    // the school requirement against the ARMY's level for that side. Evaluated
+    // per cast rather than once at construction, because research (M-6) and the
+    // encounter (M-19) can both move the school line while the unit is alive.
+    bool qualifies(const AUnit& caster, const SpellForm& form);
+
+    // The caster's ordered default list — every roster entry, in roster order.
+    // M-22: this walk IS a script, so slice 4 replaces the list rather than
+    // adding a second selection path. Resolved once at unit construction
+    // (AUnit::assignSpells).
+    const std::vector<const Spell*>& defaultScript();
 
     // The garrison sally: a casterless reinforcement spell, modelled on
     // raise_dead. Summons `r.count` allied units of `r.unitType` (marked

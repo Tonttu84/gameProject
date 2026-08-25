@@ -9,12 +9,13 @@
 #include <vector>
 #include "Defines.hpp"
 #include "Abilities.hpp"
+#include "Spell.hpp"   // SpellPath/SpellForm are stored by value/pointer below
+#include <array>
 #include "Anatomy.hpp"
 #include "Battlefield.hpp"
 #include "Utility.hpp"
 
 class Squad; // forward declare — Squad.hpp includes AUnit.hpp so we can't include it here
-struct Spell; // see Spell.hpp/SpellList.hpp — only pointers stored here
 
 // Movement and terrain-restriction category for a unit.
 // All existing human units are Foot. New unit classes set their category;
@@ -110,22 +111,47 @@ public:
     virtual void heal(int value);
     virtual void special() {};
 
-    // ── Spellcasting (Stage R0, docs/UNITS_AS_DATA_PLAN.md) ──────────────────
-    // Non-virtual: called by triggerSpecialPhase for every unit; a unit whose
-    // roster query matched no spells returns immediately. Handles the common
-    // gating (cooldown tick, alive/broken/hex, mana spend, setCast) so spell
+    // ── Spellcasting ("THE MAGIC SYSTEM", docs/CAMPAIGN_PLAN.md) ─────────────
+    // Non-virtual: called by triggerSpecialPhase for every unit; a unit with no
+    // path levels at all returns immediately. Handles the common gating
+    // (channel ticking, alive/broken, paying fatigue on completion) so spell
     // effect bodies in SpellList.cpp only target and apply.
     void castSpells();
-    // Cast-selection policy, kept separate from castSpells() so the policy can
-    // grow without touching the gating. Today every spellcaster type knows
-    // exactly ONE spell (tripwire-tested), so "first affordable spell" is
-    // trivially correct. When spell paths (Stage R4) give casters real spell
-    // arrays, THIS is where a real algorithm — priority, mana budgeting,
-    // situational scoring — replaces pick-first. Requirements are already
-    // resolved at assignment time: _spells only holds spells this unit may cast.
-    const Spell* chooseSpellToCast() const;
-    int  getMana() const { return mana; }
-    void setMana(int m)  { mana = m; }
+
+    // M-22's priority walk, replacing R0's deliberately dumb "first castable in
+    // roster order". Walks this unit's ordered default list, skips what its
+    // paths or the army's school level disallow, and returns the most POWERFUL
+    // FORM it qualifies for (M-13). Kept separate from castSpells() so slice 4
+    // can swap the list for a player-authored script without touching gating —
+    // the walk already IS a script, which is the point of M-22.
+    //
+    // NOTE there is deliberately no affordability test: under M-2 nothing is
+    // unaffordable, so fatigue never blocks selection. A caster may cast
+    // himself into the overflow and bleed for it.
+    const SpellForm* chooseSpellToCast(const Spell** outSpell) const;
+
+    // ── Spell paths (M-3, M-5) ───────────────────────────────────────────────
+    // Rolled at hire and then fixed; they ride the placement entry for BOTH
+    // sides, exactly as squad_mods does, because there is one magic system and
+    // the engine never learns who is the player (M-17).
+    int  getPathLevel(SpellPath p) const;
+    void setPathLevel(SpellPath p, int level);
+    bool hasAnyPath() const;
+
+    // M-10's formula, reading the PRIMARY path (M-20) and halved for a
+    // Low-primary spell (M-21). Public so tests can price a form directly.
+    int  spellFatigueCost(const SpellForm& form) const;
+
+    // ── Channelling (M-23) ───────────────────────────────────────────────────
+    bool isChannelling() const { return _channelForm != nullptr; }
+    // Being struck mid-cast forces a throw rather than automatically losing the
+    // spell. Returns true if the channel held. No-op (true) when not casting.
+    bool testConcentration(int damage);
+
+    // Fire the channelled spell and settle its price: M-23's fatigue on
+    // completion, M-11's draw from the army-wide banner pool, M-24's second
+    // effect for Low. One place, so the two completion paths cannot drift.
+    void completeCast();
 
     int getCast() const;
     void setCast(int setCast);
@@ -502,7 +528,6 @@ protected:
     int strength = 10;
     int maxHP = 10;
     int cast = 0;
-    int mana = 0; // only meaningful for units whose roster query matched spells
     int armour = 0;
     int ballisticSkill = 2; // see setBallisticSkill(); default matches accuracy = 10
     int accuracy = 10;      // derived: ballisticSkill * 5; do not set directly
@@ -570,7 +595,20 @@ protected:
     int _cohesionBonus = 0;  // per-tick tier (0-3), set by resolveEngagements, reset each tick
     UnitCategory _category = UnitCategory::Foot;
     std::vector<Weapon> _attacks;
-    std::vector<const Spell*> _spells; // roster entries this unit may cast; see assignSpells()
+    // The caster's ordered DEFAULT LIST — the implicit script M-22 describes.
+    // Holds every roster entry; what this unit may actually cast is decided at
+    // cast time against its paths and the army's school level, not here, because
+    // research (M-6) and the encounter (M-19) can both move that line mid-campaign.
+    std::vector<const Spell*> _spells;
+
+    // Path levels, indexed by SpellPath. Zero everywhere = not a caster.
+    std::array<int, SPELL_PATH_COUNT> _pathLevels{};
+
+    // What this unit is currently channelling, and how many ticks remain
+    // (the remaining count lives in `cast`, which Battlefield already reads as
+    // "is casting" and ReplayRecorder already exports).
+    const Spell*     _channelSpell = nullptr;
+    const SpellForm* _channelForm  = nullptr;
     int _holdTurns = 0;
     int _replayId = -1;
 

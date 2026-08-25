@@ -208,6 +208,9 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 			resultDMG = 1;
 		else
 			testMorale(resultDMG);
+		// M-23: a wound threatens a channel rather than ending it outright.
+		// No-op for anyone not currently casting.
+		testConcentration(resultDMG);
 		hitpoints -= resultDMG;
 		if (hitpoints < 1)
 			setAlive(false);
@@ -567,33 +570,174 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 
 	void AUnit::assignSpells(std::string_view unitTypeName)
 	{
-		_spells = Spells::forUnitType(unitTypeName);
+		(void) unitTypeName;
+		// The default list is the whole roster in priority order — the implicit
+		// script of M-22. What this unit may actually cast is decided per cast
+		// against its paths and the army's school level, NOT filtered here:
+		// research (M-6) and the encounter (M-19) both move that line while the
+		// unit is alive, and paths arrive from the placement entry after
+		// construction anyway.
+		_spells = Spells::defaultScript();
 	}
 
-	const Spell* AUnit::chooseSpellToCast() const
+	int AUnit::getPathLevel(SpellPath p) const
 	{
-		for (const Spell* s : _spells)
-			if (s && mana >= s->manaCost)
-				return s;
+		if (p == SpellPath::Count) return 0;
+		return _pathLevels[static_cast<size_t>(p)];
+	}
+
+	void AUnit::setPathLevel(SpellPath p, int level)
+	{
+		if (p == SpellPath::Count) return;
+		// Paths run 1-9 (M-16); clamp rather than reject, on the same
+		// never-throw discipline the JSON boundary uses for every other field.
+		if (level < 0) level = 0;
+		if (level > SPELL_PATH_MAX_LEVEL) level = SPELL_PATH_MAX_LEVEL;
+		_pathLevels[static_cast<size_t>(p)] = level;
+	}
+
+	bool AUnit::hasAnyPath() const
+	{
+		for (int lvl : _pathLevels)
+			if (lvl > 0) return true;
+		return false;
+	}
+
+	int AUnit::spellFatigueCost(const SpellForm& form) const
+	{
+		if (form.paths.empty()) return form.fatigue + fatigueCost;
+		// M-20: the divide reads the PRIMARY path and nothing else. A Fire 5
+		// casting a Fire 1 spell pays a fifth of what a Fire 1 pays.
+		const PathRequirement& primary = form.paths.front();
+		int excess = getPathLevel(primary.path) - primary.level + 1;
+		if (excess < 1) excess = 1;   // cannot legally cast below the requirement anyway
+		int cost = form.fatigue / excess;
+		// M-21: Low pays HALF — the shortcut it exists to offer. Applied to the
+		// spell's own term only, never to encumbrance: the body's burden is the
+		// body's, not the bargain's. (Assistant's call; M-10 fixes the shape of
+		// the formula but not which term the halving lands on.)
+		if (primary.path == SpellPath::Low) cost /= 2;
+		// M-10's additive floor — the unit's existing fatigueCost is Dominions'
+		// encumbrance under a name we already have. Without it a high-level
+		// caster spamming a cheap spell would pay almost nothing.
+		return cost + fatigueCost;
+	}
+
+	bool AUnit::testConcentration(int damage)
+	{
+		if (!isChannelling()) return true;
+		if (damage <= 0) return true;
+		int focus = 0;
+		if (!_channelForm->paths.empty())
+			focus = getPathLevel(_channelForm->paths.front().path) * CONCENTRATION_PER_LEVEL;
+		int m1 = Utility::throwDice(), m2 = Utility::throwDice();
+		if (focus + m1 - m2 > damage) return true;
+		Utility::getBattlefield().logEvent("A spell slips from a wounded caster's grasp");
+		_channelSpell = nullptr;
+		_channelForm  = nullptr;
+		setCast(0);
+		return false;
+	}
+
+	const SpellForm* AUnit::chooseSpellToCast(const Spell** outSpell) const
+	{
+		// M-22: walk the ordered list, take the most POWERFUL form qualified for
+		// (M-13), skip what the gates disallow. No affordability test exists —
+		// see the note on the declaration.
+		for (const Spell* s : _spells) {
+			if (!s) continue;
+			const SpellForm* best = nullptr;
+			for (const SpellForm& f : s->forms)
+				if (Spells::qualifies(*this, f)) best = &f;  // later forms are stronger
+			if (best) {
+				if (outSpell) *outSpell = s;
+				return best;
+			}
+		}
 		return nullptr;
 	}
 
 	void AUnit::castSpells()
 	{
-		if (_spells.empty()) return;
-		// Cooldown ticks once per special phase, exactly as the old
-		// special() bodies decremented it before anything else.
-		if (cast > 0) { setCast(cast - 1); return; }
+		if (!alive || broken) {
+			// A dropped channel is simply lost; nothing was paid for it (M-23).
+			_channelSpell = nullptr;
+			_channelForm  = nullptr;
+			return;
+		}
+		if (_spells.empty() || !hasAnyPath()) return;
+
+		// Already channelling: burn a tick, and fire when the last one is spent.
+		if (isChannelling()) {
+			if (cast > 0) setCast(cast - 1);
+			if (cast > 0) return;
+			completeCast();
+			return;
+		}
+
 		// No hex gate here: spells that need the caster placed on the grid
 		// (fireball's range check, raise_dead's neighbor scan) check it in
 		// their own bodies — bless works from anywhere, as it always has.
-		if (!alive || broken) return;
-		const Spell* s = chooseSpellToCast();
-		if (!s) return;
-		if (s->cast(*this)) {
-			mana -= s->manaCost;
-			setCast(s->cooldown);
+		const Spell* chosen = nullptr;
+		const SpellForm* form = chooseSpellToCast(&chosen);
+		if (!form) return;
+		_channelSpell = chosen;
+		_channelForm  = form;
+		// Minimum one turn (M-23) — nothing casts instantly, so even the
+		// cheapest spell occupies its caster for a tick.
+		setCast(form->castingTime > 1 ? form->castingTime : 1);
+		// The tick that starts a channel is spent starting it; the spell fires
+		// on a later tick, when the count runs out.
+		if (cast > 0) setCast(cast - 1);
+		if (cast == 0) completeCast();
+	}
+
+	void AUnit::completeCast()
+	{
+		const Spell*     spell = _channelSpell;
+		const SpellForm* form  = _channelForm;
+		_channelSpell = nullptr;
+		_channelForm  = nullptr;
+		if (!form) return;
+
+		// Try the chosen form, then CYCLE DOWN through this spell's weaker forms
+		// (user, 2026-08-25: "try major if gate closed for any reason, try
+		// minor"). A form can fail for reasons selection cannot see — raise_dead's
+		// major wants corpses the field has not produced yet — so the fallback
+		// belongs here, at the moment of casting, and not in chooseSpellToCast.
+		//
+		// A body that finds no legal target reports false and costs NOTHING:
+		// M-23's rule is that fatigue POWERS the spell, so no spell, no fatigue.
+		// That is what makes cycling free rather than a way to burn a caster out.
+		const SpellForm* fired = form->cast(*this) ? form : nullptr;
+		if (!fired && spell) {
+			size_t start = spell->forms.size();
+			for (size_t i = 0; i < spell->forms.size(); ++i)
+				if (&spell->forms[i] == form) { start = i; break; }
+			// forms run weakest-first, so walking DOWN from the chosen one tries
+			// the next-strongest each time.
+			for (size_t i = start; i-- > 0; ) {
+				const SpellForm& weaker = spell->forms[i];
+				if (!Spells::qualifies(*this, weaker)) continue;
+				if (weaker.cast(*this)) { fired = &weaker; break; }
+			}
 		}
+		if (!fired) return;
+		form = fired;   // everything below prices the form that ACTUALLY fired
+
+		int cost = spellFatigueCost(*form);
+		// M-11: banners are the allowance, and a caster draws from the ARMY-WIDE
+		// pool rather than a squad's own. Capped at the caster's PRIMARY path
+		// level, which is Dominions' "spend up to your path level in gems to cut
+		// fatigue" — the shape M-11 says it is delivering. (Assistant's call:
+		// M-11 fixes the pool and its scope, not the per-cast cap.)
+		if (!form->paths.empty()) {
+			int cap = getPathLevel(form->paths.front().path);
+			cost -= Utility::getBattlefield().drawChannels(team, std::min(cost, cap));
+		}
+		addFatigue(cost);
+		// M-24: Low casts twice — once against them, once against you.
+		if (form->price) form->price(*this);
 	}
 
 	void AUnit::setPlaced(bool value)
@@ -762,6 +906,23 @@ void AUnit::restoreForNextBattle()
 	{
 		fatigue = fatigue + amount;
 		if (fatigue < 0) fatigue = 0;
+		// M-2: the pool runs past the ordinary ceiling into BLOOD. This is the
+		// single mutation site for fatigue, which is why the rule lands here and
+		// reaches every unit for free — ordinary troops will never march
+		// themselves this far, but a spell can put anyone here.
+		if (fatigue > FATIGUE_HARD_MAX) {
+			int overflow = fatigue - FATIGUE_HARD_MAX;
+			fatigue      = FATIGUE_HARD_MAX;   // clamps, never above
+			int wounds    = overflow / FATIGUE_PER_WOUND;
+			int remainder = overflow % FATIGUE_PER_WOUND;
+			// The fraction is rolled: 1 point over is a 25% chance of a wound.
+			if (remainder > 0 && Utility::getRandom(1, FATIGUE_PER_WOUND) <= remainder)
+				++wounds;
+			if (wounds > 0) {
+				hitpoints -= wounds;
+				if (hitpoints < 1) setAlive(false);
+			}
+		}
 		fatiguelvl = fatigue / FATIGUE_LEVEL_DIV;
 	}
 

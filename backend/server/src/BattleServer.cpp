@@ -351,6 +351,46 @@ void runBattleFromJson(Battlefield& field)
         }
     }
 
+    // Optional top-level magic block ("THE MAGIC SYSTEM", docs/CAMPAIGN_PLAN.md).
+    //
+    //   "magic": {
+    //     "red":  { "schools": {"evocation": 3}, "channels": 4 },
+    //     "blue": { "schools": {"conjuration": 1} }
+    //   }
+    //
+    // TOP-LEVEL rather than per-placement, because both things it carries are
+    // army-wide: the school level is what the ARMY knows (M-6), and the banner
+    // channel pool is explicitly army-wide rather than per-squad (M-11, which
+    // amends decision 10 for exactly this reason).
+    //
+    // M-19: both sides pass the identical gates and only the SOURCE of each
+    // number differs — the player's school level is campaign state grown by
+    // research, the enemy's is written on the encounter. The engine cannot tell
+    // them apart and never learns the word "research".
+    //
+    // ABSENT, IT LEAVES THE DEFAULTS ALONE, AND THOSE DEFAULT OPEN: slice 1
+    // owns the gate so slice 2 retrofits nothing (M-14), but until the campaign
+    // is sending real numbers an absent block must not strip magic out of
+    // battles that already have it. Attacker-controlled like everything else
+    // here, so every field is type-checked and clamped, never thrown.
+    if (j.contains("magic") && j["magic"].is_object()) {
+        const std::pair<const char*, int> sides[] = {{"red", REDTEAM}, {"blue", BLUETEAM}};
+        for (const auto& [key, team] : sides) {
+            if (!j["magic"].contains(key) || !j["magic"][key].is_object()) continue;
+            const auto& side = j["magic"][key];
+            if (side.contains("schools") && side["schools"].is_object()) {
+                for (const auto& entry : side["schools"].items()) {
+                    if (!entry.value().is_number_integer()) continue;
+                    SpellSchool which = spellSchoolFromName(entry.key());
+                    if (which == SpellSchool::Count) continue;
+                    field.setSchoolLevel(team, which, entry.value().get<int>());
+                }
+            }
+            if (side.contains("channels") && side["channels"].is_number_integer())
+                field.setChannels(team, side["channels"].get<int>());
+        }
+    }
+
     runAndEmitBattle(field, mapName, "BATTLE", maxTicks);
 }
 

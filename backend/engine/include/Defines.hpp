@@ -90,6 +90,19 @@ constexpr int FATIGUE_VERY_TIRED  = 60;  // border assignment: tired → very ti
 constexpr int FATIGUE_MAX         = 100; // exhausted — must rest before acting
 constexpr int FATIGUE_LEVEL_DIV   = 20;  // fatigue / this = fatigue tier (0-5)
 
+// Fatigue past the ordinary ceiling runs into blood (M-2, docs/CAMPAIGN_PLAN.md).
+// Universal — ordinary troops never reach it by marching and fighting, but a
+// spell can put anyone there. At the hard ceiling a body sits at fatiguelvl 10,
+// i.e. -20 defence: an overcast mage is not asleep, he is a free kill.
+constexpr int FATIGUE_HARD_MAX    = FATIGUE_MAX * 2; // clamps here, never above
+constexpr int FATIGUE_PER_WOUND   = 4;   // 4 fatigue past FATIGUE_MAX -> 1 damage,
+                                          // the remainder rolled (1 over = 25% of a wound)
+
+// Concentration (M-23): a struck caster throws to hold the channel together,
+// mirroring testMorale's opposed roll with the PRIMARY path level as the stat.
+// Balance-deferred like every other number in the magic system.
+constexpr int CONCENTRATION_PER_LEVEL = 2;
+
 // Combat
 constexpr int SHIELDREDUCTION        = 5;
 constexpr int UNDEFENDED_SIDE_BONUS  = 3;  // attack bonus when no enemy unit defends the engaged side
@@ -104,6 +117,20 @@ constexpr int FIREBALL_CENTRE    = 10; // damage to the primary hit
 constexpr int FIREBALL_BLAST     = 5;  // damage per secondary hit
 constexpr int FIREBALL_SECONDARY = 5;  // number of secondary blast hits
 constexpr int SPELLRANGE         = 10; // max hex distance for spells
+
+// Spell numbers (M-18). ALL BALANCE-DEFERRED — chosen to be sane relative to
+// one another, not tuned. Each is the BASE; M-20 adds the caster's primary
+// path level on top, so a spell grows with the man casting it.
+constexpr int EMBER_DAMAGE       = 4;  // fireball's minor form — one bolt, no blast
+constexpr int SHOCK_DAMAGE       = 3;  // Air: less than fire, but it lands
+constexpr int SHOCK_ACCURACY     = 80; // ...because lightning goes where it is aimed
+constexpr int SOOTHING_RELIEF    = 20; // Water: fatigue washed off, not wounds healed
+constexpr int WARD_STRENGTH      = 2;  // High: a barrier, per M-4's "wards, dispelling"
+constexpr int SNARE_FATIGUE      = 15; // Nature: exhaustion inflicted, which M-2 makes lethal
+constexpr int DRAIN_DAMAGE       = 4;  // Unholy: half of what lands returns as healing
+constexpr int LOW_BLOOD_PRICE    = 3;  // M-21/M-24: what Low's second effect takes
+constexpr int GREATER_BLESS_BASE = 2;  // Holy major: how many men one blessing reaches
+constexpr int RAISE_DEAD_BODIES  = 3;  // Death major: corpses spent, and zombies raised
 
 // Battlefield dimensions
 constexpr int BATTLEFIELD_WIDTH  = 30;  // visual width  — hex rows (r), depth between armies

@@ -213,6 +213,29 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             }
         }
 
+        // Optional paths (M-3/M-5/M-17): an object of path name → level, e.g.
+        // {"fire": 3, "water": 1}. Rolled at hire by the campaign layer and
+        // then fixed, and attached SERVER-SIDE exactly like squad_mods.
+        //
+        // This rides the placement entry for BOTH SIDES because there is ONE
+        // magic system (M-17): the enemy's paths are authored like their gear,
+        // the player's are rolled, and the engine cannot tell which is which —
+        // it never learns who is the player, only what each body can do.
+        //
+        // Same never-throw discipline as squad_mods above: a non-object, a
+        // non-integer level or a path name the engine does not know is skipped
+        // rather than rejected, so a forged one is harmless. setPathLevel
+        // clamps to the 1-9 scale (M-16), which bounds what a legal one can do.
+        auto pathsIt = entry.find("paths");
+        if (pathsIt != entry.end() && pathsIt->is_object()) {
+            for (const auto& entryPath : pathsIt->items()) {
+                if (!entryPath.value().is_number_integer()) continue;
+                SpellPath which = spellPathFromName(entryPath.key());
+                if (which == SpellPath::Count) continue;
+                u->setPathLevel(which, entryPath.value().get<int>());
+            }
+        }
+
         // Optional squad_abilities (slice 6, decision 6-7): an array of ability
         // names, e.g. ["fearless"], attached SERVER-SIDE by the campaign layer
         // from the banner bound to this unit's squad.

@@ -1,4 +1,5 @@
 #pragma once
+#include "Spell.hpp"   // SpellSchool, for the per-side school levels below
 #include "Defines.hpp"
 #include "hex/HexGrid.hpp"
 #include "AUnit.hpp"
@@ -180,6 +181,25 @@ class Battlefield
         size_t getCorpses();
         void   setCorpses(size_t setCorpses);
 
+        // ── Per-side magic state ("THE MAGIC SYSTEM", docs/CAMPAIGN_PLAN.md) ──
+        // Both sides pass the IDENTICAL two gates; only the source of each
+        // number differs (M-19). The player's school level is campaign state
+        // grown by research; the enemy's is written on the encounter. The engine
+        // never learns the word "research" — it just reads a number per side,
+        // which is what keeps one magic system rather than two (M-17).
+        int  getSchoolLevel(int team, SpellSchool school) const;
+        void setSchoolLevel(int team, SpellSchool school, int level);
+
+        // M-11: banners are the allowance. A tier's channels feed an ARMY-WIDE
+        // pool any caster on that side may draw on to push past their own
+        // fatigue — Dominions' burn-a-gem-for-fatigue delivered through the
+        // vessel decision 10 already named. There is deliberately no per-path
+        // gem currency. Drawing returns how much fatigue relief was actually
+        // granted, which is 0 once the pool is dry.
+        int  getChannels(int team) const;
+        void setChannels(int team, int channels);
+        int  drawChannels(int team, int wanted);
+
         // ── Tick event log ────────────────────────────────────────────────────
         // Lightweight narrative sink for replay recording: engine code appends
         // human-readable lines (deaths, flees, summons); ReplayRecorder drains
@@ -212,6 +232,14 @@ class Battlefield
         Team   _red{REDTEAM};
         Team   _blue{BLUETEAM};
         size_t corpses = 0;
+        // Indexed [team-1][school] and [team-1]; REDTEAM/BLUETEAM are 1/2.
+        // Defaults are DELIBERATELY OPEN: absent a `magic` block on the battle
+        // input, every school sits at the top of the scale so slice 1 never
+        // removes magic from a battle that already has it. Slice 2 starts
+        // sending real (and lower) numbers.
+        std::array<std::array<int, SPELL_SCHOOL_COUNT>, 2> _schoolLevels
+            { spellSchoolsOpen(), spellSchoolsOpen() };
+        std::array<int, 2> _channels{};
         std::vector<std::string> _tickLog;
         std::vector<Reinforcement> _reinforcements;
         int    _maxTicks = DEFAULT_MAX_BATTLE_TICKS;

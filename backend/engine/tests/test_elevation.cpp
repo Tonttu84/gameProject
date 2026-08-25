@@ -230,16 +230,16 @@ TEST_CASE("elevation: caster height extends fireball range by one hex per tier")
         // In-range cast: deviation 11/70 = 0 → no rolls; the aimed path is
         // skipped WITHOUT dice (distance 11 > aimed range 6, short-circuit),
         // so the primary resolves via pickHexTarget: getRandom(1,640) = 1
-        // lands in the zombie's size-10 slot range. Splash: FIREBALL_SECONDARY
-        // × 640 → empty ground. Out of range: no dice at all.
+        // lands in the zombie's size-10 slot range. Out of range: no dice.
+        //
+        // A stock Mage is Fire 1, so this is fireball's MINOR form (M-18) —
+        // one bolt and no splash, hence no secondary rolls to push.
         Utility::pushDiceRoll(1);
-        for (int i = 0; i < FIREBALL_SECONDARY; ++i)
-            Utility::pushDiceRoll(640);
         field.triggerSpecialPhase();
         Utility::clearDiceRolls();
 
-        struct Result { int hp; int mana; };
-        Result r{zombie->getHp(), mage->getMana()};
+        struct Result { int hp; int fatigue; };
+        Result r{zombie->getHp(), mage->getFatigue()};
         field.extractResult();
         mageHex->elevation = 0;
         field.recomputeDistances();
@@ -247,12 +247,15 @@ TEST_CASE("elevation: caster height extends fireball range by one hex per tier")
     };
 
     auto flat = castFrom(0);
-    CHECK(flat.hp == 20);   // out of range — nothing happens
-    CHECK(flat.mana == 99); // and no mana is spent
+    CHECK(flat.hp == 20);      // out of range — nothing happens
+    // M-23: no spell means no fatigue. Targeting failed, so nothing was paid.
+    CHECK(flat.fatigue == 0);
 
     auto raised = castFrom(1);
-    CHECK(raised.hp == 20 - (FIREBALL_CENTRE + ELEV_RANGED_BONUS)); // 11 dealt vs armour 0
-    CHECK(raised.mana == 98);                                       // one cast, one mana
+    // Ember's damage is EMBER_DAMAGE + the caster's Fire level (M-20), plus the
+    // height bonus that is the point of this test.
+    CHECK(raised.hp == 20 - (EMBER_DAMAGE + 1 + ELEV_RANGED_BONUS));
+    CHECK(raised.fatigue > 0);  // the cast happened, so it was paid for
 }
 
 TEST_CASE("elevation: height extends the archer's max bow range in calcShot") {

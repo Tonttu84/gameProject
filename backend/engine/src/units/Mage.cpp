@@ -1,7 +1,8 @@
 #include "units/Mage.hpp"
 
 // Stats + weapon + symbol only — the fireball lives in the spell roster
-// (SpellList.cpp), name-gated to "Mage". See docs/UNITS_AS_DATA_PLAN.md R0.
+// (SpellList.cpp), reached through Fire 1 rather than a
+// name gate (M-18). See "THE MAGIC SYSTEM" in docs/CAMPAIGN_PLAN.md.
 
 Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
 {
@@ -10,13 +11,13 @@ Mage::Mage(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::Dagger)
     setBallisticSkill(12); // derives accuracy 60: 60% aimed chance, 6-hex aimed range
     preferredRange = 3;
     size = SIZE;
-    mana = 99;
+    setPathLevel(SpellPath::Fire, 1);
     assignSpells("Mage");
 }
 
 Mage::Mage() noexcept {
     setSpellcaster(true);
     printSymbol = 'M';
-    mana = 99;
+    setPathLevel(SpellPath::Fire, 1);
     assignSpells("Mage");
 }

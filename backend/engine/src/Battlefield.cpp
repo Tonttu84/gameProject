@@ -566,8 +566,14 @@ void Battlefield::moveUnits()
             int pts = m->getMovePoints()
                       - static_cast<int>(m->getSpentMove()) * m->getMovementSpeed();
             m->setSpentMove(0);
-            m->setMovePoints(std::min(pts + m->getMovementSpeed(),
-                                      m->getMovementSpeed()));
+            // M-25: a body past the exhaustion line regains NOTHING on its own —
+            // it has passed out. The aid loop below is then the only thing that
+            // moves it, which is precisely "faster members finding the path for
+            // a slow one and carrying his gear". An overcast mage (M-2 can put
+            // him here) is carried by his squad rather than stranding it.
+            // Loners already get this: moveUnitStep refuses to move them at all.
+            int regain = (m->getFatigue() >= FATIGUE_MAX) ? 0 : m->getMovementSpeed();
+            m->setMovePoints(std::min(pts + regain, m->getMovementSpeed()));
         }
 
         auto byPoints = [](AUnit* a, AUnit* b) {
@@ -1413,3 +1419,57 @@ void Battlefield::triggerSpecialPhase()
 
 size_t Battlefield::getCorpses()      { return corpses; }
 void   Battlefield::setCorpses(size_t c) { corpses = c; }
+
+// ── Per-side magic state ─────────────────────────────────────────────────────
+// Team ids are REDTEAM/BLUETEAM (1/2); anything else is out of range and reads
+// as "no magic" rather than throwing, matching the never-throw discipline the
+// JSON boundary uses.
+static bool magicSideIndex(int team, size_t& out)
+{
+    if (team != REDTEAM && team != BLUETEAM) return false;
+    out = static_cast<size_t>(team - 1);
+    return true;
+}
+
+int Battlefield::getSchoolLevel(int team, SpellSchool school) const
+{
+    // SpellSchool::None is what a pure-Holy spell carries (M-14): it has no
+    // school gate at all, so it is never blocked by one.
+    if (school == SpellSchool::None) return SPELL_SCHOOL_OPEN_DEFAULT;
+    size_t side = 0;
+    if (!magicSideIndex(team, side) || school == SpellSchool::Count) return 0;
+    return _schoolLevels[side][static_cast<size_t>(school)];
+}
+
+void Battlefield::setSchoolLevel(int team, SpellSchool school, int level)
+{
+    size_t side = 0;
+    if (!magicSideIndex(team, side)) return;
+    if (school == SpellSchool::Count || school == SpellSchool::None) return;
+    if (level < 0) level = 0;
+    if (level > SPELL_SCHOOL_OPEN_DEFAULT) level = SPELL_SCHOOL_OPEN_DEFAULT;
+    _schoolLevels[side][static_cast<size_t>(school)] = level;
+}
+
+int Battlefield::getChannels(int team) const
+{
+    size_t side = 0;
+    if (!magicSideIndex(team, side)) return 0;
+    return _channels[side];
+}
+
+void Battlefield::setChannels(int team, int channels)
+{
+    size_t side = 0;
+    if (!magicSideIndex(team, side)) return;
+    _channels[side] = channels < 0 ? 0 : channels;
+}
+
+int Battlefield::drawChannels(int team, int wanted)
+{
+    size_t side = 0;
+    if (wanted <= 0 || !magicSideIndex(team, side)) return 0;
+    int given = std::min(wanted, _channels[side]);
+    _channels[side] -= given;
+    return given;
+}
