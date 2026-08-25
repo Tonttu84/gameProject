@@ -339,7 +339,7 @@ fight, and raids are the only other way to fight. Read every "tonight" in the ol
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
 **▶ THE MAGIC SYSTEM IS SPEC'D AND NOT BUILT (interviewed 2026-08-25).** The next design front,
-and the biggest system the project has taken on: **nineteen decisions under "THE MAGIC SYSTEM" below,
+and the biggest system the project has taken on: **twenty-one decisions under "THE MAGIC SYSTEM" below,
 all the user's — do not re-derive them.** Modelled deliberately on Dominions, with the source
 checked rather than recalled. Recorded on the user's instruction to spec only, so nothing is built.
 **Read the "WHAT EXISTS TODAY" paragraph there first: magic is DEAD CODE, not half-built** — `mana`
@@ -1821,7 +1821,7 @@ may not replay on a different libstdc++.
 ### THE MAGIC SYSTEM (interviewed 2026-08-25) — SPEC'D, NOT BUILT
 
 Modelled deliberately on the **Dominions** series (user, 2026-08-25), with the source checked rather
-than recalled. **Nineteen decisions, all the user's — do not re-derive them.** Recorded on the
+than recalled. **Twenty-one decisions, all the user's — do not re-derive them.** Recorded on the
 user's instruction ("record the spec only"), so nothing below is built yet. It supersedes
 `[[todo-spell-paths-research]]` in the deferred backlog, which recorded the ask and listed the
 questions this interview answers, and it is what `docs/UNITS_AS_DATA_PLAN.md` **Stage R4 — Spell
@@ -1868,8 +1868,10 @@ than a name, and a path with no subsystem behind it is empty content.
 High/Low differ in where the power COMES FROM, not in whether it is wicked. **High** is formal,
 celestial magic that acts on magic itself — stars, mind, wards, dispelling. **Low** is hedge-craft
 and old bargains — curses, hexes, sacrifice. And the difference is mechanical, not only flavour:
-**Low may pay a spell's cost in LIFE where every other path pays fatigue**, making it the path that
-cheats the cost system. Rejected: High/Low as a tier axis (greater ritual vs lesser battle magic),
+~~**Low may pay a spell's cost in LIFE where every other path pays fatigue**~~ — **CORRECTED BY
+M-21 (user, 2026-08-25): it is not either/or.** Low pays LESS fatigue *and* pays in blood on top;
+the discount is the temptation and the blood is the price. The struck wording is kept because it is
+exactly the either/or a later reader would otherwise re-derive. Rejected: High/Low as a tier axis (greater ritual vs lesser battle magic),
 and High/Low as order vs chaos (which would restate Holy/Unholy).
 
 **M-5. PATH LEVELS ARE ROLLED AT HIRE AND THEN FIXED.** A caster's paths are their identity, as in
@@ -1913,7 +1915,8 @@ interview.
 **M-10. THE COST FORMULA IS DOMINIONS' OWN:** `spellFatigue / (casterLevel - spellLevel + 1) +
 encumbrance`. The second term is the unit's existing `fatigueCost` (4 by default) — Dominions'
 encumbrance under a name we already have. A path level therefore buys a real price curve rather than
-mere access: a Fire 5 casting a Fire 1 spell pays a fifth of what a Fire 1 pays. Rejected: a flat
+mere access: a Fire 5 casting a Fire 1 spell pays a fifth of what a Fire 1 pays.
+**Which path's numbers the divide reads is answered by M-20: the PRIMARY path, always.** Rejected: a flat
 cost (no reason to want depth), and the divide with no additive floor (a high-level caster spamming
 a cheap spell would pay almost nothing).
 
@@ -1946,8 +1949,9 @@ engine, once the script is exhausted, uses the most powerful form the caster qua
 blessings; no school level is involved, as in Dominions. **But a spell requiring BOTH Holy and an
 arcane path DOES carry a school gate, possibly at level 0** (user) — on the books, but needing no
 depth. **The consequence for the data model, and it is built in from the start rather than
-retrofitted: a spell's requirement is a SET of path requirements** (Dominions' `F2A1` shape), plus
-an optional school requirement which pure-Holy spells simply lack.
+retrofitted: a spell's requirement is an ORDERED LIST of path requirements** (Dominions' `F2A1`
+shape), plus an optional school requirement which pure-Holy spells simply lack. Ordered rather than
+a set, because M-20 makes the FIRST entry load-bearing.
 
 **M-15. FOUR SLICES: ENGINE -> CAMPAIGN -> RESEARCH UI -> SCRIPTING.**
 1. **Engine** — mana deleted, fatigue costs with M-10's divide and M-2's overflow, paths as unit
@@ -1985,6 +1989,39 @@ the encounter, and their paths are authored like their gear (9-12/9-13 already s
 generated per encounter). **This gives the designer a dial to escalate enemy magic across a campaign
 — later acts fight at a higher level — with the enemy never REACTING to anything, so standing
 principle 1 is untouched.**
+
+**M-20. THE FIRST PATH IS THE PATH THE SPELL IS ACTUALLY CAST WITH; THE OTHERS ONLY GATE IT**
+(user, 2026-08-25: *"Every spell is really cast with the first path, the others just gate it, they
+dont matter to fatigue etc, the effect will scale with the first path etc not with the
+secondaries"*). A spell's requirement list is **ORDERED, highest requirement first**, and that first
+entry is the **PRIMARY** path. It carries everything:
+
+- **Fatigue** — M-10's divide reads the caster's level in the PRIMARY path against the primary
+  requirement. Secondary paths never enter the arithmetic.
+- **Effect scaling** — a spell's strength grows with the caster's PRIMARY path level, never with a
+  secondary. A Fire 5 / Water 1 caster throwing a Fire-primary spell scales on the 5.
+- **The nature of the casting** — *"the first path ... will determine the type of casting generally,
+  not just with low"*. Each path may impose its own casting character on the spells it leads, and
+  Low (M-21) is the first path through that door rather than a special case beside it.
+
+Secondary paths do exactly one thing: **you cannot cast the spell without them.** That is what
+spares a multi-path spell from needing a second cost model, and it is why the list is ordered rather
+than a set.
+
+**A NAMING NOTE, because the interview nearly created a collision.** The user called the first path
+the *"major"* one (*"major or however we will call it"*), but **major** is already taken by
+M-12/M-13 for the stronger FORM of a spell. The first path is therefore **PRIMARY** throughout. Do
+not reintroduce "major path": one word with two meanings inside one system is how a later reader
+mis-implements it.
+
+**M-21. LOW'S BARGAIN: HALF THE FATIGUE, AND A PRICE IN BLOOD.** A spell whose PRIMARY path is Low
+costs **half fatigue** — the shortcut Low exists to offer — **and carries an ADDITIONAL authored cost
+that is thematically a sacrifice**: damage to the caster, damage to allies, or the outright death of
+an ally (user: *"low spells will have some additional cost, might make allies take damage, caster
+take damage, even sacrifice an ally or something to make it thematic"*). **This CORRECTS M-4 as
+first recorded**, which had Low paying in life INSTEAD of fatigue. Low is never simply cheaper: it is
+cheaper in the currency that limits casting and dearer in the one that cannot be recovered
+mid-battle.
 
 **Assistant's calls, flagged as overturnable:**
 - **A script line the caster cannot currently cast is SKIPPED, not stalled on** — they fall through
