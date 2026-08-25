@@ -3936,7 +3936,7 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     expect(JSON.stringify(input)).not.toContain(BLADE)
   })
 
-  test("a relic's ability reaches the battle as squad_abilities", async () => {
+  test("a relic's ability reaches the battle as carried_abilities", async () => {
     const { body: c } = await createCampaign()
     const mage = c.characters.find((x) => x.type === 'Mage')
     await stockItems(c.id, [RELIC])
@@ -3949,7 +3949,11 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     })
     const entry = engine.runBattle.mock.calls[0][0].player_placement
       .find((e) => e.character_id === mage.id)
-    expect(entry.squad_abilities).toEqual(['fearless'])
+    // The mage is attached to nothing here, which is precisely the case that
+    // used to lose the gift: merged onto squad_abilities, the engine scoped it
+    // to a squad membership this character does not have (6-6).
+    expect(entry.carried_abilities).toEqual(['fearless'])
+    expect(entry.squad_abilities).toBeUndefined()
   })
 
   test('a forged denied_abilities never reaches the engine', async () => {
@@ -3967,6 +3971,23 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     })
     const input = engine.runBattle.mock.calls[0][0]
     expect(input.player_placement[0].denied_abilities).toBeUndefined()
+  })
+
+  test('a forged carried_abilities never reaches the engine either', async () => {
+    // Same rule as the denial above, and it matters more now that the field
+    // bypasses squad scoping: a rank-and-file body wears no gear, so there is
+    // no legitimate value to overwrite this one with. It is stripped outright.
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, carried_abilities: ['fearless'] },
+      ],
+    })
+    const input = engine.runBattle.mock.calls[0][0]
+    expect(input.player_placement[0].carried_abilities).toBeUndefined()
   })
 
   test('a character away on a raid can be neither re-kitted nor detached', async () => {

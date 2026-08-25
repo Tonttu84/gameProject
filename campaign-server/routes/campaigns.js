@@ -588,12 +588,15 @@ router.post('/:id/battles', async (req, res) => {
     const withAbilities = !abilities || abilities.length === 0
       ? (() => { const { squad_abilities: _forgedAbilities, ...clean } = withoutMods; return clean })()
       : { ...withoutMods, squad_abilities: abilities }
-    // denied_abilities (9-4) is stripped UNCONDITIONALLY here. Nothing but a
-    // character's own gear may deny an ability, and characterEntryFor below
-    // builds that entry from the record — so any denial arriving in the request
-    // is forged by definition. Stripped rather than overwritten because there is
-    // no legitimate value to overwrite it WITH on an ordinary troop.
-    const { denied_abilities: _forgedDenials, ...base } = withAbilities
+    // denied_abilities (9-4) and carried_abilities are both stripped
+    // UNCONDITIONALLY here. Nothing but a character's own gear may deny or carry
+    // an ability, and characterEntryFor below builds that entry from the record —
+    // so either one arriving in the request is forged by definition. Stripped
+    // rather than overwritten because there is no legitimate value to overwrite
+    // them WITH on an ordinary troop: a rank-and-file body wears no gear.
+    const {
+      denied_abilities: _forgedDenials, carried_abilities: _forgedCarried, ...base
+    } = withAbilities
     // A character's own fields are stamped from the RECORD, never taken from
     // the request — the same rule squad_mods follows. Otherwise a client could
     // send avoids_melee for someone it does not own, or modifiers nobody earned.

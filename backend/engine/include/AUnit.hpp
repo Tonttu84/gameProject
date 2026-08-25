@@ -190,16 +190,17 @@ public:
      size_t getPackingSize() const;
      int getFormationFighter() const;
      // ─── Abilities (slice 6) ────────────────────────────────────────────────
-     // Two sets, deliberately. _innateAbilities is what the TYPE is;
-     // _grantedAbilities is what the campaign layer handed this body for this
-     // battle (a squad's banner, arriving as `squad_abilities` on the placement
-     // entry). Keeping them apart is what lets a grant be revoked without
-     // touching what the creature is in itself — strip a banner's Fearless from
-     // a skeleton and it must still be fearless.
+     // Several sets, deliberately, and what separates them is SCOPE.
+     // _innateAbilities is what the TYPE is. _grantedAbilities is what the
+     // campaign layer handed this body from OUTSIDE it for this battle (a
+     // squad's banner, arriving as `squad_abilities` on the placement entry).
+     // _carriedAbilities is what the body's own GEAR gives it
+     // (`carried_abilities`). Keeping them apart is what lets a grant be revoked
+     // without touching what the creature is in itself — strip a banner's
+     // Fearless from a skeleton and it must still be fearless.
      //
-     // The effective set is SCOPED TO SQUAD MEMBERSHIP (6-6): a granted ability
-     // holds only while the unit is actually in the formation the banner flies
-     // over. Battlefield::flee() already calls leaveSquad(), so a man who breaks
+     // Only the GRANTED set is SCOPED TO SQUAD MEMBERSHIP (6-6): it holds only
+     // while the unit is actually in the formation the banner flies over. Battlefield::flee() already calls leaveSquad(), so a man who breaks
      // loses the banner's gift by leaving; rallying clears `broken` but does NOT
      // put him back in the squad, so he fights on as a lone trooper without it,
      // and _squadId still regroups him into the charter after the battle. Every
@@ -235,6 +236,25 @@ public:
      // rather than accumulating.
      void setGrantedAbilities(UnitAbility set) { _grantedAbilities = set; }
      UnitAbility getGrantedAbilities() const   { return _grantedAbilities; }
+
+     // ─── Carried (the scoping 9a recorded and 9b left standing) ─────────────
+     // What this body's own GEAR gives it. The twin of _grantedAbilities and
+     // the counterpart of _suppressedAbilities below, and it is a set of its
+     // own for one reason: the two gifts are scoped differently, so they cannot
+     // share one.
+     //
+     // A banner is flown over a formation and covers only its members. Gear is
+     // worn on the body and goes where the body goes — onto a LOOSE unit that
+     // is in no squad at all, and away with a man who breaks and runs. Gear
+     // already took away unscoped; this is it giving unscoped too.
+     //
+     // Until this existed the campaign layer folded both gifts onto
+     // `squad_abilities`, and a gear-granted ability on a loose character was
+     // therefore dropped in silence — a character posted to no charter is in no
+     // squad. `services/characters.js` recorded that bug rather than working
+     // around it client-side, because the fix belonged here.
+     void setCarriedAbilities(UnitAbility set) { _carriedAbilities = set; }
+     UnitAbility getCarriedAbilities() const   { return _carriedAbilities; }
 
      // ─── Suppression (slice 9a, decision 9-4) ───────────────────────────────
      // What this body's GEAR takes away. Items are fully general (9-3): a row
@@ -530,6 +550,7 @@ protected:
     bool placed = false;
     UnitAbility _innateAbilities  = UnitAbility::None;
     UnitAbility _grantedAbilities = UnitAbility::None;
+    UnitAbility _carriedAbilities = UnitAbility::None;
     UnitAbility _suppressedAbilities = UnitAbility::None;
     bool battleSummon = false;
     size_t spentMove = 0; // action recovery in ticks (archer fire), NOT terrain debt:

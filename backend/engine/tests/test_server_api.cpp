@@ -992,6 +992,59 @@ TEST_CASE("buildArmyFromPlacement: unknown or malformed denied_abilities are ine
     for (const auto& u : army) REQUIRE(u->getSuppressedAbilities() == UnitAbility::None);
 }
 
+// ── carried_abilities in placement JSON (gear's gift, unscoped) ─────────────
+//
+// The other half of denied_abilities: what a body's own gear GIVES it. Parsed
+// identically to squad_abilities and landing in a set of its own, because the
+// engine scopes the two differently.
+
+TEST_CASE("buildArmyFromPlacement: carried_abilities land in the CARRIED set") {
+    // Note what is NOT here: a Squad. That is the point — an entry with no
+    // squad_id at all is exactly the loose character whose gear used to be
+    // dropped, and the ability is live on the body without one.
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"carried_abilities", json::array({"fearless"})}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(hasAbilityFlag(army[0]->getCarriedAbilities(), UnitAbility::Fearless));
+    REQUIRE(army[0]->hasAbility(UnitAbility::Fearless));
+    // And it did not leak into the squad-scoped set on the way in.
+    REQUIRE(army[0]->getGrantedAbilities() == UnitAbility::None);
+}
+
+TEST_CASE("buildArmyFromPlacement: a carried grant and a denial meet on one body") {
+    // Both of gear's fields at once, still with no squad: the denial is
+    // subtracted after the carried set is folded in, so it wins.
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"carried_abilities", json::array({"fearless"})},
+             {"denied_abilities", json::array({"fearless"})}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE_FALSE(army[0]->hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("buildArmyFromPlacement: unknown or malformed carried_abilities are inert") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"carried_abilities", json::array({"invincible", 7})}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}, {"carried_abilities", "fearless"}},
+        json{{"unit_type", "Soldier"}, {"q", 5}, {"r", 5}, {"carried_abilities", json::array()}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 3);
+    for (const auto& u : army) REQUIRE(u->getCarriedAbilities() == UnitAbility::None);
+}
+
 // ── squad_abilities in placement JSON (banners, slice 6 decision 6-7) ───────
 //
 // The campaign layer attaches these server-side from the banner bound to the

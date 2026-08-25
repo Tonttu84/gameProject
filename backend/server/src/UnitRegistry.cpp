@@ -236,6 +236,28 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             u->setGrantedAbilities(granted);
         }
 
+        // Optional carried_abilities: the same array of ability names, but for
+        // what this body's own GEAR gives it rather than what its squad does.
+        // A separate field because the engine scopes the two differently —
+        // AUnit::abilities() holds a grant only while the unit is in a squad
+        // (6-6) and a carried ability always. A loose character carries their
+        // gear's gift onto a field where no banner covers them; folding it onto
+        // squad_abilities dropped it in silence.
+        //
+        // The engine still learns only the word `fearless` and never the word
+        // `helm`: what the field name tells it is the SCOPE, not the source.
+        //
+        // Same never-throw discipline as everything else at this boundary.
+        auto carriedIt = entry.find("carried_abilities");
+        if (carriedIt != entry.end() && carriedIt->is_array()) {
+            UnitAbility carried = UnitAbility::None;
+            for (const auto& name : *carriedIt) {
+                if (!name.is_string()) continue;
+                carried |= abilityFromName(name.get<std::string>());
+            }
+            u->setCarriedAbilities(carried);
+        }
+
         // Optional denied_abilities (slice 9a, decision 9-4): an array of
         // ability names this body's GEAR takes away, attached SERVER-SIDE by
         // the campaign layer from the items a character carries.

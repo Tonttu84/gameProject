@@ -773,14 +773,22 @@ void AUnit::restoreForNextBattle()
 		// rather than by any strip step.
 		UnitAbility set = _innateAbilities;
 		if (_squad) set |= _grantedAbilities;
+		// Gear's gift, unscoped — for exactly the reason gear's denial below is.
+		// It is worn on the body, so a man who breaks and runs keeps it, and a
+		// LOOSE unit that is in no squad at all still has it. Sharing a set with
+		// the grant above is what used to drop a loose character's gear ability
+		// in silence.
+		set |= _carriedAbilities;
 		// Gear's denial (9-4), applied BEFORE the closure and never after.
 		// The order is the whole safety argument: a row that denies an implied
 		// flag is legal to write and does nothing, because abilityClosure()
 		// below puts it straight back. An undead that leaves a corpse stays
 		// unwritable no matter what any future item says.
 		//
-		// Unscoped by squad, unlike the grant above: gear is worn on the body,
-		// so a man who breaks and runs takes his cursed helm with him.
+		// Unscoped by squad, like the carried gift above and unlike the banner's
+		// grant: gear is worn on the body, so a man who breaks and runs takes his
+		// cursed helm with him. Subtracted AFTER the carried set is folded in, so
+		// one item denying what another grants resolves as denial wins.
 		set = withoutAbilities(set, _suppressedAbilities);
 		return abilityClosure(set);
 	}

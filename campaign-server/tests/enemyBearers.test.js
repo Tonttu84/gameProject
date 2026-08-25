@@ -113,14 +113,18 @@ describe('putting him on the field', () => {
     )
     expect(entry.unit_type).toBe('Soldier')
     expect(entry.squad_mods).toEqual({ attack: 1, defence: -1 })
-    expect(entry.squad_abilities).toEqual(['fearless'])
+    // On carried_abilities, never squad_abilities: everything a champion has,
+    // he has from his gear, and no banner flies over him.
+    expect(entry.carried_abilities).toEqual(['fearless'])
+    expect(entry.squad_abilities).toBeUndefined()
     expect(JSON.stringify(entry)).not.toContain('relic')
   })
 
-  test('he rides under a squad tag, or his relic would do nothing', () => {
-    // Granted abilities are scoped to squad membership in the engine (6-6), so
-    // a champion placed as a loner would silently lose whatever his relic
-    // grants. A tagged squad is honoured down to one member.
+  test('he rides under a squad tag and a character tag', () => {
+    // The squad tag names the one-man formation the replay calls Champion. It
+    // used to be what made his relic work at all — granted abilities are scoped
+    // to squad membership (6-6) — but gear travels on carried_abilities now, so
+    // the tag is no longer holding his gift up.
     const entry = bearerEntry(
       { type: 'Soldier', items: [RELIC.id] }, { q: 0, r: 0 }, BEARER_SQUAD_ID, findItem,
     )
@@ -128,9 +132,19 @@ describe('putting him on the field', () => {
     expect(BEARER_CHARACTER_ID).toBeGreaterThan(0)
   })
 
+  test('a champion placed as a loner keeps his relic’s gift', () => {
+    // The scoping bug from the enemy side: pass no squad at all and the ability
+    // is still on the entry, because carried_abilities is not gated on one.
+    const entry = bearerEntry(
+      { type: 'Soldier', items: [RELIC.id] }, { q: 0, r: 0 }, undefined, findItem,
+    )
+    expect(entry.carried_abilities).toEqual(['fearless'])
+  })
+
   test('an empty-handed champion sends no gear fields at all', () => {
     const entry = bearerEntry({ type: 'Archer', items: [] }, { q: 1, r: 1 }, 1, findItem)
     expect(entry.squad_mods).toBeUndefined()
+    expect(entry.carried_abilities).toBeUndefined()
     expect(entry.squad_abilities).toBeUndefined()
     expect(entry.denied_abilities).toBeUndefined()
   })

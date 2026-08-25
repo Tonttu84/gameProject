@@ -1590,9 +1590,9 @@ describe('enemy bearers', () => {
       const input = engine.runBattle.mock.calls[0][0]
       const champion = input.enemy_placement.at(-1)
       expect(champion.unit_type).toBe('Soldier')
-      expect(champion.squad_abilities).toEqual(['fearless'])
-      // Tagged into a squad of one, or 6-6's membership scoping would drop the
-      // relic's gift the moment he stood alone.
+      expect(champion.carried_abilities).toEqual(['fearless'])
+      // Tagged into a squad of one so the replay names his formation. His
+      // relic no longer depends on that: gear rides unscoped.
       expect(champion.squad_id).toBeGreaterThan(0)
       expect(champion.character_id).toBeGreaterThan(0)
       expect(JSON.stringify(input)).not.toContain(RELIC)

@@ -419,20 +419,20 @@ export const characterEntryFor = (
   for (const [stat, delta] of Object.entries(characterMods(character, anatomy)))
     mods[stat] = (mods[stat] ?? 0) + delta
 
-  // Gear's abilities join the squad's on the SAME wire field: the engine has one
-  // granted set and does not care which campaign-side thing filled it (6-7 — it
-  // learns the word `fearless` and never the words `banner` or `helm`).
+  // The squad's abilities and the bearer's own gear travel on SEPARATE wire
+  // fields, because the engine scopes them differently: `squad_abilities` holds
+  // only while the unit is in a squad (6-6), `carried_abilities` is worn on the
+  // body and goes wherever the body goes.
   //
-  // But the two are scoped differently on arrival, and that asymmetry is real
-  // rather than an oversight: the engine holds granted abilities only while the
-  // unit is IN a squad (6-6), so a LOOSE character's gear-granted ability would
-  // be silently dropped. Nothing in 9a can grant one to a loose character —
-  // every gear ability today is on a character who must be posted to fight — and
-  // 9b's screen is where that becomes visible. Recorded here rather than
-  // silently worked around, because the fix belongs in the engine's scoping and
-  // not in a special case here.
+  // They used to be merged onto the one field, and that was the bug 9a recorded
+  // here and 9b left standing: a LOOSE character is in no squad, so their gear's
+  // gift arrived and was dropped in silence. The fix is the engine's scoping,
+  // which is where it went — this side just stopped conflating the two.
+  //
+  // 6-7 is untouched: the engine still learns the word `fearless` and never the
+  // words `banner` or `helm`. What the field name tells it is the SCOPE.
   const gear = characterAbilities(character, anatomy)
-  const granted = [...new Set([...abilities, ...gear.granted])]
+  const granted = [...new Set(abilities)]
 
   return {
     unit_type: character.type,
@@ -444,6 +444,8 @@ export const characterEntryFor = (
     avoids_melee: character.hangBack ?? false,
     ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
     ...(granted.length > 0 ? { squad_abilities: granted } : {}),
+    // What the gear gives (9-3), unscoped — see above.
+    ...(gear.granted.length > 0 ? { carried_abilities: gear.granted } : {}),
     // What the gear takes away (9-4). A separate field because the engine
     // applies it in a fixed order — subtracted BEFORE the implication closure
     // runs — which is what makes a general item system safe.

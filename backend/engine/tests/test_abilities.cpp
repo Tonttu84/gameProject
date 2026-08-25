@@ -187,6 +187,71 @@ TEST_CASE("suppression is NOT scoped to squad membership, unlike a grant") {
     REQUIRE_FALSE(bones.hasAbility(UnitAbility::Fearless));
 }
 
+// ── Carried abilities (the scoping 9a recorded and 9b left standing) ────────
+//
+// Gear GIVES on the same terms it takes away: on the body, unscoped. These
+// cases are the mirror of the suppression ones above, and the first is the bug
+// itself — a character posted to no charter is in no squad, so a gift folded
+// onto the granted set never reached them.
+
+TEST_CASE("a carried ability holds on a unit that is in NO squad") {
+    // The bug, in one line. A loose character stands on the field covered by no
+    // banner; their own helm is still on their head.
+    Soldier s(BLUETEAM);
+    REQUIRE_FALSE(s.hasAbility(UnitAbility::Fearless));
+
+    s.setCarriedAbilities(UnitAbility::Fearless);
+    REQUIRE(s.hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("a carried ability survives leaving the squad; a granted one does not") {
+    // The two gifts side by side on one body, which is the whole reason they
+    // are separate sets. Squad first so it outlives its members.
+    Squad squad("Household");
+    Soldier s(BLUETEAM);
+    s.setGrantedAbilities(UnitAbility::Fearless);
+    s.setCarriedAbilities(UnitAbility::Undead);
+    squad.addMember(&s);
+    REQUIRE(s.hasAbility(UnitAbility::Fearless));
+    REQUIRE(s.hasAbility(UnitAbility::Undead));
+
+    s.leaveSquad();
+    REQUIRE_FALSE(s.hasAbility(UnitAbility::Fearless));  // the banner stayed behind
+    REQUIRE(s.hasAbility(UnitAbility::Undead));          // the gear went with him
+}
+
+TEST_CASE("a carried ability closes through the table like any other") {
+    // Closure does not care where a flag came from — carrying Mindless brings
+    // Fearless with it, with no squad anywhere in the picture.
+    Soldier s(BLUETEAM);
+    s.setCarriedAbilities(UnitAbility::Mindless);
+    REQUIRE(s.hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("a denial beats a carried grant, because it is subtracted after it") {
+    // Two items on one body, one giving what the other takes. The ORDER decides
+    // (9-4) and nothing else does: the carried set is folded in first, the
+    // denial subtracted from the result.
+    Soldier s(BLUETEAM);
+    s.setCarriedAbilities(UnitAbility::Fearless);
+    s.setSuppressedAbilities(UnitAbility::Fearless);
+    REQUIRE_FALSE(s.hasAbility(UnitAbility::Fearless));
+}
+
+TEST_CASE("a carried Fearless actually holds the line under fire") {
+    // Behaviour, not bookkeeping, and the loose case again: testMorale()
+    // short-circuits on Fearless, so a man in no squad with a brave man's amulet
+    // must not rout at damage that would break anyone.
+    Soldier s(BLUETEAM);
+    REQUIRE_FALSE(s.testMorale(1000));
+    REQUIRE(s.getBroken());
+
+    Soldier brave(BLUETEAM);
+    brave.setCarriedAbilities(UnitAbility::Fearless);
+    REQUIRE(brave.testMorale(1000));
+    REQUIRE_FALSE(brave.getBroken());
+}
+
 TEST_CASE("suppressing nothing changes nothing") {
     Skeleton bones(REDTEAM);
     bones.setSuppressedAbilities(UnitAbility::None);

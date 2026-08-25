@@ -297,11 +297,38 @@ the reason the charter page states — every number on a campaign screen is the 
 
 **WHAT THE NEXT SLICE SHOULD KNOW.** Nothing 9 named is outstanding. The open ends are decision 11
 (acquiring squads), decision 16 (the basic banner's benefit), 9-7's purchase and crafting channels
-(each needs prices and a call on what they compete with — their own interview), 9-5's `reconTag`
-rework, and the engine-side scoping bug 9a recorded and 9b left standing: **a gear-granted ability
-on a LOOSE character is silently dropped by the engine**, because granted abilities are scoped to
-squad membership (6-6). 9b did NOT paper over it client-side — the sheet states what the gear
-grants, which is the truth about the item — and the fix still belongs in the engine's scoping.
+(each needs prices and a call on what they compete with — their own interview), and 9-5's `reconTag`
+rework. **The engine-side scoping bug 9a recorded and 9b left standing is FIXED (2026-08-25, no
+schema bump)** — see "THE CARRIED SET" immediately below.
+
+**THE CARRIED SET — the gear-on-a-loose-body fix (2026-08-25, no schema bump).** The bug: a
+gear-granted ability on a character posted to no charter never reached the field. Both gifts — the
+banner's and the gear's — were merged onto the one wire field `squad_abilities`, and
+`AUnit::abilities()` holds that set only while the unit is in a squad (6-6). A loose character is
+in no squad, so their own helm's word was parsed, stored and then silently ignored.
+
+**The fix is a third set, and what separates the three is SCOPE, not source.** `_grantedAbilities`
+(wire: `squad_abilities`) is what something OUTSIDE the body gave it and stays squad-scoped;
+`_carriedAbilities` (wire: `carried_abilities`) is what the body's own gear gave it and is scoped
+to nothing — it goes where the body goes, onto a loose unit and away with a man who breaks, exactly
+as gear's DENIAL already did. 6-7 is untouched: the engine still learns the word `fearless` and
+never the word `helm`. What the field name tells it is the scope.
+
+What a later slice needs to know:
+
+- **Never fold gear onto `squad_abilities` again.** That merge IS the bug. `characterEntryFor` and
+  `bearerEntry` each send the two separately now, and a test on each pins a loose body keeping its
+  gift.
+- **The order in `abilities()` is still the safety argument (9-4), now over three sets.** The
+  carried set is folded in BEFORE the denial is subtracted, so one item denying what another grants
+  resolves as *denial wins*, and the implication closure still runs last.
+- **A forged `carried_abilities` is stripped unconditionally at the route**, like a forged denial
+  and unlike a forged `squad_abilities` (which is overwritten from the squad). A rank-and-file body
+  wears no gear, so there is no legitimate value to overwrite it with — and this field bypasses
+  squad scoping, so it is the one an attacker would want most.
+- **The enemy champion's `squad_id` is no longer load-bearing.** `bearerEntry` tagged him into a
+  one-man squad *because* of this bug; the tag stays (the replay names his formation by it) but his
+  relic no longer depends on it, and both comments now say so.
 
 **⚠️ CORRECTION, ON THE USER'S INSTRUCTION (2026-08-24): THERE IS NO NIGHTLY BATTLE, AND THERE HAS
 NOT BEEN FOR A LONG TIME.** Several older passages in this file still talk about "tonight's battle",

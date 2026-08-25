@@ -689,25 +689,44 @@ describe('the placement entry', () => {
     expect(entry.squad_mods).toEqual({ attack: 2, armour: 1 })
   })
 
-  test('a relic’s ability joins the squad’s on the same wire field', () => {
-    // The engine has ONE granted set and does not care which campaign-side
-    // thing filled it (6-7): it learns the word `fearless` and never the words
-    // `banner` or `horn`.
+  test('a relic’s ability rides on carried_abilities, not the squad’s field', () => {
+    // The engine still learns the word `fearless` and never the words `banner`
+    // or `horn` (6-7). What the FIELD tells it is the scope: a banner's gift is
+    // scoped to squad membership (6-6) and gear's is worn on the body.
     const kitted = character({
       type: 'Soldier',
       items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }],
     })
     const entry = characterEntryFor(kitted, { q: 0, r: 0 }, [], {}, HUMANOID)
-    expect(entry.squad_abilities).toEqual(['fearless'])
+    expect(entry.carried_abilities).toEqual(['fearless'])
+    expect(entry.squad_abilities).toBeUndefined()
   })
 
-  test('a banner and a relic granting the same word send it once', () => {
+  test('a LOOSE character’s gear still reaches the field', () => {
+    // The bug 9a recorded and 9b left standing, from this side. Merged onto
+    // squad_abilities, this entry's gift was dropped in silence: a character
+    // posted to no charter is in no squad, and the engine scopes a grant to
+    // membership. `abilities` is [] here for exactly that reason — the route
+    // passes nothing to someone no banner covers.
+    const kitted = character({
+      type: 'Soldier',
+      squadId: null,
+      items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }],
+    })
+    const entry = characterEntryFor(kitted, { q: 0, r: 0 }, [], {}, HUMANOID)
+    expect(entry.carried_abilities).toEqual(['fearless'])
+  })
+
+  test('a banner and a relic granting the same word send it on both fields', () => {
+    // Not a duplicate: they are scoped differently, so the engine needs both.
+    // Leave the squad and the banner's Fearless goes; the relic's stays.
     const kitted = character({
       type: 'Soldier',
       items: [{ slot: 'misc', index: 0, itemId: 'relic_the_long_watch' }],
     })
     const entry = characterEntryFor(kitted, { q: 0, r: 0 }, ['fearless'], {}, HUMANOID)
     expect(entry.squad_abilities).toEqual(['fearless'])
+    expect(entry.carried_abilities).toEqual(['fearless'])
   })
 
   test('nothing worn means no gear fields at all on the entry', () => {
@@ -715,6 +734,7 @@ describe('the placement entry', () => {
     // an old placement and a new one cannot diverge for a person with no gear.
     const entry = characterEntryFor(character(), { q: 3, r: 5 }, [], {}, HUMANOID)
     expect(entry.squad_abilities).toBeUndefined()
+    expect(entry.carried_abilities).toBeUndefined()
     expect(entry.denied_abilities).toBeUndefined()
     expect(entry.squad_mods).toBeUndefined()
   })

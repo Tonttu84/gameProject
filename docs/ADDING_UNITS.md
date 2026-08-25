@@ -86,6 +86,12 @@ A new ability needs: a flag in the `UnitAbility` enum, its wire name in `Abiliti
 `NAMES` table (so the campaign layer can grant it), whatever behaviour reads it, and a row
 in the implication table **only** if it genuinely implies another.
 
+**Three sets arrive, and what separates them is SCOPE.** `squad_abilities` is what something
+OUTSIDE the body grants it (a squad's banner) and holds only while the unit is in a squad (6-6);
+`carried_abilities` is what the body's own gear grants it and holds always, on a loose body as
+much as on a formed one. Never fold gear onto `squad_abilities` — that is what used to drop a
+loose character's gear ability in silence.
+
 **Abilities can also be taken away** (slice 9a): character gear may deny one, arriving as
 `denied_abilities` on the placement entry and landing in the *suppressed* set.
 `AUnit::abilities()` subtracts it **before** running `abilityClosure()`, which is the whole

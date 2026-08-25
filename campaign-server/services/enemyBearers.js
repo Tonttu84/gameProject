@@ -100,10 +100,12 @@ export function rollBearer(campaign, strengthBand, rand = getRandom) {
 
 // The tags a bearer rides under, on the ENEMY side of a placement.
 //
-// squad_id is not decoration: granted abilities are scoped to squad membership
-// in the engine (6-6), so a champion placed as a loner would silently lose
-// whatever his relic grants. A tagged squad is honoured down to one member,
-// which is what makes his gift actually reach the field.
+// squad_id names the one-man formation he fights as, and the replay names it
+// after him. It USED to be load-bearing for his relic as well — granted
+// abilities are scoped to squad membership in the engine (6-6), so a champion
+// placed as a loner lost whatever his gear granted — but that was the loose-body
+// bug, and gear now travels on `carried_abilities`, which no squad gates. The
+// tag stays for the formation; his gift no longer depends on it.
 //
 // character_id is what lets the campaign ask whether he FELL. The engine reports
 // surviving character ids per side, so one fixed tag answers both "do you loot
@@ -118,10 +120,10 @@ export const BEARER_CHARACTER_ID = 1
 // from the RECORD, never from a request, with the campaign layer translating
 // items into the engine's stat and ability vocabulary.
 //
-// `squad_id` is not decoration. Granted abilities are scoped to squad
-// membership in the engine (6-6), so a champion placed as a loner would silently
-// lose whatever his relic grants — a tagged squad is honoured down to one
-// member, which is what makes his gift actually reach the field.
+// Everything a bearer has, he has from his GEAR — he belongs to no charter and
+// no banner flies over him — so his abilities go out on `carried_abilities` and
+// never on `squad_abilities`. One meaning per field is what the split is for:
+// merging the two is what dropped a loose body's gear in the first place.
 export function bearerEntry(bearer, { q, r }, squadId, findItem) {
   const mods = {}
   const granted = new Set()
@@ -141,7 +143,7 @@ export function bearerEntry(bearer, { q, r }, squadId, findItem) {
     squad_id: squadId,
     squad_name: 'Champion',
     ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
-    ...(granted.size > 0 ? { squad_abilities: [...granted] } : {}),
+    ...(granted.size > 0 ? { carried_abilities: [...granted] } : {}),
     ...(denied.size > 0 ? { denied_abilities: [...denied] } : {}),
   }
 }
