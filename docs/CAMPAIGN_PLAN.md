@@ -98,9 +98,12 @@ this order to pick the work up cold:
 2. **M-15'S FOUR SLICES ARE ALL SHIPPED and on `main`** (2026-08-25). Spells fire in real battles
    from campaign research state, The Study renders what that research has bought, and a caster can
    be told what to reach for first.
-3. **THERE IS NO SLICE 5 OF THE MAGIC SYSTEM SPEC'D.** What the interviews deliberately left for
-   later, and where each is recorded: **tiered battle logging** (S4-8 — the user's design, a default
-   tier of basic info/deaths/casts and deeper tiers for rolls and casters mid-channel); **a store of
+3. **TIERED BATTLE LOGGING IS BUILT** (2026-08-25, six decisions L-1..L-6 under "TIERED BATTLE
+   LOGGING") — three tiers all persisted with the browser filtering, a Catch2 capture that dumps the
+   fight only when a test fails, and an end-of-turn sweep that deletes battles nobody can watch. It
+   came out of S4-8's TODO; that TODO is now history, not work.
+4. **THERE IS NO SLICE 5 OF THE MAGIC SYSTEM SPEC'D.** What the interviews deliberately left for
+   later, and where each is recorded: **a store of
    authored enemy scripts** assigned at random to match a caster's paths (S4-6); **a real cast AI**
    scoring a simulated cast (M-22), which is also where per-form priority is decided (S4-2 amends
    M-13 to per-spell until then); **stances** (M-12); **empowerment** (M-5); **Construction's
