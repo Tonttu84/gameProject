@@ -144,6 +144,13 @@ bool AUnit::getEngaged(Battlefield &myBattlefield) const
 	return false;
 }
 
+std::string AUnit::logName() const
+{
+	std::string who = unitNameForSymbol(printSymbol);
+	if (who.empty()) who = std::string(1, printSymbol);
+	return who + (team == REDTEAM ? " (red)" : " (blue)");
+}
+
 int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerReach*/, bool repelCounter)
 {
 	int defenceroll = Utility::throwDice();
@@ -163,9 +170,19 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 		}
 	}
 
-	if (defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus() - crampedPenalty
-	    - _attacksReceivedThisTurn * MULTI_ATTACK_DEFENCE_PENALTY >= AttackAttempt)
+	// TRACE (L-4): the to-hit contest, both sides of it, at the one place melee
+	// is actually decided. `defend` is the DEFENDER's method and never learns who
+	// swung, so the line names the man who stood — which is the half a failing
+	// test usually needs, since the assertion is nearly always about him.
+	const int defenceTotal = defence - fatiguelvl * 2 + defenceroll + cohesionStatBonus()
+	                       - crampedPenalty
+	                       - _attacksReceivedThisTurn * MULTI_ATTACK_DEFENCE_PENALTY;
+	if (defenceTotal >= AttackAttempt) {
+		Utility::getBattlefield().logEvent(LogTier::Trace,
+			logName() + " turns the blow — defence " + std::to_string(defenceTotal)
+			+ " vs " + std::to_string(AttackAttempt));
 		return 0;
+	}
 
 	int d1 = Utility::throwDice(), d2 = Utility::throwDice();
 	int resultDMG = damage + d1 - d2;
@@ -193,7 +210,7 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 		if (resultDMG > 0)
 		{
 			shield--;
-			Utility::getBattlefield().logEvent("Shield damaged by a strong blow");
+			Utility::getBattlefield().logEvent(LogTier::Detail, "Shield damaged by a strong blow");
 		}
 	}
 
@@ -213,6 +230,14 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 		// No-op for anyone not currently casting.
 		testConcentration(resultDMG);
 		hitpoints -= resultDMG;
+		// The raw roll is logged beside what actually landed, because the gap
+		// between them IS the armour and shield arithmetic above — a test that
+		// expected a kill and got a scratch is nearly always reading that gap.
+		Utility::getBattlefield().logEvent(LogTier::Trace,
+			logName() + " is hit for " + std::to_string(resultDMG)
+			+ " (raw " + std::to_string(damage) + ", defence " + std::to_string(defenceTotal)
+			+ " vs " + std::to_string(AttackAttempt) + ") — "
+			+ std::to_string(hitpoints > 0 ? hitpoints : 0) + " hp left");
 		if (hitpoints < 1)
 			setAlive(false);
 		return resultDMG;
@@ -520,7 +545,8 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		int r1 = Utility::throwDice(), r2 = Utility::throwDice();
 		if ((morale + r1 - r2) >= 12)
 		{
-			Utility::getBattlefield().logEvent("With nowhere to flee to a soldier rallies");
+			Utility::getBattlefield().logEvent(LogTier::Detail,
+				"With nowhere to flee to a soldier rallies");
 			broken = false;
 			return true;
 		}
@@ -656,7 +682,8 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			focus = getPathLevel(_channelForm->paths.front().path) * CONCENTRATION_PER_LEVEL;
 		int m1 = Utility::throwDice(), m2 = Utility::throwDice();
 		if (focus + m1 - m2 > damage) return true;
-		Utility::getBattlefield().logEvent("A spell slips from a wounded caster's grasp");
+		Utility::getBattlefield().logEvent(LogTier::Detail,
+			"A spell slips from a wounded caster's grasp");
 		_channelSpell = nullptr;
 		_channelForm  = nullptr;
 		setCast(0);
@@ -707,6 +734,12 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		if (!form) return;
 		_channelSpell = chosen;
 		_channelForm  = form;
+		// A caster BEGINNING to channel is Detail (L-2) — the user asked to see
+		// "mages preparing to cast" a tier below the cast itself. The cast line
+		// on completeCast() stays Basic, so a spell that fires is always visible
+		// and only the wind-up needs the deeper setting.
+		Utility::getBattlefield().logEvent(LogTier::Detail,
+			logName() + " begins to channel " + std::string(form->label));
 		// Minimum one turn (M-23) — nothing casts instantly, so even the
 		// cheapest spell occupies its caster for a tick.
 		setCast(form->castingTime > 1 ? form->castingTime : 1);
@@ -760,11 +793,8 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		// uses, for one voice across the log. The tiered logging system is a
 		// TODO of its own; this line will sit in its default tier.
 		{
-			std::string who = unitNameForSymbol(printSymbol);
-			if (who.empty()) who = std::string(1, printSymbol);
 			Utility::getBattlefield().logEvent(
-				who + (team == REDTEAM ? " (red)" : " (blue)")
-				+ " casts " + std::string(form->label));
+				logName() + " casts " + std::string(form->label));
 		}
 
 		int cost = spellFatigueCost(*form);

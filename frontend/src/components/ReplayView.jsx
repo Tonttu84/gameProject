@@ -1,7 +1,27 @@
-import React, { useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import useReplay from '../hooks/useReplay'
 import useUiStore from '../stores/useUiStore'
 import TutorialIntro from './TutorialIntro'
+
+// The battle log's three tiers (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE LOGGING").
+//
+// CUMULATIVE: choosing a depth shows that tier and every shallower one, so
+// Detail includes Basic and Trace includes both. The order here IS the ladder.
+//
+// The control opens on Basic and Basic is never removable, which is what makes
+// the user's rule — "spells cast should however appear on any level" — true by
+// construction: casts are logged at Basic engine-side, so no setting this
+// control offers can hide them.
+const LOG_TIERS = ['basic', 'detail', 'trace']
+const TIER_LABELS = { basic: 'Basic', detail: 'Detail', trace: 'Trace' }
+
+// A line whose tier the client does not recognise is shown rather than dropped.
+// A replay recorded by a newer engine should read as slightly noisy, never as
+// silently missing the line that explains what happened.
+const tierDepth = (tier) => {
+  const i = LOG_TIERS.indexOf(tier)
+  return i === -1 ? 0 : i
+}
 
 // Same geometry as HexGrid.jsx (kept in sync — extract if a third user appears).
 const HEX_SIZE = 20
@@ -71,6 +91,9 @@ const MIN_GLYPH_PX = 4
 const ReplayView = ({ battleId, tickCount, info, map, onBack, autoPlay = false, backLabel = 'Back to result' }) => {
   const { current, tick, seek, next, prev, playing, setPlaying } = useReplay(battleId, tickCount)
   const tutorial = useUiStore((s) => s.tutorial)
+  // How deep the log is shown. Per-viewing rather than persisted: it is a way
+  // of LOOKING at a battle, not a setting about the campaign.
+  const [depth, setDepth] = useState('basic')
 
   // The login-screen demo starts playing on its own — the visitor launched it
   // to watch a battle, not to press Play. Real battle replays open paused.
@@ -206,10 +229,31 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack, autoPlay = false, 
         />
       </div>
 
-      <div className="replay-log" data-testid="replay-log">
-        {(tick?.log ?? []).map((line, i) => (
-          <div key={i}>{line}</div>
+      <div className="replay-log-head">
+        <span className="replay-depth-label">Depth:</span>
+        {LOG_TIERS.map((tier) => (
+          <button
+            key={tier}
+            className={`replay-depth ${depth === tier ? 'active' : ''}`}
+            data-testid={`replay-depth-${tier}`}
+            aria-pressed={depth === tier}
+            onClick={() => setDepth(tier)}
+          >
+            {TIER_LABELS[tier]}
+          </button>
         ))}
+      </div>
+
+      <div className="replay-log" data-testid="replay-log">
+        {(tick?.log ?? [])
+          // A line older than the tiered log crossed as a bare string; render it
+          // as Basic rather than dropping it, so an already-stored replay does
+          // not go blank when the engine that wrote it predates the ladder.
+          .map((line) => (typeof line === 'string' ? { tier: 'basic', text: line } : line))
+          .filter((line) => tierDepth(line.tier) <= tierDepth(depth))
+          .map((line, i) => (
+            <div key={i} className={`replay-log-line tier-${line.tier}`}>{line.text}</div>
+          ))}
       </div>
     </div>
   )

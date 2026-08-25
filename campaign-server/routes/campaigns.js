@@ -713,7 +713,7 @@ router.post('/:id/battles', async (req, res) => {
       campaign.squads.filter((squad) => fieldedSquadIds.has(squad.id)),
     ),
   }
-  const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
+  const { error, battle, summary } = await runAndPersistBattle(input, req.user._id, campaign.day)
   if (error) return res.status(400).json({ error })
 
   // Units left in camp are unaffected; fielded units are replaced by their
@@ -995,7 +995,7 @@ router.post('/:id/raids/launch', async (req, res) => {
       // out a real decision (S2-8).
       magic: magicBlock(campaign, squads),
     }
-    const { error, battle, summary } = await runAndPersistBattle(input, req.user._id)
+    const { error, battle, summary } = await runAndPersistBattle(input, req.user._id, campaign.day)
     if (error) return res.status(400).json({ error })
 
     // The party is replaced by its survivors (same reconciliation as the main

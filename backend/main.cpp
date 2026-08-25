@@ -15,6 +15,12 @@ constexpr int SERVER_PORT = 8080;
 
 int main(int argc, char* argv[])
 {
+    // Build the unit-name lookup before any battle starts. It constructs one
+    // unit of every type and so DRAWS RANDOM NUMBERS; doing it here means the
+    // cost lands at a fixed, observable point instead of mid-battle the first
+    // time a log line names a unit (see UnitCatalog.cpp).
+    warmUnitNames();
+
     std::string mode = (argc > 1) ? argv[1] : "";
 
     // Every mode is headless — battles simulate and record; the browser

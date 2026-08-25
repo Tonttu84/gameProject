@@ -1,4 +1,5 @@
 #include "catch.hpp"
+#include "BattleLogCapture.hpp"
 #include "Battlefield.hpp"
 #include "SpellList.hpp"
 #include "units/Soldier.hpp"
@@ -33,11 +34,6 @@ static Hex* placeOne(Army& army, Battlefield& bf, HexCoord c, int team) {
     u->setHex(hex);
     army.push_back(std::move(u));
     return hex;
-}
-
-static bool logHas(const std::vector<std::string>& log, const std::string& needle) {
-    return std::any_of(log.begin(), log.end(),
-        [&](const std::string& l) { return l.find(needle) != std::string::npos; });
 }
 
 static constexpr HexCoord PLAYER_HEX = {7, 2};    // Blue, low rows

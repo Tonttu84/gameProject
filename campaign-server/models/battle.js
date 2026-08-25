@@ -14,6 +14,20 @@ const battleSchema = new mongoose.Schema(
     tickCount: { type: Number, required: true, min: 0 },
     cols: { type: Number, default: 0 },
     rows: { type: Number, default: 0 },
+    // WHICH TURN this was fought on (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE
+    // LOGGING", L-6). The retention sweep keeps the current turn's battles and
+    // deletes everything older, and this is what it sorts on.
+    //
+    // Deliberately a field on BATTLE rather than on the campaign: the campaign
+    // schema is version-gated and a save from another version is DELETED on
+    // listing, so putting it there would cost the player their in-flight
+    // campaign to gain a number the battle already knows about itself.
+    //
+    // Null for battles that belong to no turn — the ownerless sample battle
+    // behind the login-screen demo, which no sweep must ever touch. A battle
+    // stored before this field existed is likewise null, and reads as old,
+    // which is the right answer: it cannot be watched either.
+    day: { type: Number, default: null },
     // Owner, once the auth module lands (same DB, users collection).
     // Nullable from day one so multi-user attaches without a migration.
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

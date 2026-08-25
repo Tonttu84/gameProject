@@ -78,6 +78,11 @@ std::vector<std::string> roleNames(UnitRole roles);
 // earlier catalog entry wins.
 std::string unitNameForSymbol(char symbol);
 
+// Build unitNameForSymbol's lookup once, early. Call at the top of main() (and
+// at the start of a test run) — NEVER from a static initialiser: see the note
+// in UnitCatalog.cpp for the deadlock that causes.
+void warmUnitNames();
+
 // Human-readable name for a UnitCategory ("Foot", "Mounted", ...).
 const char* categoryName(UnitCategory cat);
 

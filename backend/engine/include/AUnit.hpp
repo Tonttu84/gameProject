@@ -49,6 +49,11 @@ public:
     Hex* getHex() const;
     void reset();
     int getTeam() const;
+
+    // How this unit is NAMED in the battle log: "Mage (blue)". Extracted
+    // because three log sites were each rebuilding it from printSymbol, and a
+    // fourth (the Trace combat lines) would have been a fourth copy.
+    std::string logName() const;
     virtual int takeDamage(int amount, ArmorPen pen = ArmorPen::Normal);
     // attackerReach: melee weapon reach of the attacker. Ignored by the base
     // implementation — only MountedUnit targets use it, to shift the

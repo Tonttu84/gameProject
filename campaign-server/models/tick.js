@@ -29,6 +29,20 @@ const unitStateSchema = new mongoose.Schema(
   { _id: false },
 )
 
+// One line of the battle log, and the DEPTH at which it should appear
+// (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE LOGGING"). The engine records every
+// tier and the browser filters (L-1), so the tag has to be stored, not derived.
+//
+// `tier` is deliberately NOT an enum: the client already renders an unrecognised
+// tier rather than dropping it, on the grounds that a replay from a newer engine
+// should read as slightly noisy instead of silently missing the line that
+// explains the battle. A validator here would turn that into a write failure and
+// lose the tick outright, which is the worse end of the same trade.
+const logLineSchema = new mongoose.Schema(
+  { tier: { type: String, required: true }, text: { type: String, required: true } },
+  { _id: false },
+)
+
 // One engine tick of one battle: every alive unit's position/hp plus the
 // narrative log lines for that tick. index 0 is the deployment snapshot.
 const tickSchema = new mongoose.Schema({
@@ -40,7 +54,7 @@ const tickSchema = new mongoose.Schema({
   },
   index: { type: Number, required: true, min: 0 },
   units: { type: [unitStateSchema], required: true },
-  log: { type: [String], default: [] },
+  log: { type: [logLineSchema], default: [] },
 })
 
 tickSchema.index({ battle: 1, index: 1 }, { unique: true })

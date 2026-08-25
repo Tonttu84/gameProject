@@ -82,10 +82,22 @@ void ReplayRecorder::recordTick(Battlefield& field)
     recordTeam(units, field, REDTEAM, layouts);
     recordTeam(units, field, BLUETEAM, layouts);
 
+    // The log crosses TIER-TAGGED (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE
+    // LOGGING", L-1): every tier is persisted and the browser filters, so the
+    // tag has to survive the wire. An object per line rather than a prefixed
+    // string, because the filter reads the tag and should never be parsing
+    // prose to find it.
+    json log = json::array();
+    for (const LogLine& line : field.takeTickLog())
+        log.push_back({
+            {"tier", std::string(logTierName(line.tier))},
+            {"text", line.text},
+        });
+
     _ticks.push_back({
         {"tick",  _ticks.size()},
         {"units", std::move(units)},
-        {"log",   field.takeTickLog()},
+        {"log",   std::move(log)},
     });
 }
 

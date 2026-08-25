@@ -405,8 +405,15 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
   // channel the PLAYER has for judging a script. If that line ever stops being
   // emitted this test goes red, which is the right coupling: the feature and
   // its evidence are the same thing.
+  // The log crosses TIER-TAGGED since the tiered-logging pass; a bare string is
+  // what a pre-ladder binary emits. Read through one accessor so these tests
+  // pin the CAST, not the wire shape it happens to arrive in.
+  const lineText = (l) => (typeof l === 'string' ? l : l.text)
   const castsIn = (replay) =>
-    replay.ticks.flatMap((t) => t.log ?? []).filter((l) => l.includes(' casts '))
+    replay.ticks
+      .flatMap((t) => t.log ?? [])
+      .map(lineText)
+      .filter((l) => l.includes(' casts '))
 
   // One Mage who commands two paths, against a host far enough away to give him
   // several turns of casting. Evocation 1 opens the minor form of both spells,

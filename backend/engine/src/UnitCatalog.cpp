@@ -99,6 +99,19 @@ std::vector<std::string> roleNames(UnitRole roles)
 std::string unitNameForSymbol(char symbol)
 {
     // Built once by constructing one unit per type and reading its symbol.
+    //
+    // BUILDING IT CONSUMES RNG — every AUnit constructor draws a number for its
+    // sortKey — so WHEN it is built shifts the random stream for everything
+    // after it. That was harmless while this was only called from the JSON
+    // export, and stopped being harmless the moment the tiered battle log
+    // started naming units from inside combat: the first Trace line of a battle
+    // would build the map mid-fight and eat a dozen draws, which broke every
+    // test that pushes an exact dice sequence and made a seeded replay depend
+    // on whether a log line happened to fire first.
+    //
+    // warmUnitNames() below is called at the top of main() and at the start of
+    // a test run, so the cost is paid once, early, where nothing can observe
+    // it — before any battle and before any test pushes a dice sequence.
     static const std::unordered_map<char, std::string> bySymbol = [] {
         std::unordered_map<char, std::string> m;
         for (const auto& entry : unitCatalog())
@@ -108,6 +121,18 @@ std::string unitNameForSymbol(char symbol)
     auto it = bySymbol.find(symbol);
     return it != bySymbol.end() ? it->second : "";
 }
+
+// Build the map NOW, at a moment of the caller's choosing.
+//
+// Called from main() and from the test runner's start, both of which are
+// RUNTIME — deliberately not a static initialiser. Building it at static-init
+// deadlocks the test binary: the map constructs units, every AUnit constructor
+// calls Utility::getRandom(), and getRandom touches `mockValues`/`gen`, which
+// are statics in ANOTHER translation unit with no guaranteed construction order.
+// Reading an unconstructed std::queue is undefined and in practice spins
+// forever. `./game` never showed it because only the -DTESTING build compiles
+// the mock-queue branch.
+void warmUnitNames() { unitNameForSymbol('\0'); }
 
 const char* categoryName(UnitCategory cat)
 {

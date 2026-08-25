@@ -12,7 +12,19 @@ import { runBattle, runSample } from './engine.js'
 // the BattleInput (or a marker like { sample: true }) stored for the record;
 // `userId` is the owner (null for ownerless demo battles). Returns
 // { battle, result, summary } where summary is the client-facing shape.
-async function persistBattleResult(result, { input, userId }) {
+// A log line as the Tick schema stores it (docs/CAMPAIGN_PLAN.md, "TIERED
+// BATTLE LOGGING"). The engine emits {tier, text}; a bare string is what an
+// OLDER binary emits, and it reads as Basic — the tier that cannot be filtered
+// away, so nothing goes missing.
+//
+// Normalising HERE rather than fixing the fixtures is deliberate: the campaign
+// server and the engine binary are deployed together but not built together, and
+// a server meeting a binary from before the ladder should store its battles
+// rather than reject every one of them with a validation error.
+const logLine = (line) =>
+  typeof line === 'string' ? { tier: 'basic', text: line } : line
+
+async function persistBattleResult(result, { input, userId, day = null }) {
   const replay = result.replay ?? { map: input.map ?? 'unknown', cols: 0, rows: 0, ticks: [] }
 
   const battle = await Battle.create({
@@ -25,6 +37,7 @@ async function persistBattleResult(result, { input, userId }) {
     tickCount: replay.ticks.length,
     cols: replay.cols,
     rows: replay.rows,
+    day,
   })
 
   if (replay.ticks.length > 0)
@@ -33,7 +46,7 @@ async function persistBattleResult(result, { input, userId }) {
         battle: battle._id,
         index: t.tick,
         units: t.units,
-        log: t.log ?? [],
+        log: (t.log ?? []).map(logLine),
       })),
     )
 
@@ -88,10 +101,10 @@ async function persistBattleResult(result, { input, userId }) {
 //
 // Returns { error } for engine-level rejections (bad map name, empty input …
 // — client error, nothing stored), otherwise { battle, result, summary }.
-export async function runAndPersistBattle(input, userId) {
+export async function runAndPersistBattle(input, userId, day = null) {
   const result = await runBattle(input)
   if (result.error) return { error: result.error }
-  return persistBattleResult(result, { input, userId })
+  return persistBattleResult(result, { input, userId, day })
 }
 
 // Run the hardcoded sample scenario and persist it as an ownerless battle. Same

@@ -67,7 +67,14 @@ describe('POST /api/battles', () => {
     expect(ticks.length).toBe(3)
     expect(ticks.map((t) => t.index)).toEqual([0, 1, 2])
     expect(ticks[0].units.length).toBe(3)
-    expect(ticks[2].log).toEqual(['Zombie (red) fell'])
+    // Stored TIER-TAGGED (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE LOGGING"): the
+    // browser filters on the tag, so it has to survive into the DB. This
+    // fixture's line is a bare string — what an engine binary from before the
+    // ladder emits — and it normalises to Basic rather than being rejected,
+    // which is what keeps a server storing battles when it meets an older
+    // binary than itself.
+    expect(ticks[2].log.map((l) => ({ tier: l.tier, text: l.text })))
+      .toEqual([{ tier: 'basic', text: 'Zombie (red) fell' }])
 
     // The engine's layout offsets must survive persistence — ReplayView draws
     // exclusively from them (the DB is the render interface; a strict schema

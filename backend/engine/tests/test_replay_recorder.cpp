@@ -126,8 +126,12 @@ TEST_CASE("replay recorder: cleanup logs a death event into the tick log") {
     const auto& log = replay["ticks"][1]["log"];
     bool mentionsSoldier = false;
     for (const auto& line : log)
-        if (line.get<std::string>().find("Soldier") != std::string::npos)
+        if (line["text"].get<std::string>().find("Soldier") != std::string::npos) {
             mentionsSoldier = true;
+            // A death is Basic (L-2), which is what keeps it visible at the
+            // depth the replay opens on.
+            REQUIRE(line["tier"].get<std::string>() == "basic");
+        }
     REQUIRE(mentionsSoldier);
 
     field.extractResult();
@@ -144,8 +148,13 @@ TEST_CASE("battlefield log sink: logEvent lines land in the next tick only") {
 
     json replay = recorder.toJson("sample_battle");
     REQUIRE(replay["ticks"][1]["log"].size() == 1);
-    REQUIRE(replay["ticks"][1]["log"][0].get<std::string>()
+    // The line crosses TIER-TAGGED (L-1): the browser filters on this, so the
+    // tag has to survive the wire rather than being inferred from the prose.
+    REQUIRE(replay["ticks"][1]["log"][0]["text"].get<std::string>()
             == "a soldier fled the battlefield");
+    // The untiered overload means Basic — a caller with nothing to say about
+    // depth gets the tier that cannot be filtered away.
+    REQUIRE(replay["ticks"][1]["log"][0]["tier"].get<std::string>() == "basic");
     REQUIRE(replay["ticks"][2]["log"].empty());
 
     field.extractResult();

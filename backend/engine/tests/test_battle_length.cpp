@@ -1,4 +1,5 @@
 #include "catch.hpp"
+#include "BattleLogCapture.hpp"
 #include "Battlefield.hpp"
 #include "BattleSetup.hpp"
 #include "Utility.hpp"
@@ -60,11 +61,8 @@ TEST_CASE("battle length: hitting the limit logs a day-over event") {
     field.setMaxTicks(2);
 
     while (field.tick()) {}
-    auto log = field.takeTickLog();
-    bool dayOver = false;
-    for (const auto& line : log)
-        if (line.find("day is over") != std::string::npos) dayOver = true;
-    REQUIRE(dayOver);
+    CAPTURE_BATTLE_LOG(field);
+    REQUIRE(logHas(field, "day is over"));
 
     field.extractResult();
     field.reset();

@@ -2,6 +2,7 @@
 #include "catch.hpp"
 
 #include "Utility.hpp"
+#include "UnitCatalog.hpp"
 
 // The suite runs on a RANDOM seed every time, on purpose: a fixed one would be
 // green and blind, and both flakes chased on 2026-08-09 were rare-draw bugs a
@@ -18,6 +19,12 @@ struct SeedReporter : Catch::TestEventListenerBase {
 
     void testRunStarting(Catch::TestRunInfo const&) override {
         std::cerr << "[rng] seed=" << Utility::rngSeed() << '\n';
+        // Build the unit-name lookup HERE, before the first test. It constructs
+        // one unit of every type and each constructor draws a random number, so
+        // left until first use it would fire inside whichever test first logged
+        // a unit's name and eat that test's pushed dice. Not a static
+        // initialiser: that deadlocks this binary (UnitCatalog.cpp explains).
+        warmUnitNames();
     }
 
     void testRunEnded(Catch::TestRunStats const& stats) override {

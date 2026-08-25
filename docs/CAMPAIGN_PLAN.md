@@ -2612,12 +2612,106 @@ which meant a player could reorder three slots and have no way whatever to tell 
 `AUnit::completeCast` now logs `Mage (blue) casts Ember`, naming the form that ACTUALLY fired so
 M-26's fall-through reads honestly.
 
-**▶▶ AND A TODO OF ITS OWN, the user's design, not built here: TIERED BATTLE LOGGING** (*"We will
+**▶▶ TIERED BATTLE LOGGING IS NOW BUILT — see "TIERED BATTLE LOGGING" below (interviewed and
+shipped 2026-08-25).** What follows is the TODO as it was written when slice 4 shipped, kept because
+it is the user's own wording of the design; the six decisions that settled it are in that section.
+
+**▶▶ THE TODO AS IT STOOD, the user's design** (*"We will (*"We will
 strive to log the combat with great detail with different levels, spells cast should however appear
 on any level… Basic info, units dying, spells being cast are on by default but then we can go deeper
 where we see every roll, mages preparing to cast and spells going off"*). A default tier carrying
 basic info, deaths and casts; deeper tiers exposing individual rolls and casters mid-channel. S4-8's
 line will be re-filed under that default tier when it is built.
+
+### TIERED BATTLE LOGGING (interviewed and shipped 2026-08-25)
+
+The TODO slice 4 left behind, taken up because the user wanted the tests to explain themselves:
+*"We have existing tests, if the tests log in more detail I would assume it is easier to debug them
+when something fails."* **Six decisions, all the user's — do not re-derive them.** No schema bump:
+the one new persisted field is on `Battle`, which is not version-gated (see L-6).
+
+**L-1. EVERY TIER IS PERSISTED; THE BROWSER FILTERS.** The engine has no verbosity setting and
+records everything it knows. Rejected: a per-battle cap (the assistant's recommendation — cheaper,
+but a battle is fought once and watched later, possibly at a depth nobody had chosen while it ran,
+so capping at write time throws away the only chance to keep the detail) and two separate channels,
+replay for players and stderr for developers (which would have left the player unable to go deeper
+in the browser — the half of the user's design that says *"then we can go deeper"*).
+
+**Measured, not guessed:** a sample battle was 319 ticks / 5,820 lines / **19.7 MB** before, and
+**21.0 MB** after (+6.7%) with 31,053 Trace lines, 2,152 Detail and 4,895 Basic. The bulk of a
+replay is 1,400 unit positions per tick, not prose, which is why the ladder was affordable at all —
+and L-6 is what stops even that accumulating.
+
+**L-2. THREE TIERS: Basic · Detail · Trace.** Basic carries turn markers, deaths, **casts**, routs
+and the battle's end; Detail carries engagements forming, morale checks, a caster beginning to
+channel, a spell fizzling; Trace carries every roll. **Casts sit on Basic so that the user's one
+hard rule — "spells cast should however appear on any level" — is STRUCTURAL**: the filter cannot go
+shallower than Basic, so no setting can hide a spell. Rejected: a fourth always-on tier for casts
+(the same guarantee, one more concept) and unnamed numeric levels 1-9 (nothing in the code would say
+what level 3 MEANS, so call sites drift).
+
+Three existing lines moved OFF Basic to match the ladder as decided: the spell fizzle, the rally,
+and the shield-chip. Everything else stayed, so the replay at its default depth reads as it always
+did.
+
+**L-3. TESTS RUN AT TRACE AND PRINT ONLY ON FAILURE.** `CAPTURE_BATTLE_LOG(field)` in
+`tests/BattleLogCapture.hpp` attaches the battle to every following assertion as Catch2 scoped info:
+silent on green, and on red it dumps the roll-by-roll fight under the assertion that failed.
+Rejected: opt-in-while-debugging (CI goes red and you get the basic log only, so reproducing locally
+is the extra step the idea existed to remove) and a whole-run env var (a Trace CI run prints
+everything for passing tests too).
+
+**It works because nothing drains the log in tests.** `Battlefield` clears `_tickLog` only in
+`reset()`/`loadArmies()`, and only the `ReplayRecorder` takes it — so in a test the whole battle
+accumulates and is simply sitting there when the assertions run. `tickLog()` was added beside
+`takeTickLog()` for exactly this: reading the log to build a failure message must not consume the
+log the test is about to assert on. **Measured: the fast suite is unchanged at ~2.5s.**
+
+**L-4. THIS PASS AUTHORS THE COMBAT ROLLS.** The frame, the filter, the capture, the 21 existing
+lines retagged, Trace where melee and ranged actually resolve, and Detail where the code already
+branched. Rejected: a full sweep of the engine (most of it is code nobody is debugging) and
+frame-only (the capture would have had nothing extra to show, which was the point).
+
+**L-5. A CUMULATIVE SEGMENTED CONTROL, OPENING ON BASIC.** Detail includes Basic, Trace includes
+both. Rejected: independent per-tier toggles (most combinations are noise, and it makes the
+always-on rule for casts a special case rather than a consequence of the ladder) and storing the
+tiers with no control yet.
+
+**L-6. AT END OF TURN, EVERY BATTLE OLDER THAN THE CURRENT TURN IS DELETED** — the `Battle` document
+and its `Tick`s — and `campaign.battles` is pruned with them (user: *"We only need to keep the last
+turn in the DB for the campaign… the older battles cant be replayed anyways"*, conditional on there
+being no way to watch them from the UI).
+
+**THE CONDITION WAS CHECKED, NOT ASSUMED.** `campaignView` does ship the id list, but **no component
+consumes it**: `getBattle`/`getTicks` are called only for the fight just watched. There is no
+navigation to an old replay, so those ticks are storage nobody can open.
+
+**Where the turn number lives, and why it is not on the campaign:** `Battle.day`. The campaign schema
+is version-gated and a save from another version is DELETED on listing, so putting the field there
+would have cost the player their in-flight campaign to store a number the battle already knows about
+itself. `Battle` carries no such gate. A `null` day means "belongs to no turn" — the ownerless sample
+battle behind the login-screen demo, which no sweep ever reaches because it is in no campaign's list.
+
+**Two consequences handled rather than left to bite:**
+
+- **A bare-string log line normalises to Basic at the persistence boundary** rather than being
+  rejected. The campaign server and the engine binary are deployed together but not BUILT together,
+  and a server meeting a pre-ladder binary should store its battles, not 400 on every one. The
+  browser does the same for an already-stored replay, and shows an UNKNOWN tier rather than dropping
+  it — a replay from a newer engine should read as slightly noisy, never as silently missing the
+  line that explains the battle.
+- **`Tick.log` is now `[{tier, text}]`**, and `tier` is deliberately not an enum for the same
+  forward-tolerance reason: a validator would turn an unknown tier into a lost tick.
+
+**▶ A REGRESSION THIS SLICE CAUSED AND FIXED, worth knowing about because the trap is still there.**
+Naming a unit in a log line calls `unitNameForSymbol`, whose symbol map is built lazily **by
+constructing one unit of every type — and every `AUnit` constructor draws a random number for its
+sortKey.** That was harmless while the map was only built by the JSON export, and stopped being
+harmless the moment combat started naming units: the first Trace line of a battle built the map
+mid-fight and ate a dozen draws, which broke every test that pushes an exact dice sequence and made
+a seeded replay depend on whether a log line happened to fire first. **The map is now warmed at
+static-init**, before main and therefore before any seeding or any pushed dice. **Anything else that
+lazily constructs units carries the same hazard.**
 
 **S4-9. IT IS CALLED "CHOSEN SPELLS"** (user). Not "script" (our internal Dominions word), not
 "standing orders" (the reading S4-4 ruled out).

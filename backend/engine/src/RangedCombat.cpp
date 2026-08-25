@@ -59,7 +59,22 @@ void RangedCombat::applyHit(AUnit* shooter, AUnit* target, const RangedShot& sho
     }
 
     int damage = baseDamage + elevDmgBonus - reduction;
-    if (damage <= 0) return;
+    if (damage <= 0) {
+        // TRACE (L-4): a shot that arrived and did nothing. Worth a line of its
+        // own — "no line at all" and "hit for zero" look identical in a log, and
+        // this is exactly the case S4-8 flagged, where damage SPELLS resolve as
+        // a RangedShot and so said nothing whatever about what they did.
+        Utility::getBattlefield().logEvent(LogTier::Trace,
+            target->logName() + " is grazed for nothing (base " + std::to_string(baseDamage)
+            + (blocked ? ", blocked" : "") + ")");
+        return;
+    }
+
+    Utility::getBattlefield().logEvent(LogTier::Trace,
+        target->logName() + " is struck for " + std::to_string(damage)
+        + " (base " + std::to_string(baseDamage)
+        + (elevDmgBonus ? ", elevation " + std::to_string(elevDmgBonus) : "")
+        + (blocked ? ", blocked -" + std::to_string(reduction) : "") + ")");
 
     target->takeDamage(damage, shot.pen);
     if (shot.onDamage) shot.onDamage(shooter, target, damage);

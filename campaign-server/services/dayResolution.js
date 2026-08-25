@@ -15,6 +15,7 @@ import {
 import { bracketOnLevelUp } from './recon.js'
 import { drawUpgradeOffer } from './squadUpgrades.js'
 import { refillSquads } from './squadReinforce.js'
+import { sweepOldBattles } from './battleRetention.js'
 import {
   applyEffect,
   firedRung,
@@ -411,6 +412,18 @@ export async function endDay(campaign) {
   // active-guard would strand the pending entries (and the client's gate)
   // on a finished campaign.
   if (campaign.status !== 'active') campaign.pendingChoices = []
+
+  // 6.9 Reclaim the storage of battles nobody can watch any more (L-6).
+  //
+  // BEFORE the day increments, so "older than the current turn" still means
+  // "older than the turn just fought" and today's battle — the one the player
+  // may be about to open from the report — survives.
+  //
+  // Deliberately outside the `status === 'active'` gate below: a campaign that
+  // just ended is exactly the one whose replays nobody will open again.
+  const swept = await sweepOldBattles(campaign)
+  if (swept.deleted > 0)
+    console.log(`campaign ${campaign.id}: swept ${swept.deleted} unwatchable battle(s)`)
 
   // 7. New turn
   if (campaign.status === 'active') {

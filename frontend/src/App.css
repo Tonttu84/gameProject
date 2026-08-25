@@ -825,3 +825,30 @@ body {
 .study-spell-detail { padding: 0.1rem 0 0.5rem 1.8rem; }
 .study-spell-desc { font-size: 0.85rem; margin: 0; }
 .study-spell-numbers { color: #8888aa; font-size: 0.8rem; margin: 0.2rem 0 0; }
+
+/* ── The replay's depth control (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE
+   LOGGING", L-5) ───────────────────────────────────────────────────────────
+   A segmented control over the log, reading as one control rather than three
+   buttons. Basic is where it opens and is never removable — casts are logged
+   at Basic engine-side, so no setting here can hide a spell. */
+.replay-log-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.3rem;
+}
+.replay-depth-label { color: #8888aa; font-size: 0.8rem; margin-right: 0.2rem; }
+.replay-depth {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: #aab;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.45rem;
+}
+.replay-depth.active { color: var(--gold); border-color: var(--gold); }
+/* The deeper tiers are dimmed against the Basic line they surround: at Trace a
+   death should still stand out from the forty rolls that produced it. */
+.replay-log-line.tier-detail { color: #9999bb; }
+.replay-log-line.tier-trace  { color: #77778f; font-size: 0.95em; }

@@ -1,5 +1,6 @@
 #pragma once
 #include "Spell.hpp"   // SpellSchool, for the per-side school levels below
+#include "BattleLog.hpp" // LogTier/LogLine, the tiered battle log below
 #include "Defines.hpp"
 #include "hex/HexGrid.hpp"
 #include "AUnit.hpp"
@@ -213,9 +214,36 @@ class Battlefield
         // per-battle accumulators.
         void scheduleReinforcement(Reinforcement r) { _reinforcements.push_back(std::move(r)); }
 
-        void logEvent(std::string line) { _tickLog.push_back(std::move(line)); }
-        std::vector<std::string> takeTickLog() {
-            std::vector<std::string> out;
+        // ── The battle log, in three tiers (docs/CAMPAIGN_PLAN.md, "TIERED
+        // BATTLE LOGGING") ──────────────────────────────────────────────────
+        //
+        // EVERY tier is recorded and persisted; the browser filters (L-1). So
+        // there is no verbosity dial down here and nothing to configure per
+        // battle — the engine says everything it knows, once, and the reader
+        // decides how much of it to look at.
+        //
+        // CASTS ARE ON Basic ON PURPOSE (L-2). The user's rule is that spells
+        // appear at any depth, and the way to make that true is structural: the
+        // filter cannot reach below Basic, so a cast line cannot be hidden by
+        // any setting the player picks. It is not a special case in the filter.
+        void logEvent(LogTier tier, std::string line) {
+            _tickLog.push_back({tier, std::move(line)});
+        }
+        // Untiered overload = Basic. Kept so a call site that has nothing to say
+        // about depth reads as it always did, and so the tier is a thing you opt
+        // INTO rather than a parameter every caller has to think about.
+        void logEvent(std::string line) { logEvent(LogTier::Basic, std::move(line)); }
+
+        // A non-draining look at the log. The recorder DRAINS each tick; nothing
+        // drains it in the engine tests, so there it accumulates the whole
+        // battle — which is exactly what the test capture reads
+        // (tests/BattleLogCapture.hpp). Kept separate from takeTickLog() so
+        // reading the log for a failure message cannot consume the log a test
+        // was about to assert on.
+        const std::vector<LogLine>& tickLog() const { return _tickLog; }
+
+        std::vector<LogLine> takeTickLog() {
+            std::vector<LogLine> out;
             out.swap(_tickLog);
             return out;
         }
@@ -240,7 +268,7 @@ class Battlefield
         std::array<std::array<int, SPELL_SCHOOL_COUNT>, 2> _schoolLevels
             { spellSchoolsOpen(), spellSchoolsOpen() };
         std::array<int, 2> _channels{};
-        std::vector<std::string> _tickLog;
+        std::vector<LogLine> _tickLog;
         std::vector<Reinforcement> _reinforcements;
         int    _maxTicks = DEFAULT_MAX_BATTLE_TICKS;
         int    _ticksRun = 0;
