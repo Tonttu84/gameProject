@@ -339,7 +339,7 @@ fight, and raids are the only other way to fight. Read every "tonight" in the ol
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
 **▶ THE MAGIC SYSTEM IS SPEC'D AND NOT BUILT (interviewed 2026-08-25).** The next design front,
-and the biggest system the project has taken on: **twenty-two decisions under "THE MAGIC SYSTEM" below,
+and the biggest system the project has taken on: **twenty-three decisions under "THE MAGIC SYSTEM" below,
 all the user's — do not re-derive them.** Modelled deliberately on Dominions, with the source
 checked rather than recalled. Recorded on the user's instruction to spec only, so nothing is built.
 **Read the "WHAT EXISTS TODAY" paragraph there first: magic is DEAD CODE, not half-built** — `mana`
@@ -1821,7 +1821,7 @@ may not replay on a different libstdc++.
 ### THE MAGIC SYSTEM (interviewed 2026-08-25) — SPEC'D, NOT BUILT
 
 Modelled deliberately on the **Dominions** series (user, 2026-08-25), with the source checked rather
-than recalled. **Twenty-two decisions, all the user's — do not re-derive them.** Recorded on the
+than recalled. **Twenty-three decisions, all the user's — do not re-derive them.** Recorded on the
 user's instruction ("record the spec only"), so nothing below is built yet. It supersedes
 `[[todo-spell-paths-research]]` in the deferred backlog, which recorded the ask and listed the
 questions this interview answers, and it is what `docs/UNITS_AS_DATA_PLAN.md` **Stage R4 — Spell
@@ -2045,6 +2045,31 @@ default one, and there is no second code path to write or reconcile.
 its outcome, best score winning — *"to make it a bit more dynamic but not for this slice
 certainly"*. Do not build scoring hooks in anticipation; the targeting split it would need is real
 work and belongs to the slice that uses it.
+
+**M-23. CASTING TIME REPLACES COOLDOWN, AND THE FATIGUE IS PAID WHEN THE SPELL GOES OFF.** A spell
+is authored with a casting time in ticks rather than a post-cast cooldown, **minimum one turn**
+(user) — so the cheapest spell still occupies the caster for a tick, and nothing casts instantly.
+
+**The fatigue lands at completion, not at the start and not per tick** (user, 2026-08-25: *"The
+caster gains fatigue when the spell is actually cast, the fatigue powers the spell, if there is no
+spell there is no fatigue"*). The rule reads cleanly in both directions: fatigue is what POWERS the
+spell, so an interrupted channel costs nothing, and a caster can never be exhausted by a spell that
+never happened. Rejected on the user's answer: paying up front (which front-loads exhaustion and can
+drop the very cast it paid for) and paying per tick of channelling.
+
+**BEING HIT MID-CAST FORCES A CONCENTRATION THROW** (user). The interruption rule is a roll, not an
+automatic loss — a struck caster may hold the spell together. **What the throw is rolled against is
+BALANCE-DEFERRED** like every other number here; what is decided is that damage threatens a channel
+and does not simply end it.
+
+**AN OPEN CONSEQUENCE, RAISED BY THE USER AND NOT YET DECIDED: how a passed-out mage moves now that
+casters are squad members.** The user's instinct is movement zero plus the existing help-the-slow
+mechanic ("carry them"). That mechanic is real — `Battlefield.cpp`'s squad pre-pass pools movement
+points, and a blocked squad spends `SQUAD_AID_COST = 3` points to buy the most-drained straggler +1,
+described in its own comment as "faster members finding the path for a slow one and carrying his
+gear". **The edge to weigh when deciding:** that same comment records that "a member at zero or below
+blocks the whole squad", and a unit at `movementSpeed` 0 never regains points on its own, so aid at
+3:1 becomes the only thing moving him and the squad hauls him at roughly a third speed.
 
 **Assistant's calls, flagged as overturnable:**
 - **A script line the caster cannot currently cast is SKIPPED, not stalled on** — they fall through
