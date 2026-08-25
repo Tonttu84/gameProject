@@ -49,6 +49,12 @@ const initialState = () => ({
   //     App.jsx has to tell the two apart to place them on opposite sides of
   //     the pending-choices overlay (17-6).
   storeRequest: null,
+  // THE STUDY (slice 3, S3-3). A takeover like the two above and opened the
+  // same way — from a HUD door — because research is ARMY-WIDE, the same tier
+  // as the stores and unlike a squad's charter. One boolean rather than a
+  // shape: the screen shows all four schools at once and has no sub-pages to
+  // address, so there is nothing to carry.
+  studyOpen: false,
 })
 
 // UI-only campaign state: which screen is showing, in-progress battle
@@ -84,6 +90,11 @@ const useUiStore = create((set) => ({
   showCharacterPage: (characterId) => set({ squadScreen: { page: 'character', characterId } }),
   closeSquadScreen: () => set({ squadScreen: null }),
 
+  // The Study opens over whatever screen the player is on and Back puts them
+  // back, exactly as the squad screen and the store do.
+  openStudy: () => set({ studyOpen: true }),
+  closeStudy: () => set({ studyOpen: false }),
+
   toggleTutorial: () =>
     set((state) => {
       const next = !state.tutorial
@@ -96,7 +107,7 @@ const useUiStore = create((set) => ({
   resetBattleUI: () =>
     set({
       battleResult: null, raidBattle: null, dayReport: null,
-      storeRequest: null, squadScreen: null, phase: 'prepare',
+      storeRequest: null, squadScreen: null, studyOpen: false, phase: 'prepare',
     }),
 
   reset: () => set(initialState()),

@@ -1,4 +1,5 @@
 import { getCatalog } from '../utils/catalog.js'
+import { getSpellCatalog } from '../utils/spellCatalog.js'
 import {
   armyFoodPerTurn,
   reconBand,
@@ -35,8 +36,7 @@ import { bannerTier, describeItem, findItem, squadBanner, storedItems } from './
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
 import { garrisonLevel } from './garrison.js'
-import { pathEntries, schoolOf } from './magic.js'
-import { SPELL_SCHOOLS, SPELL_SCHOOL_TEXT } from '../utils/campaignConfig.js'
+import { pathEntries, researchView } from './magic.js'
 import { displayBracket } from './recon.js'
 import {
   forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
@@ -396,16 +396,12 @@ export async function campaignView(campaign) {
     //
     // The four schools are named and phrased here rather than left as keys,
     // for the same reason the character sheet's stats are.
-    research: {
-      focus: campaign.research?.focus ?? null,
-      allies: campaign.research?.allies ?? 0,
-      schools: Object.fromEntries(
-        SPELL_SCHOOLS.map((school) => {
-          const { level, points } = schoolOf(campaign, school)
-          return [school, { label: SPELL_SCHOOL_TEXT[school], level, points }]
-        }),
-      ),
-    },
+    // Slice 3 grows this into the whole of what The Study draws: the four
+    // schools with their levels, banks and next-level prices, each carrying the
+    // spells it holds and whether the current level has unlocked them. Built in
+    // services/magic.js, which is the one place this layer knows what a school
+    // or a path IS — the view assembles, it does not compute.
+    research: researchView(campaign, getSpellCatalog()),
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { beforeAll, afterAll, describe, expect, test } from 'vitest'
 import config from '../utils/config.js'
-import { dumpUnits, getInfo, runBattle } from '../services/engine.js'
+import { dumpSpells, dumpUnits, getInfo, runBattle } from '../services/engine.js'
 import { makeZonePlacer } from '../services/enemyPlacement.js'
 import { formationFighter, statMods } from '../services/squadUpgrades.js'
 import { packedSize, squadCaps } from '../services/squadReinforce.js'
@@ -11,6 +11,7 @@ import { startTestDb, stopTestDb } from './helpers/db.js'
 import { engineStatsFixture } from './fixtures/engineStats.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { RECRUIT_POOL, FALLBACK_HIRE } from '../services/recruit.js'
+import { researchView, spellsForSchool } from '../services/magic.js'
 import {
   ENEMY_ARMY,
   STARTING_ROSTER,
@@ -19,6 +20,8 @@ import {
   SQUAD_TROOP_BUDGET,
   SQUAD_UPGRADE_POOL,
   CHARACTER_TYPES,
+  SPELL_SCHOOLS,
+  SPELL_PATHS,
   SQUAD_REINFORCE_POOL,
   SQUAD_CHARACTER_RESERVE,
 } from '../utils/campaignConfig.js'
@@ -316,4 +319,95 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
     const info = await getInfo()
     expect(SQUAD_TROOP_BUDGET + SQUAD_CHARACTER_RESERVE).toBeLessThanOrEqual(info.grid.hexCapacity)
   }, 30000)
+})
+
+// ── The spell roster crossing into the campaign layer (slice 3, S3-1) ────────
+//
+// The other half of the contract the unit catalog already has: the campaign
+// server renders gates the ENGINE enforces, so a spell retuned in C++ must move
+// The Study with it rather than leaving the screen quietly wrong. These run
+// against the real `dump-spells`, which is what makes them worth having —
+// tests/research.test.js pins the same shapes against a fixture.
+describe.skipIf(!hasEngine)('the real spell roster', () => {
+  test('dump-spells emits the fields the research view reads', async () => {
+    const { spells } = await dumpSpells()
+    expect(spells.length).toBeGreaterThan(0)
+
+    for (const row of spells) {
+      expect(typeof row.spell).toBe('string')
+      expect(typeof row.form).toBe('string')
+      // A blank label renders as an empty row and a blank description opens to
+      // an empty panel (S3-4) — both read as bugs to the player.
+      expect(row.label.length).toBeGreaterThan(0)
+      expect(row.description.length).toBeGreaterThan(0)
+      expect(row.paths.length).toBeGreaterThan(0)
+      for (const req of row.paths) expect(SPELL_PATHS).toContain(req.path)
+      if (row.school !== null) expect(SPELL_SCHOOLS).toContain(row.school)
+      expect(row.fatigue).toBeGreaterThan(0)
+      expect(row.castingTime).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  test('every school-less form is Holy or Unholy — what S3-2 filters on', async () => {
+    const { spells } = await dumpSpells()
+    // The Study drops `school === null` and nothing else. If an ARCANE spell
+    // ever lost its school gate it would vanish off the research screen without
+    // a word, so the property that makes the filter safe is pinned here.
+    for (const row of spells) {
+      const granted = ['holy', 'unholy'].includes(row.paths[0].path)
+      expect(row.school === null).toBe(granted)
+    }
+    expect(spells.some((row) => row.school === null)).toBe(true)
+  })
+
+  test('every researchable school the engine names is one the campaign offers', async () => {
+    const { spells } = await dumpSpells()
+    // The reverse of the filter above: a school authored in C++ that the
+    // campaign layer does not know would hold spells no screen could ever show.
+    const named = new Set(spells.map((row) => row.school).filter(Boolean))
+    for (const school of named) expect(SPELL_SCHOOLS).toContain(school)
+  })
+
+  test('the real roster groups cleanly under the campaign view', async () => {
+    const { spells } = await dumpSpells()
+    // A skeleton campaign, the same degrade-safely shape the structural tests
+    // sweep through magic.js: no document, just the numbers researchView reads.
+    const campaign = {
+      research: {
+        focus: 'evocation',
+        allies: 0,
+        schools: Object.fromEntries(
+          SPELL_SCHOOLS.map((s) => [s, { level: s === 'evocation' ? 1 : 0, points: 0 }]),
+        ),
+      },
+    }
+    const view = researchView(campaign, spells)
+
+    // Every arcane form lands under exactly one school, and none is orphaned.
+    const shown = SPELL_SCHOOLS.flatMap((s) => view.schools[s].spells)
+    expect(shown).toHaveLength(spells.filter((row) => row.school !== null).length)
+
+    // Evocation at 1 unlocks its level-1 forms and not its level-3 ones — the
+    // gate the engine itself applies (Spells::qualifies), read off the view.
+    for (const spell of view.schools.evocation.spells)
+      expect(spell.unlocked).toBe(spell.schoolLevel <= 1)
+  })
+
+  test('spellsForSchool keeps the engine order, so minor precedes major', async () => {
+    const { spells } = await dumpSpells()
+    for (const school of SPELL_SCHOOLS) {
+      const rows = spellsForSchool(spells, school, 9)
+      // Within one spell the engine authors weakest first — the order
+      // chooseSpellToCast walks (M-13). A screen that re-sorted would show the
+      // major form above the minor one it falls back to.
+      const bySpell = new Map()
+      for (const row of rows) {
+        const seen = bySpell.get(row.spell) ?? []
+        seen.push(row.schoolLevel)
+        bySpell.set(row.spell, seen)
+      }
+      for (const levels of bySpell.values())
+        expect([...levels]).toEqual([...levels].sort((a, b) => a - b))
+    }
+  })
 })

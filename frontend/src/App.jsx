@@ -22,6 +22,7 @@ import RecruitPanel from './components/RecruitPanel'
 import CampPanel from './components/CampPanel'
 import ItemStorePanel from './components/ItemStorePanel'
 import SquadScreen from './components/SquadScreen'
+import StudyPanel from './components/StudyPanel'
 import CampaignHUD from './components/CampaignHUD'
 import CampaignIntro from './components/CampaignIntro'
 import ScoutReport from './components/ScoutReport'
@@ -53,7 +54,7 @@ const App = () => {
     phase, setPhase, battleResult, setBattleResult, raidBattle, setRaidBattle,
     dayReport, setDayReport, demoBattle, setDemoBattle, demoLoading,
     tutorial, toggleTutorial, connectionError, setConnectionError,
-    introSeen, setIntroSeen, storeRequest, squadScreen,
+    introSeen, setIntroSeen, storeRequest, squadScreen, studyOpen,
   } = useUiStore()
 
   const { placements, squadPlacements } = usePlacementStore()
@@ -61,7 +62,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, setEffort, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, equipCharacterItem, unequipCharacterItem, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, setResearchFocus, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, equipCharacterItem, unequipCharacterItem, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -454,6 +455,28 @@ const App = () => {
   // (rejectIfChoicePending guards them all), so letting a player wander in
   // there would offer buttons that can only fail. The HUD hides its door for
   // the same reason while choices are pending.
+  // THE STUDY (slice 3, S3-3) takes over like the squad screen and the stores,
+  // and Back drops the player onto the phase underneath.
+  //
+  // BELOW the pending-choices overlay, with the squad screen rather than with
+  // browse: it carries a button the server can refuse. The focus route is
+  // phase-gated to `prepare` (S2-12), and a fate is owed at end of turn — well
+  // past it — so a Study rendered over the choice cards would offer a "Direct
+  // study here" that could only be refused. Its HUD door hides for the same
+  // reason.
+  if (studyOpen) {
+    return (
+      <div className="app">
+        <CampaignHUD />
+        {authBar}
+        <StudyPanel
+          onFocus={guarded(setResearchFocus)}
+          locked={phaseRank(phase) > phaseRank('prepare')}
+        />
+      </div>
+    )
+  }
+
   if (squadScreen) {
     return (
       <div className="app">

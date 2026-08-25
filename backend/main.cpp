@@ -3,6 +3,7 @@
 #include "server/UnitRegistry.hpp"
 #include "server/BattleServer.hpp"
 #include "UnitCatalog.hpp"
+#include "SpellList.hpp"
 #include "Battlefield.hpp"
 #include "Utility.hpp"
 
@@ -27,6 +28,15 @@ int main(int argc, char* argv[])
         // Headless: full unit catalog (single source of truth for unit facts).
         // The campaign server imports this into the DB at startup.
         std::cout << unitCatalogJson() << "\n";
+        return 0;
+    }
+
+    if (mode == "dump-spells") {
+        // Headless: the full spell roster, one row per form (slice 3, S3-1).
+        // The campaign server imports this at boot beside the unit catalog, so
+        // The Study renders gates the engine actually enforces rather than a
+        // second table kept in step by hand.
+        std::cout << Spells::spellCatalogJson() << "\n";
         return 0;
     }
 

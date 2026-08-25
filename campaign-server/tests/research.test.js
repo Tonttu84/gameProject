@@ -4,6 +4,8 @@ import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
 import { createUserAndToken } from './helpers/auth.js'
 import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
+import { spellsFixture } from './fixtures/spells.js'
+import { setSpellCatalog, clearSpellCatalogCache } from '../utils/spellCatalog.js'
 import { clearRolls } from '../utils/dice.js'
 import {
   CHANNELS_BY_BANNER_TIER,
@@ -55,7 +57,7 @@ beforeEach(async () => {
   await UnitType.insertMany(catalogFixture.units)
   ;({ token } = await createUserAndToken(api))
 })
-afterEach(clearRolls)
+afterEach(() => { clearRolls(); clearSpellCatalogCache() })
 
 const auth = (req) => req.set('Authorization', `Bearer ${token}`)
 const createCampaign = () => auth(api.post('/api/campaigns')).send({})
@@ -337,5 +339,78 @@ describe('what the engine is told (S2-8 / S2-9 / M-19)', () => {
     const champion = battleInput().enemy_placement.find((e) => e.squad_name === 'Champion')
     expect(champion).toBeTruthy()
     expect(champion.paths).toBeUndefined()
+  })
+})
+
+// ── THE STUDY's data (slice 3, S3-1/S3-2/S3-5/S3-6) ──────────────────────────
+//
+// campaignView grows the spells themselves this slice. Everything here is about
+// what the SCREEN is handed; the roster it is handed comes from a fixture, so a
+// retune in the C++ table cannot break assertions about shape. Engine↔server
+// agreement is pinned against the real binary in engine.integration.test.js.
+describe('the research view carries the roster (slice 3)', () => {
+  beforeEach(() => setSpellCatalog(spellsFixture))
+
+  test('groups spells under their school, in roster order', async () => {
+    const { body } = await createCampaign()
+    expect(body.research.schools.evocation.spells.map((s) => s.label))
+      .toEqual(['Ember', 'Fireball'])
+    expect(body.research.schools.conjuration.spells.map((s) => s.label))
+      .toEqual(['Raise Skeleton'])
+  })
+
+  test('S3-2: the granted paths are absent — Holy and Unholy are not researched', async () => {
+    const { body } = await createCampaign()
+    const everySpell = SPELL_SCHOOLS.flatMap((s) => body.research.schools[s].spells)
+    expect(everySpell.map((s) => s.label)).not.toContain('Blessing')
+    // ...and nothing school-less slipped through under some other heading.
+    for (const spell of everySpell) expect(spell.schoolLevel).toBeGreaterThan(0)
+  })
+
+  test('S3-5: Construction shows like any other school, holding nothing', async () => {
+    const { body } = await createCampaign()
+    expect(body.research.schools.construction).toMatchObject({ level: 0, spells: [] })
+    expect(body.research.schools.construction.label).toBeTruthy()
+  })
+
+  test('unlocked follows the ARMY school level, and nothing else (S3-6)', async () => {
+    const { body } = await createCampaign()
+    // Day 1, every school at 0 (S2-2): the mages can cast nothing.
+    for (const spell of body.research.schools.evocation.spells)
+      expect(spell.unlocked).toBe(false)
+
+    await Campaign.findByIdAndUpdate(body.id, { 'research.schools.evocation.level': 1 })
+    const at1 = await auth(api.get(`/api/campaigns/${body.id}`))
+    const [ember, fireball] = at1.body.research.schools.evocation.spells
+    expect(ember).toMatchObject({ label: 'Ember', schoolLevel: 1, unlocked: true })
+    // The major form is still out of reach at school 1 — and its being locked
+    // is about the SCHOOL, never about whether a caster has Fire 3 (S3-6).
+    expect(fireball).toMatchObject({ label: 'Fireball', schoolLevel: 3, unlocked: false })
+  })
+
+  test('every row carries its phrased requirement and its costs (17-5)', async () => {
+    const { body } = await createCampaign()
+    const [ember] = body.research.schools.evocation.spells
+    expect(ember).toMatchObject({
+      spell: 'fireball',
+      form: 'minor',
+      fatigue: 8,
+      castingTime: 1,
+      // Revealed on expand (S3-4) — the menu itself shows the label alone.
+      description: expect.stringContaining('fire'),
+    })
+    // Phrased server-side and ORDERED, primary first (M-20): the client joins
+    // {label, level} atoms and holds no vocabulary of its own.
+    expect(ember.requires).toEqual([{ path: 'fire', label: 'Fire', level: 1 }])
+  })
+
+  test('each school prices its next level, and the rate says what a turn adds', async () => {
+    const { body } = await createCampaign()
+    expect(body.research.schools.evocation.nextCost).toBe(RESEARCH_LEVEL_COST)
+    // Mages plus any lent ally (S2-6) — read off the view rather than assumed,
+    // because a fate can lend a mage on turn 1 and move this number.
+    const mages = body.characters.filter((c) => c.type === 'Mage' && c.alive).length
+    expect(body.research.rate)
+      .toBe((mages + body.research.allies) * RESEARCH_POINTS_PER_MAGE)
   })
 })

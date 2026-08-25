@@ -707,10 +707,12 @@ body {
 .charter-forecast-note { color: #8888aa; font-style: italic; }
 .squad-screen-nav { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem; }
 /* The screen's one door, on the HUD so it is reachable in every phase (13-7).
-   The stores' browse door (17-4) sits beside it and reads the same — one rule
-   for both, so a door added later cannot look like a different kind of thing. */
+   The stores' browse door (17-4) and The Study's (S3-3) sit beside it and read
+   the same — one rule for all three, so a door added later cannot look like a
+   different kind of thing. */
 .hud-army,
-.hud-stores {
+.hud-stores,
+.hud-study {
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -730,3 +732,96 @@ body {
   padding: 0;
   text-align: left;
 }
+
+
+/* ── The Study (docs/CAMPAIGN_PLAN.md, SLICE 3) ─────────────────────────────
+   A takeover with the same furniture as the squad screen and the store: a
+   centred column that scrolls itself inside the locked .app viewport. The
+   design target is four schools and a growing roster under each, so the school
+   is the card and the spell is a row inside it — the same one-level-down shape
+   a charter page uses for its muster. */
+.study-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.study-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 720px;
+}
+.study-head h2 { color: var(--gold); font-size: 1.4rem; flex: 1 1 auto; }
+.study-rate,
+.study-locked { width: 100%; max-width: 720px; font-size: 0.85rem; margin: 0; }
+.study-locked { color: var(--gold); font-style: italic; }
+.study-schools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 720px;
+}
+.study-school {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* The focused school is marked by its border alone — a fill would fight the
+   locked/unlocked colouring of the rows inside it. */
+.study-school.focused { border-color: var(--gold); }
+.study-school-head { display: flex; align-items: baseline; gap: 0.75rem; }
+.study-school-head h3 { color: var(--gold); font-size: 1.05rem; margin: 0; flex: 1 1 auto; }
+.study-school-level { color: #aab; font-size: 0.85rem; }
+.study-progress { display: flex; align-items: center; gap: 0.6rem; }
+.study-bar {
+  flex: 1 1 auto;
+  height: 6px;
+  background: var(--bg1, #14142a);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.study-bar-fill { height: 100%; background: var(--accent2); }
+.study-progress-text { color: #8888aa; font-size: 0.8rem; white-space: nowrap; }
+.study-focus { align-self: flex-start; font-size: 0.85rem; }
+.study-empty { color: #8888aa; font-style: italic; font-size: 0.85rem; margin: 0; }
+.study-focused-note { color: var(--gold); font-size: 0.85rem; margin: 0; }
+.study-spells { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* The row's head IS the control that expands it, so it is styled as the line it
+   reads as rather than as a button — the same rule the store's browse row
+   follows. The columns are fixed so the requirements line up down the school. */
+.study-spell-head {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1.2rem 1fr auto auto;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+  text-align: left;
+  width: 100%;
+  font-size: 0.85rem;
+}
+.study-spell-name { color: var(--gold); }
+/* A spell the army has not opened yet is dimmed rather than hidden: knowing
+   what a school is holding for you is the point of directing study at it. */
+.study-spell.locked .study-spell-name { color: #8888aa; }
+.study-spell-mark { color: var(--accent2); }
+.study-spell.locked .study-spell-mark { color: #8888aa; }
+.study-spell-req { color: #aab; }
+.study-spell-gate { color: #8888aa; font-style: italic; }
+.study-spell-detail { padding: 0.1rem 0 0.5rem 1.8rem; }
+.study-spell-desc { font-size: 0.85rem; margin: 0; }
+.study-spell-numbers { color: #8888aa; font-size: 0.8rem; margin: 0.2rem 0 0; }

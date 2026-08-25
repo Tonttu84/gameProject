@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <string_view>
 #include <vector>
 #include <array>
@@ -74,6 +75,20 @@ struct SpellForm {
     // "minor" | "major". Addressable because slice 4's scripts name the form
     // deliberately, while the AI takes the best one the caster qualifies for.
     std::string_view name;
+
+    // What the player is shown instead of the id (slice 3, S3-1). A form is the
+    // row The Study draws, so the NAME belongs to the form and not to the spell
+    // above it: "Ember" and "Fireball" are two rows, not one row with a rank.
+    std::string_view label;
+
+    // One paragraph on what the spell does, revealed when the player expands
+    // the row (S3-4) — the menu itself carries only the label.
+    //
+    // BUILT from the same constants the effect body reads, never typed out as a
+    // literal, so a retuned number moves the sentence with it. This screen is
+    // the player's only written source on what a spell does, and a description
+    // that said "4 damage" would start lying the day EMBER_DAMAGE changed.
+    std::string description;
 
     // ORDERED, highest requirement first. paths[0] is the PRIMARY path (M-20):
     // it decides the fatigue divide, the effect scaling and the character of

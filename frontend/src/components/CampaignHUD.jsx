@@ -68,6 +68,7 @@ const CampaignHUD = () => {
   // until they are answered.
   const openSquadScreen = useUiStore((s) => s.openSquadScreen)
   const openStoreBrowse = useUiStore((s) => s.openStoreBrowse)
+  const openStudy = useUiStore((s) => s.openStudy)
   const choiceOwed = (pendingChoices?.length ?? 0) > 0
 
   const landLeft = forage?.rings?.reduce((s, r) => s + r.richness, 0) ?? 0
@@ -178,6 +179,17 @@ const CampaignHUD = () => {
       <button className="hud-stores" data-testid="hud-stores" onClick={openStoreBrowse}>
         The Stores
       </button>
+      {/* The Study (slice 3, S3-3) — the third door on the same shelf, because
+          research is ARMY-WIDE like the stores and unlike a squad's charter.
+
+          Hidden while a fate is owed, like The Army and unlike The Stores: the
+          screen behind it carries a button the server can refuse, so it belongs
+          on the same side of that line as the other screen that does. */}
+      {!choiceOwed && (
+        <button className="hud-study" data-testid="hud-study" onClick={openStudy}>
+          The Study
+        </button>
+      )}
       <span className="hud-roster">
         {Object.entries(roster)
           .filter(([, n]) => n > 0)

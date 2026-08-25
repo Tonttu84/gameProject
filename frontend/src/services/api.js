@@ -66,6 +66,12 @@ export const setCampaignEffort = (id, share) =>
 // the only spend action; buying troops is the Recruit phase's hireRecruit.
 export const spendCampaign = (id, body) =>
   axios.post(`/api/campaigns/${id}/spend`, body, authed()).then(r => r.data)
+// Direct the army's study at one school ({school}); returns the refreshed view.
+// A CAMP decision, so the server refuses it once Prepare is left (S2-12) — but
+// freely re-settable within the phase, because nothing is spent by changing it:
+// points bank per school and a switch parks progress where it was earned (S2-7).
+export const setCampaignResearch = (id, school) =>
+  axios.post(`/api/campaigns/${id}/research`, { school }, authed()).then(r => r.data)
 // Returns the battle summary plus the refreshed campaign view.
 export const postCampaignBattle = (id, payload) =>
   axios.post(`/api/campaigns/${id}/battles`, payload, authed()).then(r => r.data)

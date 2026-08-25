@@ -266,6 +266,80 @@ const ORDINALS = [
 ]
 const ordinal = (n) => ORDINALS[n - 1] ?? `${n}th`
 
+// ── What the player is shown (slice 3, S3-1/S3-2/S3-6) ──────────────────────
+
+// The roster grouped under the four schools, each row carrying its gates.
+//
+// THE GRANTED PATHS ARE FILTERED OUT HERE (S3-2). A pure-Holy or pure-Unholy
+// form exports `school: null` from the engine — the whole roster crosses the
+// wire and deciding who shows what is the reader's business — and The Study is
+// about research, which those two are not part of (M-14). They wait for slice
+// 4's scripting, where a Priest's repertoire is the point.
+//
+// UNLOCKED IS THE SCHOOL GATE ALONE (S3-6). M-6 splits the two gates: the ARMY
+// researches the school, the individual caster meets the path level. So a row
+// says what it requires and stops there — it does not go looking through the
+// roster for somebody who could cast it. The player reads their casters' paths
+// on the character sheet, which is the screen that owns people.
+//
+// Rows keep the engine's order, which is the roster's own: minor before major
+// within a spell (weakest first, the order chooseSpellToCast walks), so a school
+// reads as a ladder rather than an alphabetised list.
+export const spellsForSchool = (spells, school, level) =>
+  spells
+    .filter((row) => row.school === school)
+    .map((row) => ({
+      spell: row.spell,
+      form: row.form,
+      label: row.label,
+      // Revealed when the player expands the row (S3-4); the menu shows the
+      // label alone. Authored engine-side beside the constants it quotes, and
+      // passed through untouched — this layer phrases what it owns, not this.
+      description: row.description,
+      // ORDERED, primary first (M-20), and PHRASED like pathEntries above: the
+      // client joins {label, level} atoms and holds no vocabulary of its own.
+      requires: (row.paths ?? []).map(({ path, level: needed }) => ({
+        path,
+        label: SPELL_PATH_TEXT[path] ?? path,
+        level: needed,
+      })),
+      schoolLevel: row.schoolLevel,
+      unlocked: level >= row.schoolLevel,
+      fatigue: row.fatigue,
+      castingTime: row.castingTime,
+    }))
+
+// The whole research block campaignView ships, schools and spells together.
+//
+// All four schools always appear, Construction included — it holds no spells
+// yet (M-9 shipped it hollow for crafting, which has its own interview pending)
+// and it is shown and focusable exactly like the other three (S3-5). An empty
+// school is the honest shape of the system, not a special case to hide.
+export const researchView = (campaign, spells = []) => ({
+  focus: campaign?.research?.focus ?? null,
+  allies: campaign?.research?.allies ?? 0,
+  // What this turn's study will add (S2-6) — mages plus lent allies, the same
+  // number accrueResearch banks at end of turn, so the screen cannot disagree
+  // with what actually lands.
+  rate: researchRate(campaign),
+  schools: Object.fromEntries(
+    SPELL_SCHOOLS.map((school) => {
+      const { level, points } = schoolOf(campaign, school)
+      return [school, {
+        label: SPELL_SCHOOL_TEXT[school],
+        level,
+        points,
+        // What the NEXT level costs, off the one place that arithmetic lives.
+        // At the ceiling there is nothing left to buy and the bank is held at
+        // 0 by grantResearchPoints, so this is null rather than a price for a
+        // level that cannot be bought.
+        nextCost: level >= RESEARCH_MAX_LEVEL ? null : nextLevelCost(level),
+        spells: spellsForSchool(spells, school, level),
+      }]
+    }),
+  ),
+})
+
 // ── What the engine is told ─────────────────────────────────────────────────
 
 // The player's school levels as the engine's `magic.<side>.schools` object.

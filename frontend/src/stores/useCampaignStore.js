@@ -5,6 +5,7 @@ import {
   consultCampaignAugury,
   rerollCampaignAugury,
   setCampaignEffort,
+  setCampaignResearch,
   advanceCampaignPhase,
   spendCampaign,
   postCampaignBattle,
@@ -70,6 +71,12 @@ const useCampaignStore = create((set, get) => ({
     const campaign = await advanceCampaignPhase(get().campaign.id, phase)
     set({ campaign })
     return campaign
+  },
+
+  // Aim the army's study (S2-12). Prepare-only server-side; The Study disables
+  // the control past the phase rather than letting the click 409.
+  setResearchFocus: async (school) => {
+    set({ campaign: await setCampaignResearch(get().campaign.id, school) })
   },
 
   fortify: async () => {

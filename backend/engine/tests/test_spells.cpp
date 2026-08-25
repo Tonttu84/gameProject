@@ -10,7 +10,20 @@
 #include "UnitCatalog.hpp"
 #include "Utility.hpp"
 #include "Defines.hpp"
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wformat-security"
+#include "extern/json.hpp"
+#pragma GCC diagnostic pop
+
 #include <set>
+#include <string>
+#include <utility>
+
+using json = nlohmann::json;
 
 // ── Caster characterization tests ────────────────────────────────────────────
 //
@@ -715,4 +728,92 @@ TEST_CASE("completeCast: the fallback pays for the form that actually fired") {
     REQUIRE(necro->getFatigue() <  necro->spellFatigueCost(raise->forms[1]));
 
     field.extractResult();
+}
+
+// ── The catalog export (slice 3, S3-1) ───────────────────────────────────────
+//
+// STRUCTURAL, in the same spirit as tests/describeEffect.test.js on the campaign
+// side: these sweep the WHOLE roster rather than naming spells, so a spell
+// authored next month is covered the day it is written. A form reaching The
+// Study with no label would render as a blank row, and one with no description
+// would open to an empty panel — both read as bugs to the player, and neither
+// is catchable by a test that only checks the spells that exist today.
+
+TEST_CASE("spellCatalogJson: every form carries a label and a description") {
+    auto j = json::parse(Spells::spellCatalogJson());
+    REQUIRE(j.contains("spells"));
+    REQUIRE(j["spells"].size() > 0);
+
+    for (const auto& form : j["spells"]) {
+        INFO("spell: " << form["spell"].get<std::string>()
+             << " form: " << form["form"].get<std::string>());
+        REQUIRE(form["label"].get<std::string>().size() > 0);
+        REQUIRE(form["description"].get<std::string>().size() > 0);
+        // A description is a sentence about the effect, not a restated name.
+        REQUIRE(form["description"].get<std::string>().size()
+                > form["label"].get<std::string>().size());
+    }
+}
+
+TEST_CASE("spellCatalogJson: one row per FORM, and every roster form appears") {
+    auto j = json::parse(Spells::spellCatalogJson());
+
+    size_t forms = 0;
+    for (const Spell& spell : Spells::roster()) forms += spell.forms.size();
+    REQUIRE(j["spells"].size() == forms);
+
+    // The pair (spell, form) is what slice 4's scripts will address (M-13), so
+    // it has to be unique — two rows sharing it would make a script ambiguous.
+    std::set<std::pair<std::string, std::string>> seen;
+    for (const auto& row : j["spells"]) {
+        auto key = std::make_pair(row["spell"].get<std::string>(),
+                                  row["form"].get<std::string>());
+        INFO("duplicate: " << key.first << "/" << key.second);
+        REQUIRE(seen.insert(key).second);
+    }
+}
+
+TEST_CASE("spellCatalogJson: gates cross exactly as the roster holds them") {
+    auto j = json::parse(Spells::spellCatalogJson());
+
+    for (const auto& row : j["spells"]) {
+        INFO("spell: " << row["spell"].get<std::string>()
+             << " form: " << row["form"].get<std::string>());
+
+        // Every form needs at least one path requirement: paths[0] is the
+        // PRIMARY (M-20), and a form without one has nothing to scale on.
+        REQUIRE(row["paths"].size() > 0);
+        for (const auto& req : row["paths"]) {
+            REQUIRE(spellPathFromName(req["path"].get<std::string>()) != SpellPath::Count);
+            REQUIRE(req["level"].get<int>() > 0);
+        }
+
+        // M-14: a pure-Holy or pure-Unholy form carries NO school gate, and
+        // exports null rather than being dropped from the catalog.
+        if (row["school"].is_null()) {
+            REQUIRE(row["schoolLevel"].get<int>() == 0);
+        } else {
+            REQUIRE(spellSchoolFromName(row["school"].get<std::string>())
+                    != SpellSchool::Count);
+        }
+
+        // Nothing casts instantly (M-23), and every spell costs something.
+        REQUIRE(row["castingTime"].get<int>() >= 1);
+        REQUIRE(row["fatigue"].get<int>() > 0);
+    }
+}
+
+TEST_CASE("spellCatalogJson: the granted paths are the ones without a school") {
+    auto j = json::parse(Spells::spellCatalogJson());
+
+    // The property The Study depends on (S3-2): school-less is exactly
+    // Holy/Unholy, so filtering on `school === null` server-side drops those two
+    // paths and nothing else. If an arcane spell ever loses its school gate this
+    // fails here rather than silently vanishing off the research screen.
+    for (const auto& row : j["spells"]) {
+        const std::string primary = row["paths"][0]["path"].get<std::string>();
+        const bool granted = (primary == "holy" || primary == "unholy");
+        INFO("spell: " << row["spell"].get<std::string>() << " primary: " << primary);
+        REQUIRE(row["school"].is_null() == granted);
+    }
 }

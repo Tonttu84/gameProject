@@ -338,36 +338,53 @@ refuses with 400 unless `campaign.bossFightDue` is set** — the ONLY battle is 
 fight, and raids are the only other way to fight. Read every "tonight" in the older write-ups as
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
-**▶ THE MAGIC SYSTEM — SLICES 1 AND 2 ARE BUILT; SLICES 3-4 ARE NOT (interviewed 2026-08-25).**
-The biggest system the project has taken on: **twenty-six decisions under "THE MAGIC SYSTEM" below
-plus fourteen more under "SLICE 2 — THE CAMPAIGN LAYER", all the user's — do not re-derive them.**
-Modelled deliberately on Dominions, with the source checked rather than recalled. The engine slice
-and the campaign slice both shipped 2026-08-25; see "SLICE 1 SHIPPED" and "WHAT SLICE 2 ACTUALLY
-LANDED" at the end of that section for what landed and what is still stubbed. **A spell now fires
-from campaign state rather than from an engine default** — which was slice 2's whole point.
+**▶ THE MAGIC SYSTEM — SLICES 1, 2 AND 3 ARE BUILT; SLICE 4 IS NOT (interviewed 2026-08-25).**
+The biggest system the project has taken on: **twenty-six decisions under "THE MAGIC SYSTEM" below,
+fourteen more under "SLICE 2 — THE CAMPAIGN LAYER" and six under "SLICE 3 — THE STUDY", all the
+user's — do not re-derive them.** Modelled deliberately on Dominions, with the source checked rather
+than recalled. All three shipped 2026-08-25; see "SLICE 1 SHIPPED", "WHAT SLICE 2 ACTUALLY LANDED"
+and "SLICE 3 SHIPPED" at the end of that section for what landed and what is still stubbed. **A
+spell now fires from campaign state rather than from an engine default** (slice 2's whole point),
+and **the player can now see what their research is buying them** (slice 3's).
 
-**▶▶ SESSION HANDOFF — NEXT UP IS SLICE 3, AND IT IS A PURE UI SLICE (2026-08-25).** Slices 1 and 2
-are on `main`, CI green. Slice 3 adds the RESEARCH SCREEN and nothing else: **the server is already
-finished for it (S2-1), so slice 3 should need no route and no schema work.** What is waiting:
+**▶▶ NEXT UP IS SLICE 4 — SCRIPTING, THE LAST OF M-15's FOUR.** It is where the granted paths
+finally surface: S3-2 kept Holy and Unholy off The Study because they are had rather than earned
+(M-14), so **slice 4 is the first screen on which a player sees `bless` or `drain_life` named at
+all.** The user's own sketch of the shape it might take, recorded when that decision was made and
+NOT yet interviewed: *"one option for the battle scripting would be to have all mages equip x spells
+and then those spells would be used in the AI part of battle"* — a per-caster loadout of N spells
+that the engine's selection walk then chooses within, rather than a turn-by-turn script. That sits
+naturally on M-22 (the default walk IS a script, so slice 4 replaces the list rather than adding a
+second selection path) and on M-13 (the script names the form; the AI takes the best one). **Interview
+it before building — that quote is a sketch, not a decision.**
 
-- `campaignView` ships `research` whole — `{focus, allies, schools: {<school>: {label, level,
-  points}}}`, all four schools always present, labels already phrased server-side (17-5). The client
-  composes no sentence and holds no vocabulary.
-- `POST /:id/research {school}` sets the focus. **`prepare` phase only** (409 past it, the same
-  answer every phase-gated route gives), freely re-settable within it, 400 on an unknown school.
-- The cost curve the screen will want to draw: level *n* costs `RESEARCH_LEVEL_COST × n`, bought in
-  turn, so reaching level L has cost `30 × L(L+1)/2`. `services/magic.js nextLevelCost()` is the one
-  place that arithmetic lives — call it, do not re-derive it in a component.
-- The character sheet already renders paths (`sheet-paths-<id>` / `sheet-nopaths-<id>`); that is
-  slice 2's only UI and slice 3 should leave it alone.
+What slice 4 inherits, already built and needing no work of its own:
 
-**A warning worth heeding before writing slice 3's tests:** slice 2 shipped two tests that depended
-on dice and passed locally while failing in CI. Both are fixed (commit `90562b1`) and both are worth
-knowing about. `rollBearer` can make an enemy champion ANY type in `ENEMY_ARMY`, so filtering a
-placement by `unit_type` alone catches him too; and `wandering_adept` is in the ordinary draw pool
-and lends a mage permanently, so any test asserting a research RATE must read `research.allies`
-rather than assume the starting three Mages. **Run a new random-sensitive test several times before
-believing it.**
+- **The whole roster crosses the wire already.** `./game dump-spells` emits one row per FORM with its
+  id, label, description, ordered path requirements, school gate, fatigue and casting time — the
+  school-less forms included (`school: null`). The Study filters those out; slice 4 is the reader
+  that wants them.
+- **`utils/spellCatalog.js` holds it in memory**, filled at boot. `getSpellCatalog()` is the whole
+  API. No collection, no schema — nothing references a spell.
+- **`services/magic.js` is still the one place the campaign layer knows what a path or a school is.**
+  `spellsForSchool()` and `researchView()` live there; a caster-facing view belongs beside them.
+
+**▶▶ THE ONE THING SLICE 3 GOT WRONG BEFORE IT STARTED, recorded because the mistake is
+instructive.** The handoff written for it said, in bold, that it was a PURE UI slice needing no route
+and no schema work — reasoning from S2-1, which really had finished the server's half of the
+*research* state. **It was wrong, and the interview caught it in its first question.** M-15's own
+one-line brief for slice 3 is "the research screen — directing the school, **seeing what is
+unlocked**", and nothing campaign-side had ever heard of a spell: the engine's roster carried machine
+ids and `minor`/`major`, no display names and no prose, and `./game info` exported units and terrain
+only. Directing the school needed no server work; seeing what is unlocked needed an engine export
+that did not exist.
+
+The lesson is not that S2-1 failed — it did exactly what it promised. It is that **"the server is
+finished for it" was checked against the state the screen would MUTATE and not against the data the
+screen would READ.** A handoff that names a slice pure UI is making a claim about both halves.
+
+(What stayed true: slice 3 added **no route and no schema bump**. The catalog is read-only reference
+data, so it needed neither — see S3-1.)
 
 **SLICE 2 IS BUILT AND SHIPPED (2026-08-25).** A second interview settled the thirteen things
 M-15's one-line "campaign" bullet left open — the hire roll, where a fresh campaign's research
@@ -2393,9 +2410,90 @@ a raid card, and a bearer is neither — giving him paths means a new field on `
 a decision about whether a champion rolls better than his men, which is a decision nobody has taken.
 **Take it in the slice that next touches bearers, not silently.**
 
-**What is deliberately NOT here, and is slice 3's:** every screen for research. `campaignView` ships
-the whole `research` block now (S2-1) but only ONE thing renders — the paths on the character sheet
-(S2-13), so the hire gamble pays off on the turn you take it.
+**What was deliberately NOT here, and was slice 3's:** every screen for research. `campaignView`
+shipped the whole `research` block from slice 2 (S2-1) but only ONE thing rendered — the paths on the
+character sheet (S2-13), so the hire gamble paid off on the turn you took it. **Slice 3 has since
+shipped and built the rest; see below.**
+
+**▶ SLICE 3 — THE STUDY: INTERVIEWED AND SHIPPED 2026-08-25.** Six decisions, all the user's. The
+research screen M-15 asked for, and the slice that made the campaign layer learn what a spell is.
+
+**S3-1. THE SCREEN NAMES SPELLS, LOCKED AND UNLOCKED** — grouped by school, each row carrying its
+gates. This is the decision that broke the "pure UI" prediction (see the block at the top of this
+section): nothing campaign-side had ever heard of a spell, so it needed an engine export. Rejected:
+levels-and-progress-only, which is truly pure UI but makes directing study **a choice of tone** —
+the player picks a school without being told what the school buys, which is exactly what the standing
+"no card shows flavour alone" rule exists to stop; and a server-authored spell table with no engine
+export, which would write every gate down twice in two languages with nothing able to catch them
+drifting (the `placeable`/`spawnable` mistake, again).
+
+**S3-2. HOLY AND UNHOLY ARE NOT ON THIS SCREEN** (user: *"we only need to have them in the scripting,
+not in screens"*). They carry no school gate (M-14) — they are granted, not researched — so on a
+screen organised by school they have no home. The consequence is stated rather than softened: until
+slice 4 ships, **no screen in the game names `bless` or `drain_life`**, though three Priests have been
+casting the first one since day 1 of every campaign. Rejected: a separate "Granted" section (the
+assistant's recommendation — it teaches M-14 by showing it, but puts a section on the research screen
+about the thing that is not researched) and listing them as pseudo-schools, which implies they are
+researchable, the one thing M-14 says they are not.
+
+**S3-3. A THIRD HUD DOOR — "THE STUDY".** A takeover exactly like The Army and The Stores, opened
+from the same shelf, because research is **army-wide**: the same tier as the stores and unlike a
+squad's charter. One boolean on `useUiStore` (`studyOpen`), no router, per 13-8. It hides while a
+fate is owed — the side of the overlay The Army is on, not the side browse is on (17-6) — because the
+focus route is phase-gated and a Study opened over the choice cards could only offer a button the
+server refuses.
+
+**S3-4. A ROW IS A NAME; THE DESCRIPTION OPENS ON CLICK** (user: *"You can expand or click to see the
+whole description and what it does mechanically. I guess a name is enough for the menu"*). So the
+menu stays dense enough to read a school at a glance, and the prose is there for the player who wants
+it. The expanded panel carries the description **plus the real fatigue and casting time** — the
+mechanical half is exported data, not prose, so it cannot drift.
+
+**S3-5. CONSTRUCTION IS TREATED LIKE ANY OTHER SCHOOL** (user: *"Dont worry about it, Im the only
+player, just make it normal"*). It holds no spells — M-9 shipped it hollow, and crafting has its own
+interview pending — so focusing study there banks levels that unlock nothing today. Shown, focusable,
+not special-cased. Rejected: disabling the focus with a reason (the assistant's recommendation, a
+trap-avoidance the sole player does not need) and hiding the school entirely, which would leave the
+screen and the route disagreeing about how many schools there are.
+
+**S3-6. A ROW STATES ITS REQUIREMENT AND STOPS.** No "you have nobody who can cast this" mark. M-6
+splits the two gates — the ARMY researches the school, the individual CASTER meets the path level —
+and this screen owns the first. Whether you have a Fire 3 mage is the character sheet's business,
+which is the screen that owns people. Rejected: marking rows no living caster qualifies for (it ties
+S2-3's hire gamble to the research track and needs no new server state, but puts a fact about people
+on the screen about study) and a per-school summary of your best path level.
+
+**✅ SLICE 3 SHIPPED (2026-08-25).** All six built as written, and **no route and no schema bump** —
+S2-1 held for the half it actually covered.
+
+- **The engine exports its roster**: `SpellForm` gains `label` and `description`, `dump-spells` is a
+  new headless mode, and `Spells::spellCatalogJson()` emits **one row per FORM** — "Ember" and
+  "Fireball" are two rows a player reads, not one row with a rank hidden inside it. The spell id
+  rides along so slice 4 can address the (spell, form) pair M-13 needs.
+- **Descriptions are BUILT from the constants the effect bodies read**, never typed as literals, so a
+  retuned `EMBER_DAMAGE` moves the sentence with it. The Study is the player's only written source on
+  what a spell does, and prose carrying a hardcoded "4 damage" would go quietly wrong.
+- **The catalog needs no collection.** `utils/spellCatalog.js` is a plain module cache filled at boot
+  — nothing queries a spell and no document references one, so a schema for it would be a second
+  place to keep in step. It degrades to an EMPTY roster when unset, which is what let 35 existing
+  server test files that mock `services/engine.js` whole keep passing untouched.
+- **`researchView()` in `services/magic.js`** assembles what campaignView ships; the view assembles
+  and does not compute. `spellsForSchool()` is where S3-2's filter lives — a single
+  `school === null` test, whose safety is pinned by a contract test asserting that school-less is
+  **exactly** Holy/Unholy in the real binary. An arcane spell that ever lost its school gate would
+  otherwise vanish off the research screen without a word.
+- **Nine tests against the real binary and eleven against a fixture**, plus four C++ structural
+  sweeps over the whole roster (every form has a label, a description, at least one path requirement,
+  a casting time ≥ 1). The sweeps are the point: a spell authored next month is covered the day it is
+  written, the same shape `tests/describeEffect.test.js` uses on the campaign side.
+
+**The dice-flake trap slice 2 left is still live and still worth heeding** (it bit slice 2 twice —
+tests that passed locally and failed in CI, fixed in `90562b1`). `rollBearer` can make an enemy
+champion ANY type in `ENEMY_ARMY`, so filtering a placement by `unit_type` alone catches him too; and
+`wandering_adept` is in the ordinary draw pool and lends a mage permanently, so any test asserting a
+research RATE must read `research.allies` rather than assume the starting three Mages. Slice 3's own
+rate test reads it off the view for exactly this reason. **Run a new random-sensitive test several
+times before believing it.**
 
 **Sources for the Dominions baseline** (checked 2026-08-25):
 [Magic — illwiki](https://illwiki.com/dom5/dom6/magic) ·

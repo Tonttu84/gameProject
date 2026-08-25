@@ -7,7 +7,11 @@
 #include "Utility.hpp"
 #include "units/Zombie.hpp"
 #include "units/Skeleton.hpp"
+#include "extern/json.hpp"
 #include <algorithm>
+#include <string>
+
+using json = nlohmann::json;
 
 // The spell roster. Common gating — alive/broken checks, the channel, paying
 // fatigue on completion — lives in AUnit::castSpells(); each body below only
@@ -397,6 +401,124 @@ SpellSchool spellSchoolFromName(std::string_view name)
     return SpellSchool::Count;
 }
 
+// ── what the player is told (slice 3, S3-1/S3-4) ─────────────────────────────
+//
+// Every sentence below is BUILT from the constants the matching effect body
+// reads, never typed out as a literal. The Study is the player's only written
+// source on what a spell does, and a description carrying a hardcoded "4
+// damage" would go quietly wrong the day EMBER_DAMAGE moved — the exact drift
+// the unit catalog's single-source-of-truth export exists to prevent.
+//
+// They live beside the roster rather than in the campaign server for the same
+// reason: the numbers are here, so the prose about the numbers is here too.
+// The server phrases what it owns (17-5) — school names, level lines — and
+// passes these through untouched.
+
+namespace {
+
+const std::string kRange = " at range";
+
+// "N damage, +1 for each level of X" — the shape most offensive spells share.
+std::string scalingDamage(int base, std::string_view path)
+{
+    return std::to_string(base) + " damage, and one more for every level of "
+         + std::string(path) + " the caster commands";
+}
+
+std::string ember()
+{
+    return "A single bolt of fire" + kRange + ": " + scalingDamage(EMBER_DAMAGE, "Fire")
+         + ". No blast — this is what keeps a newly sworn Fire mage useful.";
+}
+
+// Not built on scalingDamage(): fireball's sentence has to name the man it
+// lands on BEFORE the scaling clause, or the "+1 per level" reads as attaching
+// to the blast that follows it.
+std::string fireball()
+{
+    return "A detonation" + kRange + ": " + std::to_string(FIREBALL_CENTRE)
+         + " damage to the man it lands on, and one more for every level of Fire "
+           "the caster commands, then " + std::to_string(FIREBALL_SECONDARY)
+         + " further hits of " + std::to_string(FIREBALL_BLAST)
+         + " damage each tearing through the same ground.";
+}
+
+std::string shock()
+{
+    return "A lightning stroke" + kRange + ": " + scalingDamage(SHOCK_DAMAGE, "Air")
+         + ". Less than fire carries, but it pierces armour and goes where it is aimed.";
+}
+
+std::string stoneskin()
+{
+    return "One ally's skin hardens to stone: a point of armour, and another for "
+           "every three levels of Earth.";
+}
+
+std::string soothingCurrent()
+{
+    return "Washes " + std::to_string(SOOTHING_RELIEF)
+         + " fatigue off the most exhausted man on the field, and 5 more for every "
+           "level of Water. It closes no wounds — but past the ceiling, exhaustion kills.";
+}
+
+std::string ward()
+{
+    return "A barrier over one ally, turning aside " + std::to_string(WARD_STRENGTH)
+         + " damage and one more for every level of High.";
+}
+
+std::string briarSnare()
+{
+    return "Briars erupt and drag at one enemy" + kRange + ": "
+         + std::to_string(SNARE_FATIGUE)
+         + " fatigue inflicted, and 5 more for every level of Nature. "
+           "Exhaustion is lethal past the ceiling.";
+}
+
+std::string hexOfFrailty()
+{
+    return "One enemy loses a point of defence, and another for every three levels "
+           "of Low. Then the bargain takes its due: " + std::to_string(LOW_BLOOD_PRICE)
+         + " damage to the man standing nearest the caster — or to the caster himself, "
+           "if he stands alone.";
+}
+
+std::string raiseSkeleton()
+{
+    return "One skeleton claws up from old bones beside the caster. It costs no corpse, "
+           "so a raiser is useful on a field that has not yet made any dead.";
+}
+
+std::string raiseDead()
+{
+    return std::to_string(RAISE_DEAD_BODIES)
+         + " corpses rise as zombies, and one more for every three levels of Death. "
+           "Fails outright where the field has not produced enough dead — and the "
+           "lesser form is then tried in its place.";
+}
+
+std::string blessing()
+{
+    return "One wounded or broken man is healed and steadied: he finds his courage "
+           "and recovers his footing.";
+}
+
+std::string greaterBlessing()
+{
+    return "The blessing runs down the line, reaching " + std::to_string(GREATER_BLESS_BASE)
+         + " men and one more for every level of Holy, healing and steadying each.";
+}
+
+std::string drainLife()
+{
+    return "Life is pulled out of one enemy" + kRange + ": "
+         + scalingDamage(DRAIN_DAMAGE, "Unholy")
+         + ", piercing armour — and half of what lands returns to the caster as healing.";
+}
+
+}  // namespace
+
 // ── the roster ────────────────────────────────────────────────────────────────
 
 namespace Spells
@@ -417,47 +539,60 @@ namespace Spells
         static const std::vector<Spell> table = {
             // ── Fire ─────────────────────────────────────────────────────────
             { "fireball", {
-                { "minor", {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber,    nullptr },
-                { "major", {{P::Fire, 3}}, S::Evocation, 3, 22, 2, castFireball, nullptr },
+                { "minor", "Ember", ember(),
+                  {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber,    nullptr },
+                { "major", "Fireball", fireball(),
+                  {{P::Fire, 3}}, S::Evocation, 3, 22, 2, castFireball, nullptr },
             }},
             // ── Air ──────────────────────────────────────────────────────────
             { "shock", {
-                { "minor", {{P::Air, 1}}, S::Evocation, 1, 10, 1, castShock, nullptr },
+                { "minor", "Shock", shock(),
+                  {{P::Air, 1}}, S::Evocation, 1, 10, 1, castShock, nullptr },
             }},
             // ── Earth ────────────────────────────────────────────────────────
             { "stoneskin", {
-                { "minor", {{P::Earth, 1}}, S::Enchantment, 1, 10, 1, castStoneskin, nullptr },
+                { "minor", "Stoneskin", stoneskin(),
+                  {{P::Earth, 1}}, S::Enchantment, 1, 10, 1, castStoneskin, nullptr },
             }},
             // ── Water ────────────────────────────────────────────────────────
             { "soothing_current", {
-                { "minor", {{P::Water, 1}}, S::Enchantment, 1, 8, 1, castSoothingCurrent, nullptr },
+                { "minor", "Soothing Current", soothingCurrent(),
+                  {{P::Water, 1}}, S::Enchantment, 1, 8, 1, castSoothingCurrent, nullptr },
             }},
             // ── High ─────────────────────────────────────────────────────────
             { "ward", {
-                { "minor", {{P::High, 1}}, S::Enchantment, 2, 12, 1, castWard, nullptr },
+                { "minor", "Ward", ward(),
+                  {{P::High, 1}}, S::Enchantment, 2, 12, 1, castWard, nullptr },
             }},
             // ── Nature ───────────────────────────────────────────────────────
             { "briar_snare", {
-                { "minor", {{P::Nature, 1}}, S::Enchantment, 1, 10, 1, castBriarSnare, nullptr },
+                { "minor", "Briar Snare", briarSnare(),
+                  {{P::Nature, 1}}, S::Enchantment, 1, 10, 1, castBriarSnare, nullptr },
             }},
             // ── Low — half fatigue (M-21) and a price that fires with it (M-24)
             { "hex_of_frailty", {
-                { "minor", {{P::Low, 1}}, S::Enchantment, 1, 14, 1,
+                { "minor", "Hex of Frailty", hexOfFrailty(),
+                  {{P::Low, 1}}, S::Enchantment, 1, 14, 1,
                   castHexOfFrailty, priceOfFrailty },
             }},
             // ── Death ────────────────────────────────────────────────────────
             { "raise_dead", {
-                { "minor", {{P::Death, 1}}, S::Conjuration, 1, 12, 1, castRaiseSkeleton, nullptr },
-                { "major", {{P::Death, 3}}, S::Conjuration, 3, 26, 2, castRaiseDead,     nullptr },
+                { "minor", "Raise Skeleton", raiseSkeleton(),
+                  {{P::Death, 1}}, S::Conjuration, 1, 12, 1, castRaiseSkeleton, nullptr },
+                { "major", "Raise Dead", raiseDead(),
+                  {{P::Death, 3}}, S::Conjuration, 3, 26, 2, castRaiseDead,     nullptr },
             }},
             // ── Holy — granted, not researched, so NO school gate (M-14) ─────
             { "bless", {
-                { "minor", {{P::Holy, 1}}, S::None, 0, 10, 1, castBless,        nullptr },
-                { "major", {{P::Holy, 3}}, S::None, 0, 24, 2, castGreaterBless, nullptr },
+                { "minor", "Blessing", blessing(),
+                  {{P::Holy, 1}}, S::None, 0, 10, 1, castBless,        nullptr },
+                { "major", "Greater Blessing", greaterBlessing(),
+                  {{P::Holy, 3}}, S::None, 0, 24, 2, castGreaterBless, nullptr },
             }},
             // ── Unholy — granted like Holy, and likewise ungated by school ───
             { "drain_life", {
-                { "minor", {{P::Unholy, 1}}, S::None, 0, 14, 1, castDrainLife, nullptr },
+                { "minor", "Drain Life", drainLife(),
+                  {{P::Unholy, 1}}, S::None, 0, 14, 1, castDrainLife, nullptr },
             }},
         };
         return table;
@@ -529,5 +664,53 @@ namespace Spells
                 ? "Reinforcements storm the enemy's rear!"
                 : r.message);
         return placed;
+    }
+
+    // ── the catalog export (slice 3, S3-1) ───────────────────────────────────
+    //
+    // ONE ROW PER FORM, because a form is what The Study draws: "Ember" and
+    // "Fireball" are two rows the player reads, not one row with a rank hidden
+    // inside it. The spell id rides along so slice 4's scripts — which name a
+    // spell AND a form (M-13) — can address the pair without a second export.
+    //
+    // The campaign server imports this at boot exactly as it imports
+    // `dump-units`, which is what keeps the C++ roster the single source of
+    // truth: retune a gate here, restart the server, and the screen is current.
+    //
+    // A school-less form (pure Holy, pure Unholy — M-14) exports `school: null`
+    // rather than being dropped. It is the WHOLE truth about the roster that
+    // crosses; which rows a given screen shows is the reader's business, and
+    // The Study's answer (S3-2: it shows neither) is one the server makes.
+    std::string spellCatalogJson()
+    {
+        json spells = json::array();
+        for (const Spell& spell : roster()) {
+            for (const SpellForm& form : spell.forms) {
+                json paths = json::array();
+                // ORDERED, and the order is load-bearing: paths[0] is the
+                // PRIMARY (M-20), which decides the fatigue divide and the
+                // scaling. A reader that sorts these has broken them.
+                for (const PathRequirement& req : form.paths)
+                    paths.push_back({
+                        {"path",  std::string(spellPathName(req.path))},
+                        {"level", req.level},
+                    });
+
+                spells.push_back({
+                    {"spell",       std::string(spell.id)},
+                    {"form",        std::string(form.name)},
+                    {"label",       std::string(form.label)},
+                    {"description", form.description},
+                    {"school",      form.school == SpellSchool::None
+                                        ? json(nullptr)
+                                        : json(std::string(spellSchoolName(form.school)))},
+                    {"schoolLevel", form.schoolLevel},
+                    {"paths",       paths},
+                    {"fatigue",     form.fatigue},
+                    {"castingTime", form.castingTime},
+                });
+            }
+        }
+        return json{{"spells", spells}}.dump();
     }
 }

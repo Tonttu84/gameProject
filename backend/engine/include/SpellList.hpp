@@ -1,5 +1,6 @@
 #pragma once
 #include "Spell.hpp"
+#include <string>
 #include <vector>
 
 class AUnit;
@@ -27,6 +28,14 @@ namespace Spells
     // adding a second selection path. Resolved once at unit construction
     // (AUnit::assignSpells).
     const std::vector<const Spell*>& defaultScript();
+
+    // The roster as JSON, one row per FORM — the campaign server imports this
+    // at boot the way it imports `dump-units`, so the C++ table stays the single
+    // source of truth for what a spell costs and what it requires (slice 3,
+    // S3-1). Pure-Holy and pure-Unholy forms export `school: null` rather than
+    // being dropped: the whole roster crosses, and deciding which rows a screen
+    // shows is the reader's business.
+    std::string spellCatalogJson();
 
     // The garrison sally: a casterless reinforcement spell, modelled on
     // raise_dead. Summons `r.count` allied units of `r.unitType` (marked

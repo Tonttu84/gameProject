@@ -1,12 +1,13 @@
 import app, { apiRoutes } from './app.js'
 import config from './utils/config.js'
 import { connectDb } from './utils/db.js'
-import { dumpUnits, getInfo } from './services/engine.js'
+import { dumpSpells, dumpUnits, getInfo } from './services/engine.js'
 import { syncCatalog } from './services/catalogSync.js'
+import { getSpellCatalog, setSpellCatalog } from './utils/spellCatalog.js'
 import { seedDevUser, devLoginAvailable } from './services/devSeed.js'
 
 // Boot: DB up → catalog synced from the engine (single source of truth) →
-// info cache warmed → listen. A failed catalog sync aborts the boot on
+// spell roster read from the same binary → info cache warmed → listen. A failed catalog sync aborts the boot on
 // purpose: serving stale/invalid unit data would be worse than being down.
 // Each phase logs BEFORE it runs so a hung boot (unreachable Mongo, wedged
 // engine subprocess) shows where it stopped instead of sitting silent.
@@ -16,6 +17,14 @@ const start = async () => {
   console.log('boot: syncing unit catalog from the engine...')
   const count = await syncCatalog(await dumpUnits())
   console.log(`unit catalog synced (${count} types)`)
+  // The spell roster (slice 3), read from the same binary and held in memory
+  // rather than in Mongo — nothing queries a spell, so it needs no collection.
+  // A failure here aborts the boot like the catalog sync above it: The Study
+  // with an empty roster would read as "your mages know nothing" rather than as
+  // the outage it actually is.
+  console.log('boot: reading the spell roster from the engine...')
+  setSpellCatalog(await dumpSpells())
+  console.log(`spell roster loaded (${getSpellCatalog().length} forms)`)
   if (await seedDevUser())
     console.log(`dev user seeded (${config.DEV_USER}/${config.DEV_PASSWORD})`)
   await getInfo()

@@ -59,6 +59,17 @@ export function dumpUnits() {
   return runEngine('dump-units')
 }
 
+// The full spell roster, one row per FORM (slice 3, S3-1). Read at boot into
+// utils/spellCatalog.js the way dumpUnits() is read into the DB, so the C++
+// table stays the single source of truth for what a spell requires and costs.
+//
+// Unlike the unit catalog this needs no collection: nothing queries a spell, the
+// campaign stores no reference to one, and the whole roster is small enough to
+// hold in memory. A schema for it would be a second place to keep in step.
+export function dumpSpells() {
+  return runEngine('dump-spells')
+}
+
 // Grid/zone/placeable-unit info; static per binary, so cached after first call.
 let cachedInfo = null
 export async function getInfo() {
