@@ -471,7 +471,14 @@ const App = () => {
         {authBar}
         <StudyPanel
           onFocus={guarded(setResearchFocus)}
-          locked={phaseRank(phase) > phaseRank('prepare')}
+          // The SERVER phase, not the screen the player is looking at. This is
+          // the one place the distinction bites: The Study is a takeover
+          // reachable from every phase, so `phase` may be a UI-only screen
+          // (report/placement/replay, rank −1) or a back-stepped one the player
+          // is only LOOKING at — and neither says anything about what
+          // rejectIfPhasePassed will do. Gating on `phase` renders a live
+          // button on the day report that can only 409.
+          locked={phaseRank(serverPhase) > phaseRank('prepare')}
         />
       </div>
     )

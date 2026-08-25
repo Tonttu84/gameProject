@@ -8,7 +8,7 @@
 
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
   advanceCampaignPhase: vi.fn(async (_id, phase) => {
@@ -34,6 +34,7 @@ vi.mock('../services/api', () => ({
 
 import { getInfo, getMap, getCampaigns, setCampaignResearch } from '../services/api'
 import App from '../App'
+import useUiStore from '../stores/useUiStore'
 import { campaignFixture } from './fixtures/campaign'
 
 const info = {
@@ -148,5 +149,54 @@ describe('The Study door (S3-3)', () => {
     expect(screen.queryByTestId('hud-army')).toBeNull()
     // ...while the read-only door beside it survives (17-6).
     expect(screen.getByTestId('hud-stores')).toBeInTheDocument()
+  })
+})
+
+describe('the focus is gated on the SERVER phase, not the screen (S2-12)', () => {
+  // The Study is a takeover reachable from EVERY phase, so the screen the
+  // player is looking at and the phase the turn is actually in come apart
+  // routinely — and only the second is what POST /:id/research answers to.
+  // These two cases are where the readings diverge; a plain "campaign is in
+  // raids" test cannot tell them apart, because App syncs the UI phase forward
+  // to the server's and both readings then agree.
+
+  it('stays settled while the player BACK-STEPS to look at Prepare', async () => {
+    // Back-steps are pure looking (the phase they return to is behind the
+    // server's, and the sync is forward-only, so it is not yanked back). The
+    // screen says 'prepare'; the turn is in 'raids' and the route will refuse.
+    getCampaigns.mockResolvedValue([withResearch({ phase: 'raids' })])
+    render(<App />)
+    await screen.findByTestId('hud-study')
+
+    act(() => { useUiStore.setState({ phase: 'prepare' }) })
+    fireEvent.click(screen.getByTestId('hud-study'))
+    await screen.findByTestId('study-page')
+
+    expect(screen.getByTestId('study-locked')).toBeInTheDocument()
+    expect(screen.getByTestId('study-focus-conjuration')).toBeDisabled()
+  })
+
+  it('stays settled on a UI-only screen, whose phase rank is −1', async () => {
+    // The day report is rank −1 and the sync leaves it alone. Reading the gate
+    // off the SCREEN would leave a live button on the report that can only 409.
+    getCampaigns.mockResolvedValue([withResearch({ phase: 'raids' })])
+    render(<App />)
+    await screen.findByTestId('hud-study')
+
+    act(() => { useUiStore.setState({ phase: 'report' }) })
+    fireEvent.click(screen.getByTestId('hud-study'))
+    await screen.findByTestId('study-page')
+
+    expect(screen.getByTestId('study-focus-conjuration')).toBeDisabled()
+  })
+
+  it('is open in Prepare, which is the phase it belongs to', async () => {
+    getCampaigns.mockResolvedValue([withResearch({ phase: 'prepare' })])
+    render(<App />)
+    await screen.findByText(/War Council/)
+    fireEvent.click(screen.getByTestId('hud-study'))
+    await screen.findByTestId('study-page')
+    expect(screen.queryByTestId('study-locked')).toBeNull()
+    expect(screen.getByTestId('study-focus-conjuration')).toBeEnabled()
   })
 })
