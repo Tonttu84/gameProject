@@ -612,6 +612,13 @@ namespace Spells
                >= form.schoolLevel;
     }
 
+    const Spell* findSpell(std::string_view id)
+    {
+        for (const Spell& s : roster())
+            if (s.id == id) return &s;
+        return nullptr;
+    }
+
     const std::vector<const Spell*>& defaultScript()
     {
         // M-22: the AI's ordered list IS a script, which is why slice 4 costs

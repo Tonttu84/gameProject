@@ -23,6 +23,12 @@ namespace Spells
     // encounter (M-19) can both move the school line while the unit is alive.
     bool qualifies(const AUnit& caster, const SpellForm& form);
 
+    // Look a spell up by its roster id ("fireball", "bless", ...). Returns
+    // nullptr for an id the roster does not carry — the chosen-spells list
+    // arrives over the wire (slice 4) and skips what it cannot resolve rather
+    // than rejecting the whole entry.
+    const Spell* findSpell(std::string_view id);
+
     // The caster's ordered default list — every roster entry, in roster order.
     // M-22: this walk IS a script, so slice 4 replaces the list rather than
     // adding a second selection path. Resolved once at unit construction

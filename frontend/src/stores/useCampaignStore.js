@@ -20,6 +20,7 @@ import {
   attachCharacter,
   bindSquadBanner,
   setCharacterHangBack,
+  setChosenSpells,
   equipCharacterItem,
   unequipCharacterItem,
 } from '../services/api'
@@ -112,6 +113,12 @@ const useCampaignStore = create((set, get) => ({
 
   setCharacterHangBack: async (characterId, hangBack) => {
     set({ campaign: await setCharacterHangBack(get().campaign.id, characterId, hangBack) })
+  },
+
+  // The caster's chosen spells (slice 4). The whole ordered list goes over at
+  // once, so choosing, reordering and clearing are all this one call.
+  setChosenSpells: async (characterId, script) => {
+    set({ campaign: await setChosenSpells(get().campaign.id, characterId, script) })
   },
 
   // Gear on and gear off (9-16's sheet). Reversible, unlike a bound banner —

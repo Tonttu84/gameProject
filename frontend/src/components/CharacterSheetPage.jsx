@@ -32,12 +32,16 @@ import { EMPTY_ARRAY } from '../stores/selectors'
 //   DEAD     — read-only, and still carrying whatever was not stripped from the
 //              body (5-9). The record is the point: a later recovery has to
 //              have something to find.
-//   AWAY     — read-only, with the server's phrase for why (9-8/9-9). Equipping
-//              AND posting are both refused while a bearer is out, so the page
-//              greys out together rather than in halves.
+//   AWAY     — the server's phrase for why (9-8/9-9), and gear AND posting both
+//              refused while a bearer is out, so those grey out together rather
+//              than in halves. NOT read-only as a whole any more: Chosen Spells
+//              stays live out there (S4-4), because a mage's own judgement about
+//              what to reach for is not an order sent to the field. `locked` is
+//              therefore the gear-and-posting gate specifically, not a page-wide
+//              one — check which you want before reaching for it.
 //   IN CAMP  — everything is free, in any phase, at no cost (5-7).
 
-const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onUnequip }) => {
+const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenSpells, onUnequip }) => {
   const characters = useCampaignStore((s) => s.campaign?.characters ?? EMPTY_ARRAY)
   const squads = useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
   const openItemStore = useUiStore((s) => s.openItemStore)
@@ -54,6 +58,29 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onUnequip })
   const worn = character.items ?? EMPTY_ARRAY
   const wornAt = (slot, index) => worn.find((w) => w.slot === slot && w.index === index)
   const squadName = (id) => squads.find((s) => s.id === id)?.name ?? `squad ${id}`
+
+  // The list to send after ONE slot changed. The route takes the whole ordered
+  // array every time (there is no per-slot endpoint), so the slots are a
+  // rendering of an array and this is the arithmetic that keeps them one.
+  //
+  // COMPACTED, never sparse (S4-1): clearing a slot promotes what was below it,
+  // because position IS priority and a hole would claim a priority nobody
+  // chose. And a spell picked into a second slot LEAVES the first — the server
+  // refuses the same spell twice, and moving it is plainly what the player
+  // meant, so this reads as a move rather than as a rejected click.
+  const chosenWith = (slot, spellId) => {
+    const ids = (character.chosenSpells?.chosen ?? []).map((row) => row.spell)
+    if (spellId === '') {
+      if (slot < ids.length) ids.splice(slot, 1)
+      return ids
+    }
+    const from = ids.indexOf(spellId)
+    if (from !== -1) ids.splice(from, 1)
+    const at = Math.min(slot, ids.length)
+    if (from === -1 && at < ids.length) ids.splice(at, 1, spellId)   // replace
+    else ids.splice(at, 0, spellId)                                  // move / append
+    return ids
+  }
 
   const run = async (fn) => {
     setBusy(true)
@@ -85,7 +112,8 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onUnequip })
           on a mission" read differently and only the server knows which. */}
       {awayBlocker && (
         <p className="sheet-away" data-testid={`sheet-away-${character.id}`}>
-          {awayBlocker} — nothing can be changed until they are back.
+          {awayBlocker} — their gear and their posting cannot be changed until
+          they are back.
         </p>
       )}
 
@@ -107,6 +135,77 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onUnequip })
         <p data-testid={`sheet-nopaths-${character.id}`}>
           {character.name} commands no path of magic.
         </p>
+      )}
+
+      {/* CHOSEN SPELLS (docs/CAMPAIGN_PLAN.md "SLICE 4", S4-7/S4-9) — beside
+          Paths, because the two are one subject: paths are what a caster IS,
+          and this is what he reaches for with them.
+
+          Three ordered slots (S4-5), and the ORDER is the whole mechanic
+          (S4-2): the engine leads his walk with these and keeps the rest of the
+          roster behind them, so this is a preference and never a repertoire.
+          The line beneath the slots says so, because a player who read it as a
+          loadout would think a caster he scripted badly had gone mute.
+
+          Every row arrives resolved and phrased from the server (17-5) — the
+          label is the strongest FORM he currently qualifies for, so the same
+          choice reads "Ember" at Fire 1 and "Fireball" at Fire 3 without ever
+          being re-made. This file holds no spell catalog and names nothing.
+
+          NOT disabled by `locked`, unlike everything else on this page: a
+          caster away on a raid may still have his preferences changed, because
+          the fiction is his own judgement rather than an order sent to the
+          field (S4-4). Only the dead are read-only — a record takes no
+          orders. */}
+      {character.chosenSpells && (
+        <>
+          <h4>Chosen Spells</h4>
+          {character.chosenSpells.options.length === 0 ? (
+            <p data-testid={`sheet-nospells-${character.id}`}>
+              There is nothing {character.name} can cast yet.
+            </p>
+          ) : (
+            <>
+              {Array.from({ length: character.chosenSpells.max }, (_, slot) => {
+                const picked = character.chosenSpells.chosen[slot] ?? null
+                const ordinal = ['First', 'Then', 'Then'][slot] ?? 'Then'
+                return (
+                  <div
+                    className="raid-card"
+                    key={slot}
+                    data-testid={`sheet-spellslot-${character.id}-${slot}`}
+                  >
+                    <label htmlFor={`sheet-spell-${character.id}-${slot}`}>
+                      <strong>{ordinal} he reaches for</strong>
+                      <select
+                        id={`sheet-spell-${character.id}-${slot}`}
+                        data-testid={`sheet-spell-${character.id}-${slot}`}
+                        value={picked?.spell ?? ''}
+                        disabled={!alive || busy}
+                        onChange={(e) => run(() => onSetChosenSpells(character.id, chosenWith(slot, e.target.value)))}
+                      >
+                        <option value="">— nothing in particular —</option>
+                        {character.chosenSpells.options.map((row) => (
+                          <option value={row.spell} key={row.spell}>
+                            {row.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {picked && (
+                      <p className="item-blurb" data-testid={`sheet-spellblurb-${character.id}-${slot}`}>
+                        {picked.description}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+              <p data-testid={`sheet-spellnote-${character.id}`}>
+                Beyond these, {character.name} casts as he judges best.
+              </p>
+            </>
+          )}
+        </>
       )}
 
       <h4>The Sheet</h4>

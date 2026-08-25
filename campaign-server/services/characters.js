@@ -462,6 +462,15 @@ export const characterEntryFor = (
     // anyway and the roll that is the whole of the Mage lane's gamble means
     // less than it says.
     ...(isCasterType(character.type) ? { paths: enginePaths(character.paths) } : {}),
+    // The spells he reaches for first (S4-1), from the RECORD like his paths.
+    //
+    // Sent only when there are some: an absent field and an empty array mean
+    // the same thing to the engine (the default walk, untouched), and the wire
+    // says what the engine must not assume rather than restating the default.
+    // Ids only — the engine still picks the form (S4-2).
+    ...(isCasterType(character.type) && (character.script?.length ?? 0) > 0
+      ? { script: [...character.script] }
+      : {}),
     // The engine's name for the toggle. Defaulted false rather than left
     // undefined so the entry always states the intent explicitly.
     avoids_melee: character.hangBack ?? false,

@@ -40,9 +40,10 @@ import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
 } from '../services/raid.js'
 import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
-import { magicBlock, planResearchFocus, withCasterPaths } from '../services/magic.js'
+import { magicBlock, planChosenSpells, planResearchFocus, withCasterPaths } from '../services/magic.js'
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
+import { getSpellCatalog } from '../utils/spellCatalog.js'
 import { getCatalog } from '../utils/catalog.js'
 import { raidCapacityCost, fieldPointsFor, raidPrestige } from '../utils/capabilities.js'
 import config from '../utils/config.js'
@@ -635,9 +636,12 @@ router.post('/:id/battles', async (req, res) => {
     // characterEntryFor below, so one arriving in the request is forged by
     // definition — and a rank-and-file body has none to overwrite it with.
     // Stripped unconditionally for the same reason the two ability fields are.
+    // `script` (S4-1) joins them for the identical reason: the chosen spells
+    // are the character's own record, set from his sheet and nowhere else, so
+    // a list in a placement request is forged by definition.
     const {
       denied_abilities: _forgedDenials, carried_abilities: _forgedCarried,
-      paths: _forgedPaths, ...base
+      paths: _forgedPaths, script: _forgedScript, ...base
     } = withAbilities
     // A character's own fields are stamped from the RECORD, never taken from
     // the request — the same rule squad_mods follows. Otherwise a client could
@@ -1411,6 +1415,44 @@ router.post('/:id/characters/:characterId/hang-back', async (req, res) => {
     return res.status(400).json({ error: `not one of your living characters: ${req.params.characterId}` })
 
   character.hangBack = hangBack
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// ── Chosen spells (docs/CAMPAIGN_PLAN.md SLICE 4 — SCRIPTING) ───────────────
+//
+// Body `{ script: ['fireball', 'bless'] }` — the whole list, replacing whatever
+// was there. One route rather than a per-slot one, because that makes a set
+// idempotent and a clear just a shorter list; the slots on the sheet are a
+// rendering of an ordered array, not three addressable things.
+//
+// FREE and UNGATED IN EVERY DIRECTION, and this goes further than equipping
+// does (S4-4): any phase, and available even while the caster is away. The
+// fiction is why — the player is not shouting cast orders across a battlefield,
+// he is leaning on a mage's own judgement about what to reach for first, and a
+// mage on a raid is no less able to have a preference. There is nothing to
+// exploit either way: a character who is away does not fight the day's battle.
+//
+// DEAD is the one refusal, and it is not a rule of its own — livingCharacters
+// is the same filter every other character route runs through. A dead
+// character's sheet is a record (5-9), and a record does not take orders.
+router.post('/:id/characters/:characterId/script', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const character = livingCharacters(campaign).find((c) => c.id === Number(req.params.characterId))
+  if (!character)
+    return res.status(400).json({ error: `not one of your living characters: ${req.params.characterId}` })
+
+  // Validated against what he can cast TODAY (S4-3) — the same test the sheet's
+  // picker was built from, so a legal click always succeeds and a forged id
+  // never lands. The catalog is the engine's, read through the boot cache.
+  const plan = planChosenSpells(character, campaign, getSpellCatalog(), req.body?.script)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  character.script = plan.script
   await campaign.save()
   res.json(await campaignView(campaign))
 })

@@ -88,18 +88,24 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-08-25) — START HERE
 
 **▶▶ THE LIVE FRONT IS THE MAGIC SYSTEM, AND IT IS NOT IN THIS BLOCK — it is under "THE MAGIC
-SYSTEM" further down.** Schema is **v41** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
+SYSTEM" further down.** Schema is **v42** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
 authority; the v35/v36 talk below is 2026-08-24 history that was true when it was written). Read
 this order to pick the work up cold:
 
 1. **"THE MAGIC SYSTEM"** — twenty-six decisions (M-1..M-26), then "SLICE 2 — THE CAMPAIGN LAYER"
-   (S2-1..S2-14) and "SLICE 3 — THE STUDY" (S3-1..S3-6). **All forty-six are the user's; do not
-   re-derive them.**
-2. **Slices 1, 2 and 3 are SHIPPED and on `main`, CI green** (2026-08-25). Spells fire in real
-   battles from campaign research state, and The Study renders what that research has bought.
-3. **Slice 4 — SCRIPTING — is next and is NOT yet interviewed.** The user's sketch of it, and
-   everything it inherits, is in the "NEXT UP IS SLICE 4" block at the top of the magic section.
-   **Interview before building** (CLAUDE.md's standing rule, and the sketch is not a decision).
+   (S2-1..S2-14), "SLICE 3 — THE STUDY" (S3-1..S3-6) and "SLICE 4 — CHOSEN SPELLS" (S4-1..S4-9).
+   **All fifty-five are the user's; do not re-derive them.**
+2. **M-15'S FOUR SLICES ARE ALL SHIPPED and on `main`** (2026-08-25). Spells fire in real battles
+   from campaign research state, The Study renders what that research has bought, and a caster can
+   be told what to reach for first.
+3. **THERE IS NO SLICE 5 OF THE MAGIC SYSTEM SPEC'D.** What the interviews deliberately left for
+   later, and where each is recorded: **tiered battle logging** (S4-8 — the user's design, a default
+   tier of basic info/deaths/casts and deeper tiers for rolls and casters mid-channel); **a store of
+   authored enemy scripts** assigned at random to match a caster's paths (S4-6); **a real cast AI**
+   scoring a simulated cast (M-22), which is also where per-form priority is decided (S4-2 amends
+   M-13 to per-spell until then); **stances** (M-12); **empowerment** (M-5); **Construction's
+   content**, waiting on crafting's own interview (M-9/9-7). None is started; each is a decision
+   already taken about what the thing IS, not a blank.
 
 Everything in the rest of this block is the squad/character/items front, which is FINISHED —
 decision 13 and slice 17 both shipped. It is kept as the record of how those systems got their
@@ -356,36 +362,33 @@ refuses with 400 unless `campaign.bossFightDue` is set** — the ONLY battle is 
 fight, and raids are the only other way to fight. Read every "tonight" in the older write-ups as
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
-**▶ THE MAGIC SYSTEM — SLICES 1, 2 AND 3 ARE BUILT; SLICE 4 IS NOT (interviewed 2026-08-25).**
+**▶ THE MAGIC SYSTEM — ALL FOUR OF M-15'S SLICES ARE BUILT (interviewed and shipped 2026-08-25).**
 The biggest system the project has taken on: **twenty-six decisions under "THE MAGIC SYSTEM" below,
-fourteen more under "SLICE 2 — THE CAMPAIGN LAYER" and six under "SLICE 3 — THE STUDY", all the
-user's — do not re-derive them.** Modelled deliberately on Dominions, with the source checked rather
-than recalled. All three shipped 2026-08-25; see "SLICE 1 SHIPPED", "WHAT SLICE 2 ACTUALLY LANDED"
-and "SLICE 3 SHIPPED" at the end of that section for what landed and what is still stubbed. **A
-spell now fires from campaign state rather than from an engine default** (slice 2's whole point),
-and **the player can now see what their research is buying them** (slice 3's).
+fourteen more under "SLICE 2 — THE CAMPAIGN LAYER", six under "SLICE 3 — THE STUDY" and nine under
+"SLICE 4 — CHOSEN SPELLS", all the user's — do not re-derive them.** Modelled deliberately on
+Dominions, with the source checked rather than recalled. See "SLICE 1 SHIPPED", "WHAT SLICE 2
+ACTUALLY LANDED", "SLICE 3 SHIPPED" and "WHAT SLICE 4 ACTUALLY LANDED" at the end of that section
+for what each landed and what is still stubbed. **A spell now fires from campaign state rather than
+from an engine default** (slice 2's whole point), **the player can see what their research is buying
+them** (slice 3's), and **a caster can be told what to reach for first** (slice 4's).
 
-**▶▶ NEXT UP IS SLICE 4 — SCRIPTING, THE LAST OF M-15's FOUR.** It is where the granted paths
-finally surface: S3-2 kept Holy and Unholy off The Study because they are had rather than earned
-(M-14), so **slice 4 is the first screen on which a player sees `bless` or `drain_life` named at
-all.** The user's own sketch of the shape it might take, recorded when that decision was made and
-NOT yet interviewed: *"one option for the battle scripting would be to have all mages equip x spells
-and then those spells would be used in the AI part of battle"* — a per-caster loadout of N spells
-that the engine's selection walk then chooses within, rather than a turn-by-turn script. That sits
-naturally on M-22 (the default walk IS a script, so slice 4 replaces the list rather than adding a
-second selection path) and on M-13 (the script names the form; the AI takes the best one). **Interview
-it before building — that quote is a sketch, not a decision.**
+**▶▶ SLICE 4 — CHOSEN SPELLS — IS SHIPPED (2026-08-25); its nine decisions are under "SLICE 4 —
+CHOSEN SPELLS" at the end of this section.** It is where the granted paths finally surfaced: S3-2
+kept Holy and Unholy off The Study because they are had rather than earned (M-14), so **a Priest's
+sheet is the first screen in the project on which `bless` is named at all** — and it needed no
+decision of its own, falling straight out of S4-3's "offer what he can cast today".
 
-What slice 4 inherits, already built and needing no work of its own:
+M-22 predicted the shape and was right: **the walk was already a script**, so the player's list
+replaced the default one and no second selection path was written. The user's original sketch —
+*"one option for the battle scripting would be to have all mages equip x spells and then those
+spells would be used in the AI part of battle"* — was interviewed rather than built, and the
+interview moved it: an equipped SET reads as a restriction, and S4-1 made it a preference instead.
 
-- **The whole roster crosses the wire already.** `./game dump-spells` emits one row per FORM with its
-  id, label, description, ordered path requirements, school gate, fatigue and casting time — the
-  school-less forms included (`school: null`). The Study filters those out; slice 4 is the reader
-  that wants them.
-- **`utils/spellCatalog.js` holds it in memory**, filled at boot. `getSpellCatalog()` is the whole
-  API. No collection, no schema — nothing references a spell.
-- **`services/magic.js` is still the one place the campaign layer knows what a path or a school is.**
-  `spellsForSchool()` and `researchView()` live there; a caster-facing view belongs beside them.
+**A trap the interview caught, worth the same shelf as slice 3's below.** The assistant reached for
+S2-12 (the research focus is `prepare`-only) as a precedent for when a script may be edited. It is
+not one: the focus is an ARMY-WIDE POOLED allocation (M-7), not an order given to a person, so it
+says nothing about a per-character screen. **Check that a precedent is about the same KIND of thing
+before leaning on it** — the two decisions sit a few paragraphs apart and read alike.
 
 **▶▶ THE ONE THING SLICE 3 GOT WRONG BEFORE IT STARTED, recorded because the mistake is
 instructive.** The handoff written for it said, in bold, that it was a PURE UI slice needing no route
@@ -2021,6 +2024,12 @@ minor form keeps a low-path caster useful exactly as Dominions' early-generation
 or major deliberately — a strong mage can be told to spend cheap and conserve fatigue — while the
 engine, once the script is exhausted, uses the most powerful form the caster qualifies for.
 
+**⚠ AMENDED BY S4-2 (2026-08-25): the first half is NOT built and is not on the near list.** A chosen
+line names a SPELL, and the engine takes the strongest qualifying form within it — the second half of
+this decision, applied everywhere rather than only past the end of the list. So "told to spend cheap"
+is currently inexpressible, by the user's call that the ORDER is the whole decision procedure until
+there is a real cast AI. The half that still stands unchanged is the one the engine implements.
+
 **M-14. HOLY AND UNHOLY ARE GRANTED, NOT RESEARCHED.** A Priest's Holy level alone gates their
 blessings; no school level is involved, as in Dominions. **But a spell requiring BOTH Holy and an
 arcane path DOES carry a school gate, possibly at level 0** (user) — on the books, but needing no
@@ -2194,6 +2203,11 @@ different priority"*): whether a caster might prefer one spell's MINOR form over
 major — i.e. whether priority is really per-form rather than per-spell. Today the walk is per-spell
 and takes the strongest qualifying form within each. Decide it when scripting (slice 4) gives the
 player a way to express the preference, since that is where it would first be felt.
+
+**⚠ ANSWERED BY S4-2 (2026-08-25): NOT YET — priority stays per-spell.** Slice 4 reached the point
+this question was parked for, and the user's call was that the order alone is enough for now. The
+question moves on to the real cast-AI slice (M-22's deferred simulated cast), which is the next place
+it would be felt. Recorded as answered rather than still open, so nobody re-derives it as a gap.
 
 **Assistant's calls, flagged as overturnable:**
 - **A script line the caster cannot currently cast is SKIPPED, not stalled on** — they fall through
@@ -2533,6 +2547,115 @@ champion ANY type in `ENEMY_ARMY`, so filtering a placement by `unit_type` alone
 research RATE must read `research.allies` rather than assume the starting three Mages. Slice 3's own
 rate test reads it off the view for exactly this reason. **Run a new random-sensitive test several
 times before believing it.**
+
+**▶ SLICE 4 — CHOSEN SPELLS (SCRIPTING): INTERVIEWED AND SHIPPED 2026-08-25.** Nine decisions,
+all the user's — do not re-derive them. The last of M-15's four, and the slice that finally puts a
+spell's NAME in front of the player as something he chooses rather than reads.
+
+**S4-1. A CHOSEN LIST IS A PREFERENCE, NOT A REPERTOIRE.** The chosen spells lead the caster's walk;
+the rest of the roster keeps its order behind them. So an empty list is *exactly* the behaviour of
+every battle fought before this slice, nothing in the feature can make a caster mute, and a stale
+choice costs a skipped line rather than a wasted battle. This settles M-12's "script, then AI"
+against the sketch's "equip x spells", which read as a restriction. **The whole feature is therefore
+additive**, which is what let it ship without a migration or a fallback path.
+
+**S4-2. A LINE NAMES A SPELL, NOT A FORM — and this AMENDS M-13** (user: *"We will just use the order
+for now, later we will have actual spellcasting ai"*). The engine still takes the strongest form the
+caster qualifies for within a chosen spell, and M-26's cast-time fall-through is untouched. M-13's
+"a strong mage can be told to spend cheap" is therefore **not expressible today**, deliberately: the
+ORDER is the whole decision procedure for now, and per-form control waits for the real cast AI.
+
+**This also answers M-26's one deferred question** — *"I guess the major and minor might have
+different priority"* — which M-26 explicitly parked until scripting gave the player a way to express
+it. The answer is **not yet**: priority stays per-spell. M-26 asked the right question at the right
+time; the user's call is that it is not this slice's to spend.
+
+**S4-3. THE SHEET OFFERS ONLY WHAT HE CAN CAST TODAY** — his paths *and* the army's research, both
+enforced. Rejected: showing the whole roster greyed (most rows are permanently dead on most sheets),
+and path-filtered-but-research-blind (which would let a player script toward an unlock). **A property
+falls out of this and is worth knowing: a saved choice can never go stale.** Paths are fixed at hire
+(M-5) and school levels only ever rise (S2-7), so nothing prunes the stored list and nothing needs to.
+
+**S4-4. EDITABLE ALWAYS — ANY PHASE, IN CAMP OR AWAY** (user: *"There is no reason why you couldnt
+change the script while away, they wont participate in battles while on a mission and the fluff isnt
+that you tell every mage what to cast, in fluff they decide themselves"*). **The fiction is the
+reason and it is load-bearing for the wording**: the player is not shouting cast orders across a
+field, he is leaning on a mage's own judgement about what to reach for. So this goes *further* than
+equipping's in-camp rule (9-8), and the sheet's away banner had to be narrowed — it now says the gear
+and the posting are locked, because they are and this is not. Only the dead are read-only: a record
+takes no orders (5-9).
+
+*(Recorded because the assistant reached for it and it was wrong: S2-12's `prepare`-only research
+focus is NOT a precedent here. The focus is an army-wide pooled allocation (M-7), not an order to a
+person, so it settles nothing about a per-character screen.)*
+
+**S4-5. THREE SLOTS (bd).** A cap on EXPRESSION, not on power — S4-1 keeps the rest of the roster
+available underneath, so a fourth slot would add reach and never strength. Early casters cannot fill
+three, which is the intended shape rather than a flaw. `MAX_CHOSEN_SPELLS`.
+
+**S4-6. NO ENEMY SCRIPTS THIS SLICE, and the future design is recorded rather than left blank**
+(user: *"Easiest way for a simple game like this is that we have scripts in store, the enemy gets
+random assignment based on their paths. So they will appear smarter as the scripts make sense for
+their paths. But not now, note down though."*). **A store of authored scripts, and an enemy caster
+drawn one at random that MATCHES HIS PATHS** — competence without a decision anywhere in it, so
+standing principle 1 is untouched. The engine already accepts a list on any placement entry (M-17
+means it cannot tell whose caster it holds); only the campaign layer's authoring is missing.
+
+**S4-7. THREE ORDERED SLOTS WITH AN INLINE PICKER**, reusing the sheet's own slot idiom (9-16) with
+the ORDER as the visible structure. An inline picker rather than a store takeover (17-3): a spell is
+not an object that lives somewhere. Rejected: a checklist with reorder arrows (order becomes a
+secondary control) and drag-and-drop (new front-end machinery, and the hardest thing here to test).
+
+**S4-8. A PLAIN CAST LINE LANDS NOW.** Every spell effect logged its own flavour, but nothing said
+WHO cast WHAT — and the damage spells resolve as a `RangedShot` and so logged **nothing at all**,
+which meant a player could reorder three slots and have no way whatever to tell the difference.
+`AUnit::completeCast` now logs `Mage (blue) casts Ember`, naming the form that ACTUALLY fired so
+M-26's fall-through reads honestly.
+
+**▶▶ AND A TODO OF ITS OWN, the user's design, not built here: TIERED BATTLE LOGGING** (*"We will
+strive to log the combat with great detail with different levels, spells cast should however appear
+on any level… Basic info, units dying, spells being cast are on by default but then we can go deeper
+where we see every roll, mages preparing to cast and spells going off"*). A default tier carrying
+basic info, deaths and casts; deeper tiers exposing individual rolls and casters mid-channel. S4-8's
+line will be re-filed under that default tier when it is built.
+
+**S4-9. IT IS CALLED "CHOSEN SPELLS"** (user). Not "script" (our internal Dominions word), not
+"standing orders" (the reading S4-4 ruled out).
+
+**✅ WHAT SLICE 4 ACTUALLY LANDED (2026-08-25).** All nine as written. Schema **v42**
+(`characters[].script`). Nothing migrates, as ever.
+
+- **The engine change is one function.** `AUnit::setChosenSpells` rebuilds `_spells` as chosen-first,
+  roster-behind — rebuilt from `defaultScript()` every call, so setting a list twice cannot compound.
+  M-22 was right that slice 4 would be cheap: **there is still exactly one selection path**, and
+  `chooseSpellToCast` was not touched at all.
+- **`Spells::findSpell(id)`** is the only other engine addition, plus the S4-8 log line.
+- **The wire is one field.** `script` on a placement entry, parsed on the same never-throw discipline
+  as `paths` (unknown id skipped, repeats dropped), stamped from the RECORD by `characterEntryFor`
+  and **stripped from the request** — a list in a deploy body is forged by definition.
+  An empty list sends no field at all: absent and empty mean the same thing, and the wire says what
+  the engine must not assume rather than restating a default.
+- **`services/magic.js` keeps its monopoly** on what a path or a school is: `castableSpellsFor`
+  (the S4-3 fold from thirteen FORM rows down to ten SPELL rows, each wearing the label of the
+  strongest form the caster qualifies for), `chosenSpellsView`, `planChosenSpells`.
+- **A row grows with the man who chose it.** Because the fold labels a spell with his best qualifying
+  form, one choice reads "Ember" at Fire 1 and "Fireball" at Fire 3 — the stored id never changed, so
+  the player never re-makes the decision.
+- **`POST /:id/characters/:characterId/script`** takes the whole ordered list and replaces it. One
+  route rather than a per-slot one: a set is then idempotent and a clear is just a shorter list.
+- **The client compacts** (`chosenWith` in `CharacterSheetPage`): clearing a slot promotes what was
+  under it, and picking a spell already chosen MOVES it rather than drawing a refusal the player
+  would have to decode.
+- **Thirty-one tests**: six C++ (ordering, empty-is-default, unknown ids, repeats, a spell he cannot
+  cast, `findSpell`), eighteen campaign-side, twelve front-end, and **three against the real binary**
+  proving the whole chain — an unscripted mage casts Ember, the same mage given `["shock"]` casts
+  Shock, and a mage given a nonsense id is never left mute. Those three read their verdict off S4-8's
+  cast line, which is the right coupling: the feature and the player's evidence for it are the same
+  thing.
+
+**THE PHASE-GATE TRAP SLICE 3 WARNED SLICE 4 ABOUT DID NOT FIRE — because S4-4 removed the gate
+entirely.** The warning was sound and was heeded; the answer turned out to be that this screen has no
+phase to gate on. **The warning still stands for the next takeover with a phase-gated action.**
 
 **Sources for the Dominions baseline** (checked 2026-08-25):
 [Magic — illwiki](https://illwiki.com/dom5/dom6/magic) ·

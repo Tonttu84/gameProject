@@ -393,6 +393,61 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
       expect(spell.unlocked).toBe(spell.schoolLevel <= 1)
   })
 
+  // ── Chosen spells against the real binary (slice 4) ───────────────────────
+  //
+  // The strongest test in the slice, and the reason it is here rather than
+  // against a fixture: it proves the WHOLE chain in one run — a list on a
+  // placement entry, parsed at the wire, reordering the caster's walk, and a
+  // different spell actually leaving his hands. A fixture can only ever pin the
+  // shape of the JSON.
+  //
+  // It reads the verdict off the cast line S4-8 added, which is also the only
+  // channel the PLAYER has for judging a script. If that line ever stops being
+  // emitted this test goes red, which is the right coupling: the feature and
+  // its evidence are the same thing.
+  const castsIn = (replay) =>
+    replay.ticks.flatMap((t) => t.log ?? []).filter((l) => l.includes(' casts '))
+
+  // One Mage who commands two paths, against a host far enough away to give him
+  // several turns of casting. Evocation 1 opens the minor form of both spells,
+  // so which one he reaches for is decided by his list and by nothing else.
+  const castingMage = async (script) => {
+    const entry = { unit_type: 'Mage', q: 4, r: 7, paths: { fire: 1, air: 1 } }
+    if (script) entry.script = script
+    const { replay } = await runBattle({
+      map: 'sample_battle',
+      player_placement: [entry],
+      enemy_placement: [{ unit_type: 'Soldier', q: 4, r: 22, count: 6 }],
+      max_turns: 40,
+      magic: {
+        blue: { schools: { evocation: 1, conjuration: 0, enchantment: 0, construction: 0 }, channels: 0 },
+        red: { schools: { evocation: 0, conjuration: 0, enchantment: 0, construction: 0 }, channels: 0 },
+      },
+    })
+    return castsIn(replay)
+  }
+
+  test('an unscripted caster reaches for the roster\'s own order', async () => {
+    const casts = await castingMage(null)
+    expect(casts.length).toBeGreaterThan(0)
+    expect(casts.every((l) => l.includes('Ember'))).toBe(true)
+  }, 30000)
+
+  test('a chosen spell leads — the same mage now casts what he was given', async () => {
+    const casts = await castingMage(['shock'])
+    expect(casts.length).toBeGreaterThan(0)
+    expect(casts.every((l) => l.includes('Shock'))).toBe(true)
+  }, 30000)
+
+  test('an unknown id is skipped, and the caster is never left mute', async () => {
+    // The never-throw discipline at the wire, proved rather than assumed: a
+    // list the roster cannot resolve must degrade to the default walk, not to
+    // silence. S4-1's promise is that nothing here can stop a caster casting.
+    const casts = await castingMage(['no_such_spell'])
+    expect(casts.length).toBeGreaterThan(0)
+    expect(casts.every((l) => l.includes('Ember'))).toBe(true)
+  }, 30000)
+
   test('spellsForSchool keeps the engine order, so minor precedes major', async () => {
     const { spells } = await dumpSpells()
     for (const school of SPELL_SCHOOLS) {

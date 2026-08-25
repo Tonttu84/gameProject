@@ -3,6 +3,7 @@
 #include "SpellList.hpp"
 #include "Squad.hpp"
 #include "WeaponEffects.hpp"
+#include "UnitCatalog.hpp"
 #include <algorithm>
 
 
@@ -580,6 +581,29 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		_spells = Spells::defaultScript();
 	}
 
+	void AUnit::setChosenSpells(const std::vector<std::string>& spellIds)
+	{
+		// S4-1: the chosen ones lead, the rest of the roster follows in its own
+		// order. Rebuilt from the default list every call rather than shuffled
+		// in place, so setting a list twice cannot compound.
+		std::vector<const Spell*> ordered;
+		for (const std::string& id : spellIds) {
+			const Spell* s = Spells::findSpell(id);
+			if (!s) continue;   // an id the roster does not know is skipped
+			bool already = false;
+			for (const Spell* seen : ordered)
+				if (seen == s) { already = true; break; }
+			if (!already) ordered.push_back(s);
+		}
+		for (const Spell* s : Spells::defaultScript()) {
+			bool chosen = false;
+			for (const Spell* seen : ordered)
+				if (seen == s) { chosen = true; break; }
+			if (!chosen) ordered.push_back(s);
+		}
+		_spells = std::move(ordered);
+	}
+
 	int AUnit::getPathLevel(SpellPath p) const
 	{
 		if (p == SpellPath::Count) return 0;
@@ -724,6 +748,24 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		}
 		if (!fired) return;
 		form = fired;   // everything below prices the form that ACTUALLY fired
+
+		// S4-8: name the cast. Every spell effect logs its own flavour, but
+		// nothing said WHO cast WHAT — and the damage spells resolve as an
+		// ordinary RangedShot and so logged nothing at all, which left a player
+		// with no way to tell whether their chosen spells did anything. Named
+		// after the form that ACTUALLY fired, so M-26's fall-through reads
+		// honestly: a major that degraded reports the minor.
+		//
+		// Same symbol->name lookup and (red)/(blue) tag Battlefield::logDeaths
+		// uses, for one voice across the log. The tiered logging system is a
+		// TODO of its own; this line will sit in its default tier.
+		{
+			std::string who = unitNameForSymbol(printSymbol);
+			if (who.empty()) who = std::string(1, printSymbol);
+			Utility::getBattlefield().logEvent(
+				who + (team == REDTEAM ? " (red)" : " (blue)")
+				+ " casts " + std::string(form->label));
+		}
 
 		int cost = spellFatigueCost(*form);
 		// M-11: banners are the allowance, and a caster draws from the ARMY-WIDE

@@ -817,3 +817,92 @@ TEST_CASE("spellCatalogJson: the granted paths are the ones without a school") {
         REQUIRE(row["school"].is_null() == granted);
     }
 }
+
+// ── Chosen spells (slice 4, S4-1/S4-2) ───────────────────────────────────────
+//
+// The player's list is a PREFERENCE laid over the default walk, not a
+// restriction: whatever is chosen leads, and the rest of the roster keeps its
+// order behind it. These pin that, plus the never-throw discipline the wire
+// boundary relies on.
+
+TEST_CASE("setChosenSpells: the chosen spell leads, and the rest still follow") {
+    Mage mage(REDTEAM);
+    mage.setPathLevel(SpellPath::Air, 1);   // Fire 1 from the ctor, plus Air 1
+    const Spell* picked = nullptr;
+
+    // Roster order puts fireball first, so that is what he reaches for.
+    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(picked->id == "fireball");
+
+    // Choosing shock moves it to the front.
+    mage.setChosenSpells({"shock"});
+    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(picked->id == "shock");
+
+    // …and fireball is still there underneath: drop Air and he falls through to
+    // it rather than standing mute, which is the whole of S4-1.
+    mage.setPathLevel(SpellPath::Air, 0);
+    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(picked->id == "fireball");
+}
+
+TEST_CASE("setChosenSpells: an empty list is exactly the default walk") {
+    // What makes the whole feature additive — a caster nobody has scripted
+    // behaves precisely as he did before slice 4.
+    Mage chosen(REDTEAM), untouched(REDTEAM);
+    chosen.setChosenSpells({});
+
+    const Spell* a = nullptr;
+    const Spell* b = nullptr;
+    REQUIRE(chosen.chooseSpellToCast(&a) != nullptr);
+    REQUIRE(untouched.chooseSpellToCast(&b) != nullptr);
+    REQUIRE(a->id == b->id);
+}
+
+TEST_CASE("setChosenSpells: unknown ids are skipped, not fatal") {
+    // Never-throw, like every other field crossing the JSON boundary.
+    Mage mage(REDTEAM);
+    mage.setPathLevel(SpellPath::Air, 1);
+    mage.setChosenSpells({"no_such_spell", "shock", ""});
+
+    const Spell* picked = nullptr;
+    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(picked->id == "shock");
+}
+
+TEST_CASE("setChosenSpells: repeats cannot grow the walk, and setting twice does not compound") {
+    Mage mage(REDTEAM);
+    mage.setPathLevel(SpellPath::Air, 1);
+
+    // A forged list repeating one id must not lengthen the caster's roster.
+    mage.setChosenSpells({"shock", "shock", "shock"});
+    const Spell* picked = nullptr;
+    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(picked->id == "shock");
+
+    // Rebuilt from the default list every call, so a second set REPLACES the
+    // first rather than layering on it.
+    mage.setChosenSpells({"fireball"});
+    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(picked->id == "fireball");
+}
+
+TEST_CASE("setChosenSpells: a chosen spell the caster cannot cast is skipped") {
+    // S4-3 keeps these off the sheet in the first place, but the engine must
+    // not stall on one that arrives anyway — a stale list would otherwise
+    // freeze a caster for a whole battle.
+    Mage mage(REDTEAM);   // Fire 1, no Death
+    mage.setChosenSpells({"raise_dead"});
+
+    const Spell* picked = nullptr;
+    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(picked->id == "fireball");
+}
+
+TEST_CASE("findSpell: resolves roster ids and returns nullptr for the rest") {
+    REQUIRE(Spells::findSpell("fireball") != nullptr);
+    REQUIRE(Spells::findSpell("fireball")->id == "fireball");
+    REQUIRE(Spells::findSpell("bless") != nullptr);
+    REQUIRE(Spells::findSpell("no_such_spell") == nullptr);
+    REQUIRE(Spells::findSpell("") == nullptr);
+}

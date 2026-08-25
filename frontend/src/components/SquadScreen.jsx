@@ -128,7 +128,7 @@ const SquadRoll = () => {
 
 // The shell: one back button, one page at a time. `onBack` closes the whole
 // screen and returns to the phase the player opened it from.
-const SquadScreen = ({ onTakeUpgrade, onAttach, onSetHangBack, onUnequip }) => {
+const SquadScreen = ({ onTakeUpgrade, onAttach, onSetHangBack, onSetChosenSpells, onUnequip }) => {
   const screen = useUiStore((s) => s.squadScreen)
   const close = useUiStore((s) => s.closeSquadScreen)
   const openRoll = useUiStore((s) => s.openSquadScreen)
@@ -160,6 +160,7 @@ const SquadScreen = ({ onTakeUpgrade, onAttach, onSetHangBack, onUnequip }) => {
           characterId={screen.characterId}
           onAttach={onAttach}
           onSetHangBack={onSetHangBack}
+          onSetChosenSpells={onSetChosenSpells}
           onUnequip={onUnequip}
         />
       )}

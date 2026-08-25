@@ -1105,6 +1105,15 @@ export const RESEARCH_START_LEVEL = 0
 // and moving it parks no progress (S2-7).
 export const RESEARCH_DEFAULT_FOCUS = 'evocation'
 
+// S4-5 (bd): how many spells a caster may be given to reach for first.
+//
+// A cap on EXPRESSION, not on power — S4-1 keeps the rest of the roster
+// available behind the chosen ones, so a fourth choice would add reach, never
+// strength. Three is small enough that picking is a decision and large enough
+// that a developed caster has something to say; early on he will not have three
+// castable spells to fill it with, which is the intended shape.
+export const MAX_CHOSEN_SPELLS = 3
+
 // S2-8 (bd): the channel a banner tier is worth, army-wide (M-11) — the basic
 // banner's long-deferred benefit (decision 16) finally made concrete. Keyed by
 // services/items.js bannerTier(), so a retuned rank ladder moves these with it.

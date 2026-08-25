@@ -132,6 +132,15 @@ export const equipCharacterItem = (id, characterId, { slot, index, itemId }) =>
   axios.post(`/api/campaigns/${id}/characters/${characterId}/equip`, { slot, index, itemId }, authed()).then(r => r.data)
 export const unequipCharacterItem = (id, characterId, { slot, index }) =>
   axios.post(`/api/campaigns/${id}/characters/${characterId}/unequip`, { slot, index }, authed()).then(r => r.data)
+// The spells a caster reaches for first (slice 4, S4-1). The WHOLE list every
+// time, replacing what was there — there is no per-slot endpoint, because the
+// three slots on the sheet are a rendering of one ordered array.
+//
+// Free and ungated in every direction, further than equipping goes: any phase,
+// and allowed even while the caster is away (S4-4). The fiction is why — this
+// is a mage's own standing preference, not an order shouted across a field.
+export const setChosenSpells = (id, characterId, script) =>
+  axios.post(`/api/campaigns/${id}/characters/${characterId}/script`, { script }, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

@@ -36,7 +36,7 @@ import { bannerTier, describeItem, findItem, squadBanner, storedItems } from './
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
 import { garrisonLevel } from './garrison.js'
-import { pathEntries, researchView } from './magic.js'
+import { chosenSpellsView, isCasterType, pathEntries, researchView } from './magic.js'
 import { displayBracket } from './recon.js'
 import {
   forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
@@ -487,6 +487,17 @@ export async function campaignView(campaign) {
         // about the type — "nothing is known" is a sentence the screen says
         // rather than a table of zeroes.
         sheet: characterSheet(entry?.stats ?? null, mods),
+        // The spells he reaches for first, and everything he could reach for
+        // (slice 4, S4-7). Resolved and PHRASED here like the item rows above:
+        // the sheet renders slots and a picker, and holds no spell catalog.
+        //
+        // Sent for casters only — `castableSpellsFor` returns nothing for a
+        // body with no paths anyway, but the field's ABSENCE is what tells the
+        // sheet not to draw the section at all, rather than drawing an empty
+        // one for a swordsman who will never have a spell to put in it.
+        ...(isCasterType(c.type)
+          ? { chosenSpells: chosenSpellsView(c, campaign, getSpellCatalog()) }
+          : {}),
         // Why they cannot be re-kitted right now, or null (9-8/9-9). A phrase
         // rather than a boolean, because the client renders sentences it never
         // composes and "out raiding" and "on a mission" read differently.

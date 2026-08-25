@@ -236,6 +236,28 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
             }
         }
 
+        // Optional script (slice 4, S4-1): an ordered array of spell ids, e.g.
+        // ["fireball", "bless"] — the CHOSEN SPELLS the player set on this
+        // caster's sheet. They lead the caster's walk; everything else keeps
+        // its roster order behind them, so this is a preference and never a
+        // restriction, and an absent field is exactly the old behaviour.
+        //
+        // Rides the placement entry for both sides, like `paths`, because there
+        // is ONE magic system (M-17). The campaign layer sends none for the
+        // enemy today (S4-6) — the engine simply never learns whose list it is.
+        //
+        // Same never-throw discipline as `paths` above: a non-array, a
+        // non-string entry or an id the roster does not carry is skipped rather
+        // than rejected. setChosenSpells also drops repeats, so a forged list
+        // cannot grow the walk.
+        auto scriptIt = entry.find("script");
+        if (scriptIt != entry.end() && scriptIt->is_array()) {
+            std::vector<std::string> chosen;
+            for (const auto& id : *scriptIt)
+                if (id.is_string()) chosen.push_back(id.get<std::string>());
+            u->setChosenSpells(chosen);
+        }
+
         // Optional squad_abilities (slice 6, decision 6-7): an array of ability
         // names, e.g. ["fearless"], attached SERVER-SIDE by the campaign layer
         // from the banner bound to this unit's squad.

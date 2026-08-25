@@ -136,6 +136,21 @@ public:
     // the engine never learns who is the player (M-17).
     int  getPathLevel(SpellPath p) const;
     void setPathLevel(SpellPath p, int level);
+
+    // The player's CHOSEN SPELLS (slice 4, S4-1) — the ids this caster reaches
+    // for first, in order. They are moved to the front of `_spells`; everything
+    // else keeps its roster order behind them, so a chosen list is a PREFERENCE
+    // and never a restriction. An empty list therefore restores exactly the
+    // default walk, which is what makes the whole feature additive.
+    //
+    // A line names a SPELL, not a form (S4-2): the engine still takes the
+    // strongest form the caster qualifies for within it (M-13), and M-26's
+    // cast-time fall-through is untouched.
+    //
+    // Never-throw, like every other field arriving from the JSON boundary: an
+    // id the roster does not know is skipped, and a repeat of one already
+    // chosen is ignored rather than duplicating the entry.
+    void setChosenSpells(const std::vector<std::string>& spellIds);
     bool hasAnyPath() const;
 
     // M-10's formula, reading the PRIMARY path (M-20) and halved for a

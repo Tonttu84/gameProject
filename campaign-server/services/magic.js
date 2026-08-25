@@ -24,6 +24,7 @@ import {
   HIRE_PATH_POOL,
   HIRE_PRIMARY_LEVEL,
   HIRE_SECOND_PATH_PERCENT,
+  MAX_CHOSEN_SPELLS,
   RESEARCH_DEFAULT_FOCUS,
   RESEARCH_LEVEL_COST,
   RESEARCH_MAX_LEVEL,
@@ -339,6 +340,88 @@ export const researchView = (campaign, spells = []) => ({
     }),
   ),
 })
+
+// ── Chosen spells (slice 4) ─────────────────────────────────────────────────
+
+// Can THIS caster cast THIS form today? Both gates a spell passes (M-9), read
+// campaign-side: every path requirement against his own rolled levels, and the
+// school requirement against the army's research.
+//
+// A school-less form (Holy/Unholy, M-14) passes the second gate outright, which
+// is what puts `bless` on a Priest's sheet from day one — the first screen in
+// the project to name a granted path's spell at all (S3-2 kept them off The
+// Study deliberately, because they are had rather than earned).
+const qualifiesFor = (paths, row, campaign) => {
+  const held = new Map(bagEntries(paths).map(([p, lvl]) => [p, Number(lvl) || 0]))
+  for (const { path, level } of row.paths ?? [])
+    if ((held.get(path) ?? 0) < level) return false
+  if (row.school == null) return true
+  return schoolOf(campaign, row.school).level >= (row.schoolLevel ?? 0)
+}
+
+// The spells this caster can cast RIGHT NOW, one row per SPELL (S4-2/S4-3).
+//
+// The catalog is one row per FORM, so the fold is the work: a spell is offered
+// when he qualifies for at least one of its forms, and the row wears the label
+// and description of the STRONGEST one he qualifies for — which is exactly what
+// the engine would cast for him (M-13). So a Fire 1 mage is offered "Ember" and
+// the same row becomes "Fireball" when he reaches Fire 3, without the choice he
+// made ever needing to be re-made: the ID under it never changed.
+//
+// Forms arrive weakest-first (the roster's own order, which chooseSpellToCast
+// relies on), so the last qualifying one wins.
+export const castableSpellsFor = (character, campaign, spells = []) => {
+  const rows = new Map()
+  for (const row of spells) {
+    if (!qualifiesFor(character?.paths, row, campaign)) continue
+    rows.set(row.spell, {
+      spell: row.spell,
+      label: row.label,
+      description: row.description,
+    })
+  }
+  return [...rows.values()]
+}
+
+// What the character sheet renders for "Chosen spells" (S4-7, S4-9).
+//
+// The server phrases every row and the client composes no sentence (17-5), so
+// the slots arrive already resolved: a chosen id the caster can no longer be
+// offered would appear as a label-less row, and cannot — paths are fixed at
+// hire and school levels only rise, so a saved choice stays castable for good.
+export const chosenSpellsView = (character, campaign, spells = []) => {
+  const castable = castableSpellsFor(character, campaign, spells)
+  const byId = new Map(castable.map((row) => [row.spell, row]))
+  return {
+    max: MAX_CHOSEN_SPELLS,
+    // Compacted, never sparse: position IS priority (S4-1), so an id that
+    // somehow resolves to nothing is dropped rather than left as a hole.
+    chosen: (character?.script ?? []).map((id) => byId.get(id)).filter(Boolean),
+    // Everything he could reach for, chosen or not — the picker shows the whole
+    // list and marks what is already taken, rather than shrinking as slots fill.
+    options: castable,
+  }
+}
+
+// Validate a proposed list against the caster and the day (S4-3).
+//
+// Returns `{ error }` for a refusal or `{ script }` for the list to store,
+// following the plan/apply shape every other mutation in this layer uses. The
+// list REPLACES what was there; there is no per-slot route, so a set is
+// idempotent and a clear is just a shorter list.
+export const planChosenSpells = (character, campaign, spells, ids) => {
+  if (!Array.isArray(ids)) return { error: 'script must be an array of spell ids' }
+  if (ids.length > MAX_CHOSEN_SPELLS)
+    return { error: `a caster may choose at most ${MAX_CHOSEN_SPELLS} spells` }
+  if (new Set(ids).size !== ids.length)
+    return { error: 'the same spell cannot be chosen twice' }
+
+  const castable = new Set(castableSpellsFor(character, campaign, spells).map((r) => r.spell))
+  for (const id of ids)
+    if (!castable.has(id)) return { error: `${character.name} cannot cast ${id}` }
+
+  return { script: [...ids] }
+}
 
 // ── What the engine is told ─────────────────────────────────────────────────
 
