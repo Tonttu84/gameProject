@@ -338,13 +338,36 @@ refuses with 400 unless `campaign.bossFightDue` is set** — the ONLY battle is 
 fight, and raids are the only other way to fight. Read every "tonight" in the older write-ups as
 "end of turn". This block is the authority; the older wording below is history, not a spec.
 
-**▶ THE MAGIC SYSTEM — SLICE 1 (THE ENGINE) IS BUILT; SLICES 2-4 ARE NOT (interviewed 2026-08-25).**
-The biggest system the project has taken on: **twenty-six decisions under "THE MAGIC SYSTEM" below,
-all the user's — do not re-derive them.** Modelled deliberately on Dominions, with the source
-checked rather than recalled. **The engine slice shipped 2026-08-25** — see "SLICE 1 SHIPPED" at the
-end of that section for what landed and what is still stubbed. Next up is **slice 2, the campaign
-layer** (M-15): paths rolled at hire, the research track, the schema bump — and the slice at whose
-end a spell fires from campaign state rather than from an engine default.
+**▶ THE MAGIC SYSTEM — SLICES 1 AND 2 ARE BUILT; SLICES 3-4 ARE NOT (interviewed 2026-08-25).**
+The biggest system the project has taken on: **twenty-six decisions under "THE MAGIC SYSTEM" below
+plus fourteen more under "SLICE 2 — THE CAMPAIGN LAYER", all the user's — do not re-derive them.**
+Modelled deliberately on Dominions, with the source checked rather than recalled. The engine slice
+and the campaign slice both shipped 2026-08-25; see "SLICE 1 SHIPPED" and "WHAT SLICE 2 ACTUALLY
+LANDED" at the end of that section for what landed and what is still stubbed. **A spell now fires
+from campaign state rather than from an engine default** — which was slice 2's whole point.
+
+**▶▶ SESSION HANDOFF — NEXT UP IS SLICE 3, AND IT IS A PURE UI SLICE (2026-08-25).** Slices 1 and 2
+are on `main`, CI green. Slice 3 adds the RESEARCH SCREEN and nothing else: **the server is already
+finished for it (S2-1), so slice 3 should need no route and no schema work.** What is waiting:
+
+- `campaignView` ships `research` whole — `{focus, allies, schools: {<school>: {label, level,
+  points}}}`, all four schools always present, labels already phrased server-side (17-5). The client
+  composes no sentence and holds no vocabulary.
+- `POST /:id/research {school}` sets the focus. **`prepare` phase only** (409 past it, the same
+  answer every phase-gated route gives), freely re-settable within it, 400 on an unknown school.
+- The cost curve the screen will want to draw: level *n* costs `RESEARCH_LEVEL_COST × n`, bought in
+  turn, so reaching level L has cost `30 × L(L+1)/2`. `services/magic.js nextLevelCost()` is the one
+  place that arithmetic lives — call it, do not re-derive it in a component.
+- The character sheet already renders paths (`sheet-paths-<id>` / `sheet-nopaths-<id>`); that is
+  slice 2's only UI and slice 3 should leave it alone.
+
+**A warning worth heeding before writing slice 3's tests:** slice 2 shipped two tests that depended
+on dice and passed locally while failing in CI. Both are fixed (commit `90562b1`) and both are worth
+knowing about. `rollBearer` can make an enemy champion ANY type in `ENEMY_ARMY`, so filtering a
+placement by `unit_type` alone catches him too; and `wandering_adept` is in the ordinary draw pool
+and lends a mage permanently, so any test asserting a research RATE must read `research.allies`
+rather than assume the starting three Mages. **Run a new random-sensitive test several times before
+believing it.**
 
 **SLICE 2 IS BUILT AND SHIPPED (2026-08-25).** A second interview settled the thirteen things
 M-15's one-line "campaign" bullet left open — the hire roll, where a fresh campaign's research
