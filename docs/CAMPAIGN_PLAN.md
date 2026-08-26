@@ -173,10 +173,58 @@ this order to pick the work up cold:
        names a mage, it breaks the abstraction research relies on** — which is exactly why this is
        the first thing the interview must settle, before any of the numbers.
 
-     **Still open beyond that:** how many mage-turns each tier costs; whether a crafted item is
-     permanent like a bound banner (6-14) or removable like gear (9-16); and what a "construction"
-     even is — a camp improvement like the fortification level, or something that stands on the
-     battlefield.
+     **THE THIRD DECISION (user, 2026-08-25) ANSWERS THE FUNGIBILITY QUESTION ABOVE: FORGING NAMES
+     A MAGE.** *"Named mage, the items will require spell paths. Each mage has different spell paths
+     so you need to forge with a mage that has the paths."* So an item row carries a PATH
+     requirement exactly as a spell form does (M-6's caster gate), and the individual doing the work
+     has to meet it. Research stays fungible; forging never was — and now the two are explicitly
+     different, rather than one quietly contradicting the other.
+
+     **The flow, in the user's own words — TWO DOORS INTO ONE ACTION:**
+
+     - **From the FORGE screen:** the list is filtered to what you could actually make — *"items
+       that you can forge (ie you have a mage with the right paths)"* — you click one, and THEN
+       choose among the mages whose paths qualify. Item first, smith second.
+     - **From the MAGE's own screen:** *"the items he has path for are shown and he is automatically
+       selected"*. Smith first, item second. The user names the reason this door exists: *"so you
+       can use mages that are not tied to a squad that way"* — an unattached mage has no charter
+       page to be found through, and would otherwise be easy to forget.
+
+     Two entry points into the same action, which is the shape ItemStorePanel already took for the
+     store (17-4's SLOT and BROWSE modes) — worth reusing the reasoning: one screen with two modes
+     rather than two screens, so the wording and the empty state cannot drift apart.
+
+     **Two rules on the picker, both the user's:** a mage who is **AWAY cannot forge** (he is on a
+     raid or a mission — 12-3's second notion of busy), and the picker must **SHOW when a mage is
+     with a squad, "as that will affect the squad too"**. That last is the trap from the previous
+     decision being answered in the UI rather than in the rules: forging is not free for the
+     charter he is posted to, so the screen has to say so at the moment of choosing rather than
+     leave the player to discover it at the next battle.
+
+     **THE FOURTH DECISION (user, 2026-08-25): ONE TURN, AND THE ITEM ARRIVES AT ONCE** — *"forging
+     just takes 1 turn to keep things simple, we can get the item instantly so we dont need to worry
+     what happens if the mage dies etc"*. The action is ATOMIC: the mage's turn is spent, the item
+     exists. That is not just a number chosen small — it deletes a whole class of problem the
+     previous decision had opened.
+
+     **What it removes, and this is why it is worth the simplicity:** no in-progress forging to
+     store, so no schema field for part-finished work; no rule for a mage who dies mid-forge (the
+     question is now unaskable, which is better than answered); no "unavailable for X turns"
+     machinery of the kind decision 12 needed for missions; and no way for a reload to land in the
+     middle of one. Forging becomes a spend, like fortifying, rather than a commitment that has to
+     be tracked across turns.
+
+     It also fixes the cost at ONE mage-turn regardless of tier, so the Construction LEVEL is the
+     only thing that scales — level decides WHAT may be made, never how long it takes. One number,
+     one ladder.
+
+     **Still open, and now a short list:** exactly what it costs the SQUAD when its posted mage
+     forges — the previous decision requires the picker to SHOW that effect, so the rule has to
+     exist before the screen can state it, and "instant" makes it sharper rather than softer (if
+     forging is over at once, is the mage still absent from that evening's battle, or merely not
+     casting?); whether a crafted item is permanent like a bound banner (6-14) or removable like
+     gear (9-16); and what a "construction" even is — a camp improvement like the fortification
+     level, or something that stands on the battlefield.
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
      **Which reading is meant is NOT settled and should be the interview's first question:** more
      CONTENT authored against the catalogs that exist, or better TOOLING so authoring one is
