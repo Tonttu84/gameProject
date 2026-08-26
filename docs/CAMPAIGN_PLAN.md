@@ -146,13 +146,37 @@ this order to pick the work up cold:
        or an extension of one of them, is a decision 12-3 already had to make once and should be
        made deliberately again rather than by accident.
 
-     **Still open, and for the interview:** how many mage-turns an item costs and whether that
-     scales with the item; whether a Construction LEVEL gates what can be attempted, shortens the
-     work, or both; whether the mage is chosen by the player or the cost is drawn from the pool
-     abstractly (S2-6 was careful to make mages fungible — *"any living Mage counts wherever they
-     are"* — and picking a named crafter would be the first thing to break that); what happens to
-     part-finished work if the mage dies; and whether a crafted item is permanent like a bound
-     banner (6-14) or removable like gear (9-16).
+     **THE SECOND DECISION (user, 2026-08-25): A CONSTRUCTION LEVEL BUYS "more (and better) items,
+     constructions, units (golems etc)".** So the school is WIDER than crafting: it produces three
+     KINDS of thing, and only the first is an item in the 9-7 sense. "Constructions" and golems are
+     new nouns for this project — a golem is a unit that arrives without being recruited, which no
+     existing channel does (RECRUIT_POOL sells bodies; summons are battle-only and filtered out of
+     survivors by `battleSummon`). **A golem is a permanent unit bought with mage-turns, which is a
+     fourth way for a body to enter the roster and needs its own decision, not an assumption.**
+     Level therefore gates the TIER of what can be made, and the level ladder is a content ladder.
+
+     **▶ THE TRAP THE USER FLAGGED, and it is the one that decides the whole shape (user,
+     2026-08-25): "notice that the mage can be attached to a squad".** A character can be posted to
+     a charter (5a), rides into battles and raids with it, hangs back or does not, and can die
+     there. So "a mage spends his turn" is NOT a clean subtraction from a pool — the mage is
+     somewhere, possibly on a raid, possibly about to be in the decisive battle. Everything below
+     turns on this and NONE of it is decided:
+
+     - Can an ATTACHED mage craft, or must he be unposted first? If he can, is he still in the
+       battle line that turn — forging in the morning and casting in the afternoon?
+     - Does crafting instead make him UNAVAILABLE, the way a mission takes a whole squad off the
+       board (decision 12)? That is the closest existing machinery and the most likely fit.
+     - What happens to part-finished work when the mage dies on a raid — and he can, permanently
+       (5a). Does the work survive to be picked up, or die with him?
+     - S2-6 made mages deliberately FUNGIBLE for research (*"any living Mage counts wherever they
+       are"*). Crafting cannot inherit that: a golem is forged by SOMEONE. **The moment crafting
+       names a mage, it breaks the abstraction research relies on** — which is exactly why this is
+       the first thing the interview must settle, before any of the numbers.
+
+     **Still open beyond that:** how many mage-turns each tier costs; whether a crafted item is
+     permanent like a bound banner (6-14) or removable like gear (9-16); and what a "construction"
+     even is — a camp improvement like the fortification level, or something that stands on the
+     battlefield.
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
      **Which reading is meant is NOT settled and should be the interview's first question:** more
      CONTENT authored against the catalogs that exist, or better TOOLING so authoring one is
