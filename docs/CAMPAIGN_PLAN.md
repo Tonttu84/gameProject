@@ -218,13 +218,27 @@ this order to pick the work up cold:
      only thing that scales — level decides WHAT may be made, never how long it takes. One number,
      one ladder.
 
-     **Still open, and now a short list:** exactly what it costs the SQUAD when its posted mage
-     forges — the previous decision requires the picker to SHOW that effect, so the rule has to
-     exist before the screen can state it, and "instant" makes it sharper rather than softer (if
-     forging is over at once, is the mage still absent from that evening's battle, or merely not
-     casting?); whether a crafted item is permanent like a bound banner (6-14) or removable like
-     gear (9-16); and what a "construction" even is — a camp improvement like the fortification
-     level, or something that stands on the battlefield.
+     **THE FIFTH DECISION (user, 2026-08-25) — WHAT FORGING COSTS THE MAGE, AND IT IS ONLY TWO
+     THINGS:** *"he just loses the research AND cant be used to forge again this turn"*. That is the
+     whole price. He is **not** absent from the evening's battle, **not** barred from casting, and
+     **not** taken off a raid. Forging is a research cost plus a once-per-turn stamp on the
+     individual — the same shape as `recruit.drawnDay` or `augury.consulted`, and needing nothing
+     more than a per-character day marker.
+
+     **This NARROWS the earlier note, and the tension is recorded rather than quietly reconciled.**
+     Decision three said the picker must show when a mage is with a squad *"as that will affect the
+     squad too"* — but if the only costs are research and a once-per-turn stamp, forging takes
+     nothing away from the charter he is posted to. **Two readings, and the interview should confirm
+     which:** either the squad line is purely INFORMATIONAL (this man is spoken for; his charter may
+     march tonight — worth seeing, but not a cost), or the real constraint was always the AWAY rule
+     beside it (a squad on a raid takes its mage with it, so posting him somewhere is what can stop
+     him forging at all). The second reading makes both halves of that sentence one rule, and is the
+     likelier of the two — but it is a reading, not something the user said.
+
+     **Still open, and now a short list:** which of those two readings is meant; whether a crafted
+     item is permanent like a bound banner (6-14) or removable like gear (9-16); and what a
+     "construction" even is — a camp improvement like the fortification level, or something that
+     stands on the battlefield.
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
      **Which reading is meant is NOT settled and should be the interview's first question:** more
      CONTENT authored against the catalogs that exist, or better TOOLING so authoring one is
