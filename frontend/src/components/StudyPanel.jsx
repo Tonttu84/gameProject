@@ -79,7 +79,7 @@ const SpellRow = ({ spell, schoolLabel }) => {
 // One school: what it has reached, what this turn's study would buy, and its
 // spells. Construction is rendered by this same body holding nothing (S3-5) —
 // an empty school is the honest shape of the system, not a special case.
-const SchoolBlock = ({ school, data, focused, onFocus, locked }) => {
+const SchoolBlock = ({ school, data, focused, onFocus, locked, door }) => {
   const { label, level, points, nextCost, spells } = data
   // At the ceiling there is no next level to price, so the server sends null
   // rather than a cost for something that cannot be bought.
@@ -119,6 +119,8 @@ const SchoolBlock = ({ school, data, focused, onFocus, locked }) => {
         </button>
       )}
 
+      {door}
+
       {spells.length === 0 ? (
         <p className="study-empty" data-testid={`study-empty-${school}`}>
           No workings are known in this school.
@@ -147,6 +149,7 @@ const SchoolBlock = ({ school, data, focused, onFocus, locked }) => {
 const StudyPanel = ({ onFocus, locked }) => {
   const research = useCampaignStore((s) => s.campaign.research)
   const closeStudy = useUiStore((s) => s.closeStudy)
+  const openForge = useUiStore((s) => s.openForge)
   const tutorial = useUiStore((s) => s.tutorial)
 
   const schools = research?.schools ?? {}
@@ -192,6 +195,19 @@ const StudyPanel = ({ onFocus, locked }) => {
             focused={research?.focus === school}
             onFocus={onFocus}
             locked={locked}
+            // Construction's content is not spells (C-6): its school block is
+            // the ITEM-FIRST door into the forge, which is a takeover of its
+            // own like this one. Rendered as part of the block so the fourth
+            // school stops being the empty one (S3-5) the day it has works.
+            door={school === 'construction' ? (
+              <button
+                className="btn-primary study-forge-door"
+                data-testid="study-forge-door"
+                onClick={() => openForge({})}
+              >
+                The Forge
+              </button>
+            ) : null}
           />
         ))}
       </div>

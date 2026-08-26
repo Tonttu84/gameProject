@@ -1640,7 +1640,7 @@ describe('POST /api/campaigns/:id/spend', () => {
     const { body: c } = await createCampaign()
     const doc = await Campaign.findById(c.id)
     doc.roster = { Soldier: 10 }
-    doc.resources = { food: 1000, materials: 1000, gold: 0, horses: 0 }
+    doc.resources = { food: 1000, materials: 1000, gold: 0, horses: 0, mithril: 0 }
     await doc.save()
 
     const res = await spend(c.id, { action: 'militia', count: 10 })

@@ -10,6 +10,8 @@ import {
   RAID_CAPACITY_RATIO,
   RAID_LOOT_FOOD,
   RAID_LOOT_MATERIALS,
+  RAID_LOOT_MITHRIL,
+  RAID_LOOT_MITHRIL_PCT,
   RAID_GOLD_PER_UNIT,
   RAID_GOLD_VARIANCE,
   RAID_HORSES_PER_UNIT,
@@ -163,6 +165,7 @@ const rewardRangeOf = (reward) => {
   if (typeof reward.materials === 'number') range.materials = rangeAround(reward.materials)
   if (typeof reward.gold === 'number') range.gold = rangeAround(reward.gold)
   if (typeof reward.horses === 'number') range.horses = rangeAround(reward.horses)
+  if (typeof reward.mithril === 'number') range.mithril = rangeAround(reward.mithril)
   if (reward.roster) {
     range.roster = {}
     for (const [type, n] of Object.entries(reward.roster)) range.roster[type] = rangeAround(n)
@@ -201,6 +204,12 @@ const buildOpportunity = (
           food: randInt(RAID_LOOT_FOOD),
           materials: randInt(RAID_LOOT_MATERIALS),
           gold: goldFor(type, targetForce),
+          // A strongbox of the forge's metal rides with SOME trains
+          // (Construction slice C1, C-7) — a chance, not a promise, sealed
+          // here with the rest of the reward so a reload cannot reroll it.
+          ...(Math.random() * 100 < RAID_LOOT_MITHRIL_PCT
+            ? { mithril: randInt(RAID_LOOT_MITHRIL) }
+            : {}),
         }
       : type === 'rescue_troops'
         ? { roster: { [RAID_RESCUE_UNIT]: randInt(RAID_RESCUE_COUNT) } }
@@ -404,12 +413,14 @@ export function applyRaidReward(campaign, opportunity, redSurvivors = {}) {
       entries.push(`The field is stripped afterwards: +${gold} gold.`)
     }
   } else if (opportunity.type === 'loot_supplies') {
-    const { food = 0, materials = 0, gold = 0 } = opportunity.reward ?? {}
+    const { food = 0, materials = 0, gold = 0, mithril = 0 } = opportunity.reward ?? {}
     campaign.resources.food += food
     campaign.resources.materials += materials
     campaign.resources.gold += gold
+    campaign.resources.mithril = (campaign.resources.mithril ?? 0) + mithril
     entries.push(`Plunder taken: +${+(food / 1000).toFixed(1)} t of food, +${materials} materials.`)
     if (gold) entries.push(`A paychest rode with the wagons: +${gold} gold.`)
+    if (mithril) entries.push(`Among the crates, a strongbox of pale metal: +${mithril} mithril.`)
   } else if (opportunity.type === 'seize_horses') {
     // Loot-shaped: the guard is a narrative slice (hired swords watching a
     // dealer's herd, not the enemy's own riders), so nothing is subtracted

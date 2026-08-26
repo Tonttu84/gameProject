@@ -22,7 +22,7 @@ export const campaignFixture = {
   // Garrison Resolve (docs/CAMPAIGN_PLAN.md "Garrison Resolve"): own info shown
   // as a coarse band word only — the raw resolve number never crosses the wire.
   garrison: { level: 'normal' },
-  resources: { food: 50000, materials: 0, gold: 0, horses: 0, foodNeedPerTurn: 12432 },
+  resources: { food: 50000, materials: 0, gold: 0, horses: 0, mithril: 10, foodNeedPerTurn: 12432 },
   roster: { Soldier: 300, Archer: 50, Mage: 3, Priest: 3, Cavalry: 10, LightCavalry: 12 },
   // Persistent player-facing squads (playtest item 1) — a subset of roster
   // organized into named formations; the remainder stays loose.

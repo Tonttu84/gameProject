@@ -11,6 +11,8 @@ import {
   RAID_TARGET_FRACTION,
   RAID_LOOT_FOOD,
   RAID_LOOT_MATERIALS,
+  RAID_LOOT_MITHRIL,
+  RAID_LOOT_MITHRIL_PCT,
   RAID_GOLD_PER_UNIT,
   RAID_GOLD_VARIANCE,
   RAID_HORSES_PER_UNIT,
@@ -23,6 +25,7 @@ import {
   STARTING_MATERIALS,
   STARTING_GOLD,
   STARTING_HORSES,
+  STARTING_MITHRIL,
 } from '../utils/campaignConfig.js'
 
 // The balance sheet: every fate and every raid reward, priced side by side in
@@ -47,6 +50,7 @@ const zeroed = () => ({
   materials: 0,
   gold: 0,
   horses: 0,
+  mithril: 0,
   rosterDelta: {}, // unit → ± headcount
   rosterFactor: {}, // unit → multiplier (all_roster keys as '*')
   enemyFactor: 1, // enemy_losses multipliers, composed
@@ -60,6 +64,7 @@ const addInto = (acc, effect) => {
     case 'materials':
     case 'gold':
     case 'horses':
+    case 'mithril':
       acc[effect.type] += effect.delta
       break
     case 'roster':
@@ -262,7 +267,7 @@ export const eventRows = () => {
 // conditional (a recon rung) contributes a BAND — the worst and best outcome
 // it can resolve to. Bands are bounds, not predictions: the sheet will not
 // guess which branch a player takes.
-const SCALARS = ['food', 'materials', 'gold', 'horses']
+const SCALARS = ['food', 'materials', 'gold', 'horses', 'mithril']
 
 export const eventTotals = () => {
   const { ungated, perTurnBaseline: p } = drawPool()
@@ -362,8 +367,16 @@ export const raidRows = () => {
           max: RAID_LOOT_MATERIALS[1],
         },
         gold: perUnitPayoff(RAID_GOLD_PER_UNIT.loot_supplies, RAID_GOLD_VARIANCE),
+        // The strongbox chance (C-7): min is the empty train, mean is the
+        // chance times the roll's own mean, max the fattest box. The only
+        // raid tap mithril has, so this row is most of its income ceiling.
+        mithril: {
+          min: 0,
+          mean: (RAID_LOOT_MITHRIL_PCT / 100) * ((RAID_LOOT_MITHRIL[0] + RAID_LOOT_MITHRIL[1]) / 2),
+          max: RAID_LOOT_MITHRIL[1],
+        },
       },
-      notes: 'food/materials are flat rolls — they do NOT scale with the target',
+      notes: `food/materials are flat rolls — they do NOT scale with the target; ${RAID_LOOT_MITHRIL_PCT}% of trains carry a mithril strongbox`,
     },
     {
       type: 'rescue_troops',
@@ -463,7 +476,7 @@ export const renderMarkdown = () => {
   out.push('')
   out.push('| Reference | Value |')
   out.push('| --- | --- |')
-  out.push(`| Starting stores | ${(STARTING_FOOD / 1000).toFixed(1)} t food, ${STARTING_MATERIALS} materials, ${STARTING_GOLD} gold, ${STARTING_HORSES} horses |`)
+  out.push(`| Starting stores | ${(STARTING_FOOD / 1000).toFixed(1)} t food, ${STARTING_MATERIALS} materials, ${STARTING_GOLD} gold, ${STARTING_HORSES} horses, ${STARTING_MITHRIL} mithril |`)
   out.push('| Starting army eats | ~12.4 t / turn |')
   out.push(`| Fates per turn | ${AUGURY_SLOTS} slots, each a uniform draw |`)
   out.push(`| Ungated draw pool | ${pool.baselineSize} events → each ~${(pool.perTurnBaseline * 100).toFixed(1)}% of a slot, ${pool.perTurnBaseline.toFixed(3)} appearances/turn |`)
@@ -482,13 +495,13 @@ export const renderMarkdown = () => {
   out.push('One row per OUTCOME: a choice event contributes one row per branch, a recon-sensitive')
   out.push('one row per rung. Food in tonnes; blank means the outcome does not touch that column.')
   out.push('')
-  out.push('| Event | Reach | Sev | Outcome | Food t | Mat | Gold | Horses | Roster | Enemy × | Other |')
-  out.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+  out.push('| Event | Reach | Sev | Outcome | Food t | Mat | Gold | Horses | Mithril | Roster | Enemy × | Other |')
+  out.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
   for (const row of rows) {
     const p = row.price
     out.push(
       `| ${row.title} \`${row.id}\` | ${row.reach.door}${row.reach.detail ? ` (${row.reach.detail})` : ''} | ${row.severity} | ${row.outcome} | ` +
-        `${t(p.food)} | ${signed(p.materials)} | ${signed(p.gold)} | ${signed(p.horses)} | ${rosterText(p)} | ` +
+        `${t(p.food)} | ${signed(p.materials)} | ${signed(p.gold)} | ${signed(p.horses)} | ${signed(p.mithril)} | ${rosterText(p)} | ` +
         `${p.enemyFactor === 1 ? '' : p.enemyFactor.toFixed(2)} | ${p.notes.join('; ')} |`,
     )
   }
@@ -512,6 +525,7 @@ export const renderMarkdown = () => {
   out.push(`| Materials | ${dec(totals.low.materials)} | ${dec(totals.high.materials)} |`)
   out.push(`| Gold | ${dec(totals.low.gold)} | ${dec(totals.high.gold)} |`)
   out.push(`| Horses | ${dec(totals.low.horses)} | ${dec(totals.high.horses)} |`)
+  out.push(`| Mithril | ${dec(totals.low.mithril)} | ${dec(totals.high.mithril)} |`)
   for (const unit of new Set([
     ...Object.keys(totals.low.rosterDelta),
     ...Object.keys(totals.high.rosterDelta),
@@ -544,13 +558,13 @@ export const renderMarkdown = () => {
   out.push('Payoffs that scale with the target force move with the host and shrink as it is worn')
   out.push('down; flat rolls do not. Columns are min–max with the mean in brackets.')
   out.push('')
-  out.push('| Raid | Appears | Food t | Mat | Gold | Horses | Roster | Notes |')
-  out.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
+  out.push('| Raid | Appears | Food t | Mat | Gold | Horses | Mithril | Roster | Notes |')
+  out.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
   for (const row of raidRows()) {
     const r = row.reward
     out.push(
       `| \`${row.type}\` | ${row.appears} | ${r.food ? `${(r.food.min / 1000).toFixed(1)}–${(r.food.max / 1000).toFixed(1)} (${(r.food.mean / 1000).toFixed(1)})` : ''} | ` +
-        `${range(r.materials)} | ${range(r.gold)} | ${range(r.horses)} | ` +
+        `${range(r.materials)} | ${range(r.gold)} | ${range(r.horses)} | ${range(r.mithril)} | ` +
         `${r.roster ? `${r.roster.unit} ${range(r.roster)}` : ''} | ${row.notes} |`,
     )
   }
@@ -558,10 +572,10 @@ export const renderMarkdown = () => {
 
   out.push('## Where the thin resources come from')
   out.push('')
-  out.push('Gold and horses are the newest resources and have the fewest taps — worth checking')
-  out.push('against what the Recruit phase charges for them.')
+  out.push('Gold, horses and mithril are the newest resources and have the fewest taps — worth')
+  out.push('checking against what the Recruit phase and the forge charge for them.')
   out.push('')
-  for (const key of ['gold', 'horses']) {
+  for (const key of ['gold', 'horses', 'mithril']) {
     const sources = rows
       .filter((row) => row.price[key] > 0)
       .map((row) => `${row.title} \`${row.id}\`${row.outcomeId ? ` → ${row.outcomeId}` : ''} (+${row.price[key]})`)

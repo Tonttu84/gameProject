@@ -33,6 +33,7 @@ import {
   findUpgrade,
 } from './squadUpgrades.js'
 import { bannerTier, describeItem, findItem, squadBanner, storedItems } from './items.js'
+import { forgeView } from './forge.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
 import { garrisonLevel } from './garrison.js'
@@ -402,6 +403,11 @@ export async function campaignView(campaign) {
     // services/magic.js, which is the one place this layer knows what a school
     // or a path IS — the view assembles, it does not compute.
     research: researchView(campaign, getSpellCatalog()),
+    // The forge (Construction slice C1): every craftable row with its three
+    // gates (C-6) resolved against this campaign and PHRASED server-side, plus
+    // the smiths whose paths qualify per row. Both doors of the UI render from
+    // this one block, so the item-first and smith-first views cannot drift.
+    forge: forgeView(campaign),
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,
@@ -409,6 +415,10 @@ export async function campaignView(campaign) {
       // horses fund Cavalry/LightCavalry hires. Own info, not hidden.
       gold: campaign.resources.gold,
       horses: campaign.resources.horses,
+      // The forge's metal (Construction slice C1, C-6/C-7). Own info like the
+      // pair above; ?? 0 only for the structural tests' skeleton campaigns —
+      // the v43 bump guarantees the field on anything that loads.
+      mithril: campaign.resources.mithril ?? 0,
       // What the current roster will eat at the coming end-of-turn.
       foodNeedPerTurn: armyFoodPerTurn(allBodies(campaign), catalog),
     },
@@ -454,6 +464,9 @@ export async function campaignView(campaign) {
         hangBack: c.hangBack ?? false,
         alive: c.alive,
         diedDay: c.diedDay ?? null,
+        // Spent at the forge this fortnight (C-6) — the mage-door UI greys on
+        // this rather than re-deriving the stamp from a day it doesn't hold.
+        forgedToday: c.forgedDay != null && c.forgedDay === campaign.day,
         // The paths they command (S2-13), PHRASED and in the engine's canonical
         // order — the sheet prints "Fire 2 · Water 1" by joining these, and
         // holds no copy of the vocabulary to name a path itself (17-5). This is

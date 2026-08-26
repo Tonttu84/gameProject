@@ -302,11 +302,38 @@ this order to pick the work up cold:
        path, never speculative scaffolding.
 
      **THE SLICE PLAN — three slices, each finished and merged green on `main` on its own:**
-     - **▶ C1 — the forge spine + items (IN PROGRESS):** `resources.mithril` with all four
-       income channels, the forged-today stamp, the forge action with its two doors (Forge screen
-       item-first; mage screen smith-first), the three gates, an initial catalog including at
-       least one binds-on-equip row (the artificial heart), balance-sheet integration, and
-       `docs/ADDING_ITEMS.md`.
+     - **✅ C1 — the forge spine + items — SHIPPED 2026-08-26, schema v42→v43.** What landed,
+       and the shapes C2/C3 should reuse rather than reinvent:
+       - `resources.mithril` (required; seeded at `STARTING_MITHRIL`) with ALL FOUR C-7
+         channels: the seed, a strongbox chance on `loot_supplies` raids
+         (`RAID_LOOT_MITHRIL_PCT`, sealed at deal time like every reward), the `star_metal`
+         pool fate, and `garrison_smiths` behind the determined-band trust door. The new
+         `mithril` effect type runs through applyEffect/describeEffect/eventValence AND the
+         balance sheet (column, per-turn totals, raid row, thin-resources section) — the
+         UNPRICED tripwire would have caught an escape.
+       - **A row is craftable iff it carries a `forge` block** — `{level, paths, mithril}`,
+         the three C-6 gates and nothing else. `services/forge.js` holds the whole rule:
+         planForge (the planEquip contract), smithsFor, forgeView. Eligibility is exactly
+         alive + paths + not-forged-today (C-1) — there is deliberately NO location/away/squad
+         check, and a test pins that a mage on a mission still smiths.
+       - **The research half of the price is one filter**: researchingMages skips a mage whose
+         `characters[].forgedDay` equals today (`!=` null-guarded, so skeleton campaigns with
+         no `day` keep studying — that bug was found by the existing magic tests, not by new
+         ones). The bank is never debited.
+       - **POST /:id/forge** is prepare-only (like fortify), atomic: debit, stamp, grantItem,
+         log. Both UI doors call it identically.
+       - **Binds-on-equip needed NO new flag** (C-2): `permanent: true` on a gear row already
+         is the rule — planUnequip refuses it, describeItem warns, ItemStorePanel's two-step
+         confirm fires. The Artificial Heart (torso, maxHP+4, Earth 2, level 2) is the
+         shipped instance; Emberedge and Wardstone are the level-1 rows.
+       - **UI:** `ForgePanel` is a takeover with the two doors as two modes of ONE component
+         (17-4's reasoning): item-first from The Study's Construction block
+         (`study-forge-door`), smith-first from a Mage's sheet (`sheet-forge-door-<id>`,
+         auto-selected, exists so an UNPOSTED mage can be found). HUD shows mithril; raid
+         cards show a mithril range. `campaign.forge` in the view carries rows with gates
+         pre-answered and phrased (17-5) — the client composes no rule.
+       - `docs/ADDING_ITEMS.md` written (C-8), the ADDING_UNITS.md format: one row,
+         channels, the sweeps that review a row so most additions touch no test.
      - **C2 — constructions:** standing structures using existing effect channels only
        (campaign modifiers + fortified_sides), the Construction-level content ladder.
      - **C3 — the golem:** the `Crafted` role, the engine unit type, and the mindless character

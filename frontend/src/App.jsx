@@ -23,6 +23,7 @@ import CampPanel from './components/CampPanel'
 import ItemStorePanel from './components/ItemStorePanel'
 import SquadScreen from './components/SquadScreen'
 import StudyPanel from './components/StudyPanel'
+import ForgePanel from './components/ForgePanel'
 import CampaignHUD from './components/CampaignHUD'
 import CampaignIntro from './components/CampaignIntro'
 import ScoutReport from './components/ScoutReport'
@@ -54,7 +55,7 @@ const App = () => {
     phase, setPhase, battleResult, setBattleResult, raidBattle, setRaidBattle,
     dayReport, setDayReport, demoBattle, setDemoBattle, demoLoading,
     tutorial, toggleTutorial, connectionError, setConnectionError,
-    introSeen, setIntroSeen, storeRequest, squadScreen, studyOpen,
+    introSeen, setIntroSeen, storeRequest, squadScreen, studyOpen, forgeRequest,
   } = useUiStore()
 
   const { placements, squadPlacements } = usePlacementStore()
@@ -62,7 +63,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, setEffort, setResearchFocus, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, setChosenSpells, equipCharacterItem, unequipCharacterItem, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, setResearchFocus, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, setChosenSpells, forgeItem, equipCharacterItem, unequipCharacterItem, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -478,6 +479,23 @@ const App = () => {
           // is only LOOKING at — and neither says anything about what
           // rejectIfPhasePassed will do. Gating on `phase` renders a live
           // button on the day report that can only 409.
+          locked={phaseRank(serverPhase) > phaseRank('prepare')}
+        />
+      </div>
+    )
+  }
+
+  // THE FORGE (Construction slice C1) — a takeover like The Study beside it,
+  // and below the pending-choices overlay for the Study's exact reason: its
+  // one button is phase-gated to `prepare` server-side, so rendered over the
+  // choice cards it could only 409.
+  if (forgeRequest) {
+    return (
+      <div className="app">
+        <CampaignHUD />
+        {authBar}
+        <ForgePanel
+          onForge={guarded(forgeItem)}
           locked={phaseRank(serverPhase) > phaseRank('prepare')}
         />
       </div>

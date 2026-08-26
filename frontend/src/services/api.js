@@ -157,6 +157,13 @@ export const postAcceptFates = (id) =>
 export const postCampaignChoice = (id, slot, choice, squadId) =>
   axios.post(`/api/campaigns/${id}/choices/${slot}`, { choice, squadId }, authed()).then(r => r.data)
 
+// One forging (Construction slice C1, C-6): the named smith and the row, the
+// same call whichever of the two doors it came through. The server holds every
+// gate — level, paths, mithril, the once-per-turn stamp — and refuses in words
+// the notice bar can show.
+export const forgeItem = (id, { characterId, itemId }) =>
+  axios.post(`/api/campaigns/${id}/forge`, { characterId, itemId }, authed()).then(r => r.data)
+
 // Submit a player bug report. The server stamps the trusted reproduction
 // context (active campaign, day, build) itself; the client only claims which
 // screen it was on. Requires a login. Returns { id, createdAt }.

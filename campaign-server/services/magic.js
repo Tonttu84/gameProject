@@ -200,8 +200,19 @@ export const schoolOf = (campaign, school) => {
 // And a Mage AWAY ON A MISSION still studies: any living Mage counts wherever
 // they are. A second thing that changes the rate would re-open exactly what M-7
 // closed when it made every mage contribute equally, posted or not.
+//
+// The ONE exception, and it is a spend rather than a location (Construction
+// slice C1, C-6): a mage who FORGED this fortnight is excluded, so his
+// RESEARCH_POINTS_PER_MAGE simply never arrive that day. That is the research
+// half of forging's price — the bank is never debited, and no second thing
+// about WHERE he is enters the rate (C-1 keeps forging location-blind too).
 export const researchingMages = (campaign) =>
-  livingCharacters(campaign).filter((c) => c.type === 'Mage').length
+  livingCharacters(campaign).filter(
+    // A stamp only counts when it is a REAL day matching this one — `!=` on
+    // null covers undefined too, so a skeleton campaign with no `day` at all
+    // (the structural tests') keeps every mage studying.
+    (c) => c.type === 'Mage' && !(c.forgedDay != null && c.forgedDay === campaign?.day),
+  ).length
 
 export const researchRate = (campaign) =>
   (researchingMages(campaign) + (campaign?.research?.allies ?? 0)) * RESEARCH_POINTS_PER_MAGE

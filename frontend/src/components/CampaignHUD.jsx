@@ -86,6 +86,8 @@ const CampaignHUD = () => {
           hiring troops"): gold pays casters, horses pay Cavalry/LightCavalry. */}
       <span className="hud-gold" data-testid="hud-gold">Gold: {resources.gold ?? 0}</span>
       <span className="hud-horses" data-testid="hud-horses">Horses: {resources.horses ?? 0}</span>
+      {/* The forge's metal (Construction slice C1, C-7). */}
+      <span className="hud-mithril" data-testid="hud-mithril">Mithril: {resources.mithril ?? 0}</span>
       <span className="hud-forts" data-testid="hud-forts">Forts: Lv {fortification?.level ?? 0}</span>
       <span className="hud-land" data-testid="hud-land">Land: {landPct}% left</span>
       {/* Karrowgate's walls under the enemy's assault. The bar drains as the

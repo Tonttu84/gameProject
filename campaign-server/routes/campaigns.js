@@ -18,6 +18,7 @@ import {
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
 import { bindItemToSquad, squadAbilities, findItem, grantItem } from '../services/items.js'
+import { planForge } from '../services/forge.js'
 import { recoverItems, stripFallen } from '../services/loot.js'
 import {
   bearerEntry, rollBearer, BEARER_SQUAD_ID, BEARER_CHARACTER_ID,
@@ -59,6 +60,7 @@ import {
   STARTING_WORKERS,
   STARTING_GOLD,
   STARTING_HORSES,
+  STARTING_MITHRIL,
   RECRUITING_FERVOR_START,
   ENEMY_ARMY,
   ENEMY_CHANNELS,
@@ -193,7 +195,7 @@ router.post('/', async (req, res) => {
   const pool = fieldPointsFor(allBodies({ characters }, STARTING_ROSTER), catalog)
   const campaign = await Campaign.create({
     user: req.user._id,
-    resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES },
+    resources: { food: STARTING_FOOD, materials: STARTING_MATERIALS, gold: STARTING_GOLD, horses: STARTING_HORSES, mithril: STARTING_MITHRIL },
     workers: { total: STARTING_WORKERS, used: 0 },
     roster: STARTING_ROSTER,
     characters,
@@ -1530,6 +1532,45 @@ router.post('/:id/characters/:characterId/unequip', async (req, res) => {
   campaign.log.push({
     day: campaign.day,
     entries: [`${plan.character.name} sets aside ${plan.item?.name ?? 'their kit'}.`],
+  })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// ── The forge (Construction slice C1, docs/CAMPAIGN_PLAN.md C-1..C-8) ───────
+//
+// Body `{ characterId, itemId }` — the same call whichever of the two doors it
+// came through (item-first from the Forge screen, smith-first from the mage's
+// own sheet). ATOMIC (decision four, 2026-08-25): the mithril is spent, the
+// stamp is set, the item exists — no in-progress state to store and no rule
+// for a mage who dies mid-forge, because the question is unaskable.
+//
+// `prepare`-only, like fortify beside it: forging is a camp spend, and its
+// research half lands at THIS day's accrual — a forge after the omens would be
+// paid out of a fortnight the player has already seen the shape of.
+router.post('/:id/forge', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'prepare')) return
+
+  const plan = planForge(campaign, req.body?.characterId, req.body?.itemId)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  // The whole price, in one move (C-6): the metal, and the stamp whose real
+  // cost is the research that never arrives at tonight's accrual. grantItem is
+  // the same chokepoint every other channel deposits through (C-2), and its
+  // refusal cannot fire here — planForge already held the unique gate.
+  campaign.resources.mithril -= plan.cost
+  plan.character.forgedDay = campaign.day
+  grantItem(campaign, plan.row.id)
+
+  campaign.log.push({
+    day: campaign.day,
+    entries: [
+      `${plan.character.name} spends the fortnight at the forge: ${plan.row.name} is made (−${plan.cost} mithril).`,
+    ],
   })
   await campaign.save()
   res.json(await campaignView(campaign))

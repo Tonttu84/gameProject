@@ -48,6 +48,8 @@ const rewardParts = (reward) => {
   if (reward.materials !== undefined) parts.push(`${formatAmount(reward.materials)} materials`)
   if (reward.gold !== undefined) parts.push(`${formatAmount(reward.gold)} gold`)
   if (reward.horses !== undefined) parts.push(`${formatAmount(reward.horses)} horses`)
+  // The strongbox chance on a supply train (Construction slice C1, C-7).
+  if (reward.mithril !== undefined) parts.push(`${formatAmount(reward.mithril)} mithril`)
   if (reward.roster) {
     for (const [type, value] of Object.entries(reward.roster)) parts.push(`${formatAmount(value)} ${type}`)
   }

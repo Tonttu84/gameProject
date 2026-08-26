@@ -45,6 +45,7 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenS
   const characters = useCampaignStore((s) => s.campaign?.characters ?? EMPTY_ARRAY)
   const squads = useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
   const openItemStore = useUiStore((s) => s.openItemStore)
+  const openForge = useUiStore((s) => s.openForge)
   const [busy, setBusy] = useState(false)
 
   const character = characters.find((c) => c.id === characterId)
@@ -135,6 +136,22 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenS
         <p data-testid={`sheet-nopaths-${character.id}`}>
           {character.name} commands no path of magic.
         </p>
+      )}
+
+      {/* THE SMITH-FIRST DOOR into the forge (Construction slice C1, C-6) —
+          beside Paths because paths are exactly what qualify him for a
+          working. This door is WHY an unposted mage can be found at all: he
+          has no charter page, only this sheet. NOT gated on `locked`:
+          forging is location-blind (C-1), so an away or posted mage forges
+          like anyone — only the dead are past it. */}
+      {character.type === 'Mage' && alive && (
+        <button
+          className="btn-primary sheet-forge-door"
+          data-testid={`sheet-forge-door-${character.id}`}
+          onClick={() => openForge({ smithId: character.id })}
+        >
+          The Forge
+        </button>
       )}
 
       {/* CHOSEN SPELLS (docs/CAMPAIGN_PLAN.md "SLICE 4", S4-7/S4-9) — beside

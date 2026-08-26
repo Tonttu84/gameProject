@@ -37,6 +37,10 @@ export const EVENT_POOL = [
   { id: 'supply',        title: 'Wagons Bound for the Siege', description: 'Your outriders fall on an enemy supply column making for the siege lines and drive off its laden wagons. +3 t of food.', severity: 1, effect: { type: 'food',       delta: +3000 } },
   { id: 'traders',       title: 'Sutlers from Downriver',    description: 'Camp-followers pole their barges up the Marn from friendly country to sell provisions to your army. +1.5 t of food.', severity: 1, effect: { type: 'food',       delta: +1500 } },
   { id: 'weather',       title: 'A Bitter Fortnight',        description: 'Cold rain rots the tents and spoils the stores in the trenches. -1 t of food.',           severity: 1, effect: { type: 'food',       delta: -1000 } },
+  // The event tap for the forge's metal (Construction slice C1, C-7) — one of
+  // mithril's four channels. Deliberately the only unconditional pool source,
+  // and stingy: mithril is meant to feel rarer than gold.
+  { id: 'star_metal',    title: 'Iron out of the Sky',       description: 'A falling star is dug steaming out of the mud beyond the pickets, and what the smiths cannot name, the mages can: mithril, three good ingots of it. +3 mithril.', severity: 1, effect: { type: 'mithril',    delta: +3 } },
   // ── normal (severity 2): the ranks swell or thin ──
   { id: 'reinforcement', title: 'The Rearguard Catches Up',  description: 'A company of your own rearguard, footsore from the march, rejoins the banner. +20 Soldiers.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', delta: +20 } },
   { id: 'desertion',     title: 'Desertion in the Lines',    description: 'The long watch beside the siege saps the men; some slip away by night. 10% of soldiers desert.', severity: 2, effect: { type: 'roster',     unit: 'Soldier', factor: 0.9 } },
@@ -213,6 +217,11 @@ export const EVENT_POOL = [
   // use to men who cannot get out to spend it, so a garrison that trusts you
   // sends its paychest over the wall to the army that can put it to work.
   { id: 'garrison_paychest', title: 'The Garrison\'s Paychest', description: 'Karrowgate\'s paymaster has a chest of coin and nowhere inside the walls to spend it. Trusting you to buy what the siege denies them, the garrison lowers it to your quartermasters. +75 gold.', severity: 1, effect: { type: 'gold', delta: +75 }, requires: { minResolve: 67 } },
+  // The garrison channel for mithril (C-7): the fourth of the metal's four
+  // sources, through the same determined-band trust door as the stores and the
+  // paychest — what the wall's own smiths part with for the army that has
+  // stood by them.
+  { id: 'garrison_smiths', title: 'From the Warders\' Forge', description: 'Karrowgate\'s smiths have kept a little mithril back through every requisition of the siege. Trusting your mages to put it to better use than their own cold forges can, they lower the box to your quartermasters. +4 mithril.', severity: 1, effect: { type: 'mithril', delta: +4 }, requires: { minResolve: 67 } },
   // The garrison's own standard (slice 6, 6-13). A band above the ordinary
   // garrison gifts at 67: food, coin and a night sally are things a grateful
   // garrison does often — parting with the standard they have defended is what
@@ -489,6 +498,7 @@ export const eventValence = (effect) => {
     case 'materials':
     case 'gold':
     case 'horses':
+    case 'mithril':
       return effect.delta > 0 ? 'good' : effect.delta < 0 ? 'bad' : 'neutral'
     case 'roster':
       if (effect.delta !== undefined)
@@ -592,6 +602,8 @@ export const describeEffect = (effect) => {
       return [`Gold ${signed(effect.delta)}`]
     case 'horses':
       return [`Horses ${signed(effect.delta)}`]
+    case 'mithril':
+      return [`Mithril ${signed(effect.delta)}`]
     case 'roster':
       return [
         effect.delta !== undefined
@@ -755,6 +767,12 @@ export function applyEffect(campaign, effect, ctx = {}) {
     // counts hires in.
     campaign.resources.horses = Math.max(0, (campaign.resources.horses ?? 0) + effect.delta)
     log.push(`Horses ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
+  } else if (effect.type === 'mithril') {
+    // The forge's metal (Construction slice C1, C-7): a plain visible resource
+    // like gold, and the event tap is one of its four channels — seed, raid
+    // loot, events, and the garrison's trust.
+    campaign.resources.mithril = Math.max(0, (campaign.resources.mithril ?? 0) + effect.delta)
+    log.push(`Mithril ${effect.delta > 0 ? '+' : ''}${effect.delta}.`)
   } else if (effect.type === 'roster') {
     const cur = campaign.roster.get(effect.unit) ?? 0
     const next =

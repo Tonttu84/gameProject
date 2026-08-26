@@ -826,6 +826,84 @@ body {
 .study-spell-desc { font-size: 0.85rem; margin: 0; }
 .study-spell-numbers { color: #8888aa; font-size: 0.8rem; margin: 0.2rem 0 0; }
 
+/* ── The Forge (Construction slice C1, C-1..C-8) ────────────────────────────
+   The Study's takeover shape deliberately: same page column, same row-that-
+   expands grammar, so the two school screens read as siblings. A craftable
+   row dims when locked exactly as a spell the army has not opened does. */
+.forge-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.forge-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 720px;
+}
+.forge-head h2 { color: var(--gold); font-size: 1.4rem; flex: 1 1 auto; }
+.forge-stock,
+.forge-locked,
+.forge-empty { width: 100%; max-width: 720px; font-size: 0.85rem; margin: 0; }
+.forge-locked { color: var(--gold); font-style: italic; }
+.forge-empty { color: #8888aa; font-style: italic; }
+.forge-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  max-width: 720px;
+}
+.forge-row {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.75rem;
+}
+.forge-row-head {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+  text-align: left;
+  width: 100%;
+  font-size: 0.85rem;
+}
+.forge-row-name { color: var(--gold); }
+.forge-row.locked .forge-row-name { color: #8888aa; }
+.forge-row-req { color: #aab; }
+.forge-row-gate { color: #8888aa; font-style: italic; }
+.forge-row-detail { padding: 0.1rem 0 0.5rem 0.5rem; }
+.forge-row-detail p { font-size: 0.85rem; margin: 0 0 0.2rem; }
+.forge-row-blurb { font-style: italic; color: #aab; }
+.forge-row-binding { color: #8888aa; }
+.forge-row-poor,
+.forge-no-smith { color: #8888aa; font-style: italic; }
+.forge-smiths {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.forge-go { font-size: 0.85rem; align-self: flex-start; }
+.study-forge-door { align-self: flex-start; font-size: 0.85rem; }
+.sheet-forge-door { font-size: 0.85rem; }
+
 /* ── The replay's depth control (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE
    LOGGING", L-5) ───────────────────────────────────────────────────────────
    A segmented control over the log, reading as one control rather than three

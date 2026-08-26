@@ -55,6 +55,13 @@ const initialState = () => ({
   // shape: the screen shows all four schools at once and has no sub-pages to
   // address, so there is nothing to carry.
   studyOpen: false,
+  // THE FORGE (Construction slice C1). Null when closed; otherwise `{}` for
+  // the item-first door (The Study's Construction school) or `{smithId}` for
+  // the smith-first door (a mage's own sheet — "he is automatically selected",
+  // which is what lets an UNPOSTED mage be found at all, since he has no
+  // charter page). One request field like storeRequest, so the two doors are
+  // two shapes of the same takeover and cannot drift apart.
+  forgeRequest: null,
 })
 
 // UI-only campaign state: which screen is showing, in-progress battle
@@ -94,6 +101,11 @@ const useUiStore = create((set) => ({
   // back, exactly as the squad screen and the store do.
   openStudy: () => set({ studyOpen: true }),
   closeStudy: () => set({ studyOpen: false }),
+
+  // The Forge's two doors (C-6): item-first opens bare, smith-first carries
+  // the mage. Opening one replaces the other, same rule as the item store.
+  openForge: (forgeRequest = {}) => set({ forgeRequest }),
+  closeForge: () => set({ forgeRequest: null }),
 
   toggleTutorial: () =>
     set((state) => {

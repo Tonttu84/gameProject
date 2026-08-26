@@ -333,6 +333,66 @@ export const ITEM_CATALOG = [
     // A relic that gives should also cost: it is a horn, not a shield.
     mods: { defence: -1 },
   },
+
+  // ── Forged items (Construction slice C1, docs/CAMPAIGN_PLAN.md C-2/C-6) ────
+  //
+  // A `forge` block is what makes a row craftable: it names the row's THREE
+  // gates (C-6) — the Construction school level, the paths the smith must
+  // himself command (M-6's caster gate, applied to forging), and the mithril
+  // price. A row without one simply cannot be forged; nothing else about the
+  // item knows which channel it arrived through (C-2 — the forge deposits into
+  // the store exactly as loot and events do).
+  //
+  // THE NUMBERS ARE BALANCE-DEFERRED, like the gear above.
+  {
+    id: 'forged_emberedge',
+    kind: 'gear',
+    slot: 'hand',
+    name: 'Emberedge',
+    blurb:
+      'A blade quenched in forge-fire that never quite left it. The edge holds '
+      + 'a dull red glow, and meat remembers it.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { attack: 2 },
+    forge: { level: 1, paths: { fire: 1 }, mithril: 4 },
+  },
+  {
+    id: 'forged_wardstone',
+    kind: 'gear',
+    slot: 'misc',
+    name: 'Wardstone',
+    blurb:
+      'A fist of grey rock cut with a single rune, warm against the ribs. '
+      + 'Blows meant for its bearer arrive a little spent.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { defence: 1, armour: 1 },
+    forge: { level: 1, paths: { earth: 1 }, mithril: 4 },
+  },
+  {
+    id: 'forged_artificial_heart',
+    kind: 'gear',
+    slot: 'torso',
+    name: 'Artificial Heart',
+    blurb:
+      'A heart of mithril and clockwork, set beating once and never stopping. '
+      + 'It is placed where the old one was, and there is no taking it back.',
+    target: 'character',
+    // BINDS ON EQUIP (C-2): permanence is already the row property planUnequip
+    // refuses and describeItem warns about — a binding item is simply a
+    // permanent one whose target is a body. The equip screen shows the binding
+    // line BEFORE the click; after it, the heart is part of the bearer.
+    permanent: true,
+    unique: false,
+    lootable: true,
+    mods: { maxHP: 4 },
+    forge: { level: 2, paths: { earth: 2 }, mithril: 8 },
+  },
 ]
 
 // The resolve a grateful garrison must feel before it will part with its
@@ -549,6 +609,10 @@ export const STARTING_MATERIALS = 200
 // events (the garrison's paychest; A Captured Herd's keep-the-herd branch).
 export const STARTING_GOLD = 0
 export const STARTING_HORSES = 0
+// Construction slice C1 (C-7, bd): the SEED — enough for a couple of small
+// forgings before the other three channels (raid loot, events, the garrison's
+// trust) have to carry it. Mithril is meant to feel rarer than gold.
+export const STARTING_MITHRIL = 10
 
 // ── Augury ──────────────────────────────────────────────────────────────────
 // Each turn holds AUGURY_SLOTS independent fates, each a hidden true/false
@@ -694,6 +758,11 @@ export const RAID_MAX_TURNS = 60
 // bad fate (reward = {slot}, hidden — it would out which vision was true).
 export const RAID_LOOT_FOOD = [2000, 5000] // kg
 export const RAID_LOOT_MATERIALS = [10, 30]
+// Construction slice C1 (C-7, bd): a supply train SOMETIMES carries a
+// strongbox of mithril — a chance, not a promise, so no turn's board is owed
+// the forge's metal and a card that shows some is worth fighting over.
+export const RAID_LOOT_MITHRIL_PCT = 25
+export const RAID_LOOT_MITHRIL = [2, 5]
 // Gold off a won raid (docs/CAMPAIGN_PLAN.md "Recruit phase" — the currency the
 // caster lane spends: Mage 100, Priest 80). Coin per unit of the target force,
 // so a bigger detachment carries more; destroy pays better than loot per head
