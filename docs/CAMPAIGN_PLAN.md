@@ -112,6 +112,47 @@ this order to pick the work up cold:
      what it consumes, whether a crafted item is permanent like a bound banner, and how a
      Construction level gates any of it are all open. Nothing here is a blank page — M-9, 9-7 and
      S3-5 each say what the thing is FOR — but none of them says what it does.
+
+     **THE FIRST DECISION IS TAKEN (user, 2026-08-25): CRAFTING SPENDS A MAGE'S TURN.** Not gold,
+     not materials alone — a mage. That is a sharper cost than it first looks, because S2-6 already
+     makes **every living Mage worth 10 research points a turn wherever he is**: a mage at the
+     workbench is a mage not studying, so crafting is paid for in RESEARCH, the one currency the
+     magic system already has. It needs no new resource, and it puts Construction in direct
+     competition with the three schools that produce spells — which is the trade the empty fourth
+     school has been missing.
+
+     It also answers, without anyone having to decide it separately, why a Priest cannot craft:
+     Priests never fed research (S2-6), so they have no turn of this kind to spend.
+
+     **▶ THE HARD PART, flagged by the user before anyone starts planning: A MAGE CAN BE ATTACHED
+     TO A SQUAD.** Since slice 5a a caster is an individual who posts to a charter, rides into
+     battles and raids with it, and can die there. So "spend a mage's turn" is NOT a cost drawn
+     from an abstract pool — it lands on a specific man who may already be committed somewhere
+     else, and that is where this decision collides with what is built:
+
+     - **S2-6 deliberately made mages LOCATION-BLIND for research** — *"any living Mage counts
+       wherever they are"*, on the explicit grounds that a second thing changing the rate would
+       reopen what M-7 closed. Crafting cannot inherit that: a mage at a workbench is somewhere.
+       So the interview has to say whether crafting is the FIRST thing that cares where a caster
+       is, and if it is, why that does not drag research back into the same question.
+     - **A crafting mage and a fighting mage are the same body.** If his charter raids on the turn
+       he is crafting, either the work stops, the raid loses its caster, or he is in two places.
+       All three are defensible; none is free. The same holds for the pitched battle, which takes
+       the WHOLE army (`bossFightDue`), so the decisive turn may be exactly the one where crafting
+       has to yield.
+     - **Detachment already has a rule to reuse or contradict:** attach/detach is `prepare`-only
+       (5-7), and a mission takes a charter away for turns at a time (decision 12). Whether
+       crafting is a third notion of "busy" beside `raid.squadAssignment` and `squads[].mission`,
+       or an extension of one of them, is a decision 12-3 already had to make once and should be
+       made deliberately again rather than by accident.
+
+     **Still open, and for the interview:** how many mage-turns an item costs and whether that
+     scales with the item; whether a Construction LEVEL gates what can be attempted, shortens the
+     work, or both; whether the mage is chosen by the player or the cost is drawn from the pool
+     abstractly (S2-6 was careful to make mages fungible — *"any living Mage counts wherever they
+     are"* — and picking a named crafter would be the first thing to break that); what happens to
+     part-finished work if the mage dies; and whether a crafted item is permanent like a bound
+     banner (6-14) or removable like gear (9-16).
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
      **Which reading is meant is NOT settled and should be the interview's first question:** more
      CONTENT authored against the catalogs that exist, or better TOOLING so authoring one is
