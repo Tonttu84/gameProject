@@ -102,7 +102,11 @@ this order to pick the work up cold:
    LOGGING") — three tiers all persisted with the browser filtering, a Catch2 capture that dumps the
    fight only when a test fails, and an end-of-turn sweep that deletes battles nobody can watch. It
    came out of S4-8's TODO; that TODO is now history, not work.
-4. **▶▶ NEXT UP, THE USER'S CHOICE (2026-08-25): CONSTRUCTION — and a standing content task.**
+4. **▶▶ THE ACTIVE FRONT (2026-08-25, interviewed 2026-08-26): CONSTRUCTION — and a standing content task.**
+   The interview is DONE — decisions C-1..C-8 under "THE CONSTRUCTION INTERVIEW" below close every
+   open question in this block, and SLICE C1 is the work in progress. The 2026-08-25 record is kept
+   as written; where the interview DELETED a rule, the deletion is noted in C-1..C-8, and those
+   notes win.
    Two things, taken together because the first is what makes the second worth doing:
 
    - **CONSTRUCTION / CRAFTING.** The fourth school ships hollow (M-9), The Study renders it empty
@@ -235,12 +239,81 @@ this order to pick the work up cold:
      him forging at all). The second reading makes both halves of that sentence one rule, and is the
      likelier of the two — but it is a reading, not something the user said.
 
-     **Still open, and now a short list:** which of those two readings is meant; whether a crafted
-     item is permanent like a bound banner (6-14) or removable like gear (9-16); and what a
-     "construction" even is — a camp improvement like the fortification level, or something that
-     stands on the battlefield.
+     **The 2026-08-26 interview closed ALL of this — see “THE CONSTRUCTION INTERVIEW” below.** It
+     also DELETED two rules recorded above: the away rule (“a mage who is AWAY cannot forge”) and
+     the picker's squad line are both GONE (C-1) — they were protecting a cost that no longer
+     exists.
+
+     **▶ THE CONSTRUCTION INTERVIEW (2026-08-26) — eight decisions, all the user's:**
+
+     - **C-1. FORGING IS LOCATION-BLIND; the away rule and the squad line are DELETED.** Both
+       dated from when forging might skip the mage's whole turn; now that he only loses research
+       points, *“the squad is very much irrelevant”* (user). Eligibility is exactly three checks:
+       alive, paths match the row, has not forged today. No location, no attachment, nothing shown
+       about his squad. Forging stays symmetrical with the research it cannibalizes (S2-6's “any
+       living Mage counts wherever they are”).
+     - **C-2. A CRAFTED ITEM IS A NORMAL STORE ITEM — but any item row may BIND ON EQUIP.** The
+       forge deposits into `campaign.items` exactly as loot and events do (9-7's four channels stay
+       symmetric); the existing equipment rules take over from there. New item-row property
+       `binds`: a binding item (the Dominions-style artificial heart) can NEVER be unequipped once
+       worn. Binding is a property of the ITEM, not the arrival channel — a looted binding item
+       binds too — and the equip UI must warn before the click that this one is forever.
+     - **C-3. A “CONSTRUCTION” IS FORTIFICATION GENERALIZED: built from camp, felt where its
+       effect points.** The user's correction that shaped it: *“fortification is battlefield
+       structure. It is just build from the camp”* — the camp-vs-battlefield split was a false
+       dichotomy, because fortification already crosses it (campaign level → the engine's
+       `fortified_sides` seam; the engine never learns the word). A construction row declares its
+       effects and may land on either side of that seam — campaign-side modifiers or
+       battlefield-side injection — **but only through channels that already exist.** A
+       construction wanting a genuinely new engine capability (a ballista that shoots) is content
+       BLOCKED ON ITS OWN ENGINE SLICE, never a license to build one speculatively. First shipped
+       rows: campaign modifiers + fortified_sides only.
+     - **C-4. THE GOLEM IS A CHARACTER — the special, likely ONLY, MINDLESS one.** The mythic
+       golem followed intent yet acted independently, so it is a character rather than a roster
+       count — but normally Mindless rules character-hood out; this is the exception, not a
+       precedent. Its sheet: attachment YES; items YES (a construct that bears artifacts is the
+       Dominions golem's whole point); permanent death YES, record kept; paths/script NO (not a
+       caster); hang-back NO (it follows intent, not orders — no fine control); and it DOES NOT
+       EAT — a THEMATIC call, not a balance lever (user: summons eat or don't by theme, and golems
+       are rare enough not to swing supply).
+     - **C-5. NEW `Crafted` ROLE.** Roles name every channel a body may enter play through
+       (standing principle 2), and forging is a new channel, so it gets a new FLAG rather than an
+       amendment to `Player`'s promise. Placeable widens to `Player | Crafted`. The binding rule
+       gains a twin with the same teeth: a `Player` type without a RECRUIT_POOL row is a bug; a
+       `Crafted` type without a forge-catalog row is a bug. Fully composable — enemy summons /
+       enemy crafted (`Enemy | Summon`, `Enemy | Crafted`) are anticipated combinations (user).
+     - **C-6. THE COST IS THE MAGE'S FOREGONE CONTRIBUTION PLUS A MITHRIL PRICE.** Two parts.
+       (1) A mage who forged today is excluded from `researchingMages` at that day's accrual — his
+       10 points simply never arrive. The BANK is never debited, so an empty bank cannot block a
+       forge. (2) Each row carries a price in **mithril** — the user's placeholder name for *“some
+       magical resources that dont yet have... then we can expand it later”* — a NEW resource. No
+       camp-wide per-turn limit: path-matching, mage scarcity and mithril scarcity are the
+       throttles. A row therefore carries exactly three gates: Construction LEVEL, PATH
+       requirement, MITHRIL cost.
+     - **C-7. MITHRIL ARRIVES BY FOUR CHANNELS:** a starting seed, raid loot, events, and the
+       GARRISON RELATION — the besieged city's smiths and vaults rewarding a high-resolve
+       relationship, via the existing resolve-gated event machinery. Numbers deliberately stingy:
+       mithril should feel rarer than gold.
+     - **C-8. THE STANDING CONTENT TASK READS “CONTENT LEADS, TOOLING IS ITS EXHAUST”.** The
+       Construction slices ARE the content push (C1 authors a real item catalog; C3 authors a new
+       unit). As each lands, the missing guide is written from the path just walked —
+       `docs/ADDING_ITEMS.md` out of slice C1, the spells equivalent after — each pinned by
+       catalog-agreement tests like ADDING_UNITS.md §5's. Tooling as documentation of a walked
+       path, never speculative scaffolding.
+
+     **THE SLICE PLAN — three slices, each finished and merged green on `main` on its own:**
+     - **▶ C1 — the forge spine + items (IN PROGRESS):** `resources.mithril` with all four
+       income channels, the forged-today stamp, the forge action with its two doors (Forge screen
+       item-first; mage screen smith-first), the three gates, an initial catalog including at
+       least one binds-on-equip row (the artificial heart), balance-sheet integration, and
+       `docs/ADDING_ITEMS.md`.
+     - **C2 — constructions:** standing structures using existing effect channels only
+       (campaign modifiers + fortified_sides), the Construction-level content ladder.
+     - **C3 — the golem:** the `Crafted` role, the engine unit type, and the mindless character
+       with C-4's sheet.
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
-     **Which reading is meant is NOT settled and should be the interview's first question:** more
+     **RESOLVED by C-8 (2026-08-26): content leads, tooling is its exhaust — see the interview
+     above.** The question had been: more
      CONTENT authored against the catalogs that exist, or better TOOLING so authoring one is
      cheap. `docs/ADDING_UNITS.md` already documents the unit path (and §5 pins the role↔config
      tests); items and spells have no equivalent. Construction is the natural forcing function
