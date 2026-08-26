@@ -102,7 +102,24 @@ this order to pick the work up cold:
    LOGGING") — three tiers all persisted with the browser filtering, a Catch2 capture that dumps the
    fight only when a test fails, and an end-of-turn sweep that deletes battles nobody can watch. It
    came out of S4-8's TODO; that TODO is now history, not work.
-4. **THERE IS NO SLICE 5 OF THE MAGIC SYSTEM SPEC'D.** What the interviews deliberately left for
+4. **▶▶ NEXT UP, THE USER'S CHOICE (2026-08-25): CONSTRUCTION — and a standing content task.**
+   Two things, taken together because the first is what makes the second worth doing:
+
+   - **CONSTRUCTION / CRAFTING.** The fourth school ships hollow (M-9), The Study renders it empty
+     (S3-5), and 9-7 already named crafting as one of the four channels an item can arrive through
+     — *"Loot, purchase, crafting, events"* — with only loot and events built. **It has never been
+     interviewed. Interview it before building** (CLAUDE.md's standing rule): what a workshop IS,
+     what it consumes, whether a crafted item is permanent like a bound banner, and how a
+     Construction level gates any of it are all open. Nothing here is a blank page — M-9, 9-7 and
+     S3-5 each say what the thing is FOR — but none of them says what it does.
+   - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
+     **Which reading is meant is NOT settled and should be the interview's first question:** more
+     CONTENT authored against the catalogs that exist, or better TOOLING so authoring one is
+     cheap. `docs/ADDING_UNITS.md` already documents the unit path (and §5 pins the role↔config
+     tests); items and spells have no equivalent. Construction is the natural forcing function
+     either way, since a crafting system with three items to make is a menu, not a system.
+
+5. **THERE IS NO SLICE 5 OF THE MAGIC SYSTEM SPEC'D.** What the interviews deliberately left for
    later, and where each is recorded: **a store of
    authored enemy scripts** assigned at random to match a caster's paths (S4-6); **a real cast AI**
    scoring a simulated cast (M-22), which is also where per-form priority is decided (S4-2 amends
@@ -138,8 +155,9 @@ decisions and what they built are under "SLICE 17" below. Two standing rules cam
 bind every later slice: **assignment happens at the target's screen, never at a store** (17-3), and
 **the server phrases every item; the client composes no sentence** (17-5). What follows in this block is the record of
 13's interview and what it built; the "SLICE B IS SHIPPED" note below it is what a later slice needs
-to know. Decision 12 (a squad tied up for X turns) is still unbuilt and still waits for the event
-that requires a squad.
+to know. Decision 12 (a squad tied up for X turns) SHIPPED 2026-08-24 as MISSIONS,
+schema v39 — see "DECISION 12 — MISSIONS" below. (This line said "still unbuilt" until 2026-08-25;
+it was written before the mechanic had a name and never updated.)
 
 **DECISION 13 — THE SQUAD INSPECTION SCREEN (user, 2026-08-20: "13 is good").** The last
 of the squad overhaul, and the one that RENDERS everything the other twelve built. Decision 13
