@@ -127,5 +127,18 @@ export const catalogFixture = {
       stats: { maxHP: 20, attack: 8, defence: 6, armour: 0, speed: 10, ballisticSkill: 1, preferredRange: 0, reconTag: 0 },
       anatomy: { head: 1, torso: 1, legs: 1, hand: 2, misc: 1 },
     },
+    {
+      // Crafted only (slice C3): forged at the foundry, never hired. Humanoid
+      // on purpose (C-4) — it bears artifacts in a man's slots — and
+      // preferredRange 0: a mindless character has no hang-back to default.
+      name: 'Golem',
+      symbol: 'g',
+      size: 15,
+      category: 'Foot',
+      forbiddenTerrain: [],
+      roles: ['Crafted'],
+      stats: { maxHP: 35, attack: 12, defence: 12, armour: 7, speed: 8, ballisticSkill: 1, preferredRange: 0, reconTag: 0 },
+      anatomy: { head: 1, torso: 1, legs: 1, hand: 2, misc: 1 },
+    },
   ],
 }

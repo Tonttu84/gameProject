@@ -22,7 +22,8 @@ import {
 import { armyTotal } from './enemyHost.js'
 import { squadCaps, squadIntake, looseRoster, forecastRefills } from './squadReinforce.js'
 import {
-  allBodies, wornItems, characterMods, characterSheet, characterSlots, awayBlocker,
+  eatingBodies, isMindlessType, wornItems, characterMods, characterSheet,
+  characterSlots, awayBlocker,
 } from './characters.js'
 import {
   squadUpgrades,
@@ -33,7 +34,7 @@ import {
   findUpgrade,
 } from './squadUpgrades.js'
 import { bannerTier, describeItem, findItem, squadBanner, storedItems } from './items.js'
-import { forgeView } from './forge.js'
+import { forgeView, craftedUnitView } from './forge.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
 import { garrisonLevel } from './garrison.js'
@@ -414,6 +415,10 @@ export async function campaignView(campaign) {
     // effects PHRASED server-side, locked rows shown locked so the
     // Construction ladder reads as a ladder, built rows shown standing.
     constructions: constructionView(campaign),
+    // The foundry (Construction slice C3, C-4/C-5): the units the forge can
+    // raise, same contract as the two blocks above — gates resolved, smiths
+    // listed, everything phrased server-side.
+    foundry: craftedUnitView(campaign),
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,
@@ -425,8 +430,10 @@ export async function campaignView(campaign) {
       // pair above; ?? 0 only for the structural tests' skeleton campaigns —
       // the v43 bump guarantees the field on anything that loads.
       mithril: campaign.resources.mithril ?? 0,
-      // What the current roster will eat at the coming end-of-turn.
-      foodNeedPerTurn: armyFoodPerTurn(allBodies(campaign), catalog),
+      // What the current roster will eat at the coming end-of-turn — through
+      // eatingBodies, the SAME function upkeep charges by (C-4: a golem draws
+      // no rations), or the readout would lie about the coming bill.
+      foodNeedPerTurn: armyFoodPerTurn(eatingBodies(campaign), catalog),
     },
     roster: Object.fromEntries(campaign.roster),
     // Persistent, player-facing squads (own info, not hidden — same tier as
@@ -467,7 +474,10 @@ export async function campaignView(campaign) {
         name: c.name,
         type: c.type,
         squadId: c.squadId ?? null,
-        hangBack: c.hangBack ?? false,
+        // ABSENT for a mindless character (C-4): it follows intent, not
+        // orders, so there is no toggle to draw — the field's absence is what
+        // tells the sheet, the same contract chosenSpells uses below.
+        ...(isMindlessType(c.type) ? {} : { hangBack: c.hangBack ?? false }),
         alive: c.alive,
         diedDay: c.diedDay ?? null,
         // Spent at the forge this fortnight (C-6) — the mage-door UI greys on
@@ -478,7 +488,11 @@ export async function campaignView(campaign) {
         // holds no copy of the vocabulary to name a path itself (17-5). This is
         // the whole of slice 2's UI: the hire gamble pays off on the turn you
         // take it, and everything else about research waits for slice 3.
-        paths: pathEntries(c.paths),
+        //
+        // NULL for a mindless character (C-4): "commands no path" is a fact
+        // about a caster who rolled badly; a golem is not a thing paths are
+        // said about at all, and null is how the sheet skips the section.
+        paths: isMindlessType(c.type) ? null : pathEntries(c.paths),
         // The slots the sheet DRAWS, phrased and in a fixed order (9-16) —
         // rather than the raw anatomy map, which would leave the client naming
         // `misc` itself and meeting the engine's vocabulary doing it (17-5).

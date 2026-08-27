@@ -121,6 +121,9 @@ describe('what the engine is told about a caster', () => {
     expect(isCasterType('Priest')).toBe(true)
     expect(isCasterType('Necromancer')).toBe(true)
     expect(isCasterType('Soldier')).toBe(false)
+    // A character since C3, but character-hood stopped implying casterhood the
+    // day the mindless Golem joined the rolls (C-4).
+    expect(isCasterType('Golem')).toBe(false)
   })
 
   test('enginePaths sends every path the engine knows, zeros included', () => {

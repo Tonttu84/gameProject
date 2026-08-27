@@ -24,6 +24,9 @@ import {
   SPELL_PATHS,
   SQUAD_REINFORCE_POOL,
   SQUAD_CHARACTER_RESERVE,
+  CASTER_CHARACTER_TYPES,
+  MINDLESS_CHARACTER_TYPES,
+  CRAFTED_UNIT_CATALOG,
 } from '../utils/campaignConfig.js'
 
 // Contract test against the real C++ binary: what dump-units emits must pass
@@ -120,15 +123,28 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
   // the ranged types and nothing else. If a retune ever makes a Mage a melee
   // unit by that measure, the default silently inverts — so assert the claim
   // itself against the real binary rather than trusting the comment.
-  test('every character type prefers range, so the hang-back default holds', async () => {
+  //
+  // NARROWED by C3 from CHARACTER_TYPES to the caster kind: a MINDLESS
+  // character (the Golem) has no hang-back at all (C-4), so its half of the
+  // claim runs the other way — it must NOT prefer range, or the derived
+  // default would quietly hand it the order it cannot take.
+  test('every caster character type prefers range, so the hang-back default holds', async () => {
     const catalog = await dumpUnits()
-    for (const type of CHARACTER_TYPES) {
+    for (const type of CASTER_CHARACTER_TYPES) {
       const unit = catalog.units.find((u) => u.name === type)
       expect(unit, `the engine has no unit named ${type}`).toBeDefined()
       expect(
         unit.stats.preferredRange,
-        `${type} is a character type but no longer prefers range — the hang-back default has flipped`,
+        `${type} is a caster character type but no longer prefers range — the hang-back default has flipped`,
       ).toBeGreaterThan(0)
+    }
+    for (const type of MINDLESS_CHARACTER_TYPES) {
+      const unit = catalog.units.find((u) => u.name === type)
+      expect(unit, `the engine has no unit named ${type}`).toBeDefined()
+      expect(
+        unit.stats.preferredRange,
+        `${type} is mindless but prefers range — it would default to a hang-back it cannot be ordered out of`,
+      ).toBe(0)
     }
   }, 30000)
 
@@ -214,6 +230,51 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
       [...startingTypes].sort().filter((n) => !playerTypes.has(n)),
       'in the starting army without the Player role',
     ).toEqual([])
+  }, 30000)
+
+  // The Crafted twin of the Player obtainability rule, with the same teeth
+  // (C-5): a Crafted-role type without a CRAFTED_UNIT_CATALOG row is a body no
+  // channel can produce, and a row whose unit the engine does not mark Crafted
+  // would mint a character no battle could legally field. Both directions,
+  // no carve-out list. And every crafted unit must be a CHARACTER type —
+  // the foundry mints individuals, never roster counts (C-4).
+  test('Crafted-role units and the foundry catalog agree, both ways', async () => {
+    const catalog = await dumpUnits()
+    const craftedTypes = namesWithRole(catalog, 'Crafted')
+    const forgeable = new Set(CRAFTED_UNIT_CATALOG.map((r) => r.unit))
+
+    expect(craftedTypes.length).toBeGreaterThan(0)
+    expect(
+      craftedTypes.filter((n) => !forgeable.has(n)),
+      'Crafted-role units with no CRAFTED_UNIT_CATALOG row',
+    ).toEqual([])
+
+    const craftedSet = new Set(craftedTypes)
+    expect(
+      [...forgeable].sort().filter((n) => !craftedSet.has(n)),
+      'in CRAFTED_UNIT_CATALOG without the Crafted role',
+    ).toEqual([])
+
+    expect(
+      [...forgeable].sort().filter((n) => !CHARACTER_TYPES.includes(n)),
+      'craftable but not a character type — the foundry mints individuals',
+    ).toEqual([])
+  }, 30000)
+
+  // The whole battle path for a Crafted body, against the real binary: the
+  // placement API accepts the type (C-5 widened the trust boundary), it stands
+  // a battle, and its character_id comes back in the survivor report — which
+  // is what permanent death (C-4) hangs on. An unopposed one-turn field, so
+  // survival is a fact rather than a roll.
+  test('a Golem with a character_id fights and reports back as a survivor', async () => {
+    const result = await runBattle({
+      map: 'sample_battle',
+      player_placement: [{ unit_type: 'Golem', q: 4, r: 7, character_id: 42, avoids_melee: false }],
+      enemy_placement: [],
+      max_turns: 1,
+    })
+    expect(result.replay.ticks[0].units.filter((u) => u.team === 'blue')).toHaveLength(1)
+    expect(result.blue_characters).toEqual([42])
   }, 30000)
 
   // ── The hex budget: a bug fence, not a design knob ────────────────────────

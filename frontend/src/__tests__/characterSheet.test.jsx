@@ -163,9 +163,15 @@ describe('the paths a caster commands (docs/CAMPAIGN_PLAN.md "▶ SLICE 2", S2-1
     expect(await screen.findByTestId('sheet-nopaths-1')).toBeInTheDocument()
   })
 
-  it('a character the server sent no paths for is treated as commanding nothing', async () => {
-    await open(withCharacter({ paths: undefined }))
-    expect(await screen.findByTestId('sheet-nopaths-1')).toBeInTheDocument()
+  it('a character the server sent NO paths for has no Paths section at all (C-4)', async () => {
+    // The contract changed with the golem: the server sends [] for a caster
+    // who commands nothing and null for a mindless character — "commands no
+    // path" is a sentence about a caster, and a golem is not one. An absent
+    // field is the null case, not the empty one.
+    await open(withCharacter({ paths: null }))
+    expect(await screen.findByTestId('sheet-standing-1')).toBeInTheDocument()
+    expect(screen.queryByTestId('sheet-paths-1')).toBeNull()
+    expect(screen.queryByTestId('sheet-nopaths-1')).toBeNull()
   })
 })
 
@@ -311,6 +317,21 @@ describe('giving orders', () => {
     expect(toggle).toBeChecked()
     fireEvent.click(toggle)
     await waitFor(() => expect(setCharacterHangBack).toHaveBeenCalledWith(campaignFixture.id, 1, false))
+  })
+
+  // …whatever their type EXCEPT the mindless one (C-4 amends 5-8): the server
+  // omits the golem's hangBack field entirely, and the sheet renders a line
+  // saying why in the toggle's place — the golem still takes a POSTING, which
+  // is the half of Orders it does understand.
+  it('a mindless golem takes a posting but has no hang-back toggle', async () => {
+    attachCharacter.mockResolvedValue(withCharacter())
+    await open(withCharacter({
+      name: 'Basalt', type: 'Golem', hangBack: undefined, paths: null,
+    }))
+    expect(screen.queryByTestId('sheet-hangback-1')).toBeNull()
+    expect(screen.getByTestId('sheet-mindless-1')).toHaveTextContent('follows intent, not orders')
+    fireEvent.change(screen.getByTestId('sheet-squad-1'), { target: { value: '2' } })
+    await waitFor(() => expect(attachCharacter).toHaveBeenCalledWith(campaignFixture.id, 1, 2))
   })
 })
 

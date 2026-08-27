@@ -84,17 +84,33 @@ const constructionsFixture = {
   ],
 }
 
+// The foundry block (slice C3) as campaignView ships it: the golem, open —
+// no binding line and no standing state, because a body is neither unique nor
+// permanent-in-place; the row never closes.
+const foundryFixture = {
+  rows: [
+    {
+      id: 'crafted_golem', name: 'Golem', unit: 'Golem',
+      blurb: 'A man of stone, hewn and woken.',
+      level: 3, mithril: 15, pathsText: 'Earth 2',
+      smiths: [{ id: 7, name: 'Aldric', forgedToday: false }],
+      levelMet: true, mithrilMet: true,
+    },
+  ],
+}
+
 const forgeWith = ({
   forge = forgeFixture,
   constructions = constructionsFixture,
+  foundry = foundryFixture,
   request = {},
   ...props
 } = {}) => {
   useCampaignStore.setState({
-    campaign: { ...campaignFixture, forge, constructions, characters },
+    campaign: { ...campaignFixture, forge, constructions, foundry, characters },
   })
   useUiStore.setState({ forgeRequest: request })
-  return render(<ForgePanel onForge={vi.fn()} onConstruct={vi.fn()} {...props} />)
+  return render(<ForgePanel onForge={vi.fn()} onConstruct={vi.fn()} onCraft={vi.fn()} {...props} />)
 }
 
 describe('The Forge — the item-first door', () => {
@@ -160,7 +176,7 @@ describe('The Forge — the smith-first door', () => {
     expect(screen.queryByTestId('forge-row-forged_artificial_heart')).not.toBeInTheDocument()
   })
 
-  it('says so in a sentence when he qualifies for nothing — items and works both', () => {
+  it('says so in a sentence when he qualifies for nothing — items, works and foundry alike', () => {
     const none = {
       ...forgeFixture,
       rows: forgeFixture.rows.map((row) => ({ ...row, smiths: [] })),
@@ -168,7 +184,10 @@ describe('The Forge — the smith-first door', () => {
     const noWorks = {
       rows: constructionsFixture.rows.map((row) => ({ ...row, smiths: [] })),
     }
-    forgeWith({ forge: none, constructions: noWorks, request: { smithId: 7 } })
+    const noUnits = {
+      rows: foundryFixture.rows.map((row) => ({ ...row, smiths: [] })),
+    }
+    forgeWith({ forge: none, constructions: noWorks, foundry: noUnits, request: { smithId: 7 } })
     expect(screen.getByTestId('forge-empty')).toHaveTextContent('Aldric commands no paths')
   })
 })
@@ -215,5 +234,54 @@ describe('The Works — constructions on the same screen (slice C2)', () => {
     forgeWith({ constructions: hisWorks, request: { smithId: 7 } })
     expect(screen.getByTestId('work-row-works_smokehouse')).toBeInTheDocument()
     expect(screen.queryByTestId('work-row-works_warding_beacons')).not.toBeInTheDocument()
+  })
+})
+
+describe('The Foundry — crafted units on the same screen (slice C3)', () => {
+  it('shows the golem under its own head, gates phrased like everything else', () => {
+    forgeWith()
+    expect(screen.getByTestId('forge-foundry-head')).toBeInTheDocument()
+    expect(screen.getByTestId('foundry-row-req-crafted_golem')).toHaveTextContent('Earth 2 · 15 mithril')
+    // levelMet true in the fixture, so no gate badge — the Study's rule again.
+    expect(screen.queryByTestId('foundry-row-gate-crafted_golem')).not.toBeInTheDocument()
+  })
+
+  it('a level-locked golem is shown locked, never hidden — the ladder reads as a ladder', () => {
+    const locked = {
+      rows: [{ ...foundryFixture.rows[0], levelMet: false, smiths: [] }],
+    }
+    forgeWith({ foundry: locked })
+    expect(screen.getByTestId('foundry-row-gate-crafted_golem')).toHaveTextContent('Construction 3')
+  })
+
+  it('crafts through the guarded action with the smith and the row', async () => {
+    const onCraft = vi.fn()
+    forgeWith({ onCraft })
+    await userEvent.click(screen.getByTestId('foundry-row-toggle-crafted_golem'))
+    expect(screen.getByTestId('foundry-row-detail-crafted_golem')).toHaveTextContent('stone')
+    await userEvent.click(screen.getByTestId('foundry-go-crafted_golem-7'))
+    expect(onCraft).toHaveBeenCalledWith(7, 'crafted_golem')
+  })
+
+  it('the smith-first door filters the foundry to his paths too', () => {
+    const notHis = { rows: [{ ...foundryFixture.rows[0], smiths: [] }] }
+    forgeWith({ foundry: notHis, request: { smithId: 7 } })
+    expect(screen.queryByTestId('foundry-row-crafted_golem')).not.toBeInTheDocument()
+    // The head stays: his door still offers the items his paths qualify.
+    expect(screen.queryByTestId('forge-foundry-head')).not.toBeInTheDocument()
+  })
+
+  it('a spent smith is spent at the foundry exactly as at the forge', async () => {
+    const spent = {
+      rows: [{
+        ...foundryFixture.rows[0],
+        smiths: [{ id: 7, name: 'Aldric', forgedToday: true }],
+      }],
+    }
+    forgeWith({ foundry: spent })
+    await userEvent.click(screen.getByTestId('foundry-row-toggle-crafted_golem'))
+    const button = screen.getByTestId('foundry-go-crafted_golem-7')
+    expect(button).toBeDisabled()
+    expect(button).toHaveTextContent('already forged')
   })
 })

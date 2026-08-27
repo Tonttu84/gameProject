@@ -102,12 +102,13 @@ this order to pick the work up cold:
    LOGGING") — three tiers all persisted with the browser filtering, a Catch2 capture that dumps the
    fight only when a test fails, and an end-of-turn sweep that deletes battles nobody can watch. It
    came out of S4-8's TODO; that TODO is now history, not work.
-4. **▶▶ THE ACTIVE FRONT (2026-08-25, interviewed 2026-08-26): CONSTRUCTION — and a standing content task.**
-   The interview is DONE — decisions C-1..C-8 under "THE CONSTRUCTION INTERVIEW" below close every
-   open question in this block. **C1 and C2 are SHIPPED (2026-08-26 / 2026-08-27, schema v44);
-   SLICE C3 — the golem — is what remains.** The 2026-08-25 record is kept
-   as written; where the interview DELETED a rule, the deletion is noted in C-1..C-8, and those
-   notes win.
+4. **CONSTRUCTION IS DONE (2026-08-25 interviewed 2026-08-26; shipped 2026-08-26..27): ALL THREE
+   SLICES — C1 the forge, C2 the works, C3 the golem — ARE ON `main`.** Decisions C-1..C-8 under
+   "THE CONSTRUCTION INTERVIEW" below closed every open question in this block; the per-slice
+   "what landed" notes under THE SLICE PLAN are the shapes to reuse. What Construction still
+   owes is CONTENT, not machinery (C-8: content leads) — more items, works and crafted units are
+   rows now, not slices. The 2026-08-25 record is kept as written; where the interview DELETED a
+   rule, the deletion is noted in C-1..C-8, and those notes win.
    Two things, taken together because the first is what makes the second worth doing:
 
    - **CONSTRUCTION / CRAFTING.** The fourth school ships hollow (M-9), The Study renders it empty
@@ -370,8 +371,42 @@ this order to pick the work up cold:
        - **The balance sheet grew "What the forge charges"** (`forgeLedgerRows`): every
          forgeable row — items AND constructions — priced side by side, tripwired so no row
          escapes. `docs/ADDING_ITEMS.md` gained the construction-row section (C-8).
-     - **C3 — the golem:** the `Crafted` role, the engine unit type, and the mindless character
-       with C-4's sheet.
+     - **✅ C3 — the golem — SHIPPED 2026-08-27, NO schema bump** (the characters array just
+       gains rows of its existing shape; a v44 save stays valid). What landed:
+       - **Engine:** `UnitRole::Crafted` (a new channel gets a new flag, C-5) and the Golem —
+         `Mindless | NoCorpse`, never Undead (animated stone, not a corpse; what it leaves no
+         necromancer can raise), HUMANOID anatomy on purpose (C-4: it bears artifacts in a
+         man's slots), `fatigueCost 0`, ponderous (speed 8), symbol `'g'`, all numbers
+         balance-deferred. Placeable widened to `Player | Crafted` (/api/info), the API trust
+         boundary to `Player | Enemy | Crafted`. The campaign's UnitType roles enum mirrors it.
+       - **`CRAFTED_UNIT_CATALOG`** — the third forge-bearing catalog: a row is the SAME
+         three-gate `forge` block plus `unit`, and NEVER closes (no unique/built gate — mithril
+         and earth-mages are the throttle). The C-5 twin tripwire is pinned BOTH WAYS in
+         engine.integration.test.js, plus "every craftable unit is a CHARACTER_TYPE", and a
+         real-binary test walks the whole battle path (a Golem with a `character_id` fights and
+         comes back in `blue_characters` — permanent death rides the existing reconcile).
+       - **Character-hood split from casterhood** — the load-bearing refactor:
+         `CHARACTER_TYPES = CASTER_CHARACTER_TYPES + MINDLESS_CHARACTER_TYPES`, and
+         `isCasterType` now reads the CASTER list (a golem must never be offered paths on the
+         wire). `rollPaths` draws NOTHING for a non-caster (no dice-queue shift at the mint).
+         The view omits `hangBack` and sends `paths: null` for a mindless character — absence
+         is the signal, the chosenSpells contract — and the hang-back route refuses with
+         "follows intent, not orders" (C-4 amends 5-8). Attachment, items, equip rules and
+         permanent death all reused untouched (C-4's sheet: posting YES, artifacts YES).
+       - **It does not eat (C-4, thematic):** `eatingBodies` = allBodies minus
+         `NON_EATING_TYPES`, read by EXACTLY the two `armyFoodPerTurn` sites (upkeep and the
+         HUD readout, which must agree) — the meter, field points and the annihilation check
+         still count the body. A deliberate sibling of allBodies, not a filter inside it.
+       - **POST /:id/craft** — the third twin: prepare-only, atomic (debit, the SAME
+         `forgedDay` stamp — a mage forges OR builds OR crafts each fortnight — mint, log).
+         The golem is named from `GOLEM_NAMES` through drawCharacterName's own uniqueness.
+       - **UI:** "The Foundry" is the third section of the one ForgePanel, both doors
+         filtering it like the other two; the sheet skips the Paths section for `paths: null`
+         and renders a mindless line where the hang-back toggle would be. The `foundry` view
+         block mirrors forgeView's contract.
+       - forgeLedgerRows grew `kind: 'unit'` (the no-row-escapes tripwire holds);
+         `docs/ADDING_ITEMS.md` gained the crafted-unit section and `docs/ADDING_UNITS.md` the
+         Crafted role + twin rule (C-8).
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
      **RESOLVED by C-8 (2026-08-26): content leads, tooling is its exhaust — see the interview
      above.** The question had been: more

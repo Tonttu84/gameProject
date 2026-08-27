@@ -169,6 +169,11 @@ export const forgeItem = (id, { characterId, itemId }) =>
 export const buildConstruction = (id, { characterId, constructionId }) =>
   axios.post(`/api/campaigns/${id}/construct`, { characterId, constructionId }, authed()).then(r => r.data)
 
+// One crafting (Construction slice C3, C-4/C-5): the third twin — the named
+// smith and the foundry row; what comes back holds a new character.
+export const craftUnit = (id, { characterId, unitId }) =>
+  axios.post(`/api/campaigns/${id}/craft`, { characterId, unitId }, authed()).then(r => r.data)
+
 // Submit a player bug report. The server stamps the trusted reproduction
 // context (active campaign, day, build) itself; the client only claims which
 // screen it was on. Requires a login. Returns { id, createdAt }.

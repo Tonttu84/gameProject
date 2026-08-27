@@ -1,4 +1,4 @@
-import { ITEM_CATALOG, SPELL_PATH_TEXT } from '../utils/campaignConfig.js'
+import { CRAFTED_UNIT_CATALOG, ITEM_CATALOG, SPELL_PATH_TEXT } from '../utils/campaignConfig.js'
 import { findItem, holdsItem, describeItem } from './items.js'
 import { livingCharacters } from './characters.js'
 import { schoolOf } from './magic.js'
@@ -98,6 +98,62 @@ export const planForge = (campaign, characterId, itemId) => {
   if (smith.error) return smith
 
   return { character: smith.character, row, cost }
+}
+
+// ── The foundry (slice C3) — units forged like items ────────────────────────
+//
+// Same three gates, same smith eligibility, same stamp. What differs from an
+// item is only the deposit — the route mints a CHARACTER (C-4) instead of
+// granting an item — and that a row never closes: nothing here is unique, so
+// there is no `held`/`built` gate. Golems are rare because mithril and
+// earth-mages are, not because a counter says so.
+
+export const craftedUnitRows = () => CRAFTED_UNIT_CATALOG
+
+export const findCraftedUnit = (unitId) =>
+  CRAFTED_UNIT_CATALOG.find((row) => row.id === unitId) ?? null
+
+// Validate one crafting without committing it — planForge's twin, walking the
+// gates in the same order (level, mithril, then the smith) so the error the
+// player sees matches the order the UI asks its questions in.
+export const planCraftUnit = (campaign, characterId, unitId) => {
+  const row = findCraftedUnit(unitId)
+  if (!row) return { error: 'no such work of the foundry' }
+
+  const level = schoolOf(campaign, 'construction').level
+  if (level < row.forge.level)
+    return { error: `the work is beyond you — Construction ${row.forge.level} is needed` }
+
+  const cost = row.forge.mithril ?? 0
+  if ((campaign?.resources?.mithril ?? 0) < cost)
+    return { error: 'not enough mithril' }
+
+  const smith = planSmith(campaign, characterId, row)
+  if (smith.error) return smith
+
+  return { character: smith.character, row, cost }
+}
+
+// The foundry block of the view — forgeView's contract: rows stable, gates
+// pre-answered, phrased server-side. `unit` names the catalog type so the
+// client can say what stands up without holding a copy of the row.
+export const craftedUnitView = (campaign) => {
+  const level = schoolOf(campaign, 'construction').level
+  const mithril = campaign?.resources?.mithril ?? 0
+  return {
+    rows: craftedUnitRows().map((row) => ({
+      id: row.id,
+      name: row.name,
+      unit: row.unit,
+      blurb: row.blurb,
+      level: row.forge.level,
+      mithril: row.forge.mithril ?? 0,
+      pathsText: forgePathsText(row),
+      smiths: smithsFor(campaign, row),
+      levelMet: level >= row.forge.level,
+      mithrilMet: mithril >= (row.forge.mithril ?? 0),
+    })),
+  }
 }
 
 // What the client renders — every craftable row with its three gates resolved

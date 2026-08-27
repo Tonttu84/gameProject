@@ -170,12 +170,79 @@ const WorkRow = ({ row, mithril, smith, locked, onConstruct }) => {
   )
 }
 
-// `onForge`/`onConstruct` are guarded actions like The Study's onFocus;
-// `locked` means the turn has marched past Prepare — the buttons reflect the
-// server's refusal rather than duplicating it.
-const ForgePanel = ({ onForge, onConstruct, locked }) => {
+// One craftable unit row (slice C3) — the third twin. No binding, no standing
+// state: a golem is a body, and the row never closes — mithril and earth-mages
+// are the throttle, not a counter. What stands up is a CHARACTER, so the
+// detail says so; the sheet is where its numbers live.
+const FoundryRow = ({ row, mithril, smith, locked, onCraft }) => {
+  const [open, setOpen] = useState(false)
+  const smiths = smith ? row.smiths.filter((s) => s.id === smith.id) : row.smiths
+  const craftable = row.levelMet && row.mithrilMet
+
+  return (
+    <li
+      className={`forge-row ${craftable ? 'unlocked' : 'locked'}`}
+      data-testid={`foundry-row-${row.id}`}
+    >
+      <button
+        className="forge-row-head"
+        aria-expanded={open}
+        onClick={() => setOpen((was) => !was)}
+        data-testid={`foundry-row-toggle-${row.id}`}
+      >
+        <span className="forge-row-name">{row.name}</span>
+        <span className="forge-row-req" data-testid={`foundry-row-req-${row.id}`}>
+          {row.pathsText} · {row.mithril} mithril
+        </span>
+        {!row.levelMet && (
+          <span className="forge-row-gate" data-testid={`foundry-row-gate-${row.id}`}>
+            Construction {row.level}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="forge-row-detail" data-testid={`foundry-row-detail-${row.id}`}>
+          <p className="forge-row-blurb">{row.blurb}</p>
+          {!row.mithrilMet && (
+            <p className="forge-row-poor" data-testid={`foundry-poor-${row.id}`}>
+              Not enough mithril — {row.mithril} is needed, {mithril} is on hand.
+            </p>
+          )}
+          {smiths.length === 0 ? (
+            <p className="forge-no-smith" data-testid={`foundry-no-smith-${row.id}`}>
+              No living mage commands the paths this work asks for.
+            </p>
+          ) : (
+            <ul className="forge-smiths">
+              {smiths.map((s) => (
+                <li key={s.id}>
+                  <button
+                    className="btn-primary forge-go"
+                    disabled={locked || !craftable || s.forgedToday}
+                    onClick={() => onCraft(s.id, row.id)}
+                    data-testid={`foundry-go-${row.id}-${s.id}`}
+                  >
+                    {s.forgedToday
+                      ? `${s.name} has already forged this turn`
+                      : `Set ${s.name} to the work`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+// `onForge`/`onConstruct`/`onCraft` are guarded actions like The Study's
+// onFocus; `locked` means the turn has marched past Prepare — the buttons
+// reflect the server's refusal rather than duplicating it.
+const ForgePanel = ({ onForge, onConstruct, onCraft, locked }) => {
   const forge = useCampaignStore((s) => s.campaign.forge)
   const constructions = useCampaignStore((s) => s.campaign.constructions)
+  const foundry = useCampaignStore((s) => s.campaign.foundry)
   const mithril = useCampaignStore((s) => s.campaign.resources?.mithril ?? 0)
   const characters = useCampaignStore((s) => s.campaign.characters)
   const forgeRequest = useUiStore((s) => s.forgeRequest)
@@ -200,6 +267,11 @@ const ForgePanel = ({ onForge, onConstruct, locked }) => {
     ? (constructions?.rows ?? []).filter((row) => row.smiths.some((s) => s.id === smith.id))
     : (constructions?.rows ?? [])
 
+  // The foundry (slice C3), through the same door discipline again.
+  const unitRows = smith
+    ? (foundry?.rows ?? []).filter((row) => row.smiths.some((s) => s.id === smith.id))
+    : (foundry?.rows ?? [])
+
   return (
     <div className="forge-page" data-testid="forge-page">
       <div className="forge-head">
@@ -219,6 +291,7 @@ const ForgePanel = ({ onForge, onConstruct, locked }) => {
           'The work takes the fortnight and the item is ready at once, in the stores with everything else the army holds.',
           'Some things, once given, are part of the bearer. The work says so before you begin it.',
           'The Works are built the same way and stand for good — walls for the pitched battle, stores and beacons for the campaign. Each is raised once.',
+          'The Foundry raises bodies: a golem stands up a named member of the company — post it, arm it, mourn it. It takes no orders finer than intent, and it does not eat.',
         ]}
       />
 
@@ -233,7 +306,7 @@ const ForgePanel = ({ onForge, onConstruct, locked }) => {
         </p>
       )}
 
-      {rows.length === 0 && workRows.length === 0 ? (
+      {rows.length === 0 && workRows.length === 0 && unitRows.length === 0 ? (
         <p className="forge-empty" data-testid="forge-empty">
           {smith
             ? `${smith.name} commands no paths the known workings ask for.`
@@ -271,6 +344,26 @@ const ForgePanel = ({ onForge, onConstruct, locked }) => {
                     smith={smith}
                     locked={locked}
                     onConstruct={onConstruct}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+          {/* The foundry (slice C3): the units the forge can raise, third
+              under the same roof so all three spends of the one fortnight
+              read side by side. */}
+          {unitRows.length > 0 && (
+            <>
+              <h3 className="forge-works-head" data-testid="forge-foundry-head">The Foundry</h3>
+              <ul className="forge-rows">
+                {unitRows.map((row) => (
+                  <FoundryRow
+                    key={row.id}
+                    row={row}
+                    mithril={mithril}
+                    smith={smith}
+                    locked={locked}
+                    onCraft={onCraft}
                   />
                 ))}
               </ul>

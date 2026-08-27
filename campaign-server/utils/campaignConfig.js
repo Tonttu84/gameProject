@@ -38,7 +38,25 @@ export const STARTING_ROSTER = {
 // individual with a name, a modifier layer and a permanent death, or not at
 // all. A test pins this against RECRUIT_POOL's caster lane, so a new caster
 // row cannot quietly become a roster count again.
-export const CHARACTER_TYPES = ['Mage', 'Priest']
+//
+// Since slice C3 the list is TWO kinds, and the split is load-bearing:
+//   • CASTER_CHARACTER_TYPES — the hire lanes. These are what isCasterType
+//     answers for (paths, scripts, chosen spells on the wire and the view).
+//   • MINDLESS_CHARACTER_TYPES — the Golem, the special and likely ONLY
+//     mindless character (C-4: character-hood is the exception here, not a
+//     precedent). Mindless means: no paths or script ever, and no hang-back
+//     order — it follows intent, not orders, so the toggle does not exist
+//     for it (the view omits the field and the route refuses the write).
+export const CASTER_CHARACTER_TYPES = ['Mage', 'Priest']
+export const MINDLESS_CHARACTER_TYPES = ['Golem']
+export const CHARACTER_TYPES = [...CASTER_CHARACTER_TYPES, ...MINDLESS_CHARACTER_TYPES]
+
+// Types that draw no rations (C-4): a THEMATIC call per type, not a balance
+// lever and not implied by mindlessness — summons eat or don't by theme, and a
+// golem is animated stone. Read by eatingBodies (services/characters.js), the
+// food twin of allBodies; everything else about upkeep (the meter, field
+// points, annihilation) still counts these bodies.
+export const NON_EATING_TYPES = ['Golem']
 
 // One character per squad — still explicitly a PROTOTYPING PLACEHOLDER
 // (decision 9), which is why it is a named constant rather than a `1` written
@@ -60,6 +78,16 @@ export const CHARACTER_NAMES = [
   'Alard', 'Bertrande', 'Casimir', 'Drusilla', 'Eadric', 'Fenella',
   'Guthlac', 'Hilde', 'Ivo', 'Jocasta', 'Kester', 'Leofric',
   'Melisande', 'Norbert', 'Oriel', 'Perrin',
+]
+
+// What a golem is called when it first stands (slice C3). A pool of its own
+// rather than a human name off CHARACTER_NAMES — a construct is NAMED by its
+// maker the way a sword is, not christened — drawn through the same
+// drawCharacterName machinery (uniqueness against the whole rolls, numbered
+// fallback when the pool runs dry).
+export const GOLEM_NAMES = [
+  'Basalt', 'Adamant', 'Grindstone', 'Bulwark', 'Millwheel', 'Cromlech',
+  'Anvil', 'Loadbearer', 'Quernstone', 'Monolith', 'Gatewarden', 'Plinth',
 ]
 
 // The six casters a campaign opens with — the old STARTING_ROSTER Mage 3 /
@@ -503,6 +531,41 @@ export const CONSTRUCTION_CATALOG = [
         raidable: false,
       },
     ],
+  },
+]
+
+// ── Crafted units (Construction slice C3, docs/CAMPAIGN_PLAN.md C-4/C-5) ─────
+//
+// The third kind of thing the fourth school makes (the second decision,
+// 2026-08-25: items, constructions, UNITS), and the fourth way a body enters
+// the roster: forged, never hired. A row here is what makes an engine type
+// with the `Crafted` role reachable at all — the twin of Player's
+// obtainability rule, with the same teeth (C-5): a Crafted type without a row
+// here is a bug, and a row whose `unit` the engine does not mark Crafted is
+// one too (engine.integration.test.js pins both directions).
+//
+// `forge` is the SAME three-gate block items and constructions carry (C-6),
+// through the same eligibility (alive, paths, not-forged-today) and the same
+// once-per-turn stamp. What the action mints is a CHARACTER (C-4): named,
+// attachable, artifact-bearing, permanently mortal — and mindless, so no
+// paths, no script, no hang-back order, and (its own thematic call) no place
+// at the cook-fires. Unlike a construction a row never closes: golems are
+// rare because mithril and earth-mages are, not because a counter says so.
+//
+// THE NUMBERS ARE BALANCE-DEFERRED like everything the forge charges. Level 3
+// tops the ladder — the school's crown, above the level-2 heart — and the
+// paths gate asks Earth 2, the deepest a hire can roll, so the smith who can
+// raise one is himself a rare find.
+export const CRAFTED_UNIT_CATALOG = [
+  {
+    id: 'crafted_golem',
+    name: 'Golem',
+    unit: 'Golem',
+    blurb:
+      'A man of stone, hewn and woken. It does not tire, does not fear, does '
+      + 'not eat — and it bears what a man bears, if you have arms worth '
+      + 'giving it.',
+    forge: { level: 3, paths: { earth: 2 }, mithril: 15 },
   },
 ]
 

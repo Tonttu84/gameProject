@@ -127,15 +127,23 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenS
           The rows arrive PHRASED and in order (17-5): this joins them and
           composes nothing. A caster with none says so in a sentence rather than
           showing an empty line, the same way an unknown sheet does below. */}
-      <h4>Paths</h4>
-      {character.paths?.length ? (
-        <p data-testid={`sheet-paths-${character.id}`}>
-          {character.paths.map((row) => `${row.label} ${row.level}`).join(' · ')}
-        </p>
-      ) : (
-        <p data-testid={`sheet-nopaths-${character.id}`}>
-          {character.name} commands no path of magic.
-        </p>
+      {/* NULL paths (a mindless golem, C-4) skip the whole section: "commands
+          no path" is a sentence about a caster who rolled badly, and a golem
+          is not a thing paths are said about at all. The server decides by
+          sending null — the chosenSpells contract. */}
+      {character.paths != null && (
+        <>
+          <h4>Paths</h4>
+          {character.paths.length ? (
+            <p data-testid={`sheet-paths-${character.id}`}>
+              {character.paths.map((row) => `${row.label} ${row.level}`).join(' · ')}
+            </p>
+          ) : (
+            <p data-testid={`sheet-nopaths-${character.id}`}>
+              {character.name} commands no path of magic.
+            </p>
+          )}
+        </>
       )}
 
       {/* THE SMITH-FIRST DOOR into the forge (Construction slice C1, C-6) —
@@ -350,20 +358,28 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenS
             </select>
           </label>
 
-          {/* Every character carries the toggle whatever their type — a
-              battle-mage can be told to hold the line. Only the default is
-              derived from the unit (5-8). */}
-          <label htmlFor={`sheet-hangback-${character.id}`}>
-            <input
-              id={`sheet-hangback-${character.id}`}
-              data-testid={`sheet-hangback-${character.id}`}
-              type="checkbox"
-              checked={character.hangBack}
-              disabled={locked || busy}
-              onChange={(e) => run(() => onSetHangBack(character.id, e.target.checked))}
-            />
-            Hang back unless the line breaks
-          </label>
+          {/* Every character that TAKES orders carries the toggle whatever
+              their type — a battle-mage can be told to hold the line; only the
+              default is derived from the unit (5-8). A MINDLESS character
+              (C-4) has no toggle at all: the server omits the field, and the
+              sheet says why in its place — absence alone would read as a bug. */}
+          {character.hangBack != null ? (
+            <label htmlFor={`sheet-hangback-${character.id}`}>
+              <input
+                id={`sheet-hangback-${character.id}`}
+                data-testid={`sheet-hangback-${character.id}`}
+                type="checkbox"
+                checked={character.hangBack}
+                disabled={locked || busy}
+                onChange={(e) => run(() => onSetHangBack(character.id, e.target.checked))}
+              />
+              Hang back unless the line breaks
+            </label>
+          ) : (
+            <p data-testid={`sheet-mindless-${character.id}`}>
+              {character.name} follows intent, not orders — it holds no line and spares no one.
+            </p>
+          )}
         </>
       )}
     </div>

@@ -9,7 +9,10 @@
 // explicitly changes it** (5-0). That is why `allBodies` exists at all — the
 // troop-wide numbers should not have to learn what a character is.
 
-import { CHARACTER_NAMES, CHARACTER_TYPES, MAX_CHARACTERS_PER_SQUAD } from '../utils/campaignConfig.js'
+import {
+  CHARACTER_NAMES, CHARACTER_TYPES, MAX_CHARACTERS_PER_SQUAD,
+  MINDLESS_CHARACTER_TYPES, NON_EATING_TYPES,
+} from '../utils/campaignConfig.js'
 import { getRandom } from '../utils/dice.js'
 import { findItem, ITEM_STAT_TEXT, SLOT_TEXT } from './items.js'
 import { enginePaths, isCasterType, rollPaths } from './magic.js'
@@ -20,6 +23,12 @@ import { onMission } from './missions.js'
 const listOf = (campaign) => campaign?.characters ?? []
 
 export const isCharacterType = (type) => CHARACTER_TYPES.includes(type)
+
+// The Golem, and likely only ever the Golem (C-4: the exception, not a
+// precedent). A mindless character has no paths or script, and no hang-back
+// order — it follows intent, not orders — so the view omits the toggle and
+// the hang-back route refuses the write.
+export const isMindlessType = (type) => MINDLESS_CHARACTER_TYPES.includes(type)
 
 // The living. Every reader that asks "who can do something" filters through
 // here: a dead character is KEPT on the rolls (5-9), so forgetting the filter
@@ -58,6 +67,19 @@ export const allBodies = (campaign, roster = campaign?.roster) => {
   const bodies = new Map(roster instanceof Map ? roster : Object.entries(roster ?? {}))
   for (const [type, n] of characterBodies(campaign))
     bodies.set(type, (bodies.get(type) ?? 0) + n)
+  return bodies
+}
+
+// The bodies that draw RATIONS: allBodies minus the NON_EATING_TYPES (C-4 — a
+// golem is animated stone, a thematic call per type). A SIBLING of allBodies
+// rather than a filter inside it, because the other readers of allBodies (the
+// boss-fight meter, field points, the annihilation check) must keep counting
+// these bodies — only the two armyFoodPerTurn call sites read this one, and
+// they must both read the same function or the food readout lies about the
+// upkeep the day will actually charge.
+export const eatingBodies = (campaign, roster = campaign?.roster) => {
+  const bodies = allBodies(campaign, roster)
+  for (const type of NON_EATING_TYPES) bodies.delete(type)
   return bodies
 }
 

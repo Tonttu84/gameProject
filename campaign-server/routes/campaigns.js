@@ -18,7 +18,7 @@ import {
 import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../services/enemyPlacement.js'
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
 import { bindItemToSquad, squadAbilities, findItem, grantItem } from '../services/items.js'
-import { planForge } from '../services/forge.js'
+import { planForge, planCraftUnit } from '../services/forge.js'
 import { planConstruction } from '../services/constructions.js'
 import { recoverItems, stripFallen } from '../services/loot.js'
 import {
@@ -27,6 +27,8 @@ import {
 import { missionBodies, onMission } from '../services/missions.js'
 import {
   mintCharacter,
+  drawCharacterName,
+  isMindlessType,
   planAttach,
   allBodies,
   livingCharacters,
@@ -55,6 +57,7 @@ import {
   STARTING_ROSTER,
   STARTING_CHARACTERS,
   CHARACTER_NAMES,
+  GOLEM_NAMES,
   STARTING_SQUADS,
   STARTING_FOOD,
   STARTING_MATERIALS,
@@ -1405,6 +1408,11 @@ router.post('/:id/characters/:characterId/attach', async (req, res) => {
 // by EVERY character regardless of type — only the DEFAULT is type-derived — so
 // a battle-mage can be ordered to hold the line and a swordsman to stay out of
 // it. Ungated for the same reason attachment is: it spends nothing.
+//
+// EVERY character but one kind (C-4 amends 5-8): a MINDLESS character takes no
+// orders of this fineness — it follows intent, not instructions — so the
+// toggle does not exist for it. The view omits the field; this refusal is what
+// keeps a hand-crafted request from writing it anyway.
 router.post('/:id/characters/:characterId/hang-back', async (req, res) => {
   const campaign = await findOwn(req)
   if (!campaign) return res.status(404).json({ error: 'campaign not found' })
@@ -1418,6 +1426,8 @@ router.post('/:id/characters/:characterId/hang-back', async (req, res) => {
   const character = livingCharacters(campaign).find((c) => c.id === Number(req.params.characterId))
   if (!character)
     return res.status(400).json({ error: `not one of your living characters: ${req.params.characterId}` })
+  if (isMindlessType(character.type))
+    return res.status(400).json({ error: `${character.name} follows intent, not orders` })
 
   character.hangBack = hangBack
   await campaign.save()
@@ -1610,6 +1620,41 @@ router.post('/:id/construct', async (req, res) => {
     day: campaign.day,
     entries: [
       `${plan.character.name} spends the fortnight at the works: ${plan.row.name} now stands (−${plan.cost} mithril).`,
+    ],
+  })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// ── The foundry (Construction slice C3, docs/CAMPAIGN_PLAN.md C-4/C-5) ──────
+//
+// Body `{ characterId, unitId }` — the third twin: same phase, same atomicity,
+// same shared once-per-turn stamp, so a mage forges OR builds OR raises a
+// golem this fortnight, never two of them. Where it differs: the deposit is a
+// CHARACTER (C-4) — named from the golem pool, mindless (no paths rolled, no
+// hang-back — its defaults derive from the catalog like any mint), loose in
+// camp until posted, and permanently mortal like everyone on the rolls.
+router.post('/:id/craft', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'prepare')) return
+
+  const plan = planCraftUnit(campaign, req.body?.characterId, req.body?.unitId)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  campaign.resources.mithril -= plan.cost
+  plan.character.forgedDay = campaign.day
+  const crafted = mintCharacter(campaign, plan.row.unit, await getCatalog(), {
+    name: drawCharacterName(campaign, GOLEM_NAMES),
+  })
+  campaign.characters.push(crafted)
+
+  campaign.log.push({
+    day: campaign.day,
+    entries: [
+      `${plan.character.name} spends the fortnight at the foundry: ${crafted.name} the ${plan.row.name} stands (−${plan.cost} mithril).`,
     ],
   })
   await campaign.save()

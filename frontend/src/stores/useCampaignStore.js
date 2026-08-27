@@ -23,6 +23,7 @@ import {
   setChosenSpells,
   forgeItem,
   buildConstruction,
+  craftUnit,
   equipCharacterItem,
   unequipCharacterItem,
 } from '../services/api'
@@ -134,6 +135,12 @@ const useCampaignStore = create((set, get) => ({
   // shared once-per-turn stamp the server holds.
   buildConstruction: async (characterId, constructionId) => {
     set({ campaign: await buildConstruction(get().campaign.id, { characterId, constructionId }) })
+  },
+
+  // One crafting (Construction slice C3) — the third twin: what comes back
+  // holds a new golem on the character rolls.
+  craftUnit: async (characterId, unitId) => {
+    set({ campaign: await craftUnit(get().campaign.id, { characterId, unitId }) })
   },
 
   // Gear on and gear off (9-16's sheet). Reversible, unlike a bound banner —

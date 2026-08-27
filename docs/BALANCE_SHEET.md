@@ -158,8 +158,9 @@ checking against what the Recruit phase and the forge charge for them.
 
 ## What the forge charges
 
-Every forgeable row — items and constructions side by side, since they compete for the
-same mage-fortnight (the smith studies nothing that turn) and the same stingy metal.
+Every forgeable row — items, constructions and crafted units side by side, since they
+compete for the same mage-fortnight (the smith studies nothing that turn) and the same
+stingy metal.
 
 | Row | Kind | Construction level | Paths | Mithril | What it does |
 | --- | --- | --- | --- | --- | --- |
@@ -170,4 +171,5 @@ same mage-fortnight (the smith studies nothing that turn) and the same stingy me
 | Warding Beacons `works_warding_beacons` | construction | 1 | Fire 1 | 3 | The enemy strips the countryside slower |
 | Flanking Bastions `works_flanking_bastions` | construction | 2 | Earth 2 | 6 | Walls 8 hexsides of your front for every pitched battle |
 | Granary Vaults `works_granary_vaults` | construction | 3 | Nature 1 · Earth 2 | 8 | Your foraging +0.4 t/turn |
+| Golem `crafted_golem` | unit | 3 | Earth 2 | 15 | A Golem joins the rolls as a character. |
 

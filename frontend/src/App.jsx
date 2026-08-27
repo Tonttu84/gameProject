@@ -63,7 +63,7 @@ const App = () => {
   const user = useAuthStore((s) => s.user)
   const authNotice = useNoticeStore((s) => s.message)
 
-  const { campaign, loading, consultAugur, rerollAugur, setEffort, setResearchFocus, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, setChosenSpells, forgeItem, buildConstruction, equipCharacterItem, unequipCharacterItem, resolveChoice, reload } = useCampaignStore()
+  const { campaign, loading, consultAugur, rerollAugur, setEffort, setResearchFocus, advancePhase, fortify, launchRaids, scoutRaid, openRecruit, hireRecruit, takeSquadUpgrade, bindSquadBanner, attachCharacter, setCharacterHangBack, setChosenSpells, forgeItem, buildConstruction, craftUnit, equipCharacterItem, unequipCharacterItem, resolveChoice, reload } = useCampaignStore()
 
   // Hooks, so called unconditionally here rather than after the early-return
   // guards below — each is safe against a null campaign (optional chaining
@@ -497,6 +497,7 @@ const App = () => {
         <ForgePanel
           onForge={guarded(forgeItem)}
           onConstruct={guarded(buildConstruction)}
+          onCraft={guarded(craftUnit)}
           locked={phaseRank(serverPhase) > phaseRank('prepare')}
         />
       </div>

@@ -16,7 +16,7 @@
 
 import {
   CHANNELS_BY_BANNER_TIER,
-  CHARACTER_TYPES,
+  CASTER_CHARACTER_TYPES,
   DECLARED_CASTER_PATH,
   DECLARED_CASTERS_ROLL_SECOND,
   ENEMY_CHANNELS,
@@ -65,6 +65,11 @@ const bagEntries = (bag) =>
 // `rand` is injectable so tests can pin exactly who walks in, and it is drawn
 // through the shared dice queue like every other campaign roll.
 export function rollPaths(type, rand = getRandom) {
+  // A type that is no caster rolls NOTHING — and consumes nothing: a Golem
+  // minted at the foundry (C-4) must not eat draws off the shared dice queue
+  // a test or a same-day augury is counting on.
+  if (!isCasterType(type)) return {}
+
   const declared = DECLARED_CASTER_PATH[type] ?? null
   const paths = {}
 
@@ -95,8 +100,12 @@ export function rollPaths(type, rand = getRandom) {
 // caster it is holding). A type that is neither is left alone rather than sent
 // a bag of zeros — the wire says what the engine must not assume about a
 // CASTER, and a soldier was never going to be assumed anything.
+//
+// CASTER_CHARACTER_TYPES, not CHARACTER_TYPES: character-hood stopped implying
+// casterhood the day the Golem became a character (C-4) — it is minded by
+// nothing and commands nothing, and the wire must not offer it paths.
 export const isCasterType = (type) =>
-  CHARACTER_TYPES.includes(type) || Boolean(DECLARED_CASTER_PATH[type])
+  CASTER_CHARACTER_TYPES.includes(type) || Boolean(DECLARED_CASTER_PATH[type])
 
 // The rolls for every caster body in a force, in the order spreadPlacement will
 // lay them out (both walk `Object.entries` of the same {type: count} bag). One

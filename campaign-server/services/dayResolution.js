@@ -35,7 +35,7 @@ import { accrueResearch } from './magic.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging, ageForageModifiers } from './forage.js'
-import { allBodies } from './characters.js'
+import { allBodies, eatingBodies } from './characters.js'
 
 // End-of-turn pipeline (one turn = two weeks). Order is load-bearing and
 // later stages splice into it:
@@ -325,10 +325,12 @@ export async function endDay(campaign) {
   // 5. Player upkeep — size² × kg/day × days-per-turn, from live catalog sizes.
   // Characters eat like anyone else (docs/CAMPAIGN_PLAN.md 5-0/5-10): they
   // left the roster in slice 5, and if upkeep followed them out, migrating six
-  // casters into characters would silently refund their rations.
+  // casters into characters would silently refund their rations. The ONE
+  // carve-out is eatingBodies' (C-4): a golem is animated stone and draws no
+  // rations — but it still counts as a body everywhere else in camp.
   const bodies = allBodies(campaign)
   const units = rosterTotal(bodies)
-  const foodNeed = armyFoodPerTurn(bodies, catalog)
+  const foodNeed = armyFoodPerTurn(eatingBodies(campaign), catalog)
   const foodConsumed = Math.min(campaign.resources.food, foodNeed)
   campaign.resources.food = Math.max(0, campaign.resources.food - foodNeed)
   let deserters = 0

@@ -94,6 +94,30 @@ shares the item forge's whole cost model — same eligibility, same `forgedDay` 
 mage builds *or* forges each turn — and a construction is inherently unique: the built
 gate replaces `unique`.
 
+### The third kind of forgeable row: a crafted unit (slice C3, C-4/C-5)
+
+A **crafted unit** is a *body*: the row (in `CRAFTED_UNIT_CATALOG`, same file) is `id`,
+`name`, `blurb`, the same three-gate `forge` block, plus `unit` — the engine type the
+foundry mints:
+
+```js
+  { id: 'crafted_golem', name: 'Golem', unit: 'Golem', blurb: '…',
+    forge: { level: 3, paths: { earth: 2 }, mithril: 15 } },
+```
+
+What arrives is a **character** (C-4): named from `GOLEM_NAMES`, attachable,
+artifact-bearing, permanently mortal — and mindless, so no paths/script, no hang-back
+order (`MINDLESS_CHARACTER_TYPES`), and no rations (`NON_EATING_TYPES`, a thematic call
+per type). The row never closes — there is no `unique`/built gate; mithril and path-mages
+are the throttle.
+
+The `unit` must be an engine type carrying the `Crafted` role, and the agreement is
+pinned both ways in `engine.integration.test.js` (the twin of the Player obtainability
+rule — see `docs/ADDING_UNITS.md` §2/§5): a Crafted type with no row here fails, a row
+whose unit is not Crafted fails, and a craftable unit missing from `CHARACTER_TYPES`
+fails. So adding one touches **both docs' paths**: the C++ unit + catalog entry first,
+then the row here.
+
 ## Arrival channels (9-7)
 
 | Channel  | Where it's authored                                                       |

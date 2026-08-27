@@ -4,7 +4,7 @@ import {
   SIEGE_SPINE,
 } from './events.js'
 import { findItem, describeItem } from './items.js'
-import { forgeRows, forgePathsText } from './forge.js'
+import { forgeRows, forgePathsText, craftedUnitRows } from './forge.js'
 import { constructionRows, constructionEffectsText } from './constructions.js'
 import {
   AUGURY_SLOTS,
@@ -347,11 +347,11 @@ const perUnitPayoff = (rate, variance) => {
 // The four ordinary types are a uniform draw for each base target, so each
 // carries RAID_BASE_TARGETS / 4 expected cards a turn. The other three doors
 // are conditional and are described rather than rated.
-// ── What the forge charges (Construction slices C1/C2) ─────────────────────
-// Every forgeable row — items and constructions in one table, since they
-// compete for the same mage-fortnight and the same stingy metal. Derived from
-// the catalogs at call time like everything else here; balanceSheet.test.js
-// pins that no forgeable row escapes it.
+// ── What the forge charges (Construction slices C1/C2/C3) ──────────────────
+// Every forgeable row — items, constructions and crafted units in one table,
+// since they compete for the same mage-fortnight and the same stingy metal.
+// Derived from the catalogs at call time like everything else here;
+// balanceSheet.test.js pins that no forgeable row escapes it.
 export const forgeLedgerRows = () => [
   ...forgeRows().map((row) => ({
     id: row.id,
@@ -370,6 +370,15 @@ export const forgeLedgerRows = () => [
     pathsText: forgePathsText(row),
     mithril: row.forge.mithril ?? 0,
     what: constructionEffectsText(row).join('. '),
+  })),
+  ...craftedUnitRows().map((row) => ({
+    id: row.id,
+    name: row.name,
+    kind: 'unit',
+    level: row.forge.level,
+    pathsText: forgePathsText(row),
+    mithril: row.forge.mithril ?? 0,
+    what: `A ${row.unit} joins the rolls as a character.`,
   })),
 ]
 
@@ -616,8 +625,9 @@ export const renderMarkdown = () => {
 
   out.push('## What the forge charges')
   out.push('')
-  out.push('Every forgeable row — items and constructions side by side, since they compete for the')
-  out.push('same mage-fortnight (the smith studies nothing that turn) and the same stingy metal.')
+  out.push('Every forgeable row — items, constructions and crafted units side by side, since they')
+  out.push('compete for the same mage-fortnight (the smith studies nothing that turn) and the same')
+  out.push('stingy metal.')
   out.push('')
   out.push('| Row | Kind | Construction level | Paths | Mithril | What it does |')
   out.push('| --- | --- | --- | --- | --- | --- |')
