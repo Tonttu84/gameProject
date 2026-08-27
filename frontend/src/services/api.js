@@ -164,6 +164,11 @@ export const postCampaignChoice = (id, slot, choice, squadId) =>
 export const forgeItem = (id, { characterId, itemId }) =>
   axios.post(`/api/campaigns/${id}/forge`, { characterId, itemId }, authed()).then(r => r.data)
 
+// One building (Construction slice C2, C-3): the forge call's twin — the named
+// builder and the construction row, gates held server-side the same way.
+export const buildConstruction = (id, { characterId, constructionId }) =>
+  axios.post(`/api/campaigns/${id}/construct`, { characterId, constructionId }, authed()).then(r => r.data)
+
 // Submit a player bug report. The server stamps the trusted reproduction
 // context (active campaign, day, build) itself; the client only claims which
 // screen it was on. Requires a login. Returns { id, createdAt }.

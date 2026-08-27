@@ -69,6 +69,31 @@ day's accrual (C-6 — the bank is never debited), and he is stamped `forgedDay`
 turn. That is the entire price; do not add gates to the action (C-1 keeps it
 location-blind — no away rule, no squad rule).
 
+### The other kind of forgeable row: a construction (slice C2, C-3)
+
+A **construction** is not an item — it *stands* instead of stacking — but it is authored
+with the same discipline, in `CONSTRUCTION_CATALOG` (same file). A row is `id`, `name`,
+`blurb`, the same three-gate `forge` block above, plus its effect halves, **only through
+channels that already exist** (C-3):
+
+```js
+  // campaign-side: EVENT effect vocabulary, applied once at build via applyEffect.
+  // Permanent (no turnsLeft), never raidable — a structure is not a pressure a raid lifts.
+  effects: [{ type: 'forage_modifier', id: '<row id>', label: '…', target: 'playerYield', factor: 1.1, raidable: false }],
+  // battlefield-side: extra fortified_sides in the FORTIFICATION_PRESETS entry shape,
+  // derived from campaign.constructions at read time (walledSides) — never stored.
+  sides: [{ q: 0, r: 7, dir: 'SE', durability: 130 }],
+```
+
+The catalog sweeps in `constructions.test.js` hold the C-3 line for you: effects must be
+`forage_modifier` (a new effect type here has to argue its way past that fence — a
+construction wanting a genuinely new engine capability is content **blocked on its own
+engine slice**), the modifier `id` must equal the row id, `sides` must not duplicate a
+fort preset side, and every row must reach the balance sheet's forge ledger. Building
+shares the item forge's whole cost model — same eligibility, same `forgedDay` stamp, so a
+mage builds *or* forges each turn — and a construction is inherently unique: the built
+gate replaces `unique`.
+
 ## Arrival channels (9-7)
 
 | Channel  | Where it's authored                                                       |

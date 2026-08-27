@@ -19,6 +19,7 @@ import { buildEnemyPlacement, spreadPlacement, makeZonePlacer } from '../service
 import { planUpgrade, applyUpgrade, raidCostFactor, statMods } from '../services/squadUpgrades.js'
 import { bindItemToSquad, squadAbilities, findItem, grantItem } from '../services/items.js'
 import { planForge } from '../services/forge.js'
+import { planConstruction } from '../services/constructions.js'
 import { recoverItems, stripFallen } from '../services/loot.js'
 import {
   bearerEntry, rollBearer, BEARER_SQUAD_ID, BEARER_CHARACTER_ID,
@@ -40,7 +41,7 @@ import {
 import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
 } from '../services/raid.js'
-import { fortifiedSidesFor, fortifyCost, fortifyWorkerCost, atFortCap } from '../services/fortification.js'
+import { fortifyCost, fortifyWorkerCost, atFortCap, walledSides } from '../services/fortification.js'
 import { magicBlock, planChosenSpells, planResearchFocus, withCasterPaths } from '../services/magic.js'
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
@@ -697,8 +698,10 @@ router.post('/:id/battles', async (req, res) => {
     player_placement: moddedPlacement,
     enemy_placement: enemyPlacement,
     // The player's paid-for fortifications for this battle: the map file is
-    // static, the level is dynamic, so the walled sides are injected here.
-    fortified_sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
+    // static, the level is dynamic, so the walled sides are injected here —
+    // the fort's own plus the standing constructions' (slice C2), through the
+    // one composition site.
+    fortified_sides: walledSides(MAP_NAME, campaign),
     // The garrison's sally, if any: allied reinforcements at the enemy rear.
     reinforcements,
     // What each side's ARMY knows, and what its banners channel (M-11/M-19).
@@ -1570,6 +1573,43 @@ router.post('/:id/forge', async (req, res) => {
     day: campaign.day,
     entries: [
       `${plan.character.name} spends the fortnight at the forge: ${plan.row.name} is made (−${plan.cost} mithril).`,
+    ],
+  })
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// ── Constructions (Construction slice C2, docs/CAMPAIGN_PLAN.md C-3) ────────
+//
+// Body `{ characterId, constructionId }` — the forge route's twin: same
+// phase, same atomicity (the mithril is spent, the stamp is set, the works
+// stand), same shared once-per-turn stamp, so a mage builds OR forges this
+// fortnight, never both. Where it differs: instead of a store deposit, the
+// row's campaign-side effects land HERE, once, through applyEffect — the
+// fates' own chokepoint (C-3: existing channels only) — and its battlefield
+// sides need no landing at all, being derived from `constructions` at every
+// read (walledSides). applyEffect's own log lines are discarded: they phrase
+// a fate befalling the army, and this is the army building something — the
+// one line below says so.
+router.post('/:id/construct', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+  if (rejectIfPhasePassed(campaign, res, 'prepare')) return
+
+  const plan = planConstruction(campaign, req.body?.characterId, req.body?.constructionId)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  campaign.resources.mithril -= plan.cost
+  plan.character.forgedDay = campaign.day
+  campaign.constructions.push(plan.row.id)
+  for (const effect of plan.row.effects ?? []) applyEffect(campaign, effect)
+
+  campaign.log.push({
+    day: campaign.day,
+    entries: [
+      `${plan.character.name} spends the fortnight at the works: ${plan.row.name} now stands (−${plan.cost} mithril).`,
     ],
   })
   await campaign.save()

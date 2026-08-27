@@ -22,6 +22,7 @@ import {
   setCharacterHangBack,
   setChosenSpells,
   forgeItem,
+  buildConstruction,
   equipCharacterItem,
   unequipCharacterItem,
 } from '../services/api'
@@ -127,6 +128,12 @@ const useCampaignStore = create((set, get) => ({
   // letting the click 409.
   forgeItem: async (characterId, itemId) => {
     set({ campaign: await forgeItem(get().campaign.id, { characterId, itemId }) })
+  },
+
+  // One building (Construction slice C2) — the forging's twin, down to the
+  // shared once-per-turn stamp the server holds.
+  buildConstruction: async (characterId, constructionId) => {
+    set({ campaign: await buildConstruction(get().campaign.id, { characterId, constructionId }) })
   },
 
   // Gear on and gear off (9-16's sheet). Reversible, unlike a bound banner —

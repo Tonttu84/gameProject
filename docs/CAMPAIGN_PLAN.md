@@ -88,7 +88,7 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-08-25) — START HERE
 
 **▶▶ THE LIVE FRONT IS THE MAGIC SYSTEM, AND IT IS NOT IN THIS BLOCK — it is under "THE MAGIC
-SYSTEM" further down.** Schema is **v42** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
+SYSTEM" further down.** Schema is **v44** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
 authority; the v35/v36 talk below is 2026-08-24 history that was true when it was written). Read
 this order to pick the work up cold:
 
@@ -104,7 +104,8 @@ this order to pick the work up cold:
    came out of S4-8's TODO; that TODO is now history, not work.
 4. **▶▶ THE ACTIVE FRONT (2026-08-25, interviewed 2026-08-26): CONSTRUCTION — and a standing content task.**
    The interview is DONE — decisions C-1..C-8 under "THE CONSTRUCTION INTERVIEW" below close every
-   open question in this block, and SLICE C1 is the work in progress. The 2026-08-25 record is kept
+   open question in this block. **C1 and C2 are SHIPPED (2026-08-26 / 2026-08-27, schema v44);
+   SLICE C3 — the golem — is what remains.** The 2026-08-25 record is kept
    as written; where the interview DELETED a rule, the deletion is noted in C-1..C-8, and those
    notes win.
    Two things, taken together because the first is what makes the second worth doing:
@@ -334,8 +335,41 @@ this order to pick the work up cold:
          pre-answered and phrased (17-5) — the client composes no rule.
        - `docs/ADDING_ITEMS.md` written (C-8), the ADDING_UNITS.md format: one row,
          channels, the sweeps that review a row so most additions touch no test.
-     - **C2 — constructions:** standing structures using existing effect channels only
-       (campaign modifiers + fortified_sides), the Construction-level content ladder.
+     - **✅ C2 — constructions — SHIPPED 2026-08-27, schema v43→v44.** What landed, and the
+       shapes C3 should reuse rather than reinvent:
+       - **`CONSTRUCTION_CATALOG`** (campaignConfig.js, beside the items): a row is the SAME
+         three-gate `forge` block (C-6) plus its effect halves through C-3's two channels and
+         NOTHING else — `effects` in the EVENT vocabulary (forage_modifier only: permanent,
+         never raidable, modifier id = row id), and/or `sides` in the FORTIFICATION_PRESETS
+         entry shape. A sweep in constructions.test.js is the C-3 fence: a new effect type or
+         a preset-duplicating side fails it, so "existing channels only" is enforced, not
+         hoped. Four rows ship the ladder — Smokehouse (L1, playerYield ×1.1), Warding
+         Beacons (L1, enemyDrain −1000 kg), Flanking Bastions (L2, walls q0–1/q8–9 the fort
+         never covers), Granary Vaults (L3, playerYield +400 kg). Numbers balance-deferred.
+       - **Building IS forging in the ledger's eyes**: `planConstruction` mirrors planForge
+         (the smith half is shared — `planSmith` in forge.js), and the SAME `forgedDay` stamp
+         covers both, so a mage builds OR forges each fortnight. A construction stands once —
+         the built gate replaces `unique`. `POST /:id/construct` is the forge route's twin:
+         prepare-only, atomic (debit, stamp, push to `campaign.constructions`, applyEffect
+         per effect — the fates' own chokepoint, its log lines discarded for the route's one
+         "now stands" line).
+       - **The battlefield half derives, the campaign half materializes.** Sides are NEVER
+         stored: `walledSides(mapName, campaign)` (fortification.js) is the ONE composition
+         site — fort presets + standing constructions — used by both the battle input and
+         campaignView's fortification block, so the placement grid and the battle cannot
+         drift. Campaign-side modifiers land once at build into forage.modifiers and ride
+         every existing surface for free (the ForagePanel card, the slider preview, the
+         sheet's pricing). Known cosmetic quirk, accepted: an enemyDrain construction's CARD
+         is recon-gated like any enemyDrain modifier, though the works list still shows it
+         standing.
+       - **UI:** the works live on the SAME ForgePanel under "The Works" — both doors work
+         (item-first shows the whole ladder, built rows shown standing "It stands."; the
+         smith-first door filters works to his paths exactly like items). `constructions`
+         view block mirrors forgeView's contract: gates pre-answered, effects phrased
+         server-side (describeEffect + one composed walls sentence).
+       - **The balance sheet grew "What the forge charges"** (`forgeLedgerRows`): every
+         forgeable row — items AND constructions — priced side by side, tripwired so no row
+         escapes. `docs/ADDING_ITEMS.md` gained the construction-row section (C-8).
      - **C3 — the golem:** the `Crafted` role, the engine unit type, and the mindless character
        with C-4's sheet.
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.

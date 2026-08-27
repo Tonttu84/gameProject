@@ -42,7 +42,8 @@ import { displayBracket } from './recon.js'
 import {
   forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
 } from './forage.js'
-import { fortifyCost, fortifyWorkerCost, atFortCap, fortifiedSidesFor } from './fortification.js'
+import { fortifyCost, fortifyWorkerCost, atFortCap, walledSides } from './fortification.js'
+import { constructionView } from './constructions.js'
 import { eventValenceFor, choiceRung, describeEffect, optionCard, rungOf } from './events.js'
 
 // The charters a mission fate offered, resolved for display: a name and rank
@@ -408,6 +409,11 @@ export async function campaignView(campaign) {
     // the smiths whose paths qualify per row. Both doors of the UI render from
     // this one block, so the item-first and smith-first views cannot drift.
     forge: forgeView(campaign),
+    // The constructions (Construction slice C2, C-3): the same contract as the
+    // forge block beside it — every row with its gates resolved and its
+    // effects PHRASED server-side, locked rows shown locked so the
+    // Construction ladder reads as a ladder, built rows shown standing.
+    constructions: constructionView(campaign),
     resources: {
       food: campaign.resources.food,
       materials: campaign.resources.materials,
@@ -648,7 +654,9 @@ export async function campaignView(campaign) {
       nextWorkerCost: atFortCap(campaign.fortificationLevel)
         ? null
         : fortifyWorkerCost(campaign.fortificationLevel),
-      sides: fortifiedSidesFor(MAP_NAME, campaign.fortificationLevel),
+      // The fort's own presets plus the standing constructions' walls (slice
+      // C2), through the one composition site the battle input uses.
+      sides: walledSides(MAP_NAME, campaign),
     },
     // Effort slider (S2, docs/CAMPAIGN_PLAN.md "Effort slider"): foraging is
     // passive now — no per-unit assignment, just the player's slider share of

@@ -53,12 +53,48 @@ const characters = [
   { id: 8, name: 'Odo', type: 'Priest', alive: true, forgedToday: false },
 ]
 
-const forgeWith = ({ forge = forgeFixture, request = {}, ...props } = {}) => {
+// The constructions block (slice C2) as campaignView ships it: one open row,
+// one level-locked battlefield row, one already standing.
+const constructionsFixture = {
+  rows: [
+    {
+      id: 'works_smokehouse', name: 'Smokehouse and Salt Stores',
+      blurb: 'Racks over slow fires.',
+      effects: ['Your foraging ×1.1'],
+      level: 1, mithril: 3, pathsText: 'Nature 1',
+      smiths: [{ id: 7, name: 'Aldric', forgedToday: false }],
+      levelMet: true, mithrilMet: true, built: false,
+    },
+    {
+      id: 'works_flanking_bastions', name: 'Flanking Bastions',
+      blurb: 'Stone teeth at the shoulders of the line.',
+      effects: ['Walls 8 hexsides of your front for every pitched battle'],
+      level: 2, mithril: 6, pathsText: 'Earth 2',
+      smiths: [],
+      levelMet: false, mithrilMet: true, built: false,
+    },
+    {
+      id: 'works_warding_beacons', name: 'Warding Beacons',
+      blurb: 'Iron cages on high poles.',
+      effects: ['The enemy strips the countryside slower'],
+      level: 1, mithril: 3, pathsText: 'Fire 1',
+      smiths: [{ id: 7, name: 'Aldric', forgedToday: false }],
+      levelMet: true, mithrilMet: true, built: true,
+    },
+  ],
+}
+
+const forgeWith = ({
+  forge = forgeFixture,
+  constructions = constructionsFixture,
+  request = {},
+  ...props
+} = {}) => {
   useCampaignStore.setState({
-    campaign: { ...campaignFixture, forge, characters },
+    campaign: { ...campaignFixture, forge, constructions, characters },
   })
   useUiStore.setState({ forgeRequest: request })
-  return render(<ForgePanel onForge={vi.fn()} {...props} />)
+  return render(<ForgePanel onForge={vi.fn()} onConstruct={vi.fn()} {...props} />)
 }
 
 describe('The Forge — the item-first door', () => {
@@ -124,12 +160,60 @@ describe('The Forge — the smith-first door', () => {
     expect(screen.queryByTestId('forge-row-forged_artificial_heart')).not.toBeInTheDocument()
   })
 
-  it('says so in a sentence when he qualifies for nothing', () => {
+  it('says so in a sentence when he qualifies for nothing — items and works both', () => {
     const none = {
       ...forgeFixture,
       rows: forgeFixture.rows.map((row) => ({ ...row, smiths: [] })),
     }
-    forgeWith({ forge: none, request: { smithId: 7 } })
+    const noWorks = {
+      rows: constructionsFixture.rows.map((row) => ({ ...row, smiths: [] })),
+    }
+    forgeWith({ forge: none, constructions: noWorks, request: { smithId: 7 } })
     expect(screen.getByTestId('forge-empty')).toHaveTextContent('Aldric commands no paths')
+  })
+})
+
+describe('The Works — constructions on the same screen (slice C2)', () => {
+  it('shows the ladder like the items: locked rows locked, standing rows standing', () => {
+    forgeWith()
+    expect(screen.getByTestId('forge-works-head')).toBeInTheDocument()
+    expect(screen.getByTestId('work-row-req-works_smokehouse')).toHaveTextContent('Nature 1 · 3 mithril')
+    expect(screen.getByTestId('work-row-gate-works_flanking_bastions')).toHaveTextContent('Construction 2')
+    // A built row closes into its standing state — no gates, no picker.
+    expect(screen.getByTestId('work-standing-works_warding_beacons')).toHaveTextContent('It stands.')
+    expect(screen.queryByTestId('work-row-req-works_warding_beacons')).not.toBeInTheDocument()
+  })
+
+  it('opens a row into its phrased effect lines and the smith picker', async () => {
+    forgeWith()
+    await userEvent.click(screen.getByTestId('work-row-toggle-works_smokehouse'))
+    expect(screen.getByTestId('work-row-detail-works_smokehouse')).toHaveTextContent('Your foraging ×1.1')
+    expect(screen.getByTestId('work-go-works_smokehouse-7')).toHaveTextContent('Set Aldric to the work')
+  })
+
+  it('builds through the guarded action with the builder and the row', async () => {
+    const onConstruct = vi.fn()
+    forgeWith({ onConstruct })
+    await userEvent.click(screen.getByTestId('work-row-toggle-works_smokehouse'))
+    await userEvent.click(screen.getByTestId('work-go-works_smokehouse-7'))
+    expect(onConstruct).toHaveBeenCalledWith(7, 'works_smokehouse')
+  })
+
+  it('a standing row offers no picker even when opened', async () => {
+    forgeWith()
+    await userEvent.click(screen.getByTestId('work-row-toggle-works_warding_beacons'))
+    expect(screen.getByTestId('work-row-detail-works_warding_beacons')).toHaveTextContent('countryside slower')
+    expect(screen.queryByTestId('work-go-works_warding_beacons-7')).not.toBeInTheDocument()
+  })
+
+  it('the smith-first door filters the works to his paths too', () => {
+    const hisWorks = {
+      rows: constructionsFixture.rows.map((row) =>
+        row.id === 'works_smokehouse' ? row : { ...row, smiths: [] },
+      ),
+    }
+    forgeWith({ constructions: hisWorks, request: { smithId: 7 } })
+    expect(screen.getByTestId('work-row-works_smokehouse')).toBeInTheDocument()
+    expect(screen.queryByTestId('work-row-works_warding_beacons')).not.toBeInTheDocument()
   })
 })

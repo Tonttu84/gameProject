@@ -4,6 +4,7 @@ import {
   FORTIFY_COST_BASE,
   FORTIFY_WORKER_COST_BASE,
 } from '../utils/campaignConfig.js'
+import { constructionSidesFor } from './constructions.js'
 
 // Campaign fortifications as an abstract level → concrete engine hexsides.
 // Pure functions over FORTIFICATION_PRESETS; the route injects the result into
@@ -30,3 +31,13 @@ export const fortifyCost = (level) => FORTIFY_COST_BASE * (level + 1)
 export const fortifyWorkerCost = (level) => FORTIFY_WORKER_COST_BASE * (level + 1)
 
 export const atFortCap = (level) => level >= FORTIFICATION_MAX_LEVEL
+
+// EVERY walled side a battle at camp should carry: the fort's own presets plus
+// the standing constructions' (slice C2 — a construction is fortification
+// generalized, and its battlefield half lands through this same seam). The ONE
+// composition site, used by both the battle input and campaignView's
+// fortification block, so screen and battle cannot drift.
+export const walledSides = (mapName, campaign) => [
+  ...fortifiedSidesFor(mapName, campaign?.fortificationLevel ?? 0),
+  ...constructionSidesFor(campaign),
+]

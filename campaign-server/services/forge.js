@@ -58,6 +58,21 @@ export const forgePathsText = (row) =>
     .map(([path, need]) => `${SPELL_PATH_TEXT[path] ?? path} ${need}`)
     .join(' · ')
 
+// The smith half of a plan, shared with the constructions beside the items
+// (slice C2): eligibility is exactly C-1's three checks — alive, paths,
+// not-forged-today — against ONE row's forge block, whichever catalog the row
+// came from. Returns {character} or the {error} the route turns into a 400.
+export const planSmith = (campaign, characterId, row) => {
+  const character = livingCharacters(campaign).find((c) => c.id === Number(characterId))
+  if (!character) return { error: `no such character: ${characterId}` }
+  if (character.type !== 'Mage') return { error: `${character.name} is no smith of the arcane` }
+  if (!meetsForgePaths(character, row))
+    return { error: `${character.name} does not command the paths this work asks for` }
+  if (character.forgedDay != null && character.forgedDay === campaign?.day)
+    return { error: `${character.name} has already forged this fortnight` }
+  return { character }
+}
+
 // Validate one forging without committing it — the planEquip contract: an
 // {error} the route turns into a 400, or the resolved pieces the route commits.
 // Checks run item-first, then smith, so the error the player sees matches the
@@ -79,15 +94,10 @@ export const planForge = (campaign, characterId, itemId) => {
   if ((campaign?.resources?.mithril ?? 0) < cost)
     return { error: 'not enough mithril' }
 
-  const character = livingCharacters(campaign).find((c) => c.id === Number(characterId))
-  if (!character) return { error: `no such character: ${characterId}` }
-  if (character.type !== 'Mage') return { error: `${character.name} is no smith of the arcane` }
-  if (!meetsForgePaths(character, row))
-    return { error: `${character.name} does not command the paths this work asks for` }
-  if (character.forgedDay != null && character.forgedDay === campaign?.day)
-    return { error: `${character.name} has already forged this fortnight` }
+  const smith = planSmith(campaign, characterId, row)
+  if (smith.error) return smith
 
-  return { character, row, cost }
+  return { character: smith.character, row, cost }
 }
 
 // What the client renders — every craftable row with its three gates resolved

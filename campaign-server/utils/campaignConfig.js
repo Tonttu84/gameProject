@@ -395,6 +395,117 @@ export const ITEM_CATALOG = [
   },
 ]
 
+// ── Constructions (Construction slice C2, docs/CAMPAIGN_PLAN.md C-3/C-6) ─────
+//
+// A construction is FORTIFICATION GENERALIZED (C-3): built from camp, felt
+// where its effect points. A row declares its effects and may land on either
+// side of the campaign/engine seam — but ONLY through channels that already
+// exist. These first rows use exactly the two C-3 names:
+//
+//   effects – campaign-side: a list in the EVENT effect vocabulary, applied
+//             ONCE at build through applyEffect (the same chokepoint every
+//             fate uses). First rows carry only `forage_modifier`s — permanent
+//             (`turnsLeft` absent), never `raidable`: a standing structure is
+//             not a pressure a raid can lift.
+//   sides   – battlefield-side: extra `fortified_sides` entries in the exact
+//             FORTIFICATION_PRESETS shape, derived at read time beside the
+//             fort's own (services/fortification.js walledSides) and injected
+//             into every pitched battle. The engine never learns the word
+//             "construction", exactly as it never learned "fortification".
+//
+// A construction wanting a genuinely NEW engine capability (a ballista that
+// shoots) is content blocked on its own engine slice — never a license to
+// build one speculatively (C-3).
+//
+// `forge` is the SAME three-gate block the craftable items carry (C-6): the
+// Construction school level, the paths the builder must himself command, and
+// the mithril price. Building goes through the same eligibility as forging —
+// alive, paths, not-forged-today — and shares the same once-per-turn stamp:
+// the fortnight at the works is the fortnight at the forge. A construction is
+// inherently unique: it STANDS once built, so a built row simply closes.
+//
+// THE NUMBERS ARE BALANCE-DEFERRED, like the gear above. The ladder is the
+// point (the second decision, 2026-08-25: level gates the TIER of what can be
+// made): one row per rung so a higher Construction level is visibly FOR
+// something.
+export const CONSTRUCTION_CATALOG = [
+  {
+    id: 'works_smokehouse',
+    name: 'Smokehouse and Salt Stores',
+    blurb:
+      'Racks over slow fires, and cellars dug deep enough to stay cold. What '
+      + 'the foragers bring in stops rotting on the wagons.',
+    forge: { level: 1, paths: { nature: 1 }, mithril: 3 },
+    effects: [
+      {
+        type: 'forage_modifier',
+        id: 'works_smokehouse',
+        label: 'Smokehouse and salt stores',
+        target: 'playerYield',
+        factor: 1.1,
+        raidable: false,
+      },
+    ],
+  },
+  {
+    id: 'works_warding_beacons',
+    name: 'Warding Beacons',
+    blurb:
+      'Iron cages on high poles, burning with a flame that wants no wood. '
+      + 'Enemy foraging parties give the marked ground a wide berth.',
+    forge: { level: 1, paths: { fire: 1 }, mithril: 3 },
+    effects: [
+      {
+        type: 'forage_modifier',
+        id: 'works_warding_beacons',
+        label: 'Warding beacons',
+        target: 'enemyDrain',
+        deltaKg: -1000,
+        raidable: false,
+      },
+    ],
+  },
+  {
+    id: 'works_flanking_bastions',
+    name: 'Flanking Bastions',
+    blurb:
+      'Stone teeth at the shoulders of the line, where the wall never reached. '
+      + 'A flank that cost nothing to turn now costs a storming.',
+    forge: { level: 2, paths: { earth: 2 }, mithril: 6 },
+    // The wings the fort's own presets never cover: the tier-2 wall spans
+    // q2–7 on the r=7 front, so these close q0–1 and q8–9 beside it.
+    // Durability sits between the fort's tiers (100/160) on purpose.
+    sides: [
+      { q: 0, r: 7, dir: 'SE', durability: 130 },
+      { q: 0, r: 7, dir: 'SW', durability: 130 },
+      { q: 1, r: 7, dir: 'SE', durability: 130 },
+      { q: 1, r: 7, dir: 'SW', durability: 130 },
+      { q: 8, r: 7, dir: 'SE', durability: 130 },
+      { q: 8, r: 7, dir: 'SW', durability: 130 },
+      { q: 9, r: 7, dir: 'SE', durability: 130 },
+      { q: 9, r: 7, dir: 'SW', durability: 130 },
+    ],
+  },
+  {
+    id: 'works_granary_vaults',
+    name: 'Granary Vaults',
+    blurb:
+      'Vaulted stores under the camp itself, dry and past counting. The army '
+      + 'gathers as if it had twice the wagons.',
+    forge: { level: 3, paths: { nature: 1, earth: 2 }, mithril: 8 },
+    effects: [
+      {
+        type: 'forage_modifier',
+        id: 'works_granary_vaults',
+        label: 'Granary vaults',
+        target: 'playerYield',
+        deltaKg: 400,
+        raidable: false,
+      },
+    ],
+  },
+]
+
 // The resolve a grateful garrison must feel before it will part with its
 // standard (user, 2026-08-20). The ordinary garrison gifts sit at 67 — food,
 // coin and a night sally are things a grateful garrison does often. This is a

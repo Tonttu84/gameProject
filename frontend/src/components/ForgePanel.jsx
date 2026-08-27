@@ -95,11 +95,87 @@ const ForgeRow = ({ row, mithril, smith, locked, onForge }) => {
   )
 }
 
-// `onForge` is a guarded action like The Study's onFocus; `locked` means the
-// turn has marched past Prepare — the buttons reflect the server's refusal
-// rather than duplicating it.
-const ForgePanel = ({ onForge, locked }) => {
+// One construction row (slice C2) — ForgeRow's twin: the same three gates,
+// the same smith picker, but a construction STANDS instead of stacking, so a
+// built row closes into its standing state rather than offering the work
+// again. `effects` arrives as phrased sentences (17-5), one per line.
+const WorkRow = ({ row, mithril, smith, locked, onConstruct }) => {
+  const [open, setOpen] = useState(false)
+  const smiths = smith ? row.smiths.filter((s) => s.id === smith.id) : row.smiths
+  const buildable = row.levelMet && row.mithrilMet && !row.built
+
+  return (
+    <li
+      className={`forge-row ${buildable ? 'unlocked' : 'locked'}`}
+      data-testid={`work-row-${row.id}`}
+    >
+      <button
+        className="forge-row-head"
+        aria-expanded={open}
+        onClick={() => setOpen((was) => !was)}
+        data-testid={`work-row-toggle-${row.id}`}
+      >
+        <span className="forge-row-name">{row.name}</span>
+        {row.built ? (
+          <span className="forge-row-standing" data-testid={`work-standing-${row.id}`}>
+            It stands.
+          </span>
+        ) : (
+          <span className="forge-row-req" data-testid={`work-row-req-${row.id}`}>
+            {row.pathsText} · {row.mithril} mithril
+          </span>
+        )}
+        {!row.levelMet && (
+          <span className="forge-row-gate" data-testid={`work-row-gate-${row.id}`}>
+            Construction {row.level}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="forge-row-detail" data-testid={`work-row-detail-${row.id}`}>
+          <p className="forge-row-blurb">{row.blurb}</p>
+          {row.effects.map((line, i) => (
+            <p className="forge-row-effect" key={i}>{line}</p>
+          ))}
+          {!row.built && !row.mithrilMet && (
+            <p className="forge-row-poor" data-testid={`work-poor-${row.id}`}>
+              Not enough mithril — {row.mithril} is needed, {mithril} is on hand.
+            </p>
+          )}
+          {!row.built && (smiths.length === 0 ? (
+            <p className="forge-no-smith" data-testid={`work-no-smith-${row.id}`}>
+              No living mage commands the paths this work asks for.
+            </p>
+          ) : (
+            <ul className="forge-smiths">
+              {smiths.map((s) => (
+                <li key={s.id}>
+                  <button
+                    className="btn-primary forge-go"
+                    disabled={locked || !buildable || s.forgedToday}
+                    onClick={() => onConstruct(s.id, row.id)}
+                    data-testid={`work-go-${row.id}-${s.id}`}
+                  >
+                    {s.forgedToday
+                      ? `${s.name} has already forged this turn`
+                      : `Set ${s.name} to the work`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ))}
+        </div>
+      )}
+    </li>
+  )
+}
+
+// `onForge`/`onConstruct` are guarded actions like The Study's onFocus;
+// `locked` means the turn has marched past Prepare — the buttons reflect the
+// server's refusal rather than duplicating it.
+const ForgePanel = ({ onForge, onConstruct, locked }) => {
   const forge = useCampaignStore((s) => s.campaign.forge)
+  const constructions = useCampaignStore((s) => s.campaign.constructions)
   const mithril = useCampaignStore((s) => s.campaign.resources?.mithril ?? 0)
   const characters = useCampaignStore((s) => s.campaign.characters)
   const forgeRequest = useUiStore((s) => s.forgeRequest)
@@ -116,6 +192,13 @@ const ForgePanel = ({ onForge, locked }) => {
   const rows = smith
     ? (forge?.rows ?? []).filter((row) => row.smiths.some((s) => s.id === smith.id))
     : (forge?.rows ?? [])
+
+  // The works, through the same smith-first filter as the items: his door
+  // offers what HIS paths qualify him for. The item-first door shows the whole
+  // ladder, standing rows included.
+  const workRows = smith
+    ? (constructions?.rows ?? []).filter((row) => row.smiths.some((s) => s.id === smith.id))
+    : (constructions?.rows ?? [])
 
   return (
     <div className="forge-page" data-testid="forge-page">
@@ -135,6 +218,7 @@ const ForgePanel = ({ onForge, locked }) => {
           'Each working names its paths: the mage doing it must command them himself. Learning is shared; the craft is not.',
           'The work takes the fortnight and the item is ready at once, in the stores with everything else the army holds.',
           'Some things, once given, are part of the bearer. The work says so before you begin it.',
+          'The Works are built the same way and stand for good — walls for the pitched battle, stores and beacons for the campaign. Each is raised once.',
         ]}
       />
 
@@ -149,25 +233,50 @@ const ForgePanel = ({ onForge, locked }) => {
         </p>
       )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && workRows.length === 0 ? (
         <p className="forge-empty" data-testid="forge-empty">
           {smith
             ? `${smith.name} commands no paths the known workings ask for.`
             : 'No workings are known to the forge.'}
         </p>
       ) : (
-        <ul className="forge-rows">
-          {rows.map((row) => (
-            <ForgeRow
-              key={row.id}
-              row={row}
-              mithril={mithril}
-              smith={smith}
-              locked={locked}
-              onForge={onForge}
-            />
-          ))}
-        </ul>
+        <>
+          {rows.length > 0 && (
+            <ul className="forge-rows">
+              {rows.map((row) => (
+                <ForgeRow
+                  key={row.id}
+                  row={row}
+                  mithril={mithril}
+                  smith={smith}
+                  locked={locked}
+                  onForge={onForge}
+                />
+              ))}
+            </ul>
+          )}
+          {/* The works (slice C2): the same ladder discipline as the items —
+              locked rows shown locked, built rows shown standing — under one
+              heading so the two kinds of fortnight read as the one spend they
+              are. */}
+          {workRows.length > 0 && (
+            <>
+              <h3 className="forge-works-head" data-testid="forge-works-head">The Works</h3>
+              <ul className="forge-rows">
+                {workRows.map((row) => (
+                  <WorkRow
+                    key={row.id}
+                    row={row}
+                    mithril={mithril}
+                    smith={smith}
+                    locked={locked}
+                    onConstruct={onConstruct}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+        </>
       )}
     </div>
   )

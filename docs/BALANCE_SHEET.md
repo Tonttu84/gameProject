@@ -156,3 +156,18 @@ checking against what the Recruit phase and the forge charge for them.
 - **horses** — events: A Captured Herd `horses` → keep_the_herd (+25). Raids: `seize_horses` (18 mean).
 - **mithril** — events: Iron out of the Sky `star_metal` (+3), From the Warders' Forge `garrison_smiths` (+4). Raids: `loot_supplies` (1 mean).
 
+## What the forge charges
+
+Every forgeable row — items and constructions side by side, since they compete for the
+same mage-fortnight (the smith studies nothing that turn) and the same stingy metal.
+
+| Row | Kind | Construction level | Paths | Mithril | What it does |
+| --- | --- | --- | --- | --- | --- |
+| Emberedge `forged_emberedge` | item | 1 | Fire 1 | 4 | It gives its bearer +2 attack. |
+| Wardstone `forged_wardstone` | item | 1 | Earth 1 | 4 | It gives its bearer +1 defence and +1 armour. |
+| Artificial Heart `forged_artificial_heart` | item | 2 | Earth 2 | 8 | It gives its bearer +4 stamina. |
+| Smokehouse and Salt Stores `works_smokehouse` | construction | 1 | Nature 1 | 3 | Your foraging ×1.1 |
+| Warding Beacons `works_warding_beacons` | construction | 1 | Fire 1 | 3 | The enemy strips the countryside slower |
+| Flanking Bastions `works_flanking_bastions` | construction | 2 | Earth 2 | 6 | Walls 8 hexsides of your front for every pitched battle |
+| Granary Vaults `works_granary_vaults` | construction | 3 | Nature 1 · Earth 2 | 8 | Your foraging +0.4 t/turn |
+
