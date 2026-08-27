@@ -25,8 +25,8 @@
 // These replace the old `placeable`/`spawnable` booleans, which said the same
 // thing twice and could express nonsense (placeable && !spawnable). Both are
 // now derived:
-//     placeable (offered to the player in /api/info) == Player
-//     spawnable (accepted by the placement API)      == Player | Enemy
+//     placeable (offered to the player in /api/info) == Player | Crafted
+//     spawnable (accepted by the placement API)      == Player | Enemy | Crafted
 //
 // `Enemy` is DESCRIPTIVE, not exclusive: Soldier/Archer/LightCavalry carry it
 // because the campaign's enemy host actually fields them, even though the
@@ -38,11 +38,19 @@
 // compositions stay in campaign-server; the dependency points campaign →
 // engine, never back. See docs/ADDING_UNITS.md.
 enum class UnitRole : unsigned {
-    None   = 0,
-    Player = 1u << 0, // the player recruits, owns and deploys it
-    Enemy  = 1u << 1, // enemy hosts may field it
-    Summon = 1u << 2, // conjured mid-battle by a spell; never enters via the API
-    Mount  = 1u << 3, // exists under a rider; never a standalone army entry
+    None    = 0,
+    Player  = 1u << 0, // the player recruits, owns and deploys it
+    Enemy   = 1u << 1, // enemy hosts may field it
+    Summon  = 1u << 2, // conjured mid-battle by a spell; never enters via the API
+    Mount   = 1u << 3, // exists under a rider; never a standalone army entry
+    // Forged at the campaign's workbench (Construction slice C3, C-5): a body
+    // bought with a mage's turn and mithril, never hired. A new channel gets a
+    // new flag rather than an amendment to Player's promise — Player means
+    // "obtainable through recruit/reinforce rows", and the campaign-side
+    // tripwire holds Crafted to the twin rule: a Crafted type without a
+    // forge-catalog row is a bug. Composes like the rest (Enemy | Crafted is
+    // an anticipated combination).
+    Crafted = 1u << 4,
 };
 
 inline UnitRole operator|(UnitRole a, UnitRole b) {
@@ -68,8 +76,8 @@ const std::vector<UnitCatalogEntry>& unitCatalog();
 // types no army may field through the API (summon-only / mount-only types).
 std::unique_ptr<AUnit> makeUnitByName(const std::string& typeName, int team);
 
-// The role names of `roles`, in stable order (Player, Enemy, Summon, Mount).
-// Empty only for UnitRole::None, which no catalog entry may carry.
+// The role names of `roles`, in stable order (Player, Enemy, Summon, Mount,
+// Crafted). Empty only for UnitRole::None, which no catalog entry may carry.
 std::vector<std::string> roleNames(UnitRole roles);
 
 // Reverse lookup from a unit's construction-time printSymbol to its type name.

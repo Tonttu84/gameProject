@@ -118,15 +118,17 @@ every role that applies.
 | `Enemy`  | enemy hosts may field it (campaign-server's `ENEMY_ARMY`)             |
 | `Summon` | conjured mid-battle by a spell; never enters through the API          |
 | `Mount`  | exists under a rider; never a standalone army entry                   |
+| `Crafted` | forged at the campaign's workbench (slice C3): a mage's turn + mithril, never hired. Must carry a `CRAFTED_UNIT_CATALOG` row (`campaign-server/utils/campaignConfig.js`) — the twin of `Player`'s obtainability rule, with the same §5 tripwire |
 
 Every type must carry **at least one** role — a roleless entry is unreachable by any code
 path, and a test fails on it.
 
 Two things follow automatically, so don't look for separate switches:
 
-- **`/api/info`** offers exactly the `Player` types.
-- **`makeUnitByName`** — the API trust boundary — accepts exactly `Player | Enemy`.
-  Summon-only and mount-only types cannot be built from request JSON at all.
+- **`/api/info`** offers exactly the `Player | Crafted` types.
+- **`makeUnitByName`** — the API trust boundary — accepts exactly
+  `Player | Enemy | Crafted`. Summon-only and mount-only types cannot be built
+  from request JSON at all.
 
 `Enemy` is **descriptive, not exclusive**. Soldier, Archer and LightCavalry carry
 `Player | Enemy` because the campaign's enemy host really does field them, even though the
@@ -199,7 +201,10 @@ generated file to add to the build graph.
     `unit:` can't sell a unit no battle could deploy;
   - `SQUAD_REINFORCE_POOL` likewise only trains `Player` types;
   - `ENEMY_ARMY` fields only `Enemy` types;
-  - `STARTING_ROSTER`/`STARTING_SQUADS` contain only `Player` types.
+  - `STARTING_ROSTER`/`STARTING_SQUADS` contain only `Player` types;
+  - every `Crafted` type has a `CRAFTED_UNIT_CATALOG` row, and that catalog
+    forges only `Crafted` types — the twin of the `Player` rule, with the same
+    teeth (C-5).
 
   These live campaign-side because only the campaign layer can see both its own config and
   the engine dump — the engine knows nothing about recruiting, and must not.

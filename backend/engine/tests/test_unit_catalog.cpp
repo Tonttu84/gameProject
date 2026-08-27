@@ -34,8 +34,8 @@ TEST_CASE("unit catalog: lists every unit type in the engine") {
         names.insert(u["name"].get<std::string>());
 
     for (const char* expected : {"Soldier", "RoyalGuard", "Pikeman", "Militia", "Archer", "Mage",
-                                 "Priest", "Necromancer", "Cavalry", "LightCavalry", "Zombie",
-                                 "Skeleton", "Scorpion", "Horse", "Warhorse"}) {
+                                 "Priest", "Necromancer", "Golem", "Cavalry", "LightCavalry",
+                                 "Zombie", "Skeleton", "Scorpion", "Horse", "Warhorse"}) {
         INFO("missing type: " << expected);
         REQUIRE(names.count(expected) == 1);
     }
@@ -113,9 +113,11 @@ TEST_CASE("unit catalog: anatomy is declared down the inheritance chain") {
     // is where the intent gets re-examined.
     const json humanoid = {{"head", 1}, {"torso", 1}, {"legs", 1},
                            {"hand", 2}, {"misc", 1}};
+    // Golem is humanoid on purpose (C-4): a statue of a man, and bearing
+    // artifacts in a man's slots is the point of forging one.
     for (const char* name : {"Soldier", "RoyalGuard", "Pikeman", "Militia",
                              "Archer", "Mage", "Priest", "Necromancer",
-                             "Zombie", "Skeleton"}) {
+                             "Zombie", "Skeleton", "Golem"}) {
         INFO("unit: " << name);
         REQUIRE(findUnit(j, name)["anatomy"] == humanoid);
     }
@@ -220,6 +222,11 @@ TEST_CASE("unit catalog: roles mark exactly the intended types") {
 
     REQUIRE(namesWithRole(j, "Summon") == std::set<std::string>{"Zombie", "Skeleton"});
 
+    // Crafted (C-5): forged with a mage's turn and mithril, never hired. The
+    // campaign-side twin tripwire (engine.integration.test.js) requires every
+    // type here to carry a forge-catalog row.
+    REQUIRE(namesWithRole(j, "Crafted") == std::set<std::string>{"Golem"});
+
     // Scorpion is both ridden and independently fieldable — the case that made
     // roles a composable set rather than a single kind.
     REQUIRE(namesWithRole(j, "Mount") == std::set<std::string>{"Horse", "Warhorse", "Scorpion"});
@@ -227,10 +234,11 @@ TEST_CASE("unit catalog: roles mark exactly the intended types") {
 
 // The two booleans roles replaced are still the rules the API enforces; pin
 // the derivation so the gate can't loosen unnoticed.
-TEST_CASE("unit catalog: placement API accepts exactly the Player and Enemy types") {
+TEST_CASE("unit catalog: placement API accepts exactly the Player, Enemy and Crafted types") {
     for (const auto& entry : unitCatalog()) {
         const bool fieldable = hasRole(entry.roles, UnitRole::Player)
-                            || hasRole(entry.roles, UnitRole::Enemy);
+                            || hasRole(entry.roles, UnitRole::Enemy)
+                            || hasRole(entry.roles, UnitRole::Crafted);
         INFO("unit: " << entry.typeName);
         REQUIRE((makeUnitByName(entry.typeName, BLUETEAM) != nullptr) == fieldable);
     }
@@ -317,6 +325,9 @@ TEST_CASE("makeUnitByName: builds Player/Enemy types, rejects the rest") {
     REQUIRE(makeUnitByName("Necromancer", REDTEAM) != nullptr);
     REQUIRE(makeUnitByName("Scorpion",    REDTEAM) != nullptr);
 
+    // Crafted types stand in the line like hired ones (C-5).
+    REQUIRE(makeUnitByName("Golem", BLUETEAM) != nullptr);
+
     // Summon-only / mount-only types must not be creatable through the API.
     REQUIRE(makeUnitByName("Zombie",   BLUETEAM) == nullptr);
     REQUIRE(makeUnitByName("Skeleton", BLUETEAM) == nullptr);
@@ -337,6 +348,7 @@ TEST_CASE("unitNameForSymbol: maps engine print symbols back to type names") {
     REQUIRE(unitNameForSymbol('N') == "Necromancer");
     REQUIRE(unitNameForSymbol('S') == "Skeleton");
     REQUIRE(unitNameForSymbol('Z') == "Zombie");
+    REQUIRE(unitNameForSymbol('g') == "Golem");
     REQUIRE(unitNameForSymbol('?') == "");
 }
 

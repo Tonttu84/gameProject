@@ -12,6 +12,7 @@
 #include "units/LightCavalry.hpp"
 #include "units/Zombie.hpp"
 #include "units/Skeleton.hpp"
+#include "units/Golem.hpp"
 #include "units/Scorpion.hpp"
 #include "units/Horse.hpp"
 #include "units/Warhorse.hpp"
@@ -58,6 +59,10 @@ const std::vector<UnitCatalogEntry>& unitCatalog()
         {"Cavalry",      R::Player,                 makeT<Cavalry>},
         {"LightCavalry", R::Player | R::Enemy,      makeT<LightCavalry>},
         {"Necromancer",  R::Enemy,                  makeT<Necromancer>},
+        // Crafted ONLY (C-5): forged at the campaign's workbench, never hired
+        // — the fourth way a body enters the roster, and the twin tripwire
+        // campaign-side requires it to have a forge-catalog row.
+        {"Golem",        R::Crafted,                makeT<Golem>},
         {"Zombie",       R::Summon,                 makeT<Zombie>},
         {"Skeleton",     R::Summon,                 makeT<Skeleton>},
         // A ridden mount that an enemy host may also field on its own.
@@ -71,10 +76,12 @@ const std::vector<UnitCatalogEntry>& unitCatalog()
 std::unique_ptr<AUnit> makeUnitByName(const std::string& typeName, int team)
 {
     // The API trust boundary: only types some army may legitimately field can
-    // be built from request JSON. Summon-only and mount-only types are
-    // unreachable here by construction — see SECURITY_NOTES.md.
+    // be built from request JSON — Player, Enemy, and Crafted (C-5: a forged
+    // body stands in the line like a hired one). Summon-only and mount-only
+    // types are unreachable here by construction — see SECURITY_NOTES.md.
     for (const auto& entry : unitCatalog())
-        if ((hasRole(entry.roles, UnitRole::Player) || hasRole(entry.roles, UnitRole::Enemy))
+        if ((hasRole(entry.roles, UnitRole::Player) || hasRole(entry.roles, UnitRole::Enemy)
+             || hasRole(entry.roles, UnitRole::Crafted))
             && typeName == entry.typeName)
             return entry.make(team);
     return nullptr;
@@ -85,10 +92,11 @@ std::vector<std::string> roleNames(UnitRole roles)
     // Stable order, so the exported array is deterministic and tests can
     // compare it directly.
     static const std::pair<UnitRole, const char*> ALL[] = {
-        {UnitRole::Player, "Player"},
-        {UnitRole::Enemy,  "Enemy"},
-        {UnitRole::Summon, "Summon"},
-        {UnitRole::Mount,  "Mount"},
+        {UnitRole::Player,  "Player"},
+        {UnitRole::Enemy,   "Enemy"},
+        {UnitRole::Summon,  "Summon"},
+        {UnitRole::Mount,   "Mount"},
+        {UnitRole::Crafted, "Crafted"},
     };
     std::vector<std::string> out;
     for (const auto& [flag, name] : ALL)
