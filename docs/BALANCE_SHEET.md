@@ -167,9 +167,18 @@ stingy metal.
 | Emberedge `forged_emberedge` | item | 1 | Fire 1 | 4 | It gives its bearer +2 attack. |
 | Wardstone `forged_wardstone` | item | 1 | Earth 1 | 4 | It gives its bearer +1 defence and +1 armour. |
 | Artificial Heart `forged_artificial_heart` | item | 2 | Earth 2 | 8 | It gives its bearer +4 stamina. |
+| Heartwood Shield `forged_heartwood_shield` | item | 1 | Nature 1 | 4 | It gives its bearer +2 defence. |
+| Tideglass Charm `forged_tideglass_charm` | item | 1 | Water 1 | 3 | It gives its bearer +1 defence and +1 speed. |
+| Zephyr Greaves `forged_zephyr_greaves` | item | 1 | Air 1 | 4 | It gives its bearer +2 speed. |
+| Hedgeward Knot `forged_hedgeward_knot` | item | 1 | Low 1 | 3 | It gives its bearer +1 defence and +1 stamina. |
+| Farsight Lens `forged_farsight_lens` | item | 2 | High 1 | 6 | It gives its bearer +2 marksmanship. |
+| Barrowsteel Blade `forged_barrowsteel_blade` | item | 2 | Death 1 | 6 | It gives its bearer +2 attack. The bearer does not break: they hold where another would run, whatever the odds. |
+| Stormbound Plate `forged_stormbound_plate` | item | 3 | Air 2 · Water 1 | 10 | It gives its bearer +2 armour and +1 speed. |
 | Smokehouse and Salt Stores `works_smokehouse` | construction | 1 | Nature 1 | 3 | Your foraging ×1.1 |
 | Warding Beacons `works_warding_beacons` | construction | 1 | Fire 1 | 3 | The enemy strips the countryside slower |
+| Cloudwell Cisterns `works_cloudwell_cisterns` | construction | 2 | Water 1 | 5 | Your foraging ×1.1 |
 | Flanking Bastions `works_flanking_bastions` | construction | 2 | Earth 2 | 6 | Walls 8 hexsides of your front for every pitched battle |
 | Granary Vaults `works_granary_vaults` | construction | 3 | Nature 1 · Earth 2 | 8 | Your foraging +0.4 t/turn |
+| Hungering Mists `works_hungering_mists` | construction | 4 | Death 1 · Water 1 | 10 | The enemy strips the countryside slower |
 | Golem `crafted_golem` | unit | 3 | Earth 2 | 15 | A Golem joins the rolls as a character. |
 

@@ -407,6 +407,27 @@ this order to pick the work up cold:
        - forgeLedgerRows grew `kind: 'unit'` (the no-row-escapes tripwire holds);
          `docs/ADDING_ITEMS.md` gained the crafted-unit section and `docs/ADDING_UNITS.md` the
          Crafted role + twin rule (C-8).
+
+     - **✅ THE FIRST CONTENT PUSH LANDED 2026-08-27 (items + constructions, the user's scope
+       call — no new crafted unit, since that costs an engine slice).** Seven forged items and
+       two works rows, all pure catalog data through the C-8 paths, numbers balance-deferred:
+
+       - **Every hire path now forges something, and forge.test.js pins it as a rule** (the
+         sweep fails if a future path or row reopens the gap). Before the push six of the
+         eight had no ITEM: water/air/high/low/death had nothing at all, and nature had only
+         the two works rows — which CLOSE once built, so a nature-primary mage went benchless
+         the day both stood. The rule is deliberately pinned on the item rows alone, because
+         they never close. The seven: Heartwood Shield (nature), Tideglass Charm (water),
+         Zephyr Greaves (air), Hedgeward Knot (low), Farsight Lens (high 1, L2), Barrowsteel
+         Blade (death 1, L2 — attack +2 and `fearless`, the first forged item to grant an
+         ability), and Stormbound Plate (air 2 + water 1, **L3** — the item ladder now climbs
+         as high as the works ladder did).
+       - **The works ladder runs 1,1,2,2,3,4:** Cloudwell Cisterns (water 1, L2, playerYield
+         ×1.1) and Hungering Mists (death 1 + water 1, **L4**, enemyDrain −2000kg) — the
+         ladder's first rung above 3, so banking Construction past the granary now buys a
+         visible thing.
+       - No schema, no engine, no frontend change — the server phrases every row (17-5) and
+         the sweeps + regenerated `docs/BALANCE_SHEET.md` did the reviewing (C-8 exhaust).
    - **ADDING UNITS, ITEMS AND SPELLS** — recorded in the user's own words as a task of its own.
      **RESOLVED by C-8 (2026-08-26): content leads, tooling is its exhaust — see the interview
      above.** The question had been: more

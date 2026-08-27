@@ -6,6 +6,7 @@ import { catalogFixture } from './fixtures/catalog.js'
 import { clearSpellCatalogCache } from '../utils/spellCatalog.js'
 import { clearRolls } from '../utils/dice.js'
 import {
+  HIRE_PATH_POOL,
   ITEM_CATALOG,
   RESEARCH_POINTS_PER_MAGE,
   STARTING_MITHRIL,
@@ -99,6 +100,18 @@ describe('the craftable rows (C-2 / C-6)', () => {
     expect(HEART.permanent).toBe(true)
     expect(HEART.target).toBe('character')
     expect(HEART.forge).toBeTruthy()
+  })
+
+  // The 2026-08-27 content push's rule: every path a hire can roll
+  // (HIRE_PATH_POOL) must open SOMETHING at the forge. Before it, a mage
+  // rolled into water, air, high, low or death was useless at the bench —
+  // and a path with no forge row is exactly the kind of gap that reappears
+  // silently the next time a path or a row is added.
+  test('every hire path unlocks at least one forge row', () => {
+    const forgeable = new Set(
+      forgeRows().flatMap((row) => Object.keys(row.forge.paths)),
+    )
+    for (const path of HIRE_PATH_POOL) expect(forgeable).toContain(path)
   })
 })
 

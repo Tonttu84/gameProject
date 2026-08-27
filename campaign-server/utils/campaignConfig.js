@@ -421,6 +421,121 @@ export const ITEM_CATALOG = [
     mods: { maxHP: 4 },
     forge: { level: 2, paths: { earth: 2 }, mithril: 8 },
   },
+
+  // The 2026-08-27 content push: before it, six of the eight hire paths had
+  // no ITEM to forge — water, air, high, low and death had nothing at all,
+  // and nature only the works rows, which close once built, so a
+  // nature-primary mage went benchless the day both stood. One row per
+  // orphaned path, plus a level-3 capstone so the item ladder climbs as high
+  // as the works ladder did. forge.test.js now pins the rule on the ITEM
+  // rows alone (they never close): EVERY hire path forges something.
+  // THE NUMBERS ARE BALANCE-DEFERRED, like everything above.
+  {
+    id: 'forged_heartwood_shield',
+    kind: 'gear',
+    slot: 'hand',
+    name: 'Heartwood Shield',
+    blurb:
+      'Grown, not carved: a round of living oak that closed itself around '
+      + 'the boss. Cuts that would split plank seal shut in it.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { defence: 2 },
+    forge: { level: 1, paths: { nature: 1 }, mithril: 4 },
+  },
+  {
+    id: 'forged_tideglass_charm',
+    kind: 'gear',
+    slot: 'misc',
+    name: 'Tideglass Charm',
+    blurb:
+      'A disc of sea-green glass that is always cold and never dry. Blows '
+      + 'slide off its bearer the way a current slides past a stone.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { defence: 1, speed: 1 },
+    forge: { level: 1, paths: { water: 1 }, mithril: 3 },
+  },
+  {
+    id: 'forged_zephyr_greaves',
+    kind: 'gear',
+    slot: 'legs',
+    name: 'Zephyr Greaves',
+    blurb:
+      'Thin plates that weigh less than the straps that hold them. The wind '
+      + 'is always at the wearer\'s back, whichever way he runs.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { speed: 2 },
+    forge: { level: 1, paths: { air: 1 }, mithril: 4 },
+  },
+  {
+    id: 'forged_hedgeward_knot',
+    kind: 'gear',
+    slot: 'misc',
+    name: 'Hedgeward Knot',
+    blurb:
+      'Cord, feathers and a bent nail, tied the way the hedge-wives tie them. '
+      + 'It is nothing to look at, and ill luck goes around it.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { defence: 1, maxHP: 1 },
+    forge: { level: 1, paths: { low: 1 }, mithril: 3 },
+  },
+  {
+    id: 'forged_farsight_lens',
+    kind: 'gear',
+    slot: 'head',
+    name: 'Farsight Lens',
+    blurb:
+      'A crystal monocle ground under the high art. Distance thins behind '
+      + 'it, and what can be seen clearly can be hit.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { ballisticSkill: 2 },
+    forge: { level: 2, paths: { high: 1 }, mithril: 6 },
+  },
+  {
+    id: 'forged_barrowsteel_blade',
+    kind: 'gear',
+    slot: 'hand',
+    name: 'Barrowsteel Blade',
+    blurb:
+      'Steel quenched in grave-earth, grey to the edge. Whoever carries it '
+      + 'has already made his peace, and fights like it.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { attack: 2 },
+    abilities: ['fearless'],
+    forge: { level: 2, paths: { death: 1 }, mithril: 6 },
+  },
+  {
+    id: 'forged_stormbound_plate',
+    kind: 'gear',
+    slot: 'torso',
+    name: 'Stormbound Plate',
+    blurb:
+      'A cuirass with a caged storm hammered through it, light as weather. '
+      + 'It turns steel like a squall turns arrows.',
+    target: 'character',
+    permanent: false,
+    unique: false,
+    lootable: true,
+    mods: { armour: 2, speed: 1 },
+    forge: { level: 3, paths: { air: 2, water: 1 }, mithril: 10 },
+  },
 ]
 
 // ── Constructions (Construction slice C2, docs/CAMPAIGN_PLAN.md C-3/C-6) ─────
@@ -494,6 +609,24 @@ export const CONSTRUCTION_CATALOG = [
     ],
   },
   {
+    id: 'works_cloudwell_cisterns',
+    name: 'Cloudwell Cisterns',
+    blurb:
+      'Stone-lined wells that call the rain down and hold it sweet. Watered '
+      + 'ground gives more, and the wagons stop hauling barrels.',
+    forge: { level: 2, paths: { water: 1 }, mithril: 5 },
+    effects: [
+      {
+        type: 'forage_modifier',
+        id: 'works_cloudwell_cisterns',
+        label: 'Cloudwell cisterns',
+        target: 'playerYield',
+        factor: 1.1,
+        raidable: false,
+      },
+    ],
+  },
+  {
     id: 'works_flanking_bastions',
     name: 'Flanking Bastions',
     blurb:
@@ -528,6 +661,24 @@ export const CONSTRUCTION_CATALOG = [
         label: 'Granary vaults',
         target: 'playerYield',
         deltaKg: 400,
+        raidable: false,
+      },
+    ],
+  },
+  {
+    id: 'works_hungering_mists',
+    name: 'Hungering Mists',
+    blurb:
+      'A standing fog raised over the far rings, cold and faintly whispering. '
+      + 'Enemy foraging parties walk into it heavy and come back thin.',
+    forge: { level: 4, paths: { death: 1, water: 1 }, mithril: 10 },
+    effects: [
+      {
+        type: 'forage_modifier',
+        id: 'works_hungering_mists',
+        label: 'Hungering mists',
+        target: 'enemyDrain',
+        deltaKg: -2000,
         raidable: false,
       },
     ],
