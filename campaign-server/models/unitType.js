@@ -66,7 +66,7 @@ const unitTypeSchema = new mongoose.Schema({
   roles: {
     type: [String],
     required: true,
-    enum: ['Player', 'Enemy', 'Summon', 'Mount'],
+    enum: ['Player', 'Enemy', 'Summon', 'Mount', 'Crafted'],
     validate: {
       validator: (v) => Array.isArray(v) && v.length > 0,
       message: 'unit type must carry at least one role',
