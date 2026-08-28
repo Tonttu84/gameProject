@@ -436,13 +436,60 @@ this order to pick the work up cold:
      tests); items and spells have no equivalent. Construction is the natural forcing function
      either way, since a crafting system with three items to make is a menu, not a system.
 
-5. **THERE IS NO SLICE 5 OF THE MAGIC SYSTEM SPEC'D.** What the interviews deliberately left for
-   later, and where each is recorded: **a store of
-   authored enemy scripts** assigned at random to match a caster's paths (S4-6); **a real cast AI**
-   scoring a simulated cast (M-22), which is also where per-form priority is decided (S4-2 amends
-   M-13 to per-spell until then); **stances** (M-12); **empowerment** (M-5); **Construction's
-   content**, waiting on crafting's own interview (M-9/9-7). None is started; each is a decision
-   already taken about what the thing IS, not a blank.
+5. **THE LIVE FRONT (opened 2026-08-28): ENEMY SCRIPTS + BATTLEFIELD ENCHANTMENTS — see "▶ THE
+   ENEMY-SCRIPTS INTERVIEW (2026-08-28)" below.** S4-6's noted-down future is being built, in two
+   slices: **A — battlefield-wide enchantments** (engine + player scripting), then **B — the
+   enemy script store** (priority-ordered, amending S4-6's random draw). What the interviews still
+   deliberately leave for later: **a real cast AI** scoring a simulated cast (M-22), which is also
+   where per-form priority is decided (S4-2 amends M-13 to per-spell until then); **stances**
+   (M-12); **empowerment** (M-5). Each is a decision already taken about what the thing IS, not a
+   blank.
+
+   **▶ THE ENEMY-SCRIPTS INTERVIEW (2026-08-28) — decisions E-1..E-7, the user's unless flagged:**
+
+   - **E-1. TWO SLICES, ENGINE FIRST.** A: battlefield-wide enchantments + the two spells +
+     player scripting UI. B: the enemy script store, priority assignment, and the enemy
+     pool/encounter-level dial. Each finishes and merges green on `main` on its own.
+   - **E-2. NO "GEMS" — THE COST IS THE POOL.** The user's word "gems" was Dominions shorthand,
+     dropped on purpose; the one name is **the pool**, and it is the EXISTING banner channel pool
+     (S2-8/M-11) — no new resource, no new wire field. A battlefield form carries `poolCost`,
+     paid IN FULL from its side's pool on completion; a pool that cannot cover it means the line
+     does not qualify and the walk skips on (M-22's idiom). One name, two supplies: the player's
+     pool comes from fielded banners, the enemy's from its sealed `enemy.magic.channels`.
+     *Assistant's calls, flagged:* payment lands on completion like fatigue (M-23 — a dropped
+     channel pays nothing); the M-11 per-cast fatigue discount does NOT apply to a battlefield
+     form's own fatigue (poolCost is the pool's whole involvement — no double-dipping); a second
+     same-side completion fizzles unpaid with a Detail log line.
+   - **E-3. SCRIPT-ONLY, BY LIST MEMBERSHIP.** A battlefield spell never enters the default walk
+     — only a chosen-spells line fires one, so spending the army-wide pool is always a deliberate
+     decision (the player's, or in slice B an authored script's). Implemented exactly as the user
+     put it: they are simply "not in the spell list for normal casts". This is also the safety
+     rail for future self-harming globals. **Standing rule recorded for future content:
+     battlefield-wide DAMAGE spells are never targeted — they hit everyone or a random hex.**
+   - **E-4. A SUSTAINED INSTANCE, ONCE PER SIDE PER BATTLE.** Casting registers an instance
+     tagged with caster and side. It ends when its sustainer is dead or off the field, checked
+     ONCE at end of tick (the user's call — no per-tick polling; fleeing off the field already
+     sets alive=false, so liveness is the whole check, and the sweep runs before cleanup() so
+     the pointer never dangles). Once per side means once per BATTLE: an ended instance cannot
+     be recast by that side, so dispelling by killing the sustainer is final.
+   - **E-5. SYMMETRIC EFFECTS APPLY ONCE; FRIENDLY EFFECTS ARE PER-SIDE.** An everyone-hitting
+     enchantment (Leaden Air) applies once while ANY instance stands, however many sides cast
+     it — but each side's cast is an independent instance, so killing one sustainer only ends
+     that side's copy. Cast-first-then-retreat buys nothing (your instance dies with your mage's
+     exit; the enemy's own once-per-side cast was never consumed). A friendly-only enchantment
+     (Soothing Winds) benefits each side that cast it — both cast, both benefit.
+   - **E-6. THE TWO SPELLS** (numbers balance-deferred): **Soothing Winds** — Nature 2,
+     Enchantment 2, −1 fatigue/tick to every friendly, aim Friendly. **Leaden Air** — Death 2,
+     Enchantment 2, +2 fatigue/tick to ALL LIVING on both sides, aim Everyone. "Living" is read
+     structurally: a body that tires (`fatigueCost > 0`) and is not Undead — so Skeleton, Zombie
+     and the Golem are exempt with no unit named in the spell body.
+   - **E-7. SLICE B'S SHAPE, RECORDED NOW, BUILT NEXT** (amends S4-6's "random assignment"):
+     the store is a PRIORITY-ORDERED list of authored scripts; an enemy caster gets the
+     highest-priority script he qualifies for — he must hold ALL of the script's paths, and its
+     spells must pass the enemy's school levels, which are the encounter's sealed numbers
+     (S2-9): "the enemy's research is the encounter". Placeholder scripts until the roster
+     grows; the enemy pool sizing / encounter-level lock on battlefield spells is B's remaining
+     decision. Competence without a decision anywhere in it — standing principle 1 untouched.
 
 Everything in the rest of this block is the squad/character/items front, which is FINISHED —
 decision 13 and slice 17 both shipped. It is kept as the record of how those systems got their
@@ -2938,6 +2985,10 @@ their paths. But not now, note down though."*). **A store of authored scripts, a
 drawn one at random that MATCHES HIS PATHS** — competence without a decision anywhere in it, so
 standing principle 1 is untouched. The engine already accepts a list on any placement entry (M-17
 means it cannot tell whose caster it holds); only the campaign layer's authoring is missing.
+
+**⚠ AMENDED BY E-7 (2026-08-28): the draw is a PRIORITY WALK, not random** — the store is ordered,
+and a caster takes the highest-priority script he fully qualifies for. See "▶ THE ENEMY-SCRIPTS
+INTERVIEW" in the handoff block near the top, where this front's build is recorded.
 
 **S4-7. THREE ORDERED SLOTS WITH AN INLINE PICKER**, reusing the sheet's own slot idiom (9-16) with
 the ORDER as the visible structure. An inline picker rather than a store takeover (17-3): a spell is

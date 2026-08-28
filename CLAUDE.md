@@ -12,6 +12,17 @@ implementation, if your confidence in the requirements is only medium or low, in
 Staying aligned with the user outranks moving fast — err toward grilling too often rather
 than too rarely. Don't act on the plan until the interview reaches a shared understanding.
 
+## Division of labour: plan with Fable, code with an Opus subagent
+
+**Standing instruction (user, 2026-08-28): the interviewing/planning model (Fable) does the design
+work — grilling, decision records, specs, review — and hands the actual code-writing to an Opus
+subagent via the Agent tool (`model: "opus"`).** Write the subagent a complete, self-contained
+spec: the decided design with decision numbers, the files and line areas to touch, repo
+conventions (comment voice, Defines.hpp for balance-deferred numbers, -Werror), the tests to
+write, and the verification to run before it reports back. Review the returned diff yourself,
+run the suites yourself, and keep the commit/merge responsibility — the subagent writes code,
+it does not ship it.
+
 ## Planning & session continuity (multi-machine)
 
 This project is developed across **multiple computers**. Keep plans, TODOs, staged designs, and
