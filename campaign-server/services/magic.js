@@ -287,6 +287,36 @@ const ORDINALS = [
 ]
 const ordinal = (n) => ORDINALS[n - 1] ?? `${n}th`
 
+// ── The battlefield enchantments (slice A, E-2/E-3) ─────────────────────────
+
+// A battlefield form is single-form, costs its `poolCost` IN FULL out of the
+// army-wide banner channel pool (E-2 — the pool is the only cost, and there is
+// no new resource behind it), takes hold once per side per battle (E-4), and
+// never enters the default walk: only a chosen-spells line fires one (E-3).
+//
+// Four facts, one sentence, written HERE because the server phrases every row
+// and the client composes nothing (17-5). Built off the row's own poolCost, so
+// a retuned price moves the sentence with it.
+const poolLineFor = (row) =>
+  row?.battlefield === true
+    ? `Draws ${row.poolCost ?? 0} from the army's pool — once per battle, and only when scripted.`
+    : null
+
+// The two new fields as a row wears them across the wire. `battlefield` is
+// normalised to a real boolean and `poolCost` to a real number so a catalog
+// that predates the fields reads as "an ordinary spell" rather than as
+// undefined, and the client never has to test for absence.
+const poolFieldsOf = (row) => {
+  const poolLine = poolLineFor(row)
+  return {
+    battlefield: row?.battlefield === true,
+    poolCost: row?.poolCost ?? 0,
+    // Absent on an ordinary spell rather than null: there is no sentence to
+    // print, and a row with no pool involvement should carry no pool line.
+    ...(poolLine ? { poolLine } : {}),
+  }
+}
+
 // ── What the player is shown (slice 3, S3-1/S3-2/S3-6) ──────────────────────
 
 // The roster grouped under the four schools, each row carrying its gates.
@@ -328,6 +358,9 @@ export const spellsForSchool = (spells, school, level) =>
       unlocked: level >= row.schoolLevel,
       fatigue: row.fatigue,
       castingTime: row.castingTime,
+      // A battlefield row's price is not its fatigue (E-2), so the Study says
+      // so on the row itself — phrased here, printed verbatim there.
+      ...poolFieldsOf(row),
     }))
 
 // The whole research block campaignView ships, schools and spells together.
@@ -398,9 +431,45 @@ export const castableSpellsFor = (character, campaign, spells = []) => {
       spell: row.spell,
       label: row.label,
       description: row.description,
+      // Off the WINNING form, like the label and the description above: a
+      // battlefield spell is single-form today (E-3), but the fields are read
+      // here rather than off the spell so the strongest-form rule keeps
+      // owning them the day a battlefield spell grows a second form.
+      ...poolFieldsOf(row),
     })
   }
   return [...rows.values()]
+}
+
+// Who ELSE is carrying this battlefield spell in his own script (E-4/E-5).
+//
+// Once per side per BATTLE means a second completion fizzles unpaid, so two
+// casters scripted with the same enchantment is a wasted line rather than a
+// double effect. That is worth SAYING and not worth refusing (E-2/E-3: the
+// engine's once-per-side rule is the backstop, and a script is a preference
+// that a caster may never reach anyway) — so this returns a sentence, and
+// planChosenSpells goes on accepting the list.
+//
+// The dead are skipped through livingCharacters, the one place "who can still
+// do something" is decided (5-9 keeps a fallen caster on the rolls), and so is
+// anyone who is no caster at all — a script left on a body that cannot cast is
+// not a clash with anybody.
+const alsoScriptedBy = (character, campaign, spellId) => {
+  const others = livingCharacters(campaign).filter(
+    (c) => c.id !== character?.id
+      && isCasterType(c.type)
+      && (c.script ?? []).includes(spellId),
+  )
+  if (others.length === 0) return null
+
+  // Named, because the player's next move is to go and change one of the two
+  // scripts and he needs to know whose. Past the first the names stop earning
+  // their length, so the rest are counted.
+  const [first, ...rest] = others
+  const who = rest.length === 0
+    ? `${first.name} has`
+    : `${first.name} and ${rest.length} other${rest.length === 1 ? '' : 's'} have`
+  return `${who} this scripted too — it can only take hold once per battle.`
 }
 
 // What the character sheet renders for "Chosen spells" (S4-7, S4-9).
@@ -412,14 +481,22 @@ export const castableSpellsFor = (character, campaign, spells = []) => {
 export const chosenSpellsView = (character, campaign, spells = []) => {
   const castable = castableSpellsFor(character, campaign, spells)
   const byId = new Map(castable.map((row) => [row.spell, row]))
+  // A clash is only possible where the effect is army-wide and once-per-side
+  // (E-4), so an ordinary spell two casters both scripted is not remarked on:
+  // both of them casting it is the point.
+  const withWarning = (row) => {
+    if (!row.battlefield) return row
+    const warning = alsoScriptedBy(character, campaign, row.spell)
+    return warning ? { ...row, warning } : row
+  }
   return {
     max: MAX_CHOSEN_SPELLS,
     // Compacted, never sparse: position IS priority (S4-1), so an id that
     // somehow resolves to nothing is dropped rather than left as a hole.
-    chosen: (character?.script ?? []).map((id) => byId.get(id)).filter(Boolean),
+    chosen: (character?.script ?? []).map((id) => byId.get(id)).filter(Boolean).map(withWarning),
     // Everything he could reach for, chosen or not — the picker shows the whole
     // list and marks what is already taken, rather than shrinking as slots fill.
-    options: castable,
+    options: castable.map(withWarning),
   }
 }
 

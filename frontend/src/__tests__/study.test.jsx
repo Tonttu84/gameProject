@@ -47,8 +47,24 @@ const researchFixture = {
     conjuration: {
       label: 'Conjuration', level: 0, points: 0, nextCost: 30, spells: [],
     },
+    // A battlefield enchantment (slice A, E-2/E-3): priced in the ARMY's pool
+    // on top of its fatigue, and cast only off a script. The server writes that
+    // as one sentence off the row's own poolCost, and this screen prints it.
     enchantment: {
-      label: 'Enchantment', level: 0, points: 0, nextCost: 30, spells: [],
+      label: 'Enchantment',
+      level: 2,
+      points: 0,
+      nextCost: 90,
+      spells: [
+        {
+          spell: 'soothing_winds', form: 'battlefield', label: 'Soothing Winds',
+          description: 'A kind wind runs the line.',
+          requires: [{ path: 'nature', label: 'Nature', level: 2 }],
+          schoolLevel: 2, unlocked: true, fatigue: 20, castingTime: 3,
+          battlefield: true, poolCost: 2,
+          poolLine: "Draws 2 from the army's pool — once per battle, and only when scripted.",
+        },
+      ],
     },
     construction: {
       label: 'Construction', level: 0, points: 0, nextCost: 30, spells: [],
@@ -126,6 +142,22 @@ describe('The Study', () => {
 
     await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
     expect(screen.queryByTestId('study-spell-detail-fireball-minor')).not.toBeInTheDocument()
+  })
+
+  it('E-2/E-3: a battlefield row states its pool price in the server\'s own words', async () => {
+    studyWith()
+    // Collapsed, it is a name and its gates like any other row — the pool line
+    // rides with the description, in the detail the player opened.
+    expect(screen.queryByTestId('study-spell-pool-soothing_winds-battlefield'))
+      .not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('study-spell-toggle-soothing_winds-battlefield'))
+    expect(screen.getByTestId('study-spell-pool-soothing_winds-battlefield'))
+      .toHaveTextContent("Draws 2 from the army's pool — once per battle, and only when scripted.")
+
+    // ...and an ordinary row says nothing about a pool it never touches.
+    await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
+    expect(screen.queryByTestId('study-spell-pool-fireball-minor')).not.toBeInTheDocument()
   })
 
   it('S3-5: Construction renders like any school, saying it holds nothing', () => {

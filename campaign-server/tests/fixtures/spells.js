@@ -1,7 +1,7 @@
 // A spell roster shaped exactly like `./game dump-spells`, small enough to
 // reason about: two Evocation forms at different school levels, one
-// Conjuration, one school-less (granted) form, and nothing at all in
-// Construction.
+// Conjuration, one school-less (granted) form, two Enchantment battlefield
+// forms, and nothing at all in Construction.
 //
 // A FIXTURE rather than the real export, so a retune in the C++ table cannot
 // break assertions about VIEW SHAPE that have nothing to do with balance. The
@@ -32,5 +32,24 @@ export const spellsFixture = [
     description: 'One wounded or broken man is healed and steadied.',
     school: null, schoolLevel: 0,
     paths: [{ path: 'holy', level: 1 }], fatigue: 10, castingTime: 1,
+  },
+  // The battlefield-wide enchantments (E-1/E-6). SINGLE-FORM by construction
+  // (form 'battlefield'), and the two fields the ordinary rows above leave off:
+  // `battlefield` marks them script-only (E-3) and `poolCost` is what they draw
+  // from the army's pool (E-2). Two of them, at different prices, because the
+  // sentence the server writes quotes the row's own number.
+  {
+    spell: 'soothing_winds', form: 'battlefield', label: 'Soothing Winds',
+    description: 'A kind wind runs the line, and every friendly body breathes easier.',
+    school: 'enchantment', schoolLevel: 2,
+    paths: [{ path: 'nature', level: 2 }], fatigue: 20, castingTime: 3,
+    battlefield: true, poolCost: 2,
+  },
+  {
+    spell: 'leaden_air', form: 'battlefield', label: 'Leaden Air',
+    description: 'The air thickens, and every living body on the field tires faster.',
+    school: 'enchantment', schoolLevel: 2,
+    paths: [{ path: 'death', level: 2 }], fatigue: 24, castingTime: 3,
+    battlefield: true, poolCost: 3,
   },
 ]

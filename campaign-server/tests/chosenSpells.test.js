@@ -7,7 +7,9 @@ import { catalogFixture } from './fixtures/catalog.js'
 import { spellsFixture } from './fixtures/spells.js'
 import { setSpellCatalog, clearSpellCatalogCache } from '../utils/spellCatalog.js'
 import { clearRolls } from '../utils/dice.js'
-import { castableSpellsFor, chosenSpellsView, planChosenSpells } from '../services/magic.js'
+import {
+  castableSpellsFor, chosenSpellsView, planChosenSpells, spellsForSchool,
+} from '../services/magic.js'
 import { characterEntryFor } from '../services/characters.js'
 import { MAX_CHOSEN_SPELLS } from '../utils/campaignConfig.js'
 
@@ -143,7 +145,12 @@ describe('what the sheet is sent (S4-7)', () => {
     )
     expect(view.max).toBe(MAX_CHOSEN_SPELLS)
     expect(view.chosen).toEqual([
-      { spell: 'fireball', label: 'Ember', description: 'A single bolt of fire at range.' },
+      {
+        spell: 'fireball', label: 'Ember', description: 'A single bolt of fire at range.',
+        // Every row says where it stands on the pool, so the sheet never has
+        // to test for a missing field (slice A, E-2).
+        battlefield: false, poolCost: 0,
+      },
     ])
     // The picker shows everything he could reach for, taken slots included.
     expect(view.options.map((r) => r.spell)).toEqual(['fireball'])
@@ -167,6 +174,127 @@ describe('what the sheet is sent (S4-7)', () => {
     const soldier = { id: 3, name: 'Bran', type: 'Soldier', alive: true, paths: {}, script: [] }
     expect(chosenSpellsView(soldier, campaignAt({}), spellsFixture).options).toEqual([])
     expect(castableSpellsFor(soldier, campaignAt({ evocation: 9 }), spellsFixture)).toEqual([])
+  })
+})
+
+// ── THE BATTLEFIELD ENCHANTMENTS (slice A, E-2/E-3/E-4) ──────────────────────
+//
+// A battlefield spell is scripted or never cast at all (E-3), and its price is
+// the army's pool rather than the caster's own body (E-2). Both facts reach the
+// sheet as a SENTENCE the server wrote (17-5) — the client composes nothing, so
+// what is pinned here is the text itself.
+//
+// The second fact worth pinning is a refusal that deliberately is NOT one: two
+// casters carrying the same enchantment is a wasted line, not an illegal one,
+// so the view WARNS and planChosenSpells still takes the list. The engine's
+// once-per-side rule (E-4) is what actually holds, and the second completion
+// fizzles unpaid.
+describe('the battlefield enchantments (E-2/E-3/E-4)', () => {
+  const enchanted = campaignAt({ enchantment: 2 })
+  const POOL_LINE = "Draws 2 from the army's pool — once per battle, and only when scripted."
+
+  // Nature 2 reaches Soothing Winds and nothing else in the fixture, which
+  // keeps every row assertion below a one-row assertion.
+  const windsMage = (script = ['soothing_winds']) => mage({ nature: 2 }, script)
+  const other = (over = {}) => ({
+    id: 2, name: 'Bettina', type: 'Mage', alive: true, paths: { nature: 2 }, script: [], ...over,
+  })
+  const withCasters = (...characters) => ({ ...enchanted, characters })
+
+  test('a battlefield row carries its flag, its price and the server\'s sentence', () => {
+    expect(castableSpellsFor(windsMage(), enchanted, spellsFixture)).toEqual([
+      expect.objectContaining({
+        spell: 'soothing_winds',
+        label: 'Soothing Winds',
+        battlefield: true,
+        poolCost: 2,
+        poolLine: POOL_LINE,
+      }),
+    ])
+  })
+
+  test('an ordinary row answers the same fields, and carries no pool sentence', () => {
+    const [ember] = castableSpellsFor(mage({ fire: 1 }), campaignAt({ evocation: 1 }), spellsFixture)
+    expect(ember).toMatchObject({ battlefield: false, poolCost: 0 })
+    expect(ember.poolLine).toBeUndefined()
+  })
+
+  test('the sentence quotes the ROW\'s own price, never a fixed number', () => {
+    // Leaden Air draws 3 where Soothing Winds draws 2 (E-6), so a retuned
+    // price moves the sentence with it rather than drifting from it.
+    const necromancer = mage({ death: 2 })
+    const rows = castableSpellsFor(necromancer, campaignAt({ enchantment: 2 }), spellsFixture)
+    expect(rows.find((r) => r.spell === 'leaden_air').poolLine)
+      .toBe("Draws 3 from the army's pool — once per battle, and only when scripted.")
+  })
+
+  test('The Study carries the same fields, phrased the same way (S3-1)', () => {
+    const [winds, leaden] = spellsForSchool(spellsFixture, 'enchantment', 2)
+    expect(winds).toMatchObject({ battlefield: true, poolCost: 2, poolLine: POOL_LINE })
+    expect(leaden).toMatchObject({ battlefield: true, poolCost: 3 })
+    // ...and an ordinary school row still says nothing about a pool it never
+    // touches.
+    const [ember] = spellsForSchool(spellsFixture, 'evocation', 1)
+    expect(ember).toMatchObject({ battlefield: false, poolCost: 0 })
+    expect(ember.poolLine).toBeUndefined()
+  })
+
+  test('the picker\'s options carry it too — the price is read before it is chosen', () => {
+    const view = chosenSpellsView(windsMage([]), enchanted, spellsFixture)
+    expect(view.options).toEqual([expect.objectContaining({ poolLine: POOL_LINE })])
+  })
+
+  test('warns, naming him, when another living caster has the same one scripted', () => {
+    const campaign = withCasters(windsMage(), other({ script: ['soothing_winds'] }))
+    expect(chosenSpellsView(windsMage(), campaign, spellsFixture).chosen[0].warning)
+      .toBe('Bettina has this scripted too — it can only take hold once per battle.')
+  })
+
+  test('names the first and counts the rest when several are carrying it', () => {
+    const campaign = withCasters(
+      windsMage(),
+      other({ script: ['soothing_winds'] }),
+      other({ id: 3, name: 'Cerys', script: ['soothing_winds'] }),
+    )
+    expect(chosenSpellsView(windsMage(), campaign, spellsFixture).chosen[0].warning)
+      .toBe('Bettina and 1 other have this scripted too — it can only take hold once per battle.')
+  })
+
+  test('no warning when he is the only one carrying it', () => {
+    const campaign = withCasters(windsMage(), other({ script: [] }))
+    expect(chosenSpellsView(windsMage(), campaign, spellsFixture).chosen[0].warning)
+      .toBeUndefined()
+  })
+
+  test('a DEAD caster\'s script warns nobody — a record casts nothing (5-9)', () => {
+    const campaign = withCasters(windsMage(), other({ alive: false, script: ['soothing_winds'] }))
+    expect(chosenSpellsView(windsMage(), campaign, spellsFixture).chosen[0].warning)
+      .toBeUndefined()
+  })
+
+  test('an ORDINARY spell two casters both chose is not remarked on', () => {
+    // Both of them casting Ember is the point — the clash only exists where the
+    // effect is army-wide and takes hold once per side (E-4).
+    const research = campaignAt({ evocation: 1 })
+    const first = mage({ fire: 1 }, ['fireball'])
+    const second = { ...other({ paths: { fire: 1 } }), script: ['fireball'] }
+    const campaign = { ...research, characters: [first, second] }
+    expect(chosenSpellsView(first, campaign, spellsFixture).chosen[0].warning).toBeUndefined()
+  })
+
+  test('the server ACCEPTS a battlefield spell he qualifies for, and refuses one he does not', () => {
+    expect(planChosenSpells(windsMage([]), enchanted, spellsFixture, ['soothing_winds']))
+      .toEqual({ script: ['soothing_winds'] })
+    // Nature 2 is not Death 2: Leaden Air is not his to script, however open
+    // the school stands.
+    expect(planChosenSpells(windsMage([]), enchanted, spellsFixture, ['leaden_air']).error)
+      .toBeTruthy()
+  })
+
+  test('a WARNED script is still accepted — the warning is not a refusal (E-2/E-3)', () => {
+    const campaign = withCasters(windsMage([]), other({ script: ['soothing_winds'] }))
+    expect(planChosenSpells(windsMage([]), campaign, spellsFixture, ['soothing_winds']))
+      .toEqual({ script: ['soothing_winds'] })
   })
 })
 

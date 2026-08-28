@@ -29,7 +29,15 @@ namespace Spells
     // than rejecting the whole entry.
     const Spell* findSpell(std::string_view id);
 
-    // The caster's ordered default list — every roster entry, in roster order.
+    // Does this spell carry a battlefield-wide enchantment form? Asked of the
+    // SPELL rather than the form because everything that governs one — the
+    // once-per-side-per-battle register, the exclusion from the default walk —
+    // is decided per spell, and a spell that carried one sustained form among
+    // ordinary ones would still be that kind of spell.
+    bool isBattlefieldSpell(const Spell& s);
+
+    // The caster's ordered default list — every roster entry, in roster order,
+    // EXCEPT the battlefield-wide enchantments, which are script-only.
     // M-22: this walk IS a script, so slice 4 replaces the list rather than
     // adding a second selection path. Resolved once at unit construction
     // (AUnit::assignSpells).

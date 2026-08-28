@@ -70,6 +70,16 @@ const SpellRow = ({ spell, schoolLabel }) => {
             Fatigue {spell.fatigue} · {spell.castingTime} tick
             {spell.castingTime === 1 ? '' : 's'} to cast
           </p>
+          {/* A BATTLEFIELD ENCHANTMENT (slice A, E-2/E-3) is priced in the
+              ARMY's pool as well as in the caster's fatigue, and never fires
+              off the default walk. That is one sentence, written server-side
+              off the row's own poolCost (17-5) and printed here verbatim —
+              this file knows no prices, as it knows no path names. */}
+          {spell.poolCost > 0 && (
+            <p className="study-spell-numbers" data-testid={`study-spell-pool-${spell.spell}-${spell.form}`}>
+              {spell.poolLine}
+            </p>
+          )}
         </div>
       )}
     </li>

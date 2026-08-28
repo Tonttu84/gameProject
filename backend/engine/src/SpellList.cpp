@@ -185,6 +185,52 @@ static bool castBriarSnare(AUnit& caster)
     return true;
 }
 
+// ── Nature — soothing winds (Enchantment, battlefield-wide) — E-6 ────────────
+//
+// The first of the sustained spells: it is not aimed at a man, it stands over
+// the caster's own line until he does not. Friendly aim, so both sides may hold
+// their own wind at once and each is helped by its own.
+//
+// The per-tick relief is deliberately tiny next to soothing_current's one-off
+// wash: this one is paid every tick of the battle, and its real size is
+// whatever the battle's length multiplies it by.
+static void tickSoothingWinds(Battlefield& field, int team)
+{
+    for (auto& u : field.getTeam(team))
+        if (u && u->getAlive()) u->addFatigue(-SOOTHING_WINDS_RELIEF);
+}
+
+static bool castSoothingWinds(AUnit& caster)
+{
+    return Utility::getBattlefield().beginEnchantment(caster, "soothing_winds");
+}
+
+// ── Death — leaden air (Enchantment, battlefield-wide, symmetric) — E-6 ──────
+//
+// Everyone aim: the weight presses on BOTH sides, so calling it is a bet that
+// your line carries exhaustion better than theirs — and two instances never
+// press twice, which is what keeps it a decision rather than a race.
+static void tickLeadenAir(Battlefield& field, int /*team*/)
+{
+    // E-6's thematic ruling, read STRUCTURALLY rather than off a list of unit
+    // names: the curse presses on the LIVING. A body that does not tire
+    // (Skeleton, Zombie, Golem — fatigueCost 0) has nothing for a weight in the
+    // air to work on, and the Undead flag exempts anything that tires but is
+    // already dead. Between them, a unit type written next month lands on the
+    // right side of the line without this body being edited.
+    for (int team : {REDTEAM, BLUETEAM})
+        for (auto& u : field.getTeam(team)) {
+            if (!u || !u->getAlive() || !u->tires()) continue;
+            if (u->hasAbility(UnitAbility::Undead)) continue;
+            u->addFatigue(LEADEN_AIR_WEIGHT);
+        }
+}
+
+static bool castLeadenAir(AUnit& caster)
+{
+    return Utility::getBattlefield().beginEnchantment(caster, "leaden_air");
+}
+
 // ── Unholy — drain life (granted, not researched: M-14) ──────────────────────
 static bool castDrainLife(AUnit& caster)
 {
@@ -476,6 +522,27 @@ std::string briarSnare()
            "Exhaustion is lethal past the ceiling.";
 }
 
+// The sustained spells say three things no ordinary description has to: that
+// they stand rather than resolve, what ends them, and that a side gets one.
+std::string soothingWinds()
+{
+    return "A wind runs the length of your own line and does not stop: every man on your "
+           "side sheds " + std::to_string(SOOTHING_WINDS_RELIEF)
+         + " fatigue every turn, for as long as the caster who called it still stands. "
+           "It draws " + std::to_string(SOOTHING_WINDS_POOL_COST)
+         + " channels from the army's banners, and an army may call it once in a battle.";
+}
+
+std::string leadenAir()
+{
+    return "The air over the whole field turns heavy — yours as much as theirs. Every "
+           "living body on both sides gains " + std::to_string(LEADEN_AIR_WEIGHT)
+         + " fatigue every turn, for as long as the caster who called it still stands; "
+           "the undead and the unliving feel nothing. It draws "
+         + std::to_string(LEADEN_AIR_POOL_COST)
+         + " channels from the army's banners, and an army may call it once in a battle.";
+}
+
 std::string hexOfFrailty()
 {
     return "One enemy loses a point of defence, and another for every three levels "
@@ -569,6 +636,16 @@ namespace Spells
                 { "minor", "Briar Snare", briarSnare(),
                   {{P::Nature, 1}}, S::Enchantment, 1, 10, 1, castBriarSnare, nullptr },
             }},
+            // A battlefield-wide enchantment: ONE form, named "battlefield"
+            // rather than minor/major, because there is no ladder to climb —
+            // the spell either stands over the field or it does not. The three
+            // trailing fields are what make it sustained (see Spell.hpp).
+            { "soothing_winds", {
+                { "battlefield", "Soothing Winds", soothingWinds(),
+                  {{P::Nature, 2}}, S::Enchantment, 2,
+                  SOOTHING_WINDS_FATIGUE, 2, castSoothingWinds, nullptr,
+                  EnchantAim::Friendly, SOOTHING_WINDS_POOL_COST, tickSoothingWinds },
+            }},
             // ── Low — half fatigue (M-21) and a price that fires with it (M-24)
             { "hex_of_frailty", {
                 { "minor", "Hex of Frailty", hexOfFrailty(),
@@ -581,6 +658,14 @@ namespace Spells
                   {{P::Death, 1}}, S::Conjuration, 1, 12, 1, castRaiseSkeleton, nullptr },
                 { "major", "Raise Dead", raiseDead(),
                   {{P::Death, 3}}, S::Conjuration, 3, 26, 2, castRaiseDead,     nullptr },
+            }},
+            // The symmetric one: an Everyone aim presses on both lines at once,
+            // and only once however many instances stand.
+            { "leaden_air", {
+                { "battlefield", "Leaden Air", leadenAir(),
+                  {{P::Death, 2}}, S::Enchantment, 2,
+                  LEADEN_AIR_FATIGUE, 2, castLeadenAir, nullptr,
+                  EnchantAim::Everyone, LEADEN_AIR_POOL_COST, tickLeadenAir },
             }},
             // ── Holy — granted, not researched, so NO school gate (M-14) ─────
             { "bless", {
@@ -604,6 +689,15 @@ namespace Spells
         // exists campaign-wide; path levels decide who can cast it.
         for (const PathRequirement& req : form.paths)
             if (caster.getPathLevel(req.path) < req.level) return false;
+        // E-2: a form paid for out of the army's channel pool does not qualify while
+        // the pool cannot cover it IN FULL. This is a real gate and not an
+        // affordability test of the kind M-22 refused for fatigue: fatigue is
+        // the caster's own and he may spend himself into the overflow, while
+        // the pool is the army's and there is no such thing as overdrawing it.
+        // A line that does not qualify is skipped and the walk goes on.
+        if (form.poolCost > 0
+            && Utility::getBattlefield().getChannels(caster.getTeam()) < form.poolCost)
+            return false;
         // M-19: both sides pass the identical school gate; only where the
         // number comes from differs. SpellSchool::None has no gate at all,
         // which is what a pure-Holy blessing carries (M-14).
@@ -619,14 +713,36 @@ namespace Spells
         return nullptr;
     }
 
+    bool isBattlefieldSpell(const Spell& s)
+    {
+        for (const SpellForm& f : s.forms)
+            if (f.enchantAim != EnchantAim::None) return true;
+        return false;
+    }
+
     const std::vector<const Spell*>& defaultScript()
     {
         // M-22: the AI's ordered list IS a script, which is why slice 4 costs
         // almost nothing — the player's list replaces this one and no second
         // code path exists. Roster order is the default priority.
+        //
+        // EXCEPT the battlefield-wide enchantments, which are SCRIPT-ONLY
+        // (E-3, implemented as the user put it: they are simply "not in the
+        // spell list for normal casts"). One
+        // of them spends the army's whole pool allowance on a single casting
+        // and burns the side's one call for the battle, so only a deliberate
+        // script line may reach for it — never the fallback walk a caster takes
+        // when nothing better offers. The self-harming globals depend on this
+        // too: Leaden Air presses on the caster's own line, and no AI default
+        // should ever decide that on its own.
+        //
+        // AUnit::setChosenSpells appends THIS list after the player's ids, so
+        // excluding them here is the whole of the rule: a global is reachable
+        // only by being named.
         static const std::vector<const Spell*> script = [] {
             std::vector<const Spell*> out;
-            for (const Spell& s : roster()) out.push_back(&s);
+            for (const Spell& s : roster())
+                if (!isBattlefieldSpell(s)) out.push_back(&s);
             return out;
         }();
         return script;
@@ -715,6 +831,13 @@ namespace Spells
                     {"paths",       paths},
                     {"fatigue",     form.fatigue},
                     {"castingTime", form.castingTime},
+                    // On EVERY row, false/0 for an ordinary spell rather than
+                    // present only where it is interesting: the campaign server
+                    // renders the pool price from these (E-2 adds no new wire
+                    // field beyond them), and a reader that has to ask whether a
+                    // key exists is a reader that will one day forget to.
+                    {"battlefield", form.enchantAim != EnchantAim::None},
+                    {"poolCost",    form.poolCost},
                 });
             }
         }

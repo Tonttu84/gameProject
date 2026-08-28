@@ -222,6 +222,30 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenS
                         {picked.description}
                       </p>
                     )}
+                    {/* A BATTLEFIELD ENCHANTMENT (slice A, E-2/E-3) costs the
+                        ARMY's pool rather than the caster's body, takes hold
+                        once per battle, and is cast only because it was
+                        scripted. All of that is one sentence the server wrote
+                        off the row's own price (17-5) — printed verbatim, like
+                        the description above it. The row's `poolCost` is what
+                        says a pool is involved at all; this file knows no
+                        prices and no spells. */}
+                    {picked?.poolCost > 0 && (
+                      <p className="item-blurb" data-testid={`sheet-spellpool-${character.id}-${slot}`}>
+                        {picked.poolLine}
+                      </p>
+                    )}
+                    {/* A WARNING, never a refusal: the server still accepts a
+                        list two casters share, because the engine's
+                        once-per-side rule is the backstop and the second
+                        completion simply fizzles (E-2/E-3). It names the other
+                        caster, because changing one of the two scripts is the
+                        player's next move. */}
+                    {picked?.warning && (
+                      <p className="warning" data-testid={`sheet-spellwarn-${character.id}-${slot}`}>
+                        {picked.warning}
+                      </p>
+                    )}
                   </div>
                 )
               })}

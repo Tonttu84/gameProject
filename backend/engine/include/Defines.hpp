@@ -132,6 +132,19 @@ constexpr int LOW_BLOOD_PRICE    = 3;  // M-21/M-24: what Low's second effect ta
 constexpr int GREATER_BLESS_BASE = 2;  // Holy major: how many men one blessing reaches
 constexpr int RAISE_DEAD_BODIES  = 3;  // Death major: corpses spent, and zombies raised
 
+// Battlefield-wide enchantments (E-6). A sustained spell is a DIFFERENT kind of price
+// from the ones above: the per-tick number is tiny because it is paid every tick
+// of the battle, while the fatigue and the channels are paid once, up front, by
+// a side that only gets to call the spell once. ALSO BALANCE-DEFERRED — the
+// per-tick figures are the ones most likely to move, since their real cost is
+// whatever the battle's length multiplies them by.
+constexpr int SOOTHING_WINDS_FATIGUE   = 20; // Nature 2: what calling the wind costs its caster
+constexpr int SOOTHING_WINDS_POOL_COST = 2;  // channels drawn IN FULL on completion
+constexpr int SOOTHING_WINDS_RELIEF    = 1;  // fatigue washed off every friendly body, per tick
+constexpr int LEADEN_AIR_FATIGUE       = 24; // Death 2: what calling the weight costs its caster
+constexpr int LEADEN_AIR_POOL_COST     = 3;  // channels drawn IN FULL on completion
+constexpr int LEADEN_AIR_WEIGHT        = 2;  // fatigue pressed onto every LIVING body, per tick
+
 // Battlefield dimensions
 constexpr int BATTLEFIELD_WIDTH  = 30;  // visual width  — hex rows (r), depth between armies
 constexpr int BATTLEFIELD_HEIGHT = 16;  // visual height — hex columns (q), battle-line width

@@ -697,6 +697,15 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		// see the note on the declaration.
 		for (const Spell* s : _spells) {
 			if (!s) continue;
+			// E-4: once per side PER BATTLE for a battlefield-wide enchantment. A
+			// side that has already called one may not call it again, even
+			// after the instance ended with its sustainer. The skip is of the
+			// whole SPELL, not of a form, and it falls through to this
+			// caster's next line — M-22's walk doing what it already does with
+			// a line it cannot use, rather than a new kind of failure.
+			if (Spells::isBattlefieldSpell(*s)
+			    && Utility::getBattlefield().enchantmentCastAlready(getTeam(), *s))
+				continue;
 			const SpellForm* best = nullptr;
 			for (const SpellForm& f : s->forms)
 				if (Spells::qualifies(*this, f)) best = &f;  // later forms are stronger
@@ -798,12 +807,20 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		}
 
 		int cost = spellFatigueCost(*form);
+		// E-2: a battlefield-wide enchantment pays its poolCost IN FULL and takes
+		// NO discount — poolCost is the pool's whole involvement in one of these,
+		// so applying M-11's per-cast shave on top would spend the same
+		// channels twice for one casting. The fatigue is paid in full too — the
+		// pool buys the spell, not the caster's breath.
+		if (form->enchantAim != EnchantAim::None) {
+			Utility::getBattlefield().drawChannels(team, form->poolCost);
+		}
 		// M-11: banners are the allowance, and a caster draws from the ARMY-WIDE
 		// pool rather than a squad's own. Capped at the caster's PRIMARY path
 		// level, which is Dominions' "spend up to your path level in gems to cut
 		// fatigue" — the shape M-11 says it is delivering. (Assistant's call:
 		// M-11 fixes the pool and its scope, not the per-cast cap.)
-		if (!form->paths.empty()) {
+		else if (!form->paths.empty()) {
 			int cap = getPathLevel(form->paths.front().path);
 			cost -= Utility::getBattlefield().drawChannels(team, std::min(cost, cap));
 		}

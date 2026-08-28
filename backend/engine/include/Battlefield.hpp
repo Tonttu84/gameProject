@@ -11,6 +11,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <climits>
 #include "Utility.hpp"
@@ -201,6 +202,36 @@ class Battlefield
         void setChannels(int team, int channels);
         int  drawChannels(int team, int wanted);
 
+        // ── Battlefield-wide enchantments (E-4) ──────────────────────────────
+        // A sustained spell instance: the form's standing effect, the caster
+        // holding it up and the side that paid for it. It stands until the
+        // battle ends or its sustainer stops being alive — fleeing off the
+        // field already clears `alive`, so liveness is the WHOLE of the check
+        // and there is no second "has he left" test to keep in step.
+        struct ActiveEnchantment {
+            const Spell*     spell;
+            const SpellForm* form;
+            const AUnit*     caster;
+            int              team;   // the side that called it, and paid for it
+        };
+
+        // The cast body's entry point: resolves the spell by roster id, charges
+        // nothing (completeCast() draws the pool once this reports true), and
+        // returns false where the calling cannot happen — which costs the
+        // caster nothing at all, per M-23.
+        bool beginEnchantment(AUnit& caster, std::string_view spellId);
+
+        // Once per side PER BATTLE, keyed on the SPELL. Deliberately outlives
+        // the instance (E-4): a side that let its sustainer die has spent its
+        // call, which is what makes killing a sustainer a FINAL dispel.
+        bool enchantmentCastAlready(int team, const Spell& s) const;
+
+        // The instances standing right now. Read-only, and exposed for the
+        // tests — the engine itself only ever reaches them through the two
+        // per-turn hooks below.
+        const std::vector<ActiveEnchantment>& activeEnchantments() const
+        { return _enchantments; }
+
         // ── Tick event log ────────────────────────────────────────────────────
         // Lightweight narrative sink for replay recording: engine code appends
         // human-readable lines (deaths, flees, summons); ReplayRecorder drains
@@ -251,6 +282,10 @@ class Battlefield
     private:
         void onTurnStart();
         void onTurnEnd();
+        // Run every standing enchantment's per-tick effect, once each turn.
+        void applyEnchantments();
+        // Drop the instances whose sustainer is gone, logging each fade.
+        void sweepEnchantments();
         void logDeaths(const Team& team);
         // Summon any reinforcement wave whose turn has arrived. Called once at
         // the top of each tick(), before the special/movement phases so fresh
@@ -268,6 +303,11 @@ class Battlefield
         std::array<std::array<int, SPELL_SCHOOL_COUNT>, 2> _schoolLevels
             { spellSchoolsOpen(), spellSchoolsOpen() };
         std::array<int, 2> _channels{};
+        // The instances standing, and — separately — the register of what each
+        // side has ever called. The register is NOT pruned when an instance
+        // ends: once per side per battle means exactly that.
+        std::vector<ActiveEnchantment> _enchantments;
+        std::vector<std::pair<int, const Spell*>> _enchantmentsCast;
         std::vector<LogLine> _tickLog;
         std::vector<Reinforcement> _reinforcements;
         int    _maxTicks = DEFAULT_MAX_BATTLE_TICKS;

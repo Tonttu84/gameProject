@@ -483,6 +483,21 @@ this order to pick the work up cold:
      Enchantment 2, +2 fatigue/tick to ALL LIVING on both sides, aim Everyone. "Living" is read
      structurally: a body that tires (`fatigueCost > 0`) and is not Undead — so Skeleton, Zombie
      and the Golem are exempt with no unit named in the spell body.
+   - **✅ SLICE A SHIPPED 2026-08-28 (no schema bump — no campaign field moved; the catalog
+     grew fields, and the catalog is engine-owned reference data).** What landed, and the shapes
+     B should reuse: `SpellForm` gained `enchantAim`/`poolCost`/`tickEffect` (defaulted, last in
+     the struct, so no roster row moved); `Battlefield` holds the instances + the per-battle
+     once-registry, applies effects in onTurnStart AFTER recover() (so relief is not washed away)
+     and sweeps in onTurnEnd BEFORE cleanup() (order is memory-safety, commented at the site);
+     `loadArmies()` clears both — the singleton reuse would otherwise carry a dangling sustainer
+     across battles. The walk skips an already-called spell whole; `qualifies` gates on the pool
+     in full; payment replaces (never stacks with) M-11's discount. `tires()` (`fatigueCost > 0`)
+     + the Undead flag is Leaden Air's structural "living". Catalog rows all carry
+     `battlefield`/`poolCost`; `poolFieldsOf`/`poolLineFor` in services/magic.js phrase the one
+     pool sentence, `alsoScriptedBy` phrases the named duplicate-script warning (options AND
+     chosen rows carry it; a warning, never a refusal). 9 engine cases (97 assertions), 11+1
+     server cases, 5 frontend cases. First build under the CLAUDE.md plan-with-Fable workflow:
+     two Opus subagents (engine ‖ server+frontend), specs and review in-session.
    - **E-7. SLICE B'S SHAPE, RECORDED NOW, BUILT NEXT** (amends S4-6's "random assignment"):
      the store is a PRIORITY-ORDERED list of authored scripts; an enemy caster gets the
      highest-priority script he qualifies for — he must hold ALL of the script's paths, and its

@@ -5,6 +5,7 @@
 #include <array>
 
 class AUnit;
+class Battlefield;
 
 // A castable spell — roster data one level up from Weapon: the unit provides
 // the body (path levels, the channel slot), the spell provides everything that
@@ -67,6 +68,22 @@ struct PathRequirement {
     int       level;
 };
 
+// ── Battlefield-wide enchantments (E-4, E-5) ─────────────────────────────────
+// A form whose aim is not None is not delivered at a target and then finished:
+// it is SUSTAINED. One standing instance, tagged with the caster holding it up
+// and the side that paid for it, lasting until the battle ends or until that
+// caster stops being alive.
+//
+// E-5 fixes what each aim means:
+//   Friendly — the instance benefits ITS OWN side. Both sides may hold one of
+//              the same spell at once, and both then benefit from their own.
+//   Everyone — the effect is symmetric, so it applies ONCE while any instance
+//              stands, whoever cast it. Two instances never press twice on the
+//              same body; a symmetric spell would otherwise reward whichever
+//              side called it second. Each side's cast is still its OWN
+//              instance, so killing one sustainer ends only that copy.
+enum class EnchantAim { None, Friendly, Everyone };
+
 // A single castable form. M-12 gives one spell a MINOR and a MAJOR form rather
 // than a ladder of near-duplicates, so each form carries its own gates, price
 // and effect — otherwise "the best form you qualify for" (M-13) has nothing to
@@ -122,6 +139,28 @@ struct SpellForm {
     // own side (the caster bleeds, allies burn, an ally dies). nullptr for
     // every path that does not bargain. Runs only after cast() reports true.
     bool (*price)(AUnit& caster);
+
+    // ── The battlefield-wide fields ──────────────────────────────────────────
+    // Defaulted, and LAST in the struct on purpose: every ordinary roster row
+    // is aggregate-initialised positionally, so a sustained spell adds three
+    // fields without touching a single existing line.
+
+    // None for every ordinary spell. Anything else marks this form as a
+    // battlefield-wide enchantment, with the semantics above.
+    EnchantAim enchantAim = EnchantAim::None;
+
+    // E-2: channels drawn IN FULL from the side's army-wide pool — and it is
+    // the EXISTING banner pool (M-11), not a new currency: the user's "gems"
+    // was Dominions shorthand, dropped on purpose. Spent, not shaved off the
+    // fatigue. A form the pool cannot cover does not qualify, so the walk falls
+    // through to the caster's next line rather than stalling on it.
+    int poolCost = 0;
+
+    // The standing effect, applied once per tick for as long as the instance
+    // stands. `team` is the side that benefits for a Friendly aim; for an
+    // Everyone aim it is meaningless (0 is passed) and the body reads both
+    // teams itself.
+    void (*tickEffect)(Battlefield& field, int team) = nullptr;
 };
 
 struct Spell {

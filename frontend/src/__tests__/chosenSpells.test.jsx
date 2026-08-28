@@ -60,9 +60,27 @@ const info = {
 
 // Rows exactly as the server sends them: resolved and phrased, wearing the
 // label of the strongest FORM this caster qualifies for (S4-2).
-const EMBER = { spell: 'fireball', label: 'Ember', description: 'A single bolt of fire at range.' }
-const MIST = { spell: 'mist', label: 'Mist', description: 'A cold fog gathers.' }
-const SNARE = { spell: 'briar_snare', label: 'Briar Snare', description: 'Briars erupt underfoot.' }
+const EMBER = {
+  spell: 'fireball', label: 'Ember', description: 'A single bolt of fire at range.',
+  battlefield: false, poolCost: 0,
+}
+const MIST = {
+  spell: 'mist', label: 'Mist', description: 'A cold fog gathers.',
+  battlefield: false, poolCost: 0,
+}
+const SNARE = {
+  spell: 'briar_snare', label: 'Briar Snare', description: 'Briars erupt underfoot.',
+  battlefield: false, poolCost: 0,
+}
+// A battlefield enchantment (slice A, E-2/E-3): priced in the ARMY's pool, and
+// carrying the finished sentence that says so. The page prints it; it composes
+// nothing (17-5).
+const POOL_LINE = "Draws 2 from the army's pool — once per battle, and only when scripted."
+const WINDS = {
+  spell: 'soothing_winds', label: 'Soothing Winds',
+  description: 'A kind wind runs the line.',
+  battlefield: true, poolCost: 2, poolLine: POOL_LINE,
+}
 
 const character = (over = {}) => ({
   id: 1,
@@ -145,6 +163,38 @@ describe('the slots', () => {
     await open({ ...noCaster, chosenSpells: undefined })
     expect(screen.queryByTestId('sheet-spell-1-0')).not.toBeInTheDocument()
     expect(screen.queryByTestId('sheet-nospells-1')).not.toBeInTheDocument()
+  })
+})
+
+// The two sentences slice A adds. Both are written server-side and printed
+// here word for word (17-5) — what these pin is that the page prints them WHEN
+// the row carries them and stays silent when it does not. No test here asserts
+// the wording's arithmetic; that is magic.js's, and it is pinned there.
+describe('battlefield enchantments (E-2/E-3)', () => {
+  it('prints the pool sentence under a scripted battlefield spell', async () => {
+    await open({ chosenSpells: { max: 3, chosen: [WINDS], options: [WINDS, EMBER] } })
+    expect(screen.getByTestId('sheet-spellpool-1-0')).toHaveTextContent(POOL_LINE)
+  })
+
+  it('says nothing about a pool for an ordinary spell', async () => {
+    await open({ chosenSpells: { max: 3, chosen: [EMBER], options: [EMBER, MIST, SNARE] } })
+    expect(screen.queryByTestId('sheet-spellpool-1-0')).not.toBeInTheDocument()
+  })
+
+  it('shows the clash warning verbatim when the server sends one', async () => {
+    // A WARNING, not a refusal: the slot is still his and still postable — the
+    // engine's once-per-side rule is what actually holds (E-4).
+    const warning = 'Bettina has this scripted too — it can only take hold once per battle.'
+    await open({
+      chosenSpells: { max: 3, chosen: [{ ...WINDS, warning }], options: [WINDS, EMBER] },
+    })
+    expect(screen.getByTestId('sheet-spellwarn-1-0')).toHaveTextContent(warning)
+    expect(screen.getByTestId('sheet-spell-1-0')).not.toBeDisabled()
+  })
+
+  it('shows no warning where the server sent none', async () => {
+    await open({ chosenSpells: { max: 3, chosen: [WINDS], options: [WINDS, EMBER] } })
+    expect(screen.queryByTestId('sheet-spellwarn-1-0')).not.toBeInTheDocument()
   })
 })
 

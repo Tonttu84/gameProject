@@ -404,6 +404,31 @@ describe('the research view carries the roster (slice 3)', () => {
     expect(ember.requires).toEqual([{ path: 'fire', label: 'Fire', level: 1 }])
   })
 
+  test('a battlefield enchantment states its pool price in the server\'s own words', async () => {
+    // Slice A (E-2/E-3): the price is the ARMY's pool, not the caster's body,
+    // and the working is script-only. Both facts are one sentence written here
+    // and printed verbatim on the screen (17-5) — the client composes nothing.
+    const { body } = await createCampaign()
+    const [winds, leaden] = body.research.schools.enchantment.spells
+    expect(winds).toMatchObject({
+      spell: 'soothing_winds',
+      form: 'battlefield',
+      battlefield: true,
+      poolCost: 2,
+      poolLine: "Draws 2 from the army's pool — once per battle, and only when scripted.",
+    })
+    // The sentence quotes the ROW's price, so the two rows do not read alike.
+    expect(leaden.poolLine).toBe(
+      "Draws 3 from the army's pool — once per battle, and only when scripted.",
+    )
+
+    // An ordinary row answers the same two fields and carries no sentence —
+    // there is no pool line to print where the pool is not involved.
+    const [ember] = body.research.schools.evocation.spells
+    expect(ember).toMatchObject({ battlefield: false, poolCost: 0 })
+    expect(ember.poolLine).toBeUndefined()
+  })
+
   test('each school prices its next level, and the rate says what a turn adds', async () => {
     const { body } = await createCampaign()
     expect(body.research.schools.evocation.nextCost).toBe(RESEARCH_LEVEL_COST)

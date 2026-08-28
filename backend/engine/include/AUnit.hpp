@@ -326,6 +326,12 @@ public:
     void addWeapon(Weapon newWeapon);
     int getFatigue() const;
     int getFatigueCost() const;
+    // A body that tires at all — fatigueCost above zero, which today is every
+    // unit except the Skeleton, the Zombie and the Golem. E-6 reads Leaden
+    // Air's "living" off THIS plus the Undead flag rather than off a list
+    // of unit names: bone and animated stone have nothing for a weight in the
+    // air to work on, and a new unliving type is exempt the day it is written.
+    bool tires() const { return fatigueCost > 0; }
     virtual int getAttackPWR() const { return attackPWR; }
 
     // Per-turn attack counter: incremented by MeleeCombat::engage() after each

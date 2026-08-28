@@ -156,6 +156,11 @@ void Battlefield::reset()
     corpses = 0;
     _tickLog.clear();
     _reinforcements.clear();
+    // Both, and both per battle: the standing instances point at units that are
+    // being destroyed right now, and "once per side per battle" is spent when
+    // the battle is.
+    _enchantments.clear();
+    _enchantmentsCast.clear();
     _ticksRun = 0;
     _maxTicks = DEFAULT_MAX_BATTLE_TICKS;
 }
@@ -173,6 +178,11 @@ void Battlefield::loadArmies(Army red, Army blue)
     corpses   = 0;
     _tickLog.clear();
     _reinforcements.clear(); // per-battle; scheduled AFTER loadArmies by callers
+    // Per-battle for the same reason the corpse count is, and load-bearing for
+    // memory safety on top: an instance carried over from the previous battle
+    // would hold a pointer to a caster this call has just replaced.
+    _enchantments.clear();
+    _enchantmentsCast.clear();
     // Red flees south (r = height-1); Blue flees north (r = 0).
     hexGrid.computeDistances(height - 1, 0);
 }
@@ -188,6 +198,11 @@ void Battlefield::onTurnStart()
     for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
     for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
 
+    // AFTER the passive recovery, never before it: a sustained spell's whole
+    // effect is what it adds to or takes off a body that has already rested,
+    // and running it first would let recover() wash the turn's relief away.
+    applyEnchantments();
+
     for (auto& u : _red.units)  if (u) { u->resetAttacksReceived(); u->resetRepelMalus(); }
     for (auto& u : _blue.units) if (u) { u->resetAttacksReceived(); u->resetRepelMalus(); }
 
@@ -198,7 +213,85 @@ void Battlefield::onTurnStart()
 
 void Battlefield::onTurnEnd()
 {
+    // E-4 checks liveness ONCE at end of tick — no per-tick polling.
+    // ORDER IS LOAD-BEARING: cleanup() erases the dead unit objects, and the
+    // sweep reads each instance's sustainer to decide whether it still stands.
+    // Swap these two and the sweep dereferences a unit that has just been
+    // destroyed.
+    sweepEnchantments();
     cleanup();
+}
+
+// ── Battlefield-wide enchantments (E-2, E-4, E-5) ────────────────────────────
+
+bool Battlefield::enchantmentCastAlready(int team, const Spell& s) const
+{
+    for (const auto& called : _enchantmentsCast)
+        if (called.first == team && called.second == &s) return true;
+    return false;
+}
+
+bool Battlefield::beginEnchantment(AUnit& caster, std::string_view spellId)
+{
+    const Spell* spell = Spells::findSpell(spellId);
+    if (!spell || spell->forms.empty()) return false;
+    // forms.front(): every battlefield spell is single-form today. The
+    // once-per-side register keys on the SPELL rather than the form, so the
+    // form is carried only for its label and its standing effect — a second
+    // form would change what the instance DOES, never how many a side may call.
+    const SpellForm* form = &spell->forms.front();
+    const int        team = caster.getTeam();
+
+    if (enchantmentCastAlready(team, *spell)) {
+        // Two casters on one side, both scripted for the same spell: the second
+        // one fizzles unpaid (E-2, assistant's call, flagged there). Detail
+        // tier — nothing happened on the field, and the
+        // player who wrote both scripts is the only reader who wants the line.
+        // Returning false costs the caster nothing (M-23).
+        logEvent(LogTier::Detail, std::string(form->label)
+            + " fizzles — it has already been called over this field");
+        return false;
+    }
+    // Re-checked here and not only at selection: the pool is army-wide, so
+    // another caster on this side may have drained it in the ticks this one
+    // spent channelling.
+    if (getChannels(team) < form->poolCost) return false;
+
+    _enchantments.push_back({spell, form, &caster, team});
+    _enchantmentsCast.push_back({team, spell});
+    return true;
+}
+
+void Battlefield::applyEnchantments()
+{
+    // E-5: an Everyone-aim form applies ONCE per tick per spell however many
+    // instances stand — the effect is symmetric, so pressing twice because both
+    // sides called it would turn a decision into a race to call it second.
+    std::vector<const Spell*> seen;
+    for (const ActiveEnchantment& e : _enchantments) {
+        if (!e.form || !e.form->tickEffect) continue;
+        if (e.form->enchantAim == EnchantAim::Friendly) {
+            e.form->tickEffect(*this, e.team);
+            continue;
+        }
+        if (std::find(seen.begin(), seen.end(), e.spell) != seen.end()) continue;
+        seen.push_back(e.spell);
+        e.form->tickEffect(*this, 0);   // team is meaningless to a symmetric effect
+    }
+}
+
+void Battlefield::sweepEnchantments()
+{
+    // Backwards, so an erase cannot move an instance past the cursor.
+    for (size_t i = _enchantments.size(); i-- > 0; ) {
+        const AUnit* caster = _enchantments[i].caster;
+        if (caster && caster->getAlive()) continue;
+        // Basic tier: the field visibly changes, and a player who watched a
+        // spell go up is owed the moment it comes down.
+        logEvent(std::string(_enchantments[i].form->label)
+            + " fades — its sustainer is gone");
+        _enchantments.erase(_enchantments.begin() + static_cast<std::ptrdiff_t>(i));
+    }
 }
 
 void Battlefield::fireScheduledReinforcements()
