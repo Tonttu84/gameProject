@@ -11,12 +11,18 @@ import {
   DECLARED_CASTER_PATH,
   ENEMY_CHANNELS,
   ENEMY_SCHOOLS,
+  HEX_DIRECTIONS,
   MAP_NAME,
   SANDBOX_MAX_CHANNELS,
   SANDBOX_MAX_PATH_LEVEL,
+  SANDBOX_MAX_REINFORCEMENTS,
+  SANDBOX_MAX_REINFORCE_COUNT,
+  SANDBOX_MAX_REINFORCE_MESSAGE,
   SANDBOX_MAX_RUNS,
   SANDBOX_MAX_SCHOOL_LEVEL,
   SANDBOX_MAX_UNITS_PER_SIDE,
+  SANDBOX_MAX_WALL_DURABILITY,
+  SANDBOX_MAX_WALL_SIDES,
   SPELL_PATHS,
   SPELL_PATH_TEXT,
   SPELL_SCHOOLS,
@@ -159,6 +165,115 @@ const sanitizeMagic = (magic) => {
   return Object.keys(out).length > 0 ? out : null
 }
 
+// ── S4's two extra wire fields (SB-9) ───────────────────────────────────────
+
+// ONE WALLED SIDE, rebuilt by construction like everything else here.
+//
+// A WALL BELONGS TO THE FIELD, NOT TO A SIDE (F1): `fortified_sides` is a
+// property of the battle — a rampart stands where it stands and both armies
+// meet it — so unlike the armies, the placements and the magic there is one
+// list per SCENARIO rather than one per side, and nothing in the entry names a
+// team.
+//
+// An unknown `dir` DROPS the entry rather than defaulting: the engine's own
+// hexDirFromName answers NE for anything it does not recognise, so a typo that
+// travelled would silently wall a side nobody painted.
+//
+// `durability` is OMITTED when the client sent nothing usable, following the
+// same absence rule as the caster fields above — the engine puts
+// DEFAULT_FORT_DURABILITY on a side whose entry carries no durability, and
+// absence is how that default is asked for. A zero is not junk, though: a
+// hexside walled at 0 is a statement (a work that falls the moment it is hit),
+// so only an unreadable value is dropped.
+const sanitizeWall = (entry) => {
+  const dir = HEX_DIRECTIONS.find((name) => name === entry?.dir)
+  if (!dir) return null
+  const q = Math.trunc(Number(entry?.q))
+  const r = Math.trunc(Number(entry?.r))
+  if (!Number.isFinite(q) || !Number.isFinite(r)) return null
+
+  const durability = Math.trunc(Number(entry?.durability))
+  return {
+    q,
+    r,
+    dir,
+    ...(Number.isFinite(durability)
+      ? { durability: Math.min(SANDBOX_MAX_WALL_DURABILITY, Math.max(0, durability)) }
+      : {}),
+  }
+}
+
+// The engine's team integers (REDTEAM 1 / BLUETEAM 2, backend/engine/include/
+// Defines.hpp), and the translation happens HERE (F3): the lab speaks `blue`
+// and `red` like every other part of it, and the client never names a team
+// number — the same reasoning that stamps the map server-side rather than
+// taking one from the body.
+// The engine's team integers, which are the ONE thing about a reinforcement the
+// lab does not let a client name: everything else here speaks 'blue'/'red', and
+// the mapping is stamped server-side for the same reason the map name is.
+// 2 = BLUETEAM, 1 = REDTEAM (engine Defines.hpp) — the same pair
+// GARRISON_SALLY_TEAM writes down for the campaign's own scheduled wave.
+const TEAM_BY_SIDE = { blue: 2, red: 1 }
+
+// ONE SCHEDULED WAVE: {side, unit_type, count, tick, message} in, the engine's
+// {team, unit_type, count, tick, message} out.
+//
+// An entry that fails ANY gate is dropped whole rather than passed through
+// half-built — a wave with an unknown type would arrive as bodies the engine
+// cannot build, and a wave at tick 0 is a wave the engine would quietly move to
+// 1 with nobody to say so. `sizes` is the catalog the placements are already
+// checked against, so a reinforcement can field exactly what a placement can.
+//
+// `count` is clamped to the ENGINE'S OWN maximum rather than a number invented
+// here (SANDBOX_MAX_REINFORCE_COUNT mirrors MAX_REINFORCE_COUNT), and `message`
+// is trimmed to its cap rather than refused: it is a log line, and a long one
+// is a mistake with an obvious repair.
+const sanitizeReinforcement = (entry, sizes) => {
+  const team = TEAM_BY_SIDE[entry?.side]
+  if (team === undefined) return null
+  const unitType = String(entry?.unit_type ?? '')
+  if (!sizes.has(unitType)) return null
+
+  const count = Math.trunc(Number(entry?.count))
+  if (!Number.isFinite(count) || count < 1) return null
+  const tick = Math.trunc(Number(entry?.tick))
+  if (!Number.isFinite(tick) || tick < 1) return null
+
+  const message = typeof entry?.message === 'string' ? entry.message.trim() : ''
+  return {
+    team,
+    unit_type: unitType,
+    count: Math.min(SANDBOX_MAX_REINFORCE_COUNT, count),
+    tick,
+    ...(message.length > 0
+      ? { message: message.slice(0, SANDBOX_MAX_REINFORCE_MESSAGE) }
+      : {}),
+  }
+}
+
+// F4: A SCHEDULED BODY COUNTS AGAINST THE PER-SIDE CAP. SANDBOX_MAX_UNITS_PER_SIDE
+// exists so one launch cannot ask the engine for unbounded work (SB-2), and a
+// reinforcement is a body that arrives late, not a body that is free — a
+// hundred waves of five hundred is the same fight the placement cap refuses.
+//
+// The refusal names BOTH numbers, because "too many units" against an army the
+// player can see is 40 strong is a message that reads as a bug: what is over
+// the line is the sum, so the sum is what the sentence has to show. Named in
+// the lab's own words (blue/red), which is how the reinforcement rows are
+// labelled — the placement cap above keeps its player/enemy wording, since that
+// is the field the client sent.
+const reinforcementSideError = (placements, waves) => {
+  for (const [side, placed] of Object.entries(placements)) {
+    const scheduled = waves
+      .filter((w) => w.team === TEAM_BY_SIDE[side])
+      .reduce((sum, w) => sum + w.count, 0)
+    if (placed + scheduled > SANDBOX_MAX_UNITS_PER_SIDE)
+      return `too many units on the ${side} side (${placed} placed + ${scheduled} scheduled;`
+        + ` the lab allows ${SANDBOX_MAX_UNITS_PER_SIDE})`
+  }
+  return null
+}
+
 // Every type isCasterType() accepts, DERIVED rather than listed a second time.
 // The two config keys are the whole universe it can say yes to, and running the
 // union back through the predicate is what keeps this honest the day a third
@@ -209,9 +324,10 @@ const seedFrom = (value) => {
   return Number.isFinite(seed) ? seed : null
 }
 
-// Launch one lab battle. Body is {player_placement, enemy_placement, magic}:
-// axial entries, one per BODY, exactly as the campaign's battle route builds
-// them, plus S2's per-side school levels and channel pool.
+// Launch one lab battle. Body is {player_placement, enemy_placement, magic,
+// fortified_sides, reinforcements}: axial entries, one per BODY, exactly as the
+// campaign's battle route builds them, plus S2's per-side school levels and
+// channel pool and S4's walls and scheduled waves.
 //
 // The map is stamped here rather than taken from the body — only
 // maps/sample_battle.json exists, so there is nothing to pick between, and a
@@ -232,6 +348,32 @@ router.post('/battles', userExtractor, async (req, res) => {
   // survive alone?), so only the pair is refused.
   if (playerPlacement.length === 0 && enemyPlacement.length === 0)
     return res.status(400).json({ error: 'place at least one unit before launching' })
+
+  // S4's two lists, capped by COUNT on what the client actually sent — before
+  // anything is rebuilt, so a body of a hundred thousand entries is refused
+  // rather than sanitized one entry at a time.
+  const wallsSent = Array.isArray(req.body?.fortified_sides) ? req.body.fortified_sides : []
+  if (wallsSent.length > SANDBOX_MAX_WALL_SIDES)
+    return res.status(400).json({
+      error: `too many walled sides (${wallsSent.length}; the lab allows ${SANDBOX_MAX_WALL_SIDES})`,
+    })
+  const wavesSent = Array.isArray(req.body?.reinforcements) ? req.body.reinforcements : []
+  if (wavesSent.length > SANDBOX_MAX_REINFORCEMENTS)
+    return res.status(400).json({
+      error: `too many reinforcement waves (${wavesSent.length}; the lab allows`
+        + ` ${SANDBOX_MAX_REINFORCEMENTS})`,
+    })
+
+  // An entry that cannot be rebuilt is DROPPED (a dir the engine does not know,
+  // a type the catalog does not hold), never passed through half-built.
+  const walls = wallsSent.map(sanitizeWall).filter(Boolean)
+  const reinforcements = wavesSent.map((w) => sanitizeReinforcement(w, sizes)).filter(Boolean)
+
+  const overCap = reinforcementSideError(
+    { blue: playerPlacement.length, red: enemyPlacement.length },
+    reinforcements,
+  )
+  if (overCap) return res.status(400).json({ error: overCap })
 
   // Omitted entirely when the client sent nothing usable, rather than sent as
   // an empty object: the engine's defaults are the lab's defaults (SB-7), and
@@ -254,6 +396,11 @@ router.post('/battles', userExtractor, async (req, res) => {
       player_placement: playerPlacement,
       enemy_placement: enemyPlacement,
       ...(magic ? { magic } : {}),
+      // Omitted when empty, the same absence rule the magic block above
+      // follows: a battle with no walls is a battle whose input never mentions
+      // them, which is what an unpainted scenario has always sent.
+      ...(walls.length > 0 ? { fortified_sides: walls } : {}),
+      ...(reinforcements.length > 0 ? { reinforcements } : {}),
     },
     req.user._id,
     { runs, seed },
@@ -325,6 +472,11 @@ router.get('/reference', userExtractor, (req, res) => {
     paths: SPELL_PATHS.map((key) => ({ key, label: SPELL_PATH_TEXT[key] })),
     schools: SPELL_SCHOOLS.map((key) => ({ key, label: SPELL_SCHOOL_TEXT[key] })),
     casterTypes: CASTER_TYPES,
+    // The six hexside names the engine answers to (S4). Served rather than kept
+    // in the lab for the same reason the paths and schools above are: the lab
+    // holds no copy of the engine's vocabulary, so a wall painter cannot invent
+    // a seventh direction or spell one of the six differently.
+    hexDirections: HEX_DIRECTIONS,
     enemyPreset: { schools: { ...ENEMY_SCHOOLS }, channels: ENEMY_CHANNELS },
     limits: {
       maxPathLevel: SANDBOX_MAX_PATH_LEVEL,
@@ -338,6 +490,13 @@ router.get('/reference', userExtractor, (req, res) => {
       // and the level a side sits at when no magic block is sent. The lab
       // initialises its schools to it so that touching nothing changes nothing.
       openSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
+      // S4's bounds. `maxReinforceCount` is the ENGINE'S own per-wave clamp
+      // mirrored (MAX_REINFORCE_COUNT), so the spinner stops where the engine
+      // would have trimmed silently.
+      maxWallSides: SANDBOX_MAX_WALL_SIDES,
+      maxWallDurability: SANDBOX_MAX_WALL_DURABILITY,
+      maxReinforcements: SANDBOX_MAX_REINFORCEMENTS,
+      maxReinforceCount: SANDBOX_MAX_REINFORCE_COUNT,
     },
   })
 })

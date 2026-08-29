@@ -87,22 +87,31 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-08-29) — START HERE
 
-**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29; SLICES S1, S2 AND S3
-ARE SHIPPED, S4 IS THE LAST.** Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX
-MODE" entry in the Deferred design backlog below; **start there, and do not re-derive them.**
-S1 — the spine — landed 2026-08-29: the hex geometry is extracted, the Battle Lab composes and
-places BOTH armies from the full catalog, launches through the existing pipeline and plays the
-replay, with SB-12's per-launch retention behind it. S2 — the casters — landed the same day and is where the original ask is met: per-caster paths
-and scripts defaulting to the engine's own choice, per-side school levels and channel pool, and
-SB-8's real-host preset off the live constants. S3 — the lab itself — landed with it: N runs run
-sequentially, the fixed seed (which collapses a batch to one run, since it repeats the engine's
-whole draw sequence), the win-rate and average-survivor readout (SB-10), and the browser-local
-JSON export/import that makes a setup a checkable fixture (SB-11). **S4 is the last slice** —
-walls painting, reinforcements, and SB-13's bonus prefill of blue from the player's own
-campaign. Read the per-slice "what landed" notes under THE SLICE PLAN for the shapes each slice
-extends (the placement-entry whitelist in
-`routes/sandbox.js` is the seam they widen, one field at a time; `useSandboxStore` is the
-scenario S3 serialises).
+**▶▶ THE SANDBOX / TEST MODE FRONT IS CLOSED — INTERVIEWED AND BUILT 2026-08-29, ALL FOUR
+SLICES SHIPPED AND GREEN ON `main`.** Thirteen decisions (SB-1..SB-13) and the four-slice plan
+are in the "TEST / SANDBOX MODE" entry in the Deferred design backlog below, each slice carrying
+a "what landed" note; **start there, and do not re-derive them.** In order:
+
+- **S1, the spine** — the hex geometry extracted, the Battle Lab composing and placing BOTH
+  armies from the full catalog, launched through the existing pipeline and watched in
+  ReplayView, with SB-12's per-launch retention behind it.
+- **S2, the casters** — where the original ask is met: per-caster paths and scripts defaulting
+  to the engine's own choice, per-side school levels and channel pool, SB-8's preset off the
+  live constants.
+- **S3, the lab** — N runs run sequentially, the fixed seed (which collapses a batch to one run,
+  since it repeats the engine's whole draw sequence), the win-rate and average-survivor readout
+  (SB-10), and the browser-local JSON export/import that makes a setup a checkable fixture
+  (SB-11).
+- **S4, the extras** — wall painting, reinforcements, and SB-13's prefill of blue from the
+  player's own campaign. **Nothing in the lab is outstanding**: SB-13 was the last deferred item
+  and it is built.
+
+The seams to reuse when something new needs the lab: the placement-entry whitelist in
+`routes/sandbox.js` is what every slice widened, one field at a time and by construction, and
+`useSandboxStore` is the scenario S3 serialises.
+
+**So the next front is a choice, not a continuation.** The candidates are below in this same
+block.
 Everything else on `main` is SHIPPED and green — the front that closed just before this was ENEMY
 SCRIPTS + BATTLEFIELD ENCHANTMENTS (slices A and B, 2026-08-28/29 — item 5 below). The other
 candidates, each a decision already taken about what the thing IS and none of them started: the
@@ -7869,7 +7878,44 @@ sequence. So the server half is nearly free and the work is almost all in COMPOS
   - Not checked on import: unit types against the catalog. An unknown type rides to the server,
     which refuses it by name at the trust boundary — one rejection site, and it is the one that
     cannot be bypassed.
-- **S4 — the extras.** Walls painting, reinforcements, and SB-13's campaign prefill.
+- **S4 — the extras. ✅ SHIPPED 2026-08-29 — THE FRONT IS CLOSED.** Wall painting,
+  reinforcements, and SB-13's campaign prefill.
+
+  - **F1. A WALL BELONGS TO THE FIELD, NOT TO A SIDE.** `fortified_sides` is a property of the
+    battle — a rampart stands where it stands and both armies meet it — so unlike armies,
+    placements and magic there is ONE wall list per scenario rather than one per side. Painting
+    is: select a hex, toggle one of its six sides, set its durability. A durability left empty is
+    OMITTED from the wire so the engine's own default stands — the same absence discipline S2's
+    caster fields established, and not the same statement as 0 (a wall that falls to the first
+    blow).
+  - **F2. `wallSegment` MOVED INTO `utils/hexGeometry.js`**, doing exactly what S1's note said it
+    would: it stayed in `HexGrid` while it had one user, "and S4's wall painting is when that
+    changes". Moved verbatim — LAYOUT only, as SB-4 drew that line.
+  - **F3. REINFORCEMENTS ARE NAMED PER SIDE AND MAPPED SERVER-SIDE.** The lab speaks
+    `blue`/`red` like everything else in it; `TEAM_BY_SIDE` stamps the engine's team integer at
+    the boundary, for the same reason the map name is stamped there. An entry failing any gate is
+    dropped WHOLE rather than passed through half-built.
+  - **F4. SCHEDULED BODIES COUNT AGAINST THE PER-SIDE CAP.** `SANDBOX_MAX_UNITS_PER_SIDE` exists
+    so a launch cannot ask the engine for unbounded work (SB-2), and a reinforcement is a body
+    that arrives late, not a body that is free. The refusal names both halves ("N placed + M
+    scheduled"). A consequence worth knowing: the mirrored engine cap
+    (`SANDBOX_MAX_REINFORCE_COUNT`, 500) sits above the per-side cap (400), so this check always
+    bites first and the engine's own clamp cannot fire through this route. The mirror is kept
+    anyway — the number typed is the number that arrives.
+  - **F5. THE PREFILL IS CLIENT-SIDE, BLUE-ONLY, AND ADDS NO ROUTE.** It reads the campaign view
+    already in the browser: the roster plus ONE BODY PER LIVING CHARACTER (a character is not a
+    roster count), the school levels off `research`, then a server-side auto-place, and then each
+    living caster character's own paths and chosen script attached to the bodies of his type IN
+    PLACEMENT ORDER — the same rule `withCasterPaths` follows. **The channel pool is left
+    alone on purpose**: the campaign's pool comes from which bannered squads take the field
+    (`channelsForSquads`), and the lab fields loose troops with no squads at all.
+  - **F6. THE SCENARIO FORMAT IS v2, AND v1 STILL LOADS.** `LAB_SCENARIO_READABLE = [1, 2]`: a v1
+    file loads with both new lists empty, because a build that could paint no walls has nothing
+    to say about them and there is no v1 shape this build would read WRONGLY. Refusing would have
+    discarded saved fixtures for nothing. An unknown version is still refused.
+  - Hex selection widened to any passable hex, since a wall belongs to the field and could
+    otherwise never be painted mid-field. The PLACEMENT menu is still zone-bound — the two are
+    separate menus now, so "places only inside the side being edited" is unchanged.
 
 **One constraint, not a decision:** only `maps/sample_battle.json` exists, so there is no map
 picker — every sandbox battle is fought on the sample map's terrain until a second map does.

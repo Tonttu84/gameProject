@@ -1034,3 +1034,41 @@ body {
 .lab-batch h3 { margin: 0 0 0.3rem; font-size: 13px; color: var(--accent2); }
 .lab-batch p { margin: 0 0 0.2rem; font-size: 12px; }
 .lab-batch-survivors { color: #999; }
+
+/* S4's extras: the wall painter beside the hex menu, and the wave rows in the
+   casting column. Both are SCENARIO-level rather than per side — a rampart
+   belongs to the field, and one wave list carries both sides' arrivals. */
+.lab-wall-menu {
+  width: 15rem;
+  padding: 0.8rem;
+  border-left: 1px solid var(--border);
+  background: var(--bg2);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.lab-wall-menu h4 { margin: 0 0 0.6rem; font-size: 13px; color: var(--accent2); }
+.lab-wall-menu input { width: 5rem; }
+.lab-wall-side {
+  flex: 1;
+  text-align: left;
+  font-size: 12px;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg2);
+  color: #999;
+  cursor: pointer;
+}
+.lab-wall-side.active { color: #d9a441; border-color: #d9a441; background: var(--bg); }
+.lab-reinforce-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.lab-reinforce-row select { max-width: 9rem; }
+.lab-reinforce-row input[type="text"] { width: 100%; }

@@ -46,3 +46,37 @@ export const svgSize = (grid) => ({
   width: Math.ceil(HEX_SIZE * 1.5 * grid.height + HEX_SIZE * 2),
   height: Math.ceil(HEX_SIZE * SQRT3 * (grid.width + 0.5) + HEX_SIZE * 2),
 })
+
+// Engine hexside direction → axial neighbor offset (mirrors HexGrid.cpp DQ/DR).
+export const DIR_OFFSET = {
+  NE: [1, -1], E: [1, 0], SE: [0, 1], SW: [-1, 1], W: [-1, 0], NW: [0, -1],
+}
+
+// A fortified side {q, r, dir} draws a rampart on the edge SHARED between the
+// defended hex and its neighbor in `dir`. That edge is the perpendicular
+// bisector of the two hex centers — computing it from the centers avoids having
+// to reason about vertex order under the row→x / col→y axis swap.
+//
+// MOVED HERE 2026-08-29 (S4), doing what S1's own note said it would: this
+// stayed in HexGrid while it had exactly one user, and the lab's wall painting
+// is the second. LAYOUT only, as SB-4 drew that line — WHERE an edge is drawn,
+// never who may wall it or what a wall does when it is hit. An unknown
+// direction returns null and the caller draws nothing, which is how a map file
+// carrying a typo still renders.
+export const wallSegment = (q, r, dir) => {
+  const off = DIR_OFFSET[dir]
+  if (!off) return null
+  const a = toOffset(q, r)
+  const nb = toOffset(q + off[0], r + off[1])
+  const c = hexCenter(a.col, a.row)
+  const n = hexCenter(nb.col, nb.row)
+  const mx = (c.x + n.x) / 2
+  const my = (c.y + n.y) / 2
+  const dx = n.x - c.x
+  const dy = n.y - c.y
+  const len = Math.hypot(dx, dy) || 1
+  const px = -dy / len // unit perpendicular
+  const py = dx / len
+  const half = HEX_SIZE * 0.5 // hex edge length ≈ HEX_SIZE
+  return { x1: mx - px * half, y1: my - py * half, x2: mx + px * half, y2: my + py * half }
+}

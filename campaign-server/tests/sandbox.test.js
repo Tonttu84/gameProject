@@ -40,9 +40,10 @@ const { default: Battle } = await import('../models/battle.js')
 const { default: Tick } = await import('../models/tick.js')
 const { default: UnitType } = await import('../models/unitType.js')
 const {
-  ENEMY_CHANNELS, ENEMY_SCHOOLS, SANDBOX_MAX_CHANNELS, SANDBOX_MAX_PATH_LEVEL,
-  SANDBOX_MAX_RUNS, SANDBOX_MAX_SCHOOL_LEVEL, SANDBOX_MAX_UNITS_PER_SIDE, SPELL_PATHS,
-  SPELL_SCHOOLS,
+  ENEMY_CHANNELS, ENEMY_SCHOOLS, HEX_DIRECTIONS, SANDBOX_MAX_CHANNELS, SANDBOX_MAX_PATH_LEVEL,
+  SANDBOX_MAX_REINFORCEMENTS, SANDBOX_MAX_REINFORCE_COUNT, SANDBOX_MAX_REINFORCE_MESSAGE,
+  SANDBOX_MAX_RUNS, SANDBOX_MAX_SCHOOL_LEVEL, SANDBOX_MAX_UNITS_PER_SIDE,
+  SANDBOX_MAX_WALL_DURABILITY, SANDBOX_MAX_WALL_SIDES, SPELL_PATHS, SPELL_SCHOOLS,
 } = await import('../utils/campaignConfig.js')
 
 const api = supertest(app)
@@ -454,7 +455,23 @@ describe('GET /api/sandbox/reference', () => {
       maxChannels: SANDBOX_MAX_CHANNELS,
       openSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
       maxRuns: SANDBOX_MAX_RUNS,
+      // S4's four. `maxReinforceCount` is the ENGINE'S own per-wave clamp
+      // mirrored (MAX_REINFORCE_COUNT in BattleServer.cpp), so the lab stops
+      // where the engine would have trimmed without saying so.
+      maxWallSides: SANDBOX_MAX_WALL_SIDES,
+      maxWallDurability: SANDBOX_MAX_WALL_DURABILITY,
+      maxReinforcements: SANDBOX_MAX_REINFORCEMENTS,
+      maxReinforceCount: SANDBOX_MAX_REINFORCE_COUNT,
     })
+  })
+
+  test("names the engine's six hexside directions, so the lab keeps no copy", async () => {
+    const res = await reference()
+
+    // In the engine's own declaration order (HexDirection, hex/HexGrid.hpp) —
+    // the wall painter draws its six toggles straight off this.
+    expect(res.body.hexDirections).toEqual(HEX_DIRECTIONS)
+    expect(res.body.hexDirections).toEqual(['NE', 'E', 'SE', 'SW', 'W', 'NW'])
   })
 })
 
@@ -666,5 +683,239 @@ describe('a batch of runs (SB-10 / E1-E4)', () => {
     expect(res.status).toBe(201)
     expect(res.body.batch.runs).toBe(1)
     expect(res.body.batch.incomplete).toMatch(/timed out/)
+  })
+})
+
+// ── S4: the walls and the scheduled waves (SB-9) ─────────────────────────────
+//
+// Two BattleInput fields with no other way to be posed as a question: the
+// campaign injects walls from its own fort presets and a wave only when the
+// garrison sallies, so neither can be varied anywhere but here. Both go through
+// the same by-construction whitelist S1 built and S2 widened — nothing from the
+// body is passed through, and an entry that cannot be rebuilt is dropped whole
+// rather than half-built.
+describe('walls on the field (SB-9 / F1)', () => {
+  const inputOf = () => engine.runBattle.mock.calls[0][0]
+
+  test('a painted side survives the whitelist and reaches the engine', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      fortified_sides: [{ q: 4, r: 7, dir: 'SE', durability: 160 }],
+    })
+
+    expect(inputOf().fortified_sides).toEqual([{ q: 4, r: 7, dir: 'SE', durability: 160 }])
+  })
+
+  test('an unknown direction drops the entry rather than defaulting to one', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      fortified_sides: [
+        { q: 4, r: 7, dir: 'NORTH', durability: 100 },
+        { q: 5, r: 7, dir: 'SW', durability: 100 },
+      ],
+    })
+
+    // The engine's own hexDirFromName answers NE for anything it does not
+    // know, so a typo that travelled would silently wall a side nobody painted.
+    expect(inputOf().fortified_sides).toEqual([{ q: 5, r: 7, dir: 'SW', durability: 100 }])
+  })
+
+  test('coordinates are truncated and durability clamped', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      fortified_sides: [
+        { q: 4.9, r: 7.2, dir: 'SE', durability: SANDBOX_MAX_WALL_DURABILITY + 4000 },
+        { q: 2, r: 7, dir: 'W', durability: -50 },
+      ],
+    })
+
+    expect(inputOf().fortified_sides).toEqual([
+      { q: 4, r: 7, dir: 'SE', durability: SANDBOX_MAX_WALL_DURABILITY },
+      { q: 2, r: 7, dir: 'W', durability: 0 },
+    ])
+  })
+
+  test('an unreadable durability is OMITTED, which is the engine\'s own default', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      fortified_sides: [{ q: 4, r: 7, dir: 'SE' }, { q: 5, r: 7, dir: 'SE', durability: 'lots' }],
+    })
+
+    // DEFAULT_FORT_DURABILITY is what the engine puts on a side whose entry
+    // carries no durability, and saying nothing is the only way to ask for it.
+    expect(inputOf().fortified_sides).toEqual([
+      { q: 4, r: 7, dir: 'SE' },
+      { q: 5, r: 7, dir: 'SE' },
+    ])
+  })
+
+  test('caps the list by count, before anything is rebuilt', async () => {
+    const painted = Array.from({ length: SANDBOX_MAX_WALL_SIDES + 1 }, (_, i) => ({
+      q: i, r: 7, dir: 'SE',
+    }))
+    const res = await launch({ ...oneOfEach, fortified_sides: painted })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/too many walled sides/i)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('an empty list is omitted rather than sent as []', async () => {
+    stubEngine()
+    await launch({ ...oneOfEach, fortified_sides: [] })
+
+    expect('fortified_sides' in inputOf()).toBe(false)
+  })
+})
+
+describe('scheduled waves (SB-9 / F3 / F4)', () => {
+  const inputOf = () => engine.runBattle.mock.calls[0][0]
+
+  test('a side name becomes the engine\'s team integer', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      reinforcements: [
+        { side: 'blue', unit_type: 'Soldier', count: 40, tick: 4, message: 'The gates open!' },
+        { side: 'red', unit_type: 'Archer', count: 10, tick: 2 },
+      ],
+    })
+
+    // REDTEAM 1 / BLUETEAM 2 (backend/engine/include/Defines.hpp). The client
+    // never names a team number — the route is the one place that translation
+    // happens, exactly as the map is stamped here rather than sent.
+    expect(inputOf().reinforcements).toEqual([
+      { team: 2, unit_type: 'Soldier', count: 40, tick: 4, message: 'The gates open!' },
+      { team: 1, unit_type: 'Archer', count: 10, tick: 2 },
+    ])
+  })
+
+  test('drops an unknown side, an unknown type, a dead count and a tick below one', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      reinforcements: [
+        { side: 'green', unit_type: 'Soldier', count: 5, tick: 2 },
+        { side: 'blue', unit_type: 'Dragon', count: 5, tick: 2 },
+        { side: 'blue', unit_type: 'Soldier', count: 0, tick: 2 },
+        { side: 'blue', unit_type: 'Soldier', count: -3, tick: 2 },
+        { side: 'blue', unit_type: 'Soldier', count: 5, tick: 0 },
+        { side: 'blue', unit_type: 'Soldier', count: 5, tick: 'soon' },
+        { side: 'blue', unit_type: 'Soldier', count: 5, tick: 3 },
+      ],
+    })
+
+    // Dropped WHOLE, never passed through half-built: a wave the engine would
+    // have quietly moved to tick 1 is a wave nobody scheduled.
+    expect(inputOf().reinforcements).toEqual([
+      { team: 2, unit_type: 'Soldier', count: 5, tick: 3 },
+    ])
+  })
+
+  test('truncates the tick and trims the message to its cap', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      reinforcements: [{
+        side: 'blue',
+        unit_type: 'Soldier',
+        count: 40,
+        tick: 2.9,
+        message: 'x'.repeat(SANDBOX_MAX_REINFORCE_MESSAGE + 50),
+      }],
+    })
+
+    const [wave] = inputOf().reinforcements
+    expect(wave.tick).toBe(2)
+    // Trimmed rather than refused: a long log line is a mistake with an obvious
+    // repair, and this one is STORED on the battle input and printed into the
+    // replay.
+    expect(wave.message).toHaveLength(SANDBOX_MAX_REINFORCE_MESSAGE)
+  })
+
+  test("clamps the count to the engine's own maximum before anything counts it", async () => {
+    const res = await launch({
+      ...oneOfEach,
+      reinforcements: [{
+        side: 'blue', unit_type: 'Soldier', count: SANDBOX_MAX_REINFORCE_COUNT + 1000, tick: 2,
+      }],
+    })
+
+    // The clamp shows itself in the REFUSAL'S arithmetic, because the two caps
+    // collide: SANDBOX_MAX_REINFORCE_COUNT mirrors the engine's own 500, and
+    // the per-side cap is 400 — so a wave that big is over the line even after
+    // being clamped, and what the message counts is the clamped 500 rather than
+    // the 1500 the client asked for. (Which means the engine's own clamp can
+    // never actually fire through this route; it is mirrored so the number the
+    // player types is the number that arrives, never one trimmed a layer down.)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(new RegExp(`${SANDBOX_MAX_REINFORCE_COUNT} scheduled`))
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('an empty message is omitted, and so is an empty list', async () => {
+    stubEngine()
+    await launch({
+      ...oneOfEach,
+      reinforcements: [{ side: 'blue', unit_type: 'Soldier', count: 5, tick: 2, message: '   ' }],
+    })
+    expect('message' in inputOf().reinforcements[0]).toBe(false)
+
+    engine.runBattle.mockClear()
+    stubEngine()
+    await launch({ ...oneOfEach, reinforcements: [] })
+    expect('reinforcements' in inputOf()).toBe(false)
+  })
+
+  test('caps the number of waves by count', async () => {
+    const waves = Array.from({ length: SANDBOX_MAX_REINFORCEMENTS + 1 }, () => ({
+      side: 'blue', unit_type: 'Soldier', count: 1, tick: 1,
+    }))
+    const res = await launch({ ...oneOfEach, reinforcements: waves })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/too many reinforcement waves/i)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('F4: scheduled bodies count against the per-side cap, and the refusal names both', async () => {
+    const placed = Array.from({ length: SANDBOX_MAX_UNITS_PER_SIDE - 10 }, () => ({
+      unit_type: 'Soldier', q: 4, r: 4,
+    }))
+    const res = await launch({
+      player_placement: placed,
+      enemy_placement: [],
+      reinforcements: [{ side: 'blue', unit_type: 'Soldier', count: 11, tick: 3 }],
+    })
+
+    expect(res.status).toBe(400)
+    // A reinforcement is a body that arrives late, not a body that is free —
+    // and what is over the line is the SUM, so the sum is what the sentence
+    // shows rather than a placement count the player can see is under the cap.
+    expect(res.body.error).toMatch(/too many units on the blue side/i)
+    expect(res.body.error).toMatch(new RegExp(`${SANDBOX_MAX_UNITS_PER_SIDE - 10} placed`))
+    expect(res.body.error).toMatch(/11 scheduled/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('the cap is per side, so red\'s waves do not close blue\'s door', async () => {
+    stubEngine()
+    const placed = Array.from({ length: SANDBOX_MAX_UNITS_PER_SIDE - 10 }, () => ({
+      unit_type: 'Soldier', q: 4, r: 4,
+    }))
+    const res = await launch({
+      player_placement: placed,
+      enemy_placement: [],
+      reinforcements: [{ side: 'red', unit_type: 'Soldier', count: 300, tick: 3 }],
+    })
+
+    expect(res.status).toBe(201)
+    expect(inputOf().reinforcements).toEqual([
+      { team: 1, unit_type: 'Soldier', count: 300, tick: 3 },
+    ])
   })
 })

@@ -70,6 +70,57 @@ export const SANDBOX_MAX_SCHOOL_LEVEL = 9
 // approaching this is already far past every fight worth testing.
 export const SANDBOX_MAX_CHANNELS = 99
 
+// ── S4's two extra wire fields (SB-9) ───────────────────────────────────────
+//
+// `fortified_sides` and `reinforcements` are both real BattleInput fields with
+// no other way to be tried out: the campaign injects walls from its own fort
+// presets and a reinforcement wave only when the garrison sallies, so neither
+// can be POSED as a question anywhere but here. (`max_turns` was offered and
+// declined — it stays off the wire.)
+//
+// The vocabulary of a hexside, straight from the engine (HexDirection in
+// backend/engine/include/hex/HexGrid.hpp, in its own declaration order) and the
+// same six names FORTIFICATION_PRESETS below is authored in. Held here rather
+// than in the lab, so the client is served the engine's words instead of
+// keeping a second copy of them (17-5).
+export const HEX_DIRECTIONS = ['NE', 'E', 'SE', 'SW', 'W', 'NW']
+
+// How many sides one lab scenario may wall. The campaign's own fullest work is
+// TWELVE sides (FORTIFICATION_PRESETS.sample_battle, tiers 1 and 2 together),
+// so ten times that is far past any rampart the game can raise while still
+// bounding an array that is painted one side at a time by hand.
+export const SANDBOX_MAX_WALL_SIDES = 120
+
+// A SANITY BOUND, like SANDBOX_MAX_CHANNELS and for the same reason: durability
+// has no engine ceiling. The engine's own default is 100
+// (DEFAULT_FORT_DURABILITY, Defines.hpp) and the campaign's sturdiest preset is
+// 160, so this is thirty times the strongest wall the campaign can build — a
+// rampart no lab army will ever chew through, and still a number the engine's
+// arithmetic can hold.
+export const SANDBOX_MAX_WALL_DURABILITY = 5000
+
+// How many scheduled waves one launch may carry. Each entry is BODIES that
+// arrive late, so the bodies themselves are bounded by
+// SANDBOX_MAX_UNITS_PER_SIDE (counted placed + scheduled, at the route); this
+// bounds the number of ENTRIES, which is what a client could otherwise post
+// tens of thousands of. The campaign schedules exactly one (the garrison
+// sally), and twenty is more waves than a fight worth testing has turns to
+// spend them on.
+export const SANDBOX_MAX_REINFORCEMENTS = 20
+
+// THE ENGINE'S OWN NUMBER, mirrored rather than invented: BattleServer.cpp
+// clamps a wave to MAX_REINFORCE_COUNT = 500 itself. Mirroring it means the lab
+// refuses (or clamps) at the same place the engine would, so the count the
+// player types is the count that arrives — never a number silently trimmed one
+// layer down where nothing can say so.
+export const SANDBOX_MAX_REINFORCE_COUNT = 500
+
+// The wave's log line, capped because it is STORED on the battle input and
+// rendered into the replay log. The campaign's own sally line
+// (GARRISON_SALLY_BATTLE_MESSAGE) is 76 characters; this leaves room to write
+// one like it without letting a client park a novel in a battle document.
+export const SANDBOX_MAX_REINFORCE_MESSAGE = 120
+
 // Retires the frontend STARTING_ROSTER hardcode (docs/ADDING_UNITS.md §6).
 // Mage and Priest USED to sit here at 3 apiece; slice 5 moved them out of the
 // roster entirely and into STARTING_CHARACTERS below (docs/CAMPAIGN_PLAN.md

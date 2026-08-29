@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import useSandboxStore, { SIDES } from '../stores/useSandboxStore'
+import useCampaignStore from '../stores/useCampaignStore'
 import {
   autoPlaceLabSide, launchLabBattle, closeBattleLab, loadLabCastable,
-  exportLabScenario, importLabScenario,
+  exportLabScenario, importLabScenario, prefillLabFromCampaign,
 } from '../stores/flows'
-import { HEX_SIZE, hexCenter, hexPoints, toAxial, svgSize } from '../utils/hexGeometry'
+import { HEX_SIZE, hexCenter, hexPoints, toAxial, svgSize, wallSegment } from '../utils/hexGeometry'
 
 // THE BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE", slice S1).
 //
@@ -86,6 +87,19 @@ const SandboxScreen = ({ info, map }) => {
   const seed = useSandboxStore((s) => s.seed)
   const setSeed = useSandboxStore((s) => s.setSeed)
   const batch = useSandboxStore((s) => s.batch)
+  // S4's two scenario-level lists — NOT per side (F1/F3): a wall belongs to the
+  // field, and one wave list carries both sides' arrivals.
+  const walls = useSandboxStore((s) => s.walls)
+  const toggleWall = useSandboxStore((s) => s.toggleWall)
+  const setWallDurability = useSandboxStore((s) => s.setWallDurability)
+  const reinforcements = useSandboxStore((s) => s.reinforcements)
+  const addReinforcement = useSandboxStore((s) => s.addReinforcement)
+  const setReinforcement = useSandboxStore((s) => s.setReinforcement)
+  const removeReinforcement = useSandboxStore((s) => s.removeReinforcement)
+  // SB-13's prefill is offered only when there is a campaign to read (F5). The
+  // lab itself needs none — that is SB-1 — so this is the one place the screen
+  // looks at campaign state at all, and it looks at the player's OWN.
+  const campaign = useCampaignStore((s) => s.campaign)
 
   // Which caster body the editor is open on — SCREEN state, not store state:
   // it is a cursor into the setup, not part of it, and S3's export would have
@@ -179,8 +193,14 @@ const SandboxScreen = ({ info, map }) => {
 
   const totalPlaced = (s) => armies[s].placements.reduce((sum, p) => sum + p.count, 0)
 
+  // ANY passable hex may be SELECTED, not only one in the side being edited:
+  // a wall stands where it stands and both armies meet it (F1), so the wall
+  // panel has to be able to reach the middle of the field. What stays
+  // zone-gated is PLACEMENT — the hex menu below draws its unit rows only for
+  // the side's own zone, which is what keeps a click on a hex unambiguous about
+  // whose army it is composing.
   const handleHexClick = (col, row) => {
-    if (!inZone(side, row) || hexData(col, row).impassable) return
+    if (hexData(col, row).impassable) return
     setSelectedHex(
       selectedHex?.col === col && selectedHex?.row === row ? null : { col, row },
     )
@@ -244,6 +264,9 @@ const SandboxScreen = ({ info, map }) => {
   const hexMenu = () => {
     if (!selectedHex) return null
     const { col, row } = selectedHex
+    // Placement is the side's own business; a hex outside its zone offers the
+    // wall panel and nothing else.
+    if (!inZone(side, row)) return null
     const terrain = hexData(col, row).terrain
     const here = Object.fromEntries(placementsAt(side, col, row).map((p) => [p.type, p.count]))
     const composed = Object.keys(armies[side].army)
@@ -462,6 +485,147 @@ const SandboxScreen = ({ info, map }) => {
     )
   }
 
+  // ── The walls (SB-9 / F1) ───────────────────────────────────────────────
+  //
+  // ONE LIST FOR THE SCENARIO, edited whichever side the palette is on: a
+  // rampart is a property of the FIELD, not of an army, and both armies meet
+  // the one that stands between them. Painting is select-a-hex then toggle a
+  // side, and the six names come off the reference — the lab keeps no copy of
+  // the engine's vocabulary (17-5), here or anywhere else.
+  const wallAt = (q, r, dir) => walls.find((w) => w.q === q && w.r === r && w.dir === dir) ?? null
+
+  const wallMenu = () => {
+    if (!selectedHex) return null
+    const { q, r } = toAxial(selectedHex.col, selectedHex.row)
+
+    return (
+      <div className="lab-wall-menu" data-testid="lab-wall-menu">
+        <h4>Walls on hex {q},{r}</h4>
+        <p className="lab-hint">
+          A rampart stands on the edge between two hexes, and both armies meet it — so these
+          belong to the field rather than to a side. Left empty, a wall takes whatever the engine
+          gives it.
+        </p>
+        {(reference?.hexDirections ?? []).map((dir) => {
+          const wall = wallAt(q, r, dir)
+          return (
+            <div key={dir} className="lab-hex-row">
+              <button
+                className={`lab-wall-side ${wall ? 'active' : ''}`}
+                data-testid={`lab-wall-${dir}`}
+                onClick={() => toggleWall(q, r, dir)}
+              >
+                {dir}{wall ? ' — walled' : ''}
+              </button>
+              {wall && (
+                <input
+                  type="number"
+                  min="0"
+                  max={limits.maxWallDurability}
+                  placeholder="engine default"
+                  value={wall.durability ?? ''}
+                  data-testid={`lab-wall-durability-${dir}`}
+                  onChange={(e) => setWallDurability(
+                    q, r, dir,
+                    // An emptied field is the engine's own default, NOT zero — a
+                    // wall at 0 is a work that falls to the first blow, which is
+                    // a different thing to say.
+                    e.target.value === '' ? null : clamp(e.target.value, limits.maxWallDurability),
+                  )}
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ── The scheduled waves (SB-9 / F3) ─────────────────────────────────────
+  //
+  // Each row names its own SIDE in the lab's own words; the route turns that
+  // into the engine's team integer, so nothing here holds a team number. A wave
+  // is bodies that arrive late, and they count against the same per-side cap
+  // the placed ones do (F4) — the server says so by name if a launch goes over.
+  const reinforcementsPanel = () => (
+    <section className="lab-reinforcements" data-testid="lab-reinforcements">
+      <h3>Reinforcements</h3>
+      <p className="lab-hint">
+        Bodies that march on mid-battle, at the turn you name — the garrison sally the campaign
+        fights with, posed as a question. They count against the same per-side limit as the
+        troops already on the field.
+      </p>
+      {reinforcements.map((wave, index) => (
+        // Index-keyed on purpose: a wave has no identity of its own, and the
+        // list is only ever appended to or cut from, never reordered.
+        <div key={index} className="lab-reinforce-row" data-testid={`lab-reinforce-${index}`}>
+          <select
+            value={wave.side}
+            data-testid={`lab-reinforce-side-${index}`}
+            onChange={(e) => setReinforcement(index, { side: e.target.value })}
+          >
+            {SIDES.map((s) => <option key={s} value={s}>{SIDE_LABEL[s]}</option>)}
+          </select>
+          <select
+            value={wave.unit_type}
+            data-testid={`lab-reinforce-type-${index}`}
+            onChange={(e) => setReinforcement(index, { unit_type: e.target.value })}
+          >
+            {catalog.map((unit) => <option key={unit.name} value={unit.name}>{unit.name}</option>)}
+          </select>
+          <label className="lab-launch-field">
+            <span>Count</span>
+            <input
+              type="number"
+              min="1"
+              max={limits.maxReinforceCount}
+              value={wave.count}
+              data-testid={`lab-reinforce-count-${index}`}
+              onChange={(e) => setReinforcement(index, {
+                count: Math.max(1, clamp(e.target.value, limits.maxReinforceCount)),
+              })}
+            />
+          </label>
+          <label className="lab-launch-field">
+            <span>Turn</span>
+            <input
+              type="number"
+              min="1"
+              value={wave.tick}
+              data-testid={`lab-reinforce-tick-${index}`}
+              onChange={(e) => setReinforcement(index, { tick: Math.max(1, clamp(e.target.value)) })}
+            />
+          </label>
+          <input
+            type="text"
+            placeholder="what the log says when they arrive"
+            value={wave.message}
+            data-testid={`lab-reinforce-message-${index}`}
+            onChange={(e) => setReinforcement(index, { message: e.target.value })}
+          />
+          <button
+            data-testid={`lab-reinforce-remove-${index}`}
+            onClick={() => removeReinforcement(index)}
+          >
+            remove
+          </button>
+        </div>
+      ))}
+      <button
+        data-testid="lab-reinforce-add"
+        disabled={catalog.length === 0 || reinforcements.length >= (limits.maxReinforcements ?? 0)}
+        onClick={() => addReinforcement({
+          // The side being edited, the first type in the catalog, one body on
+          // turn one — a row that is legal the moment it appears, so nothing
+          // has to be filled in before the next one can be added.
+          side, unit_type: catalog[0]?.name ?? '', count: 1, tick: 1, message: '',
+        })}
+      >
+        Schedule a wave
+      </button>
+    </section>
+  )
+
   // ── The batch readout (SB-10 / E3) ──────────────────────────────────────
   //
   // What a batch can honestly say and nothing more: how often each side won,
@@ -578,6 +742,15 @@ const SandboxScreen = ({ info, map }) => {
             handed over to reproduce a bug exactly. */}
         <div className="lab-actions">
           <button data-testid="lab-export" onClick={exportLabScenario}>Export setup</button>
+          {/* SB-13's bonus (F5): the player's OWN campaign, composed into blue.
+              Offered only when there is one loaded, and DESTRUCTIVE — it
+              replaces blue's army, placements and school levels, which the
+              label says out loud rather than discovering afterwards. */}
+          {campaign && (
+            <button data-testid="lab-prefill" onClick={prefillLabFromCampaign}>
+              Prefill blue from your campaign (replaces it)
+            </button>
+          )}
           <label className="lab-import">
             Import setup
             <input
@@ -653,12 +826,34 @@ const SandboxScreen = ({ info, map }) => {
           {magicPanel()}
           {castersPanel()}
           {casterEditor()}
+          {reinforcementsPanel()}
         </div>
 
         <div className="lab-field">
           <div className="hex-grid-scroll">
             <svg width={svgW} height={svgH}>
               {hexElements}
+              {/* The ramparts, drawn on the edge SHARED by the walled hex and
+                  its neighbour — the same wallSegment the campaign's own
+                  deployment grid draws its fort with, which is why it moved
+                  into utils/hexGeometry (F2). */}
+              {walls.map((w) => {
+                const seg = wallSegment(w.q, w.r, w.dir)
+                if (!seg) return null
+                return (
+                  <line
+                    key={`wall-${w.q}-${w.r}-${w.dir}`}
+                    data-testid={`lab-wall-line-${w.q}-${w.r}-${w.dir}`}
+                    x1={seg.x1}
+                    y1={seg.y1}
+                    x2={seg.x2}
+                    y2={seg.y2}
+                    stroke="#d9a441"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                )
+              })}
               <text
                 x={hexCenter(0, playerZone.rowMax).x + HEX_SIZE}
                 y={svgH / 2}
@@ -684,6 +879,7 @@ const SandboxScreen = ({ info, map }) => {
             </svg>
           </div>
           {hexMenu()}
+          {wallMenu()}
         </div>
       </div>
     </div>

@@ -210,7 +210,10 @@ export const closeBattleLab = () => useUiStore.getState().closeLab()
 // lab packs hexes exactly as the real game does. What comes back is axial and
 // one entry per body; the grid draws offset stacks, so it is folded back into
 // {type, col, row, count} here — the one place that conversion belongs.
-export const autoPlaceLabSide = guarded(async (side) => {
+// Unguarded, because the prefill below calls it as one STEP of a longer flow
+// and needs a failure to abort that flow rather than be swallowed into an
+// undefined the next step would build on.
+const spreadLabSide = async (side) => {
   const { army } = useSandboxStore.getState()[side]
   const { placement } = await autoPlaceSandbox(side, army)
 
@@ -223,7 +226,9 @@ export const autoPlaceLabSide = guarded(async (side) => {
     else stacks.set(key, { type: entry.unit_type, col, row, count: 1 })
   }
   useSandboxStore.getState().setPlacements(side, [...stacks.values()])
-})
+}
+
+export const autoPlaceLabSide = guarded(spreadLabSide)
 
 // The seed as the WIRE wants it: an integer, or null for a fresh draw. The
 // store holds what was typed, so this is the one place that reading happens.
@@ -270,6 +275,10 @@ export const launchLabBattle = guarded(async () => {
   const enemy_placement = expand('red')
   if (player_placement.length === 0 && enemy_placement.length === 0) return
 
+  // Scenario-level, not per side (F1/F3): a wall belongs to the FIELD, and one
+  // wave list carries both sides' arrivals with each row naming whose it is.
+  const { walls, reinforcements } = state
+
   // BOTH blocks, always (D1). The lab's default is the engine's own — every
   // school at its open level and no pool — so sending them changes nothing
   // until the player moves a spinner, and the numbers on screen are then the
@@ -283,6 +292,27 @@ export const launchLabBattle = guarded(async () => {
     // player on his setup with the reason on screen.
     const summary = await postSandboxBattle({
       player_placement, enemy_placement, magic,
+      // S4's two extras, and both are OMITTED when empty — a scenario with no
+      // walls sends no `fortified_sides`, which is byte-for-byte the launch the
+      // lab made before this slice. A wall's `durability` follows the same rule
+      // one level down: null is "whatever the engine puts there itself"
+      // (DEFAULT_FORT_DURABILITY), and the way to ask for it is to say nothing.
+      ...(walls.length > 0
+        ? {
+          fortified_sides: walls.map(({ q, r, dir, durability }) => ({
+            q, r, dir, ...(durability === null || durability === undefined ? {} : { durability }),
+          })),
+        }
+        : {}),
+      // The side stays a WORD on this wire (F3): the route turns blue and red
+      // into the engine's team integers, so the browser never holds one.
+      ...(reinforcements.length > 0
+        ? {
+          reinforcements: reinforcements.map(({ side, unit_type, count, tick, message }) => ({
+            side, unit_type, count, tick, ...(message ? { message } : {}),
+          })),
+        }
+        : {}),
       runs: state.runs,
       // Sanitised HERE, once (the store keeps the string the player typed):
       // an unreadable field is no seed at all, which is the engine's own fresh
@@ -311,7 +341,18 @@ export const launchLabBattle = guarded(async () => {
 // things that are not part of a setup: the catalog and the reference (fetched),
 // the selected hex and the castable answer (cursors), and the battle just
 // fought (an outcome, not an input).
-export const LAB_SCENARIO_VERSION = 1
+// BUMPED TO 2 BY S4, which added two fields to the format (the walls and the
+// scheduled waves). The version is what a file is refused BY, so a format
+// change has to move it.
+//
+// A V1 FILE STILL LOADS, deliberately: the two new fields are simply empty in
+// one, so an old scenario is not a file this build has to guess at — it is a
+// file that says nothing about walls, and "no walls" is a complete answer.
+// Refusing it would have thrown away every fixture already saved to buy
+// nothing, since there is no v1 shape this build would read wrongly. A version
+// this build has never heard of is still refused rather than guessed at.
+export const LAB_SCENARIO_VERSION = 2
+const LAB_SCENARIO_READABLE = [1, 2]
 
 const scenarioSide = (side) => ({
   army: { ...side.army },
@@ -338,6 +379,10 @@ export const labScenario = () => {
     red: scenarioSide(state.red),
     runs: state.runs,
     seed: seedNumber(state.seed),
+    // Scenario-level, like the two numbers above: a wall belongs to the field
+    // rather than to a side (F1), and one wave list carries both sides'.
+    walls: state.walls.map((w) => ({ ...w })),
+    reinforcements: state.reinforcements.map((w) => ({ ...w })),
   }
 }
 
@@ -383,6 +428,22 @@ const validSide = (side) => {
       && Array.isArray(c.script) && c.script.every((id) => typeof id === 'string')))),
   )
 }
+
+// S4's two lists, validated on the same terms as a side: the shape the store's
+// own setters could have produced, and nothing else. A v1 file has neither
+// field at all, which reads as the empty list both are born as.
+const validWalls = (walls) =>
+  walls === undefined
+  || (Array.isArray(walls) && walls.every((w) =>
+    isBag(w) && Number.isFinite(w.q) && Number.isFinite(w.r) && typeof w.dir === 'string'
+    && (w.durability === null || w.durability === undefined || isCount(w.durability))))
+
+const validReinforcements = (waves) =>
+  waves === undefined
+  || (Array.isArray(waves) && waves.every((w) =>
+    isBag(w) && (w.side === 'blue' || w.side === 'red') && typeof w.unit_type === 'string'
+    && Number.isFinite(w.count) && w.count > 0 && Number.isFinite(w.tick) && w.tick >= 1
+    && (w.message === undefined || typeof w.message === 'string')))
 
 const applySide = (side, data) => {
   const store = useSandboxStore.getState()
@@ -438,14 +499,18 @@ export const importLabScenario = async (source) => {
   // A version this build does not know is refused rather than guessed at: a
   // scenario is a fixture other people's builds will read, and half-applying a
   // future format would be a worse answer than saying no.
-  if (!isBag(scenario) || scenario.version !== LAB_SCENARIO_VERSION) {
+  if (!isBag(scenario) || !LAB_SCENARIO_READABLE.includes(scenario.version)) {
     notice.show(
-      `That file is not a lab scenario this build can read (version ${LAB_SCENARIO_VERSION} expected)`
-      + ' — the setup is unchanged.',
+      'That file is not a lab scenario this build can read (versions '
+      + `${LAB_SCENARIO_READABLE.join(' and ')} are read here) — the setup is unchanged.`,
     )
     return false
   }
   if (!validSide(scenario.blue) || !validSide(scenario.red)) {
+    notice.show('That lab scenario is malformed — the setup is unchanged.')
+    return false
+  }
+  if (!validWalls(scenario.walls) || !validReinforcements(scenario.reinforcements)) {
     notice.show('That lab scenario is malformed — the setup is unchanged.')
     return false
   }
@@ -455,8 +520,95 @@ export const importLabScenario = async (source) => {
   const store = useSandboxStore.getState()
   store.setRuns(Number.isFinite(scenario.runs) ? scenario.runs : 1)
   store.setSeed(Number.isFinite(scenario.seed) ? String(scenario.seed) : null)
+  // Absent in a v1 file, which is the same thing as empty: that build could
+  // paint no walls and schedule no waves, so it has nothing to say about them.
+  store.setWalls((scenario.walls ?? []).map((w) => ({ ...w, durability: w.durability ?? null })))
+  store.setReinforcements((scenario.reinforcements ?? []).map((w) => ({ ...w })))
   // The outcome of the LAST setup is not the outcome of this one.
   store.setBatch(null)
   notice.show('Lab scenario loaded.')
   return true
 }
+
+// ── S4: prefill blue from the campaign (SB-13 / F5) ─────────────────────────
+//
+// The bonus the interview parked: *"allow the player to easily export his
+// research level, units etc to plan better"*. It is the player's OWN data, so
+// it raises no recon question — nothing here can tell him anything about the
+// host his campaign is shadowing, which is what kept SB-1 free-standing in the
+// first place.
+//
+// CLIENT-SIDE AND BLUE-ONLY, with no new route: every field it wants is already
+// on screen somewhere in the campaign view the browser is holding. What it
+// composes is what the player would otherwise type in by hand — his roster, his
+// living characters, his research levels, his casters' paths and scripts.
+//
+// IT REPLACES BLUE'S SETUP, army, placements and schools alike. That is
+// destructive, and the control says so; a prefill that merged would leave a
+// half-campaign army nobody could reason about.
+export const prefillLabFromCampaign = guarded(async () => {
+  const campaign = useCampaignStore.getState().campaign
+  if (!campaign) return
+  const notice = useNoticeStore.getState()
+
+  // 1. THE ARMY: the roster plus ONE BODY PER LIVING CHARACTER. A character is
+  // not a roster count (5-1) — the campaign budgets the two separately all the
+  // way through — so the Mage who leads the army has to be added here or he
+  // would not take the field at all. The dead stay on the rolls (5-9) and off
+  // the field.
+  const living = (campaign.characters ?? []).filter((c) => c.alive)
+  const army = { ...(campaign.roster ?? {}) }
+  for (const character of living) army[character.type] = (army[character.type] ?? 0) + 1
+
+  const store = useSandboxStore.getState()
+  for (const type of Object.keys(store.blue.army)) store.setArmyCount('blue', type, 0)
+  for (const [type, count] of Object.entries(army)) store.setArmyCount('blue', type, count)
+
+  // 2. THE SCHOOLS, straight off the research the player has already paid for.
+  //
+  // THE CHANNEL POOL IS LEFT ALONE, DELIBERATELY. A campaign's pool is decided
+  // by which BANNERED SQUADS take the field (channelsForSquads), and the lab
+  // fields loose troops with no squads at all (S1) — so there is no number here
+  // to carry across, and inventing one would be the lab quietly answering a
+  // question the campaign answers a different way.
+  for (const [school, block] of Object.entries(campaign.research?.schools ?? {}))
+    store.setSchoolLevel('blue', school, block?.level ?? 0)
+
+  // 3. PLACE THEM THROUGH THE SERVER'S OWN SPREAD, so the lab packs hexes
+  // exactly as the real game does — the same function the enemy's daily plan
+  // and both sides of a raid use.
+  await spreadLabSide('blue')
+
+  // 4. THE CASTERS, matched to bodies OF THEIR OWN TYPE IN PLACEMENT ORDER —
+  // the same rule withCasterPaths already follows server-side, because eleven
+  // Necromancers are eleven individuals and the only thing that can tell them
+  // apart is the order they were laid out in. A character with no paths and no
+  // script attaches nothing, which leaves that body at the engine's own choice.
+  const after = useSandboxStore.getState()
+  const casterTypes = after.reference?.casterTypes ?? []
+  const queues = new Map()
+  for (const character of living) {
+    if (!casterTypes.includes(character.type)) continue
+    const queue = queues.get(character.type) ?? []
+    queue.push(character)
+    queues.set(character.type, queue)
+  }
+
+  for (const stack of after.blue.placements) {
+    const queue = queues.get(stack.type)
+    if (!queue?.length) continue
+    for (let index = 0; index < stack.count && queue.length > 0; index++) {
+      const character = queue.shift()
+      after.setCasterConfig('blue', { col: stack.col, row: stack.row, type: stack.type }, index, {
+        // The view sends `paths: [{path, label, level}]` phrased (17-5); the
+        // store wants the engine's own {path: level} bag.
+        paths: Object.fromEntries((character.paths ?? []).map((p) => [p.path, p.level])),
+        // His chosen script, in the order he chose it — position is priority
+        // (S4-1) on both sides of this copy.
+        script: (character.chosenSpells?.chosen ?? []).map((row) => row.spell),
+      })
+    }
+  }
+
+  notice.show("Blue is now your campaign army — roster, characters, research and all.")
+})

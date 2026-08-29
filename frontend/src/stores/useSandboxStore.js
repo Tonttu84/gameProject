@@ -106,6 +106,23 @@ const initialState = () => ({
   // The server sends it on every launch, a batch of one included, so the
   // readout needs no special case for the common launch.
   batch: null,
+
+  // ── S4's two extras (SB-9) ──────────────────────────────────────────────
+  //
+  // A WALL BELONGS TO THE FIELD, NOT TO A SIDE (F1). `fortified_sides` is a
+  // property of the battle rather than of an army — a rampart stands where it
+  // stands and both armies meet it — so this is ONE list for the scenario,
+  // edited whichever side the palette happens to be on, unlike the armies,
+  // placements and magic above. Entries are {q, r, dir, durability}, and
+  // `durability: null` means "whatever the engine puts there itself", which is
+  // sent as no durability at all.
+  walls: [],
+  // The scheduled waves, {side, unit_type, count, tick, message}. NAMED PER
+  // SIDE (F3): the lab speaks blue and red like every other part of it, and the
+  // route turns that into the engine's team integer — the client never holds a
+  // team number. Scenario-level for the same reason the walls are: one wave
+  // list carries both sides' arrivals, each row saying whose it is.
+  reinforcements: [],
 })
 
 const useSandboxStore = create((set, get) => ({
@@ -147,6 +164,52 @@ const useSandboxStore = create((set, get) => ({
   setSeed: (seed) => set({ seed: seed === null || String(seed).trim() === '' ? null : String(seed) }),
 
   setBatch: (batch) => set({ batch }),
+
+  // Paint or unpaint one hexside. A TOGGLE, because that is what painting is:
+  // the same click that raised a rampart takes it down again, and there is no
+  // state in between for a separate "remove" to be about. New paint carries
+  // NULL durability — the engine's own DEFAULT_FORT_DURABILITY, asked for by
+  // saying nothing (the absence rule this store keeps everywhere else) — and
+  // the durability control below is how a wall becomes sturdier than that.
+  toggleWall: (q, r, dir) =>
+    set((s) => {
+      const at = (w) => w.q === q && w.r === r && w.dir === dir
+      return s.walls.some(at)
+        ? { walls: s.walls.filter((w) => !at(w)) }
+        : { walls: [...s.walls, { q, r, dir, durability: null }] }
+    }),
+
+  // What one painted side can take before it falls. Null (an emptied field) is
+  // the engine's own default rather than zero — a wall at 0 is a work that
+  // falls to the first blow, which is a different statement from not having
+  // said anything.
+  setWallDurability: (q, r, dir, durability) =>
+    set((s) => ({
+      walls: s.walls.map((w) =>
+        (w.q === q && w.r === r && w.dir === dir ? { ...w, durability } : w)),
+    })),
+
+  // Replace the whole list — what the scenario import applies and what Clear
+  // empties, the same wholesale contract setPlacements holds for a side.
+  setWalls: (walls) => set({ walls }),
+
+  // One more wave, at the end of the list. Order is not priority here (each row
+  // carries its own tick), but appending is what keeps a row where the player
+  // put it while he edits the one above.
+  addReinforcement: (wave) => set((s) => ({ reinforcements: [...s.reinforcements, wave] })),
+
+  // Merge a patch into the `index`-th wave. Merged rather than replaced so the
+  // five fields are edited independently, exactly as a caster's paths and
+  // script are.
+  setReinforcement: (index, patch) =>
+    set((s) => ({
+      reinforcements: s.reinforcements.map((w, i) => (i === index ? { ...w, ...patch } : w)),
+    })),
+
+  removeReinforcement: (index) =>
+    set((s) => ({ reinforcements: s.reinforcements.filter((_, i) => i !== index) })),
+
+  setReinforcements: (reinforcements) => set({ reinforcements }),
 
   // Compose: how many of `type` this side fields. Zero removes the row rather
   // than leaving a 0 behind, so `army` reads as the list it is.

@@ -48,6 +48,7 @@ import {
   getSandboxReference, postSandboxCastable,
 } from '../services/api'
 import App from '../App'
+import useCampaignStore from '../stores/useCampaignStore'
 
 const info = {
   grid: { width: 16, height: 30, hexCapacity: 640 },
@@ -83,11 +84,17 @@ const reference = {
     { key: 'enchantment', label: 'Enchantment' }, { key: 'construction', label: 'Construction' },
   ],
   casterTypes: ['Mage', 'Priest', 'Necromancer'],
+  // S4: the engine's six hexside names, in its own declaration order. The wall
+  // painter draws its toggles straight off this rather than holding a copy.
+  hexDirections: ['NE', 'E', 'SE', 'SW', 'W', 'NW'],
   enemyPreset: {
     schools: { evocation: 1, conjuration: 2, enchantment: 1, construction: 0 },
     channels: 3,
   },
-  limits: { maxPathLevel: 9, maxSchoolLevel: 9, maxChannels: 99, openSchoolLevel: 9, maxRuns: 20 },
+  limits: {
+    maxPathLevel: 9, maxSchoolLevel: 9, maxChannels: 99, openSchoolLevel: 9, maxRuns: 20,
+    maxWallSides: 120, maxWallDurability: 5000, maxReinforcements: 20, maxReinforceCount: 500,
+  },
 }
 
 // The lab's own default magic block: every school at the engine's own open
@@ -719,6 +726,19 @@ describe('the scenario file (SB-11)', () => {
     fireEvent.change(screen.getByTestId('lab-school-evocation'), { target: { value: '2' } })
     fireEvent.click(screen.getByTestId('lab-side-blue'))
 
+    // S4's two extras are SCENARIO-level (F1/F3) — one wall list for the field
+    // and one wave list for both sides — so they ride the file beside the
+    // launch numbers rather than inside either side's block.
+    fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+    fireEvent.click(screen.getByTestId('lab-wall-SE'))
+    fireEvent.change(screen.getByTestId('lab-wall-durability-SE'), { target: { value: '250' } })
+    fireEvent.click(screen.getByTestId('lab-reinforce-add'))
+    fireEvent.change(screen.getByTestId('lab-reinforce-count-0'), { target: { value: '40' } })
+    fireEvent.change(screen.getByTestId('lab-reinforce-tick-0'), { target: { value: '4' } })
+    fireEvent.change(screen.getByTestId('lab-reinforce-message-0'), {
+      target: { value: 'The gates open!' },
+    })
+
     setRuns(6)
     setSeed('20260829')
   }
@@ -733,14 +753,25 @@ describe('the scenario file (SB-11)', () => {
     const scenario = JSON.parse(text)
     // A plain JSON file with a format version — checkable into the repo as a
     // fixture, and refusable by a build that does not know the shape.
-    expect(scenario.version).toBe(1)
+    // BUMPED BY S4: the format grew the walls and the waves, and the version
+    // is what a file is refused by, so a format change has to move it.
+    expect(scenario.version).toBe(2)
     expect(scenario.runs).toBe(6)
     expect(scenario.seed).toBe(20260829)
+    expect(scenario.walls).toEqual([{ q: 2, r: 4, dir: 'SE', durability: 250 }])
+    expect(scenario.reinforcements).toEqual([
+      { side: 'blue', unit_type: 'Soldier', count: 40, tick: 4, message: 'The gates open!' },
+    ])
     expect(saved.revoked).toBe('blob:lab-scenario')
 
     // Now tear the setup down completely — both sides, the magic and the
     // launch numbers — so nothing that comes back could have merely survived.
     fireEvent.click(screen.getByTestId('lab-clear'))
+    // Clearing the placements drops the selection with them, so the wall panel
+    // needs its hex picked again before the rampart can be taken down.
+    fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+    fireEvent.click(screen.getByTestId('lab-wall-SE'))
+    fireEvent.click(screen.getByTestId('lab-reinforce-remove-0'))
     compose('Soldier', 0)
     compose('Mage', 0)
     fireEvent.change(screen.getByTestId('lab-channels'), { target: { value: '0' } })
@@ -771,6 +802,39 @@ describe('the scenario file (SB-11)', () => {
     fireEvent.click(screen.getByTestId('lab-side-red'))
     expect(screen.getByTestId('lab-glyph-red-3-25-Zombie')).toHaveTextContent('Z4')
     expect(screen.getByTestId('lab-school-evocation')).toHaveValue(2)
+
+    // …and S4's two scenario-level lists, which belong to neither side.
+    expect(screen.getByTestId('lab-wall-line-2-4-SE')).toBeInTheDocument()
+    expect(screen.getByTestId('lab-reinforce-count-0')).toHaveValue(40)
+    expect(screen.getByTestId('lab-reinforce-message-0')).toHaveValue('The gates open!')
+  })
+
+  it('still reads a v1 file, taking its silence about walls as none (F6)', async () => {
+    await openLab()
+    placeSoldiers(3)
+
+    // A file saved before S4 existed. It is not a shape this build would read
+    // WRONGLY — a build that could paint no walls has nothing to say about them
+    // — so refusing it would throw away every fixture already saved to buy
+    // nothing.
+    importFile(JSON.stringify({
+      version: 1,
+      blue: {
+        army: { Zombie: 2 },
+        placements: [{ type: 'Zombie', col: 5, row: 5, count: 2 }],
+        magic: { schools: { evocation: 4 }, channels: 2 },
+      },
+      red: { army: {}, placements: [], magic: { schools: {}, channels: 0 } },
+      runs: 3,
+      seed: null,
+    }))
+
+    expect(await screen.findByTestId('lab-glyph-blue-5-5-Zombie')).toHaveTextContent('Z2')
+    expect(screen.getByTestId('lab-channels')).toHaveValue(2)
+    expect(screen.getByTestId('lab-runs')).toHaveValue(3)
+    // Nothing walled and nothing scheduled — the empty both lists are born as.
+    expect(screen.queryByTestId('lab-wall-line-2-4-SE')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('lab-reinforce-0')).not.toBeInTheDocument()
   })
 
   it('leaves the standing setup untouched when the file is malformed', async () => {
@@ -800,7 +864,7 @@ describe('the scenario file (SB-11)', () => {
 
     importFile(JSON.stringify({ ...good, version: 99 }))
     await waitFor(() =>
-      expect(screen.getByTestId('auth-notice')).toHaveTextContent(/version 1 expected/))
+      expect(screen.getByTestId('auth-notice')).toHaveTextContent(/versions 1 and 2 are read here/))
     expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
 
     // A side whose placements are not a list of stacks: refused whole, rather
@@ -810,5 +874,255 @@ describe('the scenario file (SB-11)', () => {
     await waitFor(() => expect(screen.getByTestId('auth-notice')).toHaveTextContent(/malformed/))
     expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
     expect(screen.getByTestId('lab-recruit-Soldier')).toHaveValue(3)
+  })
+})
+
+// ── S4: the walls, the waves and the prefill (SB-9 / SB-13) ──────────────────
+//
+// Two BattleInput fields with no other way to be posed as a question — the
+// campaign injects walls off its own fort presets and a wave only when the
+// garrison sallies — plus the bonus the interview parked: the player's own
+// campaign, composed into blue.
+describe('painting walls (SB-9 / F1)', () => {
+  // Any passable hex may be SELECTED, not only one in the side being edited: a
+  // rampart stands where it stands and both armies meet it, so the panel has to
+  // reach the middle of the field. Placement stays zone-gated.
+  const selectHex = (col, row) => fireEvent.click(screen.getByTestId(`lab-hex-${col}-${row}`))
+
+  it('paints a side on, and paints the same side off again', async () => {
+    await openLab()
+    selectHex(4, 4)
+
+    fireEvent.click(screen.getByTestId('lab-wall-SE'))
+    // Drawn on the edge SHARED by the hex and its neighbour — the very
+    // wallSegment the campaign's deployment grid draws its fort with (F2).
+    expect(screen.getByTestId('lab-wall-line-2-4-SE')).toBeInTheDocument()
+    expect(screen.getByTestId('lab-wall-SE')).toHaveTextContent('walled')
+
+    // The same click takes it down: painting is a toggle, and there is no
+    // state in between for a separate "remove" to be about.
+    fireEvent.click(screen.getByTestId('lab-wall-SE'))
+    expect(screen.queryByTestId('lab-wall-line-2-4-SE')).not.toBeInTheDocument()
+  })
+
+  it('offers all six of the engine\'s directions, and no seventh', async () => {
+    await openLab()
+    selectHex(4, 4)
+
+    for (const dir of reference.hexDirections)
+      expect(screen.getByTestId(`lab-wall-${dir}`)).toBeInTheDocument()
+    expect(screen.queryByTestId('lab-wall-NORTH')).not.toBeInTheDocument()
+  })
+
+  it('belongs to the FIELD, not to a side — it survives the side tab', async () => {
+    await openLab()
+    selectHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-wall-SE'))
+
+    fireEvent.click(screen.getByTestId('lab-side-red'))
+    expect(screen.getByTestId('lab-wall-line-2-4-SE')).toBeInTheDocument()
+    // …and an enemy-zone hex paints into the same one list.
+    selectHex(3, 25)
+    fireEvent.click(screen.getByTestId('lab-wall-W'))
+    expect(screen.getByTestId('lab-wall-line--9-25-W')).toBeInTheDocument()
+  })
+
+  it('rides the launch, with an unset durability left off entirely', async () => {
+    await openLab()
+    placeSoldiers(2)
+    selectHex(5, 5)
+    fireEvent.click(screen.getByTestId('lab-wall-SE'))
+    fireEvent.click(screen.getByTestId('lab-wall-SW'))
+    fireEvent.change(screen.getByTestId('lab-wall-durability-SW'), { target: { value: '250' } })
+
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalledWith(expect.objectContaining({
+      // Saying nothing is how the engine's own DEFAULT_FORT_DURABILITY is asked
+      // for — the same absence rule the caster fields keep one layer down.
+      fortified_sides: [
+        { q: 3, r: 5, dir: 'SE' },
+        { q: 3, r: 5, dir: 'SW', durability: 250 },
+      ],
+    })))
+  })
+
+  it('sends no fortified_sides at all when nothing is painted', async () => {
+    await openLab()
+    placeSoldiers(2)
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalled())
+    expect('fortified_sides' in postSandboxBattle.mock.calls[0][0]).toBe(false)
+  })
+})
+
+describe('scheduling reinforcements (SB-9 / F3)', () => {
+  it('adds a row, edits it, and drops it again', async () => {
+    await openLab()
+    fireEvent.click(screen.getByTestId('lab-reinforce-add'))
+
+    // A row that is legal the moment it appears: the side being edited, the
+    // first type in the catalog, one body on turn one.
+    expect(screen.getByTestId('lab-reinforce-side-0')).toHaveValue('blue')
+    expect(screen.getByTestId('lab-reinforce-count-0')).toHaveValue(1)
+    expect(screen.getByTestId('lab-reinforce-tick-0')).toHaveValue(1)
+
+    fireEvent.click(screen.getByTestId('lab-reinforce-remove-0'))
+    expect(screen.queryByTestId('lab-reinforce-0')).not.toBeInTheDocument()
+  })
+
+  it('carries both sides in ONE list, each row naming whose it is', async () => {
+    await openLab()
+    placeSoldiers(2)
+
+    fireEvent.click(screen.getByTestId('lab-reinforce-add'))
+    fireEvent.change(screen.getByTestId('lab-reinforce-type-0'), { target: { value: 'Cavalry' } })
+    fireEvent.change(screen.getByTestId('lab-reinforce-count-0'), { target: { value: '25' } })
+    fireEvent.change(screen.getByTestId('lab-reinforce-tick-0'), { target: { value: '6' } })
+    fireEvent.change(screen.getByTestId('lab-reinforce-message-0'), {
+      target: { value: 'Horsemen on the ridge!' },
+    })
+
+    fireEvent.click(screen.getByTestId('lab-reinforce-add'))
+    fireEvent.change(screen.getByTestId('lab-reinforce-side-1'), { target: { value: 'red' } })
+    fireEvent.change(screen.getByTestId('lab-reinforce-type-1'), { target: { value: 'Zombie' } })
+
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalledWith(expect.objectContaining({
+      // The SIDE stays a word on this wire (F3) — the route turns blue and red
+      // into the engine's team integers, so the browser holds no team number.
+      // An empty message is left off, like every other empty field the lab
+      // sends.
+      reinforcements: [
+        {
+          side: 'blue', unit_type: 'Cavalry', count: 25, tick: 6,
+          message: 'Horsemen on the ridge!',
+        },
+        { side: 'red', unit_type: 'Zombie', count: 1, tick: 1 },
+      ],
+    })))
+  })
+
+  it('reads its bounds off the server, and sends nothing when there are no waves', async () => {
+    await openLab()
+    placeSoldiers(2)
+    fireEvent.click(screen.getByTestId('lab-reinforce-add'))
+    expect(screen.getByTestId('lab-reinforce-count-0')).toHaveAttribute('max', '500')
+
+    fireEvent.click(screen.getByTestId('lab-reinforce-remove-0'))
+    fireEvent.click(screen.getByTestId('lab-launch'))
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalled())
+    expect('reinforcements' in postSandboxBattle.mock.calls[0][0]).toBe(false)
+  })
+})
+
+describe('prefilling blue from the campaign (SB-13 / F5)', () => {
+  // The campaign view as the server serves it, cut down to the fields the
+  // prefill reads: the roster, the characters (with their PHRASED paths and
+  // their chosen script), and the research levels.
+  const campaign = {
+    id: 'campaign-1',
+    status: 'active',
+    roster: { Soldier: 12, Mage: 1 },
+    research: {
+      schools: {
+        evocation: { level: 3 }, conjuration: { level: 1 },
+        enchantment: { level: 2 }, construction: { level: 0 },
+      },
+    },
+    characters: [
+      {
+        id: 'c1', name: 'Elrid', type: 'Mage', alive: true,
+        paths: [{ path: 'fire', label: 'Fire', level: 3 }, { path: 'air', label: 'Air', level: 1 }],
+        chosenSpells: { chosen: [{ spell: 'fireball', label: 'Ember' }] },
+      },
+      // Dead men stay on the rolls (5-9) and off the field.
+      { id: 'c2', name: 'Maro', type: 'Mage', alive: false, paths: [], chosenSpells: { chosen: [] } },
+      { id: 'c3', name: 'Bram', type: 'Soldier', alive: true, paths: null },
+    ],
+  }
+
+  // What the server's own spread answers with for that army: the two Mage
+  // bodies (the roster's one plus the living character) on one hex, the
+  // thirteen foot on another.
+  const spread = [
+    ...Array.from({ length: 2 }, () => ({ unit_type: 'Mage', q: 2, r: 4 })),
+    ...Array.from({ length: 13 }, () => ({ unit_type: 'Soldier', q: 3, r: 5 })),
+  ]
+
+  const openWithCampaign = async () => {
+    await openLab()
+    // Seeded straight into the store: the lab needs no campaign to open (SB-1),
+    // so this fixture is the only campaign in the test at all.
+    useCampaignStore.setState({ campaign })
+    return screen.findByTestId('lab-prefill')
+  }
+
+  it('is offered only when a campaign is loaded', async () => {
+    await openLab()
+    // SB-1 again: the lab opens with no campaign at all, so there is nothing
+    // for the prefill to read and the control is simply not there.
+    expect(screen.queryByTestId('lab-prefill')).not.toBeInTheDocument()
+
+    useCampaignStore.setState({ campaign })
+    expect(await screen.findByTestId('lab-prefill')).toBeInTheDocument()
+  })
+
+  it('composes the roster plus one body per LIVING character, and places them', async () => {
+    autoPlaceSandbox.mockResolvedValue({ placement: spread })
+    await openWithCampaign()
+
+    fireEvent.click(screen.getByTestId('lab-prefill'))
+
+    // A character is not a roster count (5-1), so the Mage who leads the army
+    // is a body ADDED to the twelve foot and the roster's own Mage — and the
+    // dead one is not.
+    await waitFor(() => expect(autoPlaceSandbox).toHaveBeenCalledWith('blue', {
+      Soldier: 13, Mage: 2,
+    }))
+    expect(await screen.findByTestId('lab-glyph-blue-4-4-Mage')).toHaveTextContent('M2')
+    expect(screen.getByTestId('lab-glyph-blue-5-5-Soldier')).toHaveTextContent('S13')
+    expect(screen.getByTestId('lab-recruit-Soldier')).toHaveValue(13)
+  })
+
+  it('sets the school levels from the research already paid for', async () => {
+    autoPlaceSandbox.mockResolvedValue({ placement: spread })
+    await openWithCampaign()
+
+    fireEvent.click(screen.getByTestId('lab-prefill'))
+
+    await waitFor(() => expect(screen.getByTestId('lab-school-evocation')).toHaveValue(3))
+    expect(screen.getByTestId('lab-school-enchantment')).toHaveValue(2)
+    expect(screen.getByTestId('lab-school-construction')).toHaveValue(0)
+    // THE CHANNEL POOL IS LEFT ALONE, deliberately: a campaign's pool is
+    // decided by which bannered squads take the field, and the lab fields loose
+    // troops with no squads at all.
+    expect(screen.getByTestId('lab-channels')).toHaveValue(0)
+    // …and red is untouched, because the prefill is blue's own data.
+    fireEvent.click(screen.getByTestId('lab-side-red'))
+    expect(screen.getByTestId('lab-school-evocation')).toHaveValue(9)
+  })
+
+  it("attaches a caster character's paths and script to a body of his type", async () => {
+    autoPlaceSandbox.mockResolvedValue({ placement: spread })
+    await openWithCampaign()
+
+    fireEvent.click(screen.getByTestId('lab-prefill'))
+    await screen.findByTestId('lab-caster-Mage-4-4-0')
+
+    // Matched to bodies of his own type IN PLACEMENT ORDER — the same rule
+    // withCasterPaths follows server-side, because the only thing that tells
+    // two Mages apart is the order they were laid out in. Elrid takes body #1;
+    // the roster's own Mage behind him is left at the engine's own choice.
+    fireEvent.click(screen.getByTestId('lab-caster-Mage-4-4-0'))
+    expect(await screen.findByTestId('lab-path-fire')).toHaveValue(3)
+    expect(screen.getByTestId('lab-path-air')).toHaveValue(1)
+    expect(screen.getByTestId('lab-script-remove-fireball')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('lab-caster-Mage-4-4-1'))
+    expect(await screen.findByTestId('lab-path-fire')).toHaveValue(0)
+    expect(screen.queryByTestId('lab-script-remove-fireball')).not.toBeInTheDocument()
   })
 })
