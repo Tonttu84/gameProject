@@ -210,17 +210,16 @@ Two real subsystems now, not one: the C++ **battle engine** (`backend/engine/`) 
 raids, magic research, the forge) with a React campaign UI (`frontend/`) in front of it. The
 "placeholder React app" this section described until 2026-08-29 has not been true for many
 stages; `docs/CAMPAIGN_PLAN.md` is the campaign layer's own record and the place to read it.
-See `DESIGN.md` for hex/formation/combat design (most of it is marked `[PLANNED]` and not yet
-implemented — the hex-side engagement/frontage/formation system it describes is only partially
-built in `Battlefield::resolveEngagements()`).
+See `ARCHITECTURE.md` for the data-flow diagrams (**rewritten 2026-08-29** against the real
+system — the previous version had rotted back to the pre-hex, pre-magic engine, so anything you
+remember from it is suspect), and `DESIGN.md` for hex/formation/combat design (most of it is
+marked `[PLANNED]` and not yet implemented — the hex-side engagement/frontage/formation system it
+describes is only partially built in `Battlefield::resolveEngagements()`).
 
-**⚠ `ARCHITECTURE.md` IS STALE — do not trust its diagrams (audited 2026-08-29).** It predates
-hexes (it draws `Cell*` and Chebyshev distance; there is no `Cell` class), predates the magic
-system (it gives Mage/Priest/Necromancer a `mana: int` that slice 1 DELETED, and `castFireball()`/
-`castBless()`/`raiseDead()` methods the spell roster replaced), omits ~10 unit types and the
-campaign layer entirely, and its tick diagram is missing `resolveEngagements()`,
-`onTurnStart()`/`onTurnEnd()` and the battlefield-enchantment hooks. The per-tick flow below and
-the module boundaries here are the accurate summary; rewriting that file is an open task.
+**The authoring guides, each written out of a path actually walked** (C-8: content leads, tooling
+is its exhaust): `docs/ADDING_UNITS.md`, `docs/ADDING_ITEMS.md` (items, constructions and crafted
+units — all three forge-bearing catalogs), and `docs/ADDING_SPELLS.md` (spell forms, the
+battlefield-enchantment kind, and the sweeps that review a row).
 
 **Module boundaries** (mirrored under `BUILD/` by the Makefile's recursive source discovery):
 - `backend/engine/` — core simulation: `HexGrid`/`Hex`/`HexSide`, `AUnit` hierarchy

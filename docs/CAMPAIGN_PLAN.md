@@ -540,24 +540,28 @@ this order to pick the work up cold:
      assigned at most once ("only 1 mage should have it scripted" applied to the enemy's own
      authoring).
 
-6. **DOCUMENTATION DEBT, found by an audit on 2026-08-29 — two items, neither urgent, both real.**
-   Recorded here rather than left in a session's memory, because that is the whole point of this
-   file.
-   - **`ARCHITECTURE.md` IS OBSOLETE and CLAUDE.md now says so at the point it used to recommend
-     it.** It describes roughly the pre-hex, pre-magic engine: `Cell*` and Chebyshev distance
-     (there is no `Cell` class), a `mana: int` on Mage/Priest/Necromancer that magic slice 1
-     DELETED, `castFireball()`/`castBless()`/`raiseDead()` methods the spell roster replaced,
-     ~10 missing unit types, a tick diagram with no `resolveEngagements()`/`onTurnStart()`/
-     `onTurnEnd()`, and a "future" campaign layer that has been real for months. **It is a
-     rewrite, not a patch** — the diagrams are the file. Until then CLAUDE.md's per-tick flow and
-     module boundaries are the accurate summary, and they were corrected in the same audit.
-   - **`docs/ADDING_SPELLS.md` is OWED by C-8** ("content leads, tooling is its exhaust" —
-     `ADDING_ITEMS.md` came out of C1, "the spells equivalent after"). The path has now been
-     walked twice and is fresh: slice A added a whole new spell KIND (three `SpellForm` fields,
-     the sustained-instance machinery) and two rows; slice B added `ENEMY_SCRIPT_STORE`. The
-     guide would cover a form row, the roster table's weakest-first order, the constant-built
-     description rule, `Defines.hpp`, the catalog JSON export, and the sweeps that review a row —
-     pinned by catalog-agreement tests the way ADDING_UNITS.md §5 is.
+6. **✅ THE DOCUMENTATION DEBT AN AUDIT FOUND ON 2026-08-29 IS PAID, SAME DAY.** Recorded here
+   rather than in a session's memory, because that is the whole point of this file.
+   - **`ARCHITECTURE.md` WAS OBSOLETE and is REWRITTEN.** It had rotted back to roughly the
+     pre-hex, pre-magic engine: `Cell*` and Chebyshev distance (there is no `Cell` class), a
+     `mana: int` on Mage/Priest/Necromancer that magic slice 1 DELETED, `castFireball()`/
+     `castBless()`/`raiseDead()` methods the spell roster replaced, ~10 missing unit types, a
+     tick diagram with no `resolveEngagements()`/`onTurnStart()`/`onTurnEnd()`, and a "future"
+     campaign layer that had been real for months. The new file covers the three-process system,
+     the turn phases, the battle pipeline and its trust boundary, the real tick (both turn hooks,
+     with the ordering arguments), the hex grid and its first-class SIDES, the full unit
+     hierarchy plus the three cross-cutting descriptors, the magic system, squads/wings, Utility
+     (including the mock dice queue), and a caster's cast end to end. It is deliberately kept at
+     *what talks to what*: field-by-field detail is what rotted last time.
+   - **`docs/ADDING_SPELLS.md` IS WRITTEN**, closing C-8's "the spells equivalent after". It was
+     owed once the path had been walked: slice A added a whole new spell KIND (three `SpellForm`
+     fields, the sustained-instance machinery) and two rows, slice B added
+     `ENEMY_SCRIPT_STORE`. Covers the form row, the strictly-ascending forms rule, the
+     built-never-typed description rule, `Defines.hpp`, the battlefield kind, who may reach for a
+     spell, the catalog-JSON chokepoint, and the sweeps that do the reviewing. **Its load-bearing
+     warning:** a battlefield form must be its OWN spell — `defaultScript()` drops a spell if ANY
+     form is battlefield, so bolting one onto an existing spell makes that whole spell unreachable
+     to the default AI.
 
 Everything in the rest of this block is the squad/character/items front, which is FINISHED —
 decision 13 and slice 17 both shipped. It is kept as the record of how those systems got their
