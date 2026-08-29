@@ -225,6 +225,14 @@ export const autoPlaceLabSide = guarded(async (side) => {
   useSandboxStore.getState().setPlacements(side, [...stacks.values()])
 })
 
+// The seed as the WIRE wants it: an integer, or null for a fresh draw. The
+// store holds what was typed, so this is the one place that reading happens.
+const seedNumber = (seed) => {
+  if (seed === null || seed === undefined || String(seed).trim() === '') return null
+  const n = Math.trunc(Number(seed))
+  return Number.isFinite(n) ? n : null
+}
+
 // Launch the composed battle. Both sides expand to ONE ENTRY PER BODY, which is
 // the shape the engine's placement JSON takes everywhere else (see startBattle
 // above) — the count on a lab placement is a UI convenience, never a wire
@@ -273,8 +281,182 @@ export const launchLabBattle = guarded(async () => {
     // guarded() surfaces a refusal (the size cap, an unknown type) in the
     // notice bar and returns undefined, so a failed launch simply leaves the
     // player on his setup with the reason on screen.
-    state.setBattle(await postSandboxBattle({ player_placement, enemy_placement, magic }))
+    const summary = await postSandboxBattle({
+      player_placement, enemy_placement, magic,
+      runs: state.runs,
+      // Sanitised HERE, once (the store keeps the string the player typed):
+      // an unreadable field is no seed at all, which is the engine's own fresh
+      // draw. The server sanitises it again and decides E2 — a seed collapses
+      // the batch to one run — so the spinner greying out is a courtesy, not
+      // the rule.
+      seed: seedNumber(state.seed),
+    })
+    useSandboxStore.getState().setBattle(summary)
+    // The aggregate rides alongside the summary on EVERY launch, a batch of one
+    // included, so the readout never has to reconstruct it from a single run.
+    useSandboxStore.getState().setBatch(summary?.batch ?? null)
   } finally {
     useSandboxStore.getState().setLaunching(false)
   }
 })
+
+// ── S3: the scenario file (SB-11) ───────────────────────────────────────────
+//
+// A saved setup is a plain JSON file and nothing else — no route, no schema, no
+// collection. That is the whole of SB-11, and it is what makes a scenario
+// checkable into the repo as a regression fixture or handed over to reproduce a
+// bug exactly.
+//
+// The store IS the scenario, so the format is the store's own shape minus the
+// things that are not part of a setup: the catalog and the reference (fetched),
+// the selected hex and the castable answer (cursors), and the battle just
+// fought (an outcome, not an input).
+export const LAB_SCENARIO_VERSION = 1
+
+const scenarioSide = (side) => ({
+  army: { ...side.army },
+  // Casters ride ON the stack they belong to (D2), so serialising the
+  // placements serialises them — a config is a fact about the i-th body of one
+  // stack, and it would mean nothing anywhere else.
+  placements: side.placements.map((p) => ({
+    type: p.type, col: p.col, row: p.row, count: p.count,
+    ...(p.casters?.length > 0
+      ? { casters: p.casters.map((c) => ({ paths: { ...c?.paths }, script: [...(c?.script ?? [])] })) }
+      : {}),
+  })),
+  magic: { schools: { ...side.magic.schools }, channels: side.magic.channels },
+})
+
+// The scenario object as it is written to file. Split out from the download so
+// the shape has one definition and the import below has something to be the
+// inverse of.
+export const labScenario = () => {
+  const state = useSandboxStore.getState()
+  return {
+    version: LAB_SCENARIO_VERSION,
+    blue: scenarioSide(state.blue),
+    red: scenarioSide(state.red),
+    runs: state.runs,
+    seed: seedNumber(state.seed),
+  }
+}
+
+// Hand the browser a file. Returns the serialised text as well, which is what
+// makes the round trip testable without a filesystem — the download itself is
+// the browser's business and nothing reads it back.
+export const exportLabScenario = () => {
+  const text = JSON.stringify(labScenario(), null, 2)
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'lab-scenario.json'
+  link.click()
+  // Revoked on the NEXT tick rather than this one. An object URL nobody revokes
+  // holds its Blob for the life of the document, but the click only STARTS the
+  // save — tearing the URL down in the same turn is a download some browsers
+  // cancel out from under the player.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+  return text
+}
+
+// ── Import: VALIDATE FIRST, then apply through the store's own setters ───────
+//
+// Two rules, and both are about not half-applying a file. A wrong shape must
+// leave the setup the player has standing completely untouched — an import that
+// wiped an army and then failed on the magic block would be the worst outcome
+// this feature could have — and nothing may enter the store except through the
+// setters, so an imported scenario cannot hold a shape the store could not have
+// produced itself (a caster config past the end of its stack, say).
+const isBag = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
+const isCount = (v) => Number.isFinite(v) && v >= 0
+
+const validSide = (side) => {
+  if (!isBag(side) || !isBag(side.army) || !Array.isArray(side.placements)) return false
+  if (!Object.values(side.army).every(isCount)) return false
+  if (!isBag(side.magic) || !isBag(side.magic.schools) || !isCount(side.magic.channels)) return false
+  if (!Object.values(side.magic.schools).every(isCount)) return false
+  return side.placements.every((p) =>
+    isBag(p) && typeof p.type === 'string' && Number.isFinite(p.col) && Number.isFinite(p.row)
+    && isCount(p.count) && p.count > 0
+    && (p.casters === undefined || (Array.isArray(p.casters) && p.casters.every((c) =>
+      isBag(c) && isBag(c.paths) && Object.values(c.paths).every(isCount)
+      && Array.isArray(c.script) && c.script.every((id) => typeof id === 'string')))),
+  )
+}
+
+const applySide = (side, data) => {
+  const store = useSandboxStore.getState()
+  // Every setter mutates through set((s) => …), so this snapshot's functions
+  // read the CURRENT state each time — the reads below are of a state that is
+  // already being replaced.
+  for (const type of Object.keys(store[side].army)) store.setArmyCount(side, type, 0)
+  store.clearPlacements(side)
+
+  for (const [type, count] of Object.entries(data.army)) store.setArmyCount(side, type, count)
+  for (const p of data.placements) {
+    store.place(side, p.col, p.row, p.type, p.count)
+    // The bodies are placed FIRST, because setCasterConfig refuses an index
+    // past the stack — which is exactly the guard that keeps an imported file
+    // from configuring a man who is not there.
+    ;(p.casters ?? []).forEach((caster, index) =>
+      store.setCasterConfig(side, { col: p.col, row: p.row, type: p.type }, index, {
+        paths: { ...caster.paths }, script: [...caster.script],
+      }))
+  }
+
+  for (const [school, level] of Object.entries(data.magic.schools))
+    store.setSchoolLevel(side, school, level)
+  store.setChannels(side, data.magic.channels)
+}
+
+// One file's text. `Blob.text()` is the modern one-liner, but a FileReader is
+// two lines rather than a dependency and covers the environments that lack it
+// (jsdom, and Safari before 14) — an import is the one place a scenario can
+// arrive from, so it is worth it working everywhere the lab renders.
+const fileText = (file) =>
+  typeof file.text === 'function'
+    ? file.text()
+    : new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error ?? new Error('unreadable file'))
+      reader.readAsText(file)
+    })
+
+// Load a scenario from a File (the import control) or from text (a fixture, a
+// paste). Anything it cannot read leaves the standing setup alone and says so.
+export const importLabScenario = async (source) => {
+  const notice = useNoticeStore.getState()
+  let scenario
+  try {
+    scenario = JSON.parse(typeof source === 'string' ? source : await fileText(source))
+  } catch {
+    notice.show('That file could not be read as JSON — the setup is unchanged.')
+    return false
+  }
+
+  // A version this build does not know is refused rather than guessed at: a
+  // scenario is a fixture other people's builds will read, and half-applying a
+  // future format would be a worse answer than saying no.
+  if (!isBag(scenario) || scenario.version !== LAB_SCENARIO_VERSION) {
+    notice.show(
+      `That file is not a lab scenario this build can read (version ${LAB_SCENARIO_VERSION} expected)`
+      + ' — the setup is unchanged.',
+    )
+    return false
+  }
+  if (!validSide(scenario.blue) || !validSide(scenario.red)) {
+    notice.show('That lab scenario is malformed — the setup is unchanged.')
+    return false
+  }
+
+  applySide('blue', scenario.blue)
+  applySide('red', scenario.red)
+  const store = useSandboxStore.getState()
+  store.setRuns(Number.isFinite(scenario.runs) ? scenario.runs : 1)
+  store.setSeed(Number.isFinite(scenario.seed) ? String(scenario.seed) : null)
+  // The outcome of the LAST setup is not the outcome of this one.
+  store.setBatch(null)
+  notice.show('Lab scenario loaded.')
+  return true
+}

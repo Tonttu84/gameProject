@@ -22,7 +22,7 @@
  */
 
 import React from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({
@@ -87,7 +87,7 @@ const reference = {
     schools: { evocation: 1, conjuration: 2, enchantment: 1, construction: 0 },
     channels: 3,
   },
-  limits: { maxPathLevel: 9, maxSchoolLevel: 9, maxChannels: 99, openSchoolLevel: 9 },
+  limits: { maxPathLevel: 9, maxSchoolLevel: 9, maxChannels: 99, openSchoolLevel: 9, maxRuns: 20 },
 }
 
 // The lab's own default magic block: every school at the engine's own open
@@ -314,6 +314,9 @@ describe('launching', () => {
       // defaults until a spinner moves — so this launch is byte-for-byte the
       // battle S1 fought, which is the point of starting open.
       magic: { blue: openMagic, red: openMagic },
+      // S3's two launch numbers, at their defaults: one battle, drawn fresh.
+      runs: 1,
+      seed: null,
     }))
 
     // The one and only renderer, reading ticks back from the DB.
@@ -512,6 +515,8 @@ describe('what the launch carries (D1 / D2)', () => {
         blue: { schools: { ...openMagic.schools, evocation: 4 }, channels: 0 },
         red: openMagic,
       },
+      runs: 1,
+      seed: null,
     }))
   })
 
@@ -528,5 +533,282 @@ describe('what the launch carries (D1 / D2)', () => {
         player_placement: [{ unit_type: 'Mage', q: 2, r: 4 }],
       }),
     ))
+  })
+})
+
+
+// ── S3: the batch, the seed and the scenario file ───────────────────────────
+//
+// SB-10 and SB-11. One battle is one sample from a noisy distribution, so a
+// launch is a BATCH and the readout is a win rate; the seed answers the other
+// question (why did THAT happen) and therefore cannot be batched — which the
+// screen says out loud rather than letting a spinner promise ten samples it
+// would only ever draw once. SB-11's file is browser-local: no route, no
+// schema, and a setup that can be checked into the repo as a fixture.
+
+// A batch as the server sends it back, riding alongside the same summary S1
+// returned — additive, so the replay path above is untouched.
+const batchSummary = {
+  ...summary,
+  batch: {
+    runs: 4,
+    requested: 4,
+    seed: null,
+    wins: { blue: 3, red: 1, draw: 0 },
+    averageSurvivors: { blue: { Soldier: 2.5, Mage: 0.25 }, red: { Zombie: 1 } },
+  },
+}
+
+const setRuns = (n) =>
+  fireEvent.change(screen.getByTestId('lab-runs'), { target: { value: String(n) } })
+const setSeed = (text) =>
+  fireEvent.change(screen.getByTestId('lab-seed'), { target: { value: text } })
+
+// A pair of soldiers on the field, which is the smallest setup that can launch.
+const placeSoldiers = (n = 2) => {
+  compose('Soldier', n)
+  fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+  placeHere('Soldier', n)
+}
+
+describe('the batch and the seed (SB-10)', () => {
+  it('sends the runs the spinner names, bounded by the server-served ceiling', async () => {
+    await openLab()
+    placeSoldiers()
+
+    expect(screen.getByTestId('lab-runs')).toHaveAttribute('max', '20')
+    setRuns(5)
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalledWith(
+      expect.objectContaining({ runs: 5, seed: null }),
+    ))
+  })
+
+  it('sends the seed as a number, and an emptied field as no seed at all', async () => {
+    await openLab()
+    placeSoldiers()
+
+    setSeed('20260829')
+    fireEvent.click(screen.getByTestId('lab-launch'))
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenLastCalledWith(
+      expect.objectContaining({ seed: 20260829 }),
+    ))
+
+    // The replay took over, as every launch does; Back lands on the setup that
+    // produced it, seed and all.
+    await screen.findByText(/Battle Replay/)
+    fireEvent.click(screen.getByTestId('replay-back'))
+    await screen.findByTestId('lab-palette')
+
+    // Blank is the ABSENCE, not zero — a fresh draw, which is the engine's own
+    // behaviour when nothing is set.
+    setSeed('')
+    fireEvent.click(screen.getByTestId('lab-launch'))
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenLastCalledWith(
+      expect.objectContaining({ seed: null }),
+    ))
+  })
+
+  it('holds the runs spinner at one while a seed is set, and says why (E2)', async () => {
+    await openLab()
+    placeSoldiers()
+    setRuns(6)
+    expect(screen.getByTestId('lab-runs')).toBeEnabled()
+    expect(screen.queryByTestId('lab-seed-note')).not.toBeInTheDocument()
+
+    setSeed('7')
+    // A repeated draw sequence is one battle copied, so ten seeded runs would
+    // be a win rate read off a single sample.
+    expect(screen.getByTestId('lab-runs')).toBeDisabled()
+    expect(screen.getByTestId('lab-seed-note')).toHaveTextContent(/fights once/)
+
+    setSeed('')
+    expect(screen.getByTestId('lab-runs')).toBeEnabled()
+  })
+
+  it('reads the aggregate back: wins, the rate, and average survivors (E3)', async () => {
+    postSandboxBattle.mockResolvedValue(batchSummary)
+    await openLab()
+    placeSoldiers()
+    setRuns(4)
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    // The replay is the batch's FIRST run and takes over the screen exactly as
+    // a single launch always has; the aggregate is waiting underneath it.
+    await screen.findByText(/Battle Replay/)
+    fireEvent.click(screen.getByTestId('replay-back'))
+
+    const readout = await screen.findByTestId('lab-batch')
+    expect(readout).toHaveTextContent('4 of 4 runs')
+    expect(screen.getByTestId('lab-batch-wins')).toHaveTextContent('Blue 3 (75%)')
+    expect(screen.getByTestId('lab-batch-wins')).toHaveTextContent('Red 1 (25%)')
+    expect(screen.getByTestId('lab-batch-survivors-blue')).toHaveTextContent('Soldier 2.5')
+    expect(screen.getByTestId('lab-batch-survivors-red')).toHaveTextContent('Zombie 1.0')
+    expect(screen.queryByTestId('lab-batch-incomplete')).not.toBeInTheDocument()
+  })
+
+  it('says when a batch ended early, and still reports what it got (E4)', async () => {
+    postSandboxBattle.mockResolvedValue({
+      ...batchSummary,
+      batch: { ...batchSummary.batch, runs: 2, requested: 9, incomplete: 'game battle: timed out' },
+    })
+    await openLab()
+    placeSoldiers()
+    fireEvent.click(screen.getByTestId('lab-launch'))
+    await screen.findByText(/Battle Replay/)
+    fireEvent.click(screen.getByTestId('replay-back'))
+
+    expect(await screen.findByTestId('lab-batch')).toHaveTextContent('2 of 9 runs')
+    expect(screen.getByTestId('lab-batch-incomplete')).toHaveTextContent(/timed out/)
+  })
+})
+
+describe('the scenario file (SB-11)', () => {
+  // The browser's half of a download, which jsdom has neither of: the object
+  // URL is captured so the test can read the very Blob the player would have
+  // saved, and the anchor's click is stubbed because jsdom cannot navigate.
+  const captureDownload = () => {
+    const saved = {}
+    global.URL.createObjectURL = vi.fn((blob) => { saved.blob = blob; return 'blob:lab-scenario' })
+    global.URL.revokeObjectURL = vi.fn((url) => { saved.revoked = url })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    return saved
+  }
+
+  // jsdom has FileReader but not Blob.text(), so this is how the test reads the
+  // very bytes the player's file would have held.
+  const blobText = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+
+  // The anchor spy is on a shared prototype, so it goes back the way it was
+  // rather than leaving every later click stubbed.
+  afterEach(() => vi.restoreAllMocks())
+
+  const importFile = (text) =>
+    fireEvent.change(screen.getByTestId('lab-import'), {
+      target: { files: [new File([text], 'lab-scenario.json', { type: 'application/json' })] },
+    })
+
+  // Both sides composed, placed, magicked and scripted — everything the store
+  // holds that IS the scenario (S1's armies and placements, S2's per-side magic
+  // and per-body caster configs, S3's two launch numbers).
+  const buildSetup = async () => {
+    postSandboxCastable.mockResolvedValue({
+      options: [{ spell: 'fireball', label: 'Ember', description: 'A bolt.' }],
+    })
+    placeSoldiers(3)
+    // The menu is still open on that hex, so the Mage joins the same stack
+    // without a second click (which would toggle the hex shut).
+    compose('Mage', 1)
+    placeHere('Mage', 1)
+    openBody(0)
+    setPath('fire', 3)
+    await waitFor(() => expect(screen.getByTestId('lab-script-add')).toHaveTextContent('Ember'))
+    fireEvent.change(screen.getByTestId('lab-script-add'), { target: { value: 'fireball' } })
+    fireEvent.change(screen.getByTestId('lab-channels'), { target: { value: '5' } })
+
+    fireEvent.click(screen.getByTestId('lab-side-red'))
+    compose('Zombie', 4)
+    fireEvent.click(screen.getByTestId('lab-hex-3-25'))
+    placeHere('Zombie', 4)
+    fireEvent.change(screen.getByTestId('lab-school-evocation'), { target: { value: '2' } })
+    fireEvent.click(screen.getByTestId('lab-side-blue'))
+
+    setRuns(6)
+    setSeed('20260829')
+  }
+
+  it('exports a versioned file and imports it back, setup for setup', async () => {
+    const saved = captureDownload()
+    await openLab()
+    await buildSetup()
+
+    fireEvent.click(screen.getByTestId('lab-export'))
+    const text = await blobText(saved.blob)
+    const scenario = JSON.parse(text)
+    // A plain JSON file with a format version — checkable into the repo as a
+    // fixture, and refusable by a build that does not know the shape.
+    expect(scenario.version).toBe(1)
+    expect(scenario.runs).toBe(6)
+    expect(scenario.seed).toBe(20260829)
+    expect(saved.revoked).toBe('blob:lab-scenario')
+
+    // Now tear the setup down completely — both sides, the magic and the
+    // launch numbers — so nothing that comes back could have merely survived.
+    fireEvent.click(screen.getByTestId('lab-clear'))
+    compose('Soldier', 0)
+    compose('Mage', 0)
+    fireEvent.change(screen.getByTestId('lab-channels'), { target: { value: '0' } })
+    setSeed('')
+    setRuns(1)
+    fireEvent.click(screen.getByTestId('lab-side-red'))
+    fireEvent.click(screen.getByTestId('lab-clear'))
+    fireEvent.click(screen.getByTestId('lab-side-blue'))
+    expect(screen.queryByTestId('lab-glyph-blue-4-4-Soldier')).not.toBeInTheDocument()
+
+    importFile(text)
+
+    // Both armies, both placements, the magic, the launch numbers…
+    expect(await screen.findByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Mage')).toHaveTextContent('M1')
+    expect(screen.getByTestId('lab-recruit-Soldier')).toHaveValue(3)
+    expect(screen.getByTestId('lab-channels')).toHaveValue(5)
+    expect(screen.getByTestId('lab-runs')).toHaveValue(6)
+    expect(screen.getByTestId('lab-seed')).toHaveValue('20260829')
+
+    // …and the CASTER CONFIG, which is the half that would be easiest to lose:
+    // it rides on the stack it belongs to, because it is a fact about the i-th
+    // body of that stack and means nothing anywhere else.
+    openBody(0)
+    expect(screen.getByTestId('lab-path-fire')).toHaveValue(3)
+    expect(screen.getByTestId('lab-script-remove-fireball')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('lab-side-red'))
+    expect(screen.getByTestId('lab-glyph-red-3-25-Zombie')).toHaveTextContent('Z4')
+    expect(screen.getByTestId('lab-school-evocation')).toHaveValue(2)
+  })
+
+  it('leaves the standing setup untouched when the file is malformed', async () => {
+    await openLab()
+    placeSoldiers(3)
+    fireEvent.change(screen.getByTestId('lab-channels'), { target: { value: '5' } })
+
+    importFile('{ this is not a scenario')
+    expect(await screen.findByTestId('auth-notice')).toHaveTextContent(/could not be read as JSON/)
+
+    // NOTHING was applied — a wrong file that wiped an army before failing
+    // would be the worst outcome this feature could have.
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
+    expect(screen.getByTestId('lab-channels')).toHaveValue(5)
+  })
+
+  it('refuses a scenario whose shape or version this build does not know', async () => {
+    await openLab()
+    placeSoldiers(3)
+
+    const good = {
+      version: 1,
+      blue: { army: { Soldier: 1 }, placements: [], magic: { schools: {}, channels: 0 } },
+      red: { army: {}, placements: [], magic: { schools: {}, channels: 0 } },
+      runs: 1, seed: null,
+    }
+
+    importFile(JSON.stringify({ ...good, version: 99 }))
+    await waitFor(() =>
+      expect(screen.getByTestId('auth-notice')).toHaveTextContent(/version 1 expected/))
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
+
+    // A side whose placements are not a list of stacks: refused whole, rather
+    // than applied as far as the first bad row. Waited for by its TEXT, since
+    // the notice bar from the refusal above is already on screen.
+    importFile(JSON.stringify({ ...good, red: { ...good.red, placements: [{ type: 'Zombie' }] } }))
+    await waitFor(() => expect(screen.getByTestId('auth-notice')).toHaveTextContent(/malformed/))
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
+    expect(screen.getByTestId('lab-recruit-Soldier')).toHaveValue(3)
   })
 })

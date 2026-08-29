@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import useSandboxStore, { SIDES } from '../stores/useSandboxStore'
 import {
   autoPlaceLabSide, launchLabBattle, closeBattleLab, loadLabCastable,
+  exportLabScenario, importLabScenario,
 } from '../stores/flows'
 import { HEX_SIZE, hexCenter, hexPoints, toAxial, svgSize } from '../utils/hexGeometry'
 
@@ -80,6 +81,11 @@ const SandboxScreen = ({ info, map }) => {
   const setChannels = useSandboxStore((s) => s.setChannels)
   const loadEnemyPreset = useSandboxStore((s) => s.loadEnemyPreset)
   const setCasterConfig = useSandboxStore((s) => s.setCasterConfig)
+  const runs = useSandboxStore((s) => s.runs)
+  const setRuns = useSandboxStore((s) => s.setRuns)
+  const seed = useSandboxStore((s) => s.seed)
+  const setSeed = useSandboxStore((s) => s.setSeed)
+  const batch = useSandboxStore((s) => s.batch)
 
   // Which caster body the editor is open on — SCREEN state, not store state:
   // it is a cursor into the setup, not part of it, and S3's export would have
@@ -456,7 +462,59 @@ const SandboxScreen = ({ info, map }) => {
     )
   }
 
+  // ── The batch readout (SB-10 / E3) ──────────────────────────────────────
+  //
+  // What a batch can honestly say and nothing more: how often each side won,
+  // and how many of each type walked off the field on average. The rate is over
+  // the runs that COMPLETED, which is the same number the server averaged over
+  // (E4) — so a batch cut short reports the samples it really has rather than
+  // diluting them with the runs that never happened.
+  //
+  // It survives the replay: launching shows the fight, and Back lands here with
+  // the aggregate still on screen, which is the order the two are read in.
+  const batchReadout = () => {
+    if (!batch) return null
+    const done = batch.runs
+    const rate = (n) => (done > 0 ? Math.round((n / done) * 100) : 0)
+    const meansFor = (s) => Object.entries(batch.averageSurvivors?.[s] ?? {})
+
+    return (
+      <section className="lab-batch" data-testid="lab-batch">
+        <h3>
+          Last launch — {done} of {batch.requested} run{batch.requested === 1 ? '' : 's'}
+          {batch.seed !== null && batch.seed !== undefined && `, seed ${batch.seed}`}
+        </h3>
+        <p data-testid="lab-batch-wins">
+          Blue {batch.wins.blue} ({rate(batch.wins.blue)}%)
+          {' · '}Red {batch.wins.red} ({rate(batch.wins.red)}%)
+          {' · '}Draw {batch.wins.draw} ({rate(batch.wins.draw)}%)
+        </p>
+        {SIDES.map((s) => (
+          <p key={s} className="lab-batch-survivors" data-testid={`lab-batch-survivors-${s}`}>
+            <span className="lab-unit-name">{SIDE_LABEL[s]} survivors per run:</span>{' '}
+            {meansFor(s).length === 0
+              ? 'none'
+              : meansFor(s).map(([type, mean]) => `${type} ${mean.toFixed(1)}`).join(', ')}
+          </p>
+        ))}
+        {/* E4: the batch ENDED, it was not voided — the runs above really
+            happened, and this says why there are not more of them. */}
+        {batch.incomplete && (
+          <p className="lab-hint" data-testid="lab-batch-incomplete">
+            The batch stopped early: {batch.incomplete}
+          </p>
+        )}
+      </section>
+    )
+  }
+
   const nothingPlaced = totalPlaced('blue') + totalPlaced('red') === 0
+
+  // A seed collapses the batch to a single run (E2) — DECIDED SERVER-SIDE; the
+  // greyed-out spinner and the note beside it are the courtesy of saying so
+  // before the launch rather than after it.
+  const seeded = seed !== null
+  const launchLabel = !seeded && runs > 1 ? `Fight ${runs} battles` : 'Launch the battle'
 
   return (
     <div className="sandbox-screen">
@@ -466,17 +524,78 @@ const SandboxScreen = ({ info, map }) => {
           Compose both armies from the whole catalog, place them, and fight it out — no campaign,
           nothing spent, nothing learned about the host actually shadowing you.
         </p>
-        <div className="lab-actions">
+        {/* ── The launch panel (SB-10) ────────────────────────────────────
+            One battle is one sample from a noisy distribution, so a win rate
+            needs a batch; the seed answers the other question — why did THAT
+            happen — and the two do not mix, which is what the note below says
+            out loud rather than letting the spinner lie. */}
+        <div className="lab-actions lab-launch">
+          <label className="lab-launch-field">
+            <span>Runs</span>
+            <input
+              type="number"
+              min="1"
+              max={limits.maxRuns}
+              value={runs}
+              data-testid="lab-runs"
+              disabled={seeded}
+              onChange={(e) => setRuns(clamp(e.target.value, limits.maxRuns))}
+            />
+          </label>
+          <label className="lab-launch-field">
+            <span>Seed</span>
+            {/* Text, not a number spinner: empty is a state this field must be
+                able to hold, and it means "draw fresh" rather than zero. */}
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="fresh draw"
+              value={seed ?? ''}
+              data-testid="lab-seed"
+              onChange={(e) => setSeed(e.target.value)}
+            />
+          </label>
           <button
             className="btn-primary"
             data-testid="lab-launch"
             disabled={launching || nothingPlaced}
             onClick={launchLabBattle}
           >
-            {launching ? 'The armies close…' : 'Launch the battle'}
+            {launching ? 'The armies close…' : launchLabel}
           </button>
           <button data-testid="lab-back" onClick={closeBattleLab}>Leave the lab</button>
         </div>
+        {seeded && (
+          <p className="lab-hint" data-testid="lab-seed-note">
+            A seed repeats the whole battle exactly, so a batch of them would be one fight counted
+            many times — this launch fights once.
+          </p>
+        )}
+
+        {/* ── The scenario file (SB-11) ───────────────────────────────────
+            Browser-local: a plain JSON file, no route and no collection, which
+            is what makes a setup checkable into the repo as a fixture or
+            handed over to reproduce a bug exactly. */}
+        <div className="lab-actions">
+          <button data-testid="lab-export" onClick={exportLabScenario}>Export setup</button>
+          <label className="lab-import">
+            Import setup
+            <input
+              type="file"
+              accept="application/json,.json"
+              data-testid="lab-import"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                // Cleared afterwards so importing the SAME file twice fires
+                // again — a re-import after an edit is the normal way to get
+                // back to a known setup.
+                e.target.value = ''
+                if (file) importLabScenario(file)
+              }}
+            />
+          </label>
+        </div>
+        {batchReadout()}
       </div>
 
       <div className="lab-sides" role="tablist">

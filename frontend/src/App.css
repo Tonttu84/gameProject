@@ -1020,3 +1020,17 @@ body {
 .lab-caster-editor { border-top: 1px solid var(--border); padding-top: 0.6rem; }
 .lab-script { margin: 0.2rem 0; padding-left: 1.2rem; font-size: 12px; }
 .lab-script li { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; }
+
+/* S3: the launch panel, the scenario file and the batch readout. */
+.lab-launch { flex-wrap: wrap; margin-bottom: 0.4rem; }
+.lab-launch-field { display: flex; align-items: center; gap: 0.35rem; font-size: 12px; color: #999; }
+.lab-launch-field input { width: 5rem; }
+.lab-import {
+  font-size: 12px; color: #999; display: inline-flex; align-items: center; gap: 0.4rem;
+  border: 1px solid var(--border); border-radius: 3px; padding: 0.2rem 0.5rem; cursor: pointer;
+}
+.lab-import input { display: none; }
+.lab-batch { margin-top: 0.6rem; border-top: 1px solid var(--border); padding-top: 0.5rem; }
+.lab-batch h3 { margin: 0 0 0.3rem; font-size: 13px; color: var(--accent2); }
+.lab-batch p { margin: 0 0 0.2rem; font-size: 12px; }
+.lab-batch-survivors { color: #999; }

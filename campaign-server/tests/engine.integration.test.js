@@ -279,6 +279,32 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
     expect(result.blue_characters).toEqual([42])
   }, 30000)
 
+  // SB-10's SEED HALF, against the real binary — the one thing a mocked engine
+  // cannot check. `runBattle(input, { seed })` sets GAME_RNG_SEED, which
+  // Utility reads once and uses for the ENTIRE draw sequence, so two runs of
+  // one input under one seed are the same battle blow for blow. That is what
+  // makes the seed an answer to "why did THAT happen" rather than a decoration,
+  // and it is the whole reason E2 collapses a seeded batch to a single run.
+  test('a seed replays the same battle, blow for blow (SB-10)', async () => {
+    const input = {
+      map: 'sample_battle',
+      player_placement: Array.from({ length: 6 }, (_, i) => ({
+        unit_type: 'Soldier', q: 4 + i, r: 6,
+      })),
+      enemy_placement: Array.from({ length: 6 }, (_, i) => ({
+        unit_type: 'Zombie', q: 4 + i, r: 22,
+      })),
+      max_turns: 40,
+    }
+
+    const first = await runBattle(input, { seed: 20260829 })
+    const again = await runBattle(input, { seed: 20260829 })
+
+    expect(again.winner).toBe(first.winner)
+    expect(again.blue_survivors).toEqual(first.blue_survivors)
+    expect(again.replay.ticks).toEqual(first.replay.ticks)
+  }, 60000)
+
   // ── The hex budget: a bug fence, not a design knob ────────────────────────
   //
   // A squad is always ONE formation on ONE hex, so an archetype whose caps

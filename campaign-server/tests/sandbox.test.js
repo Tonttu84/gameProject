@@ -41,7 +41,8 @@ const { default: Tick } = await import('../models/tick.js')
 const { default: UnitType } = await import('../models/unitType.js')
 const {
   ENEMY_CHANNELS, ENEMY_SCHOOLS, SANDBOX_MAX_CHANNELS, SANDBOX_MAX_PATH_LEVEL,
-  SANDBOX_MAX_SCHOOL_LEVEL, SANDBOX_MAX_UNITS_PER_SIDE, SPELL_PATHS, SPELL_SCHOOLS,
+  SANDBOX_MAX_RUNS, SANDBOX_MAX_SCHOOL_LEVEL, SANDBOX_MAX_UNITS_PER_SIDE, SPELL_PATHS,
+  SPELL_SCHOOLS,
 } = await import('../utils/campaignConfig.js')
 
 const api = supertest(app)
@@ -105,6 +106,8 @@ describe('POST /api/sandbox/battles', () => {
 
     expect(engine.runBattle).toHaveBeenCalledWith(
       expect.objectContaining({ map: 'sample_battle' }),
+      // S3's second argument: the run's seed, and `null` is "draw fresh".
+      { seed: null },
     )
   })
 
@@ -450,6 +453,7 @@ describe('GET /api/sandbox/reference', () => {
       maxSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
       maxChannels: SANDBOX_MAX_CHANNELS,
       openSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
+      maxRuns: SANDBOX_MAX_RUNS,
     })
   })
 })
@@ -504,5 +508,163 @@ describe('POST /api/sandbox/castable (D3)', () => {
       schools: { evocation: 'lots', ...allOpen },
     })
     expect(idsOf(res)).toEqual(['fireball'])
+  })
+})
+
+
+// ── S3: the batch and the seed (SB-10) ──────────────────────────────────────
+//
+// One battle is one sample from a noisy distribution, so a launch is now a
+// BATCH: N runs, a win rate read off them, and average survivors. What is
+// pinned here is the four rules that keep the batch honest and keep SB-2's
+// guard intact — sequential runs with only the FIRST persisted (E1), a seed
+// collapsing the batch because a repeated draw sequence is one sample wearing
+// N (E2), an aggregate over the runs that COMPLETED (E3), and a later
+// failure ending the batch rather than voiding it (E4).
+describe('a batch of runs (SB-10 / E1-E4)', () => {
+  // Distinct results, so an aggregate that quietly counted one run N times
+  // could not pass: three battles, two blue wins and one red.
+  const runResults = [
+    { winner: 'blue', blue_survivors: { Soldier: 4 }, red_survivors: {},
+      replay: structuredClone(battleResultFixture.replay) },
+    { winner: 'red', blue_survivors: {}, red_survivors: { Zombie: 2 },
+      replay: structuredClone(battleResultFixture.replay) },
+    { winner: 'blue', blue_survivors: { Soldier: 2, Archer: 1 }, red_survivors: {},
+      replay: structuredClone(battleResultFixture.replay) },
+  ]
+
+  const stubRuns = (results) => {
+    engine.runBattle.mockReset()
+    for (const result of results) engine.runBattle.mockResolvedValueOnce(structuredClone(result))
+    return results
+  }
+
+  test('runs the engine N times but persists exactly ONE battle (E1)', async () => {
+    stubRuns(runResults)
+    const res = await launch({ ...oneOfEach, runs: 3 })
+
+    expect(res.status).toBe(201)
+    expect(engine.runBattle).toHaveBeenCalledTimes(3)
+    // One Battle document and one set of ticks, whatever N was — the replay on
+    // screen is the batch's FIRST run, which is the one a player can name.
+    expect(await Battle.countDocuments({ sandbox: true })).toBe(1)
+    expect(await Tick.countDocuments({ battle: res.body.id })).toBe(3)
+    expect(res.body.winner).toBe('blue')
+  })
+
+  test('counts the wins and averages the survivors over the runs (E3)', async () => {
+    stubRuns(runResults)
+    const { body } = await launch({ ...oneOfEach, runs: 3 })
+
+    expect(body.batch.runs).toBe(3)
+    expect(body.batch.requested).toBe(3)
+    expect(body.batch.wins).toEqual({ blue: 2, red: 1, draw: 0 })
+    // A type absent from a run survived it zero times, so the mean is over
+    // every run and not just the ones that fielded the type: 4 + 0 + 2 over
+    // three runs, and one lone Archer over the same three.
+    expect(body.batch.averageSurvivors.blue.Soldier).toBeCloseTo(2)
+    expect(body.batch.averageSurvivors.blue.Archer).toBeCloseTo(1 / 3)
+    expect(body.batch.averageSurvivors.red.Zombie).toBeCloseTo(2 / 3)
+  })
+
+  test('a launch of one is a batch of one, so the block is always there', async () => {
+    stubEngine()
+    const { body } = await launch(oneOfEach)
+
+    expect(body.batch).toEqual({
+      runs: 1,
+      requested: 1,
+      seed: null,
+      wins: { blue: 1, red: 0, draw: 0 },
+      averageSurvivors: { blue: { Soldier: 2 }, red: {} },
+    })
+    // ADDITIVE: everything S1 and S2 returned is still there, unchanged.
+    expect(body.id).toBeDefined()
+    expect(body.winner).toBe('blue')
+    expect(body.tickCount).toBe(3)
+  })
+
+  test('clamps runs to 1..SANDBOX_MAX_RUNS and falls back to one on junk', async () => {
+    stubEngine()
+    await launch({ ...oneOfEach, runs: SANDBOX_MAX_RUNS + 50 })
+    expect(engine.runBattle).toHaveBeenCalledTimes(SANDBOX_MAX_RUNS)
+
+    for (const runs of [0, -4, 'lots', null, undefined, {}]) {
+      engine.runBattle.mockClear()
+      await launch({ ...oneOfEach, runs })
+      expect(engine.runBattle, `runs: ${JSON.stringify(runs)}`).toHaveBeenCalledTimes(1)
+    }
+
+    // 2.9 runs is two battles, not three: the same truncation every other
+    // number on this wire gets.
+    engine.runBattle.mockClear()
+    await launch({ ...oneOfEach, runs: 2.9 })
+    expect(engine.runBattle).toHaveBeenCalledTimes(2)
+  })
+
+  test('a seed collapses the batch to one run and rides to the engine (E2)', async () => {
+    stubEngine()
+    const { body } = await launch({ ...oneOfEach, runs: 10, seed: 4242 })
+
+    // GAME_RNG_SEED repeats the ENTIRE draw sequence, so ten seeded runs are
+    // ten copies of one battle — a "100% win rate" off a single sample. The
+    // server decides this, not the client.
+    expect(engine.runBattle).toHaveBeenCalledTimes(1)
+    expect(engine.runBattle).toHaveBeenCalledWith(expect.any(Object), { seed: 4242 })
+    expect(body.batch).toMatchObject({ runs: 1, requested: 1, seed: 4242 })
+  })
+
+  test('reads the seed a text field produces, and treats junk as no seed', async () => {
+    stubEngine()
+    await launch({ ...oneOfEach, seed: '20260825' })
+    expect(engine.runBattle).toHaveBeenLastCalledWith(expect.any(Object), { seed: 20260825 })
+
+    // Absent, empty and unreadable all mean "draw fresh" — and none of them
+    // may collapse a batch the player actually asked for.
+    for (const seed of ['', ' ', 'abc', null, undefined, {}, []]) {
+      engine.runBattle.mockClear()
+      await launch({ ...oneOfEach, runs: 2, seed })
+      expect(engine.runBattle, `seed: ${JSON.stringify(seed)}`).toHaveBeenCalledTimes(2)
+      expect(engine.runBattle).toHaveBeenLastCalledWith(expect.any(Object), { seed: null })
+    }
+  })
+
+  test('a FIRST-run failure is a 400 with nothing stored (E4)', async () => {
+    engine.runBattle.mockReset()
+    engine.runBattle.mockResolvedValueOnce({ error: 'no such map' })
+    const res = await launch({ ...oneOfEach, runs: 5 })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('no such map')
+    expect(await Battle.countDocuments({})).toBe(0)
+    // The batch stops at the failure rather than pressing on through it.
+    expect(engine.runBattle).toHaveBeenCalledTimes(1)
+  })
+
+  test('a LATER failure ends the batch without voiding it (E4)', async () => {
+    stubRuns(runResults.slice(0, 2))
+    engine.runBattle.mockResolvedValueOnce({ error: 'engine died' })
+    const res = await launch({ ...oneOfEach, runs: 5 })
+
+    // The persisted replay is still there to watch, and the two good samples
+    // are still reported — throwing them away because the third subprocess
+    // died would be the wrong way to be wrong.
+    expect(res.status).toBe(201)
+    expect(await Battle.findById(res.body.id)).not.toBe(null)
+    expect(engine.runBattle).toHaveBeenCalledTimes(3)
+    expect(res.body.batch.runs).toBe(2)
+    expect(res.body.batch.requested).toBe(5)
+    expect(res.body.batch.wins).toEqual({ blue: 1, red: 1, draw: 0 })
+    expect(res.body.batch.incomplete).toBe('engine died')
+  })
+
+  test('a THROWN engine failure ends it the same way', async () => {
+    stubRuns([runResults[0]])
+    engine.runBattle.mockRejectedValueOnce(new Error('game battle: timed out'))
+    const res = await launch({ ...oneOfEach, runs: 3 })
+
+    expect(res.status).toBe(201)
+    expect(res.body.batch.runs).toBe(1)
+    expect(res.body.batch.incomplete).toMatch(/timed out/)
   })
 })

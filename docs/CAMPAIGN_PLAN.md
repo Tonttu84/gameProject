@@ -87,17 +87,20 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-08-29) — START HERE
 
-**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29; SLICES S1 AND S2 ARE
-SHIPPED, S3 IS NEXT.** Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX
+**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29; SLICES S1, S2 AND S3
+ARE SHIPPED, S4 IS THE LAST.** Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX
 MODE" entry in the Deferred design backlog below; **start there, and do not re-derive them.**
 S1 — the spine — landed 2026-08-29: the hex geometry is extracted, the Battle Lab composes and
 places BOTH armies from the full catalog, launches through the existing pipeline and plays the
 replay, with SB-12's per-launch retention behind it. S2 — the casters — landed the same day and is where the original ask is met: per-caster paths
 and scripts defaulting to the engine's own choice, per-side school levels and channel pool, and
-SB-8's real-host preset off the live constants. **S3 is the lab itself** — N runs, the fixed
-seed, aggregate win rate and average survivors (SB-10), and the browser-local JSON export/import
-that makes a setup a checkable fixture (SB-11). Read the per-slice "what landed" notes under THE
-SLICE PLAN for the shapes each slice extends (the placement-entry whitelist in
+SB-8's real-host preset off the live constants. S3 — the lab itself — landed with it: N runs run
+sequentially, the fixed seed (which collapses a batch to one run, since it repeats the engine's
+whole draw sequence), the win-rate and average-survivor readout (SB-10), and the browser-local
+JSON export/import that makes a setup a checkable fixture (SB-11). **S4 is the last slice** —
+walls painting, reinforcements, and SB-13's bonus prefill of blue from the player's own
+campaign. Read the per-slice "what landed" notes under THE SLICE PLAN for the shapes each slice
+extends (the placement-entry whitelist in
 `routes/sandbox.js` is the seam they widen, one field at a time; `useSandboxStore` is the
 scenario S3 serialises).
 Everything else on `main` is SHIPPED and green — the front that closed just before this was ENEMY
@@ -7833,7 +7836,39 @@ sequence. So the server half is nearly free and the work is almost all in COMPOS
     choice" per body.** `AUnit::setPathLevel` honours an explicit 0, so a path typed down to
     zero is a real statement ("this Mage has no Fire") and is NOT the same as never having
     configured him. Without the reset there was no way back to the absence D2 rests on.
-- **S3 — the lab.** N runs, the seed, aggregate results, JSON export/import.
+- **S3 — the lab. ✅ SHIPPED 2026-08-29.** N runs, the fixed seed, the aggregate readout, and
+  the browser-local JSON export/import.
+
+  - **E1. THE BATCH RUNS SEQUENTIALLY, AND ONLY THE FIRST RUN IS PERSISTED.** N engine
+    subprocesses at once is exactly the resource-exhaustion vector SB-2 flagged when it let the
+    lab ship player-facing; one at a time is the same load as N launches made by hand. The FIRST
+    run is the one kept, so the replay on screen is a row of the batch the player can name
+    rather than an unidentifiable member of it — and SB-12's sweep still runs once, after it
+    lands.
+  - **E2. A SEED FORCES N TO 1, AND THE SERVER DECIDES IT.** `GAME_RNG_SEED` repeats the engine's
+    entire draw sequence, so ten seeded runs are ten copies of one battle wearing a win rate.
+    The seed and the batch answer different questions — SB-10 says so outright — so naming a
+    seed collapses the batch to the one run it can actually produce. The client greying out the
+    spinner is a courtesy; the route is the contract.
+  - **E3. THE AGGREGATE IS WINS AND AVERAGE SURVIVORS**, nothing cleverer, and averaged over the
+    runs that COMPLETED rather than the runs asked for.
+  - **E4. A LATER RUN'S FAILURE ENDS THE BATCH, IT DOES NOT VOID IT.** The first run failing is a
+    400 with nothing stored (the contract every other battle route keeps); run k>1 failing —
+    an `{error}` or a thrown `EngineProcessError` alike — stops there and still returns the
+    persisted replay plus the k-1 good samples, marked `incomplete` with the reason.
+  - **E5. EXPORT/IMPORT IS BROWSER-LOCAL AND VERSIONED** (`LAB_SCENARIO_VERSION`), as SB-11
+    asked: no route, no schema, no collection. Import VALIDATES BEFORE IT REPLACES ANYTHING and
+    then applies through the store's own setters, so a bad file leaves the setup standing and
+    nothing can enter the store in a shape the store could not have produced itself. A version
+    this build does not know is refused rather than guessed at — a scenario is a fixture other
+    builds will read.
+  - The seed's plumbing is pinned by a REAL-BINARY test (`tests/engine.integration.test.js`):
+    the sandbox suite mocks `services/engine.js` and therefore cannot prove `GAME_RNG_SEED`
+    reaches the process at all, so one test runs the same input twice under one seed and
+    asserts identical winner, survivors and ticks.
+  - Not checked on import: unit types against the catalog. An unknown type rides to the server,
+    which refuses it by name at the trust boundary — one rejection site, and it is the one that
+    cannot be bypassed.
 - **S4 — the extras.** Walls painting, reinforcements, and SB-13's campaign prefill.
 
 **One constraint, not a decision:** only `maps/sample_battle.json` exists, so there is no map

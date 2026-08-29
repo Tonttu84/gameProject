@@ -9,8 +9,10 @@ import { create } from 'zustand'
 // is the abstraction SB-4 explicitly declined to build.
 //
 // Nothing here is persisted server-side (SB-11): a lab setup is browser state,
-// and the export/import that makes one shareable is slice S3's job. Which means
-// this store IS the scenario — the shape to serialise when that slice lands.
+// and the JSON export/import that makes one shareable (S3, in stores/flows.js)
+// is a file the browser writes, not a document a collection holds. Which means
+// THIS STORE IS THE SCENARIO — what the export serialises and what the import
+// rebuilds, through the setters below and never around them.
 
 export const SIDES = ['blue', 'red']
 
@@ -85,6 +87,25 @@ const initialState = () => ({
   // The summary of the battle just launched, or null. The lab holds only the
   // latest — which is also all the server keeps (SB-12).
   battle: null,
+
+  // ── S3's two launch numbers and the answer they produce (SB-10) ──────────
+  //
+  // How many battles one launch fights. One is what every launch meant before
+  // S3, so a player who never touches the spinner sees exactly the lab he had.
+  runs: 1,
+  // The fixed GAME_RNG_SEED, or null for a fresh draw.
+  //
+  // STORED AS A STRING WHEN THERE IS ONE, and as null when there is not — the
+  // field is a text box and "" is not a seed, so the empty state has to be
+  // representable as something other than a number. Sanitising happens once, on
+  // send (flows.js), which is also what the export writes: the store keeps what
+  // the player typed and the wire gets an integer or nothing.
+  seed: null,
+  // The batch aggregate the last launch came back with — {runs, requested,
+  // seed, wins, averageSurvivors, incomplete?} — or null before the first one.
+  // The server sends it on every launch, a batch of one included, so the
+  // readout needs no special case for the common launch.
+  batch: null,
 })
 
 const useSandboxStore = create((set, get) => ({
@@ -114,6 +135,18 @@ const useSandboxStore = create((set, get) => ({
   setSelectedHex: (selectedHex) => set({ selectedHex }),
   setLaunching: (launching) => set({ launching }),
   setBattle: (battle) => set({ battle }),
+
+  // Whole runs only, never below one: a launch of zero battles is not a thing
+  // to ask for. The CEILING is the server's (limits.maxRuns), applied by the
+  // spinner that reads it, so the store never invents a bound of its own.
+  setRuns: (runs) => set({ runs: Math.max(1, Math.floor(Number(runs)) || 1) }),
+
+  // What the player typed, or null for "no seed". A blank field is the absence,
+  // not the number zero — seed 0 is a perfectly good seed, and the two have to
+  // be tellable apart.
+  setSeed: (seed) => set({ seed: seed === null || String(seed).trim() === '' ? null : String(seed) }),
+
+  setBatch: (batch) => set({ batch }),
 
   // Compose: how many of `type` this side fields. Zero removes the row rather
   // than leaving a 0 behind, so `army` reads as the list it is.

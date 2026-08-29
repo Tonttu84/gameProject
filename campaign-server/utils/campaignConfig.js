@@ -34,6 +34,20 @@ export const MAP_NAME = 'sample_battle'
 // (any path level, any script, any pool); it is not a promise about army size.
 export const SANDBOX_MAX_UNITS_PER_SIDE = 400
 
+// THE SAME GUARD, ON THE OTHER AXIS SB-2 NAMED: a launch now says how MANY
+// battles it wants (SB-10 — one battle is one sample from a noisy distribution,
+// so a batch is what a win rate can honestly be read off). Each run is one more
+// engine subprocess, and the lab is the one route where the caller names how
+// many of them there are.
+//
+// The batch runs them ONE AT A TIME (E1), so a launch of this size is the same
+// load on the box as twenty launches a player could make by hand anyway — this
+// number bounds how long ONE request may hold a worker, not how much can be
+// spawned at once. Not a balance number: twenty runs is enough for a win rate
+// to stop swinging on a single unlucky draw, and few enough that the request
+// returns while the player is still watching.
+export const SANDBOX_MAX_RUNS = 20
+
 // S2's three bounds on the caster numbers the lab lets the player type.
 //
 // The first two are THE ENGINE'S OWN SCALE, not a balance call: both are 9 in

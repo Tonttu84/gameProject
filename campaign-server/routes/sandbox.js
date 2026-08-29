@@ -14,6 +14,7 @@ import {
   MAP_NAME,
   SANDBOX_MAX_CHANNELS,
   SANDBOX_MAX_PATH_LEVEL,
+  SANDBOX_MAX_RUNS,
   SANDBOX_MAX_SCHOOL_LEVEL,
   SANDBOX_MAX_UNITS_PER_SIDE,
   SPELL_PATHS,
@@ -181,6 +182,33 @@ const placementError = (entries, side, sizes) => {
   return null
 }
 
+// SB-10's two launch numbers, rebuilt from the body by construction like
+// everything else here — they are the one pair a client names that decides how
+// much WORK the server does, so neither is ever passed through.
+//
+// `runs`: truncated and clamped into 1..SANDBOX_MAX_RUNS, with junk falling
+// back to a single battle rather than a refusal. Asking for "lots" is a broken
+// client, not an attack, and one run is what every launch before S3 meant.
+const runCountFrom = (value) => {
+  const runs = Math.trunc(Number(value))
+  if (!Number.isFinite(runs)) return 1
+  return Math.min(SANDBOX_MAX_RUNS, Math.max(1, runs))
+}
+
+// `seed`: an integer or nothing at all. Absent, blank and unreadable all mean
+// "draw fresh" — the engine's own default — and only a number or the string a
+// text field produces is even looked at, since `Number([])` is 0 and an empty
+// array is nobody asking for seed zero. A string is TRIMMED first for the same
+// reason: `Number(' ')` is 0, and a field holding a space would otherwise seed
+// the batch to a single run nobody asked to collapse.
+const seedFrom = (value) => {
+  if (typeof value !== 'number' && typeof value !== 'string') return null
+  const named = typeof value === 'string' ? value.trim() : value
+  if (named === '') return null
+  const seed = Math.trunc(Number(named))
+  return Number.isFinite(seed) ? seed : null
+}
+
 // Launch one lab battle. Body is {player_placement, enemy_placement, magic}:
 // axial entries, one per BODY, exactly as the campaign's battle route builds
 // them, plus S2's per-side school levels and channel pool.
@@ -210,7 +238,17 @@ router.post('/battles', userExtractor, async (req, res) => {
   // the only way to say "leave them alone" on this wire is to say nothing.
   const magic = sanitizeMagic(req.body?.magic)
 
-  const { error: engineError, summary } = await runAndPersistSandboxBattle(
+  // E2, DECIDED HERE rather than in the browser: a seed makes the engine repeat
+  // its entire draw sequence, so N seeded runs are N copies of ONE battle — a
+  // batch that would report "100% win rate" off a single sample dressed as ten.
+  // The seed and the batch answer different questions (SB-10 says so outright),
+  // so naming a seed collapses the batch to the one run it can actually
+  // produce. The client greying the spinner out is a courtesy; this is the
+  // contract.
+  const seed = seedFrom(req.body?.seed)
+  const runs = seed === null ? runCountFrom(req.body?.runs) : 1
+
+  const { error: engineError, summary, batch } = await runAndPersistSandboxBattle(
     {
       map: MAP_NAME,
       player_placement: playerPlacement,
@@ -218,10 +256,15 @@ router.post('/battles', userExtractor, async (req, res) => {
       ...(magic ? { magic } : {}),
     },
     req.user._id,
+    { runs, seed },
   )
   if (engineError) return res.status(400).json({ error: engineError })
 
-  res.status(201).json(summary)
+  // ADDITIVE: the summary is byte-for-byte the one S1 returned — the replay the
+  // client already watches is the batch's FIRST run (E1) — and `batch` rides
+  // alongside it. A launch of one is a batch of one, so the block is always
+  // there and the readout needs no special case for the common launch.
+  res.status(201).json({ ...summary, batch })
 })
 
 // Auto-place one side's army over its deployment zone (SB-3's per-side button).
@@ -287,6 +330,9 @@ router.get('/reference', userExtractor, (req, res) => {
       maxPathLevel: SANDBOX_MAX_PATH_LEVEL,
       maxSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
       maxChannels: SANDBOX_MAX_CHANNELS,
+      // SB-10's batch ceiling, so the runs spinner reads its own bound off the
+      // server exactly as every other spinner in the lab does.
+      maxRuns: SANDBOX_MAX_RUNS,
       // The same number as maxSchoolLevel, and the same CONSTANT: it is the
       // engine's SPELL_SCHOOL_OPEN_DEFAULT, which is both the top of the scale
       // and the level a side sits at when no magic block is sent. The lab

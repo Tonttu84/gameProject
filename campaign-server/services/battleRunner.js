@@ -109,6 +109,34 @@ export async function runAndPersistBattle(input, userId, day = null) {
   return persistBattleResult(result, { input, userId, day })
 }
 
+// SB-10's aggregate over a batch, and deliberately nothing cleverer than the
+// two questions a batch can honestly answer: how often each side won, and how
+// many of each type walked off the field on average.
+//
+// The mean is over the runs that COMPLETED, not over the runs asked for (E4) —
+// dividing good samples by a count that includes a subprocess which died would
+// quietly report an army as weaker than every run of it actually was.
+const aggregateRuns = (results) => {
+  const wins = { blue: 0, red: 0, draw: 0 }
+  const totals = { blue: {}, red: {} }
+
+  for (const result of results) {
+    if (result.winner in wins) wins[result.winner] += 1
+    for (const side of ['blue', 'red']) {
+      const bag = result[`${side}_survivors`] ?? {}
+      for (const [type, count] of Object.entries(bag))
+        totals[side][type] = (totals[side][type] ?? 0) + Number(count)
+    }
+  }
+
+  // A type absent from a run survived it zero times, so the sum already carries
+  // the zeroes — dividing by the run count is the whole of the average.
+  const mean = (bag) =>
+    Object.fromEntries(Object.entries(bag).map(([type, sum]) => [type, sum / results.length]))
+
+  return { wins, averageSurvivors: { blue: mean(totals.blue), red: mean(totals.red) } }
+}
+
 // Run one battle for the BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX
 // MODE") and persist it. The same pipeline as every other battle — SB-1's whole
 // point is that the lab needs no campaign document, so the only differences are
@@ -119,14 +147,61 @@ export async function runAndPersistBattle(input, userId, day = null) {
 // nothing. A sweep failure is not allowed to fail the launch: the player has a
 // battle to watch either way, and the worst case of a missed sweep is one
 // extra replay that the next launch will collect.
-export async function runAndPersistSandboxBattle(input, userId) {
-  const result = await runBattle(input)
-  if (result.error) return { error: result.error }
-  const persisted = await persistBattleResult(result, { input, userId, sandbox: true })
+//
+// SB-10 makes the launch a BATCH of `runs`, and four rules govern it:
+//
+//   • E1 — SEQUENTIALLY, and only the FIRST run is persisted. N subprocesses at
+//     once is exactly the resource-exhaustion vector SB-2 flagged when it let
+//     the lab ship player-facing; one at a time is the same load as N launches
+//     made by hand. Persisting the first (rather than an arbitrary member)
+//     means the replay on screen is a row of the batch the player can name.
+//   • E2 belongs to the route: a seed collapses the batch to one run, because
+//     GAME_RNG_SEED repeats the whole draw sequence and ten seeded runs are ten
+//     copies of one battle wearing a win rate.
+//   • E3 — the aggregate is wins and average survivors, over the completed runs.
+//   • E4 — a LATER run's failure ENDS the batch, it does not void it. The first
+//     run failing is a client error with nothing stored (the contract every
+//     other battle route keeps); run k>1 failing stops there and still returns
+//     the persisted replay plus the k-1 good samples, marked incomplete.
+export async function runAndPersistSandboxBattle(input, userId, { runs = 1, seed = null } = {}) {
+  const first = await runBattle(input, { seed })
+  if (first.error) return { error: first.error }
+
+  const persisted = await persistBattleResult(first, { input, userId, sandbox: true })
   await sweepSandboxBattles(userId, persisted.battle._id).catch((e) =>
     console.error('sandbox battle sweep failed:', e.message),
   )
-  return persisted
+
+  const results = [first]
+  let incomplete = null
+  for (let run = 1; run < runs; run++) {
+    // A throw is as much an ended batch as an { error } is: EngineProcessError
+    // is what a timeout or a killed subprocess arrives as, and neither is a
+    // reason to throw away the samples that already finished.
+    let next
+    try {
+      next = await runBattle(input, { seed })
+    } catch (e) {
+      incomplete = e.message
+      break
+    }
+    if (next.error) {
+      incomplete = next.error
+      break
+    }
+    results.push(next)
+  }
+
+  return {
+    ...persisted,
+    batch: {
+      runs: results.length,
+      requested: runs,
+      seed,
+      ...aggregateRuns(results),
+      ...(incomplete ? { incomplete } : {}),
+    },
+  }
 }
 
 // Run the hardcoded sample scenario and persist it as an ownerless battle. Same

@@ -185,11 +185,20 @@ export const submitBugReport = (message, screen) =>
 // (SB-1). Both need a login (SB-2) — a launch spawns an engine subprocess.
 
 // Launch one lab battle. The payload is {player_placement, enemy_placement,
-// magic}: axial entries one per BODY — a caster's may carry `paths` and
-// `script`, and only when the player actually set them, since absence is how
-// the engine's own default is asked for (SB-7) — plus S2's per-side
-// {schools, channels}. Returns the same battle summary every other battle route
-// returns, so ReplayView plays it exactly like a campaign fight.
+// magic, runs, seed}: axial entries one per BODY — a caster's may carry `paths`
+// and `script`, and only when the player actually set them, since absence is
+// how the engine's own default is asked for (SB-7) — plus S2's per-side
+// {schools, channels} and S3's two launch numbers.
+//
+// `runs` is how many battles this launch fights (SB-10 — one battle is one
+// sample from a noisy distribution, so a win rate needs a batch); `seed` is a
+// fixed GAME_RNG_SEED or null for a fresh draw. A SEED COLLAPSES THE BATCH to
+// one run, and the server decides that, not this call: a repeated draw sequence
+// is one battle copied N times, and a win rate read off it would be a lie.
+//
+// Returns the same battle summary every other battle route returns — the
+// replay is the batch's FIRST run — plus a `batch` block carrying the wins and
+// the average survivors. So ReplayView plays it exactly like a campaign fight.
 export const postSandboxBattle = (payload) =>
   axios.post('/api/sandbox/battles', payload, authed()).then(r => r.data)
 

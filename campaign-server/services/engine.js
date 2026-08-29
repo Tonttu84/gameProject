@@ -13,7 +13,12 @@ export class EngineOutputError extends Error {
 
 // Run `./game <mode>` with optional stdin, parse stdout as JSON.
 // cwd is the repo root — the engine resolves maps/ relative to it.
-function runEngine(mode, stdinText) {
+//
+// `extraEnv` is merged over the fixed environment below, and is how a caller
+// asks the BINARY for something the JSON contract has no field for — today
+// only GAME_RNG_SEED (SB-10's fixed seed). Merged last on purpose: the seed a
+// caller names beats whatever the server process happens to have inherited.
+function runEngine(mode, stdinText, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       config.ENGINE_BIN,
@@ -25,7 +30,7 @@ function runEngine(mode, stdinText) {
         // The dev binary links ASan/LSan; known third-party leaks
         // (SFML/freetype glyph cache) would otherwise fail every battle run.
         // Engine leak checking still happens in `make test-serial`.
-        env: { ...process.env, ASAN_OPTIONS: 'detect_leaks=0' },
+        env: { ...process.env, ASAN_OPTIONS: 'detect_leaks=0', ...extraEnv },
       },
       (err, stdout) => {
         if (err) return reject(new EngineProcessError(`game ${mode}: ${err.message}`))
@@ -42,8 +47,18 @@ function runEngine(mode, stdinText) {
 }
 
 // One battle: BattleInput in, { winner, *_survivors, replay } out.
-export function runBattle(input) {
-  return runEngine('battle', JSON.stringify(input))
+//
+// `seed` (SB-10) sets GAME_RNG_SEED, which makes the engine repeat its ENTIRE
+// draw sequence — the same battle, blow for blow, which is what answers "why
+// did THAT happen". It is set only for a real integer and ABSENT otherwise:
+// the variable existing at all is what the engine checks, and an empty string
+// would be a seed it warns about on stderr and then ignores.
+export function runBattle(input, { seed = null } = {}) {
+  return runEngine(
+    'battle',
+    JSON.stringify(input),
+    Number.isInteger(seed) ? { GAME_RNG_SEED: String(seed) } : {},
+  )
 }
 
 // The hardcoded sample scenario, run headless. Same { winner, *_survivors,
