@@ -205,12 +205,22 @@ To run a single Vitest test: `cd frontend && npx vitest run src/__tests__/placem
 
 ## Architecture
 
-The C++ **battle engine** (`backend/engine/`) is the only fully implemented subsystem; the
-strategic campaign layer is a placeholder React app (`frontend/`) that talks to it over HTTP.
-See `ARCHITECTURE.md` for the full data-flow diagrams and `DESIGN.md` for hex/formation/combat
-design (most of DESIGN.md is marked `[PLANNED]` and not yet implemented — the hex-side
-engagement/frontage/formation system it describes is only partially built in
-`Battlefield::resolveEngagements()`).
+Two real subsystems now, not one: the C++ **battle engine** (`backend/engine/`) and the
+**campaign layer** — a Node BFF (`campaign-server/`, a v44 document schema, the turn pipeline,
+raids, magic research, the forge) with a React campaign UI (`frontend/`) in front of it. The
+"placeholder React app" this section described until 2026-08-29 has not been true for many
+stages; `docs/CAMPAIGN_PLAN.md` is the campaign layer's own record and the place to read it.
+See `DESIGN.md` for hex/formation/combat design (most of it is marked `[PLANNED]` and not yet
+implemented — the hex-side engagement/frontage/formation system it describes is only partially
+built in `Battlefield::resolveEngagements()`).
+
+**⚠ `ARCHITECTURE.md` IS STALE — do not trust its diagrams (audited 2026-08-29).** It predates
+hexes (it draws `Cell*` and Chebyshev distance; there is no `Cell` class), predates the magic
+system (it gives Mage/Priest/Necromancer a `mana: int` that slice 1 DELETED, and `castFireball()`/
+`castBless()`/`raiseDead()` methods the spell roster replaced), omits ~10 unit types and the
+campaign layer entirely, and its tick diagram is missing `resolveEngagements()`,
+`onTurnStart()`/`onTurnEnd()` and the battlefield-enchantment hooks. The per-tick flow below and
+the module boundaries here are the accurate summary; rewriting that file is an open task.
 
 **Module boundaries** (mirrored under `BUILD/` by the Makefile's recursive source discovery):
 - `backend/engine/` — core simulation: `HexGrid`/`Hex`/`HexSide`, `AUnit` hierarchy
@@ -243,10 +253,15 @@ engagement/frontage/formation system it describes is only partially built in
   not a fresh `{}`/`[]` literal, or `useSyncExternalStore` treats every render as "changed" and
   infinite-loops.
 
-**Per-tick flow** (`Battlefield::tick()`): `triggerSpecialPhase()` (archers/mages/priests/
-necromancers act) → `moveUnits()` (squad pre-pass, then per-unit movement/flee/preferred-range
-logic) → `resolveEngagements()` (assigns units to contested hex sides, squads before loners,
-fresh before tired) → `makeBattle()` (interleaved red/blue attacks) → `cleanup()` (prune dead).
+**Per-tick flow** (`Battlefield::tick()`): `onTurnStart()` (passive `recover()`, then
+`applyEnchantments()` — standing battlefield spells press AFTER the rest, or recovery would wash
+the turn's relief away — then the per-tick flag resets) → `fireScheduledReinforcements()` (the
+garrison sally) → `triggerSpecialPhase()` (archers/mages/priests/necromancers act) →
+`moveUnits()` (squad pre-pass, then per-unit movement/flee/preferred-range logic) →
+`resolveEngagements()` (assigns units to contested hex sides, squads before loners, fresh before
+tired) → `makeBattle()` (interleaved red/blue attacks) → `onTurnEnd()`, which is
+`sweepEnchantments()` (drop instances whose sustainer died — BEFORE the prune, while the pointer
+is still valid) then `cleanup()` (prune dead).
 
 **Process model**: `./game server` runs one long-lived `httplib` server. `POST /api/battle`
 does *not* run the battle in-process — it shells out to `./game battle` as a subprocess (via

@@ -85,10 +85,16 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-25) — START HERE
+### Where the work stands (2026-08-29) — START HERE
 
-**▶▶ THE LIVE FRONT IS THE MAGIC SYSTEM, AND IT IS NOT IN THIS BLOCK — it is under "THE MAGIC
-SYSTEM" further down.** Schema is **v44** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
+**▶▶ THERE IS NO LIVE FRONT: every front opened so far is SHIPPED and on `main`, CI green.** The
+last to close was ENEMY SCRIPTS + BATTLEFIELD ENCHANTMENTS (slices A and B, 2026-08-28/29 — item 5
+below). Nothing is half-built and nothing is waiting to be picked up; the next session CHOOSES a
+front rather than resuming one. The candidates, each a decision already taken about what the thing
+IS: the real cast AI (M-22), stances (M-12), empowerment (M-5), and the BALANCE PASS — which now
+has the most to chew on, since every number the magic and Construction fronts shipped is
+balance-deferred. **The magic system is the biggest built thing and it is NOT in this block** — it
+is under "THE MAGIC SYSTEM" further down. Schema is **v44** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
 authority; the v35/v36 talk below is 2026-08-24 history that was true when it was written). Read
 this order to pick the work up cold:
 
@@ -436,10 +442,12 @@ this order to pick the work up cold:
      tests); items and spells have no equivalent. Construction is the natural forcing function
      either way, since a crafting system with three items to make is a menu, not a system.
 
-5. **THE LIVE FRONT (opened 2026-08-28): ENEMY SCRIPTS + BATTLEFIELD ENCHANTMENTS — see "▶ THE
-   ENEMY-SCRIPTS INTERVIEW (2026-08-28)" below.** S4-6's noted-down future is being built, in two
-   slices: **A — battlefield-wide enchantments** (engine + player scripting), then **B — the
-   enemy script store** (priority-ordered, amending S4-6's random draw). What the interviews still
+5. **ENEMY SCRIPTS + BATTLEFIELD ENCHANTMENTS ARE DONE (interviewed and shipped 2026-08-28/29):
+   BOTH SLICES ARE ON `main` — see "▶ THE ENEMY-SCRIPTS INTERVIEW (2026-08-28)" below.** S4-6's
+   noted-down future got built in two slices: **A — battlefield-wide enchantments** (engine +
+   player scripting, commit `36a0d37`), then **B — the enemy script store** (priority-ordered,
+   amending S4-6's random draw, commit `46cf80e`). Decisions E-1..E-8 closed every question; the
+   two "what landed" notes under them are the shapes to reuse. What the interviews still
    deliberately leave for later: **a real cast AI** scoring a simulated cast (M-22), which is also
    where per-form priority is decided (S4-2 amends M-13 to per-spell until then); **stances**
    (M-12); **empowerment** (M-5). Each is a decision already taken about what the thing IS, not a
@@ -531,6 +539,25 @@ this order to pick the work up cold:
      walledSides precedent), and within one composition pass a battlefield-bearing script is
      assigned at most once ("only 1 mage should have it scripted" applied to the enemy's own
      authoring).
+
+6. **DOCUMENTATION DEBT, found by an audit on 2026-08-29 — two items, neither urgent, both real.**
+   Recorded here rather than left in a session's memory, because that is the whole point of this
+   file.
+   - **`ARCHITECTURE.md` IS OBSOLETE and CLAUDE.md now says so at the point it used to recommend
+     it.** It describes roughly the pre-hex, pre-magic engine: `Cell*` and Chebyshev distance
+     (there is no `Cell` class), a `mana: int` on Mage/Priest/Necromancer that magic slice 1
+     DELETED, `castFireball()`/`castBless()`/`raiseDead()` methods the spell roster replaced,
+     ~10 missing unit types, a tick diagram with no `resolveEngagements()`/`onTurnStart()`/
+     `onTurnEnd()`, and a "future" campaign layer that has been real for months. **It is a
+     rewrite, not a patch** — the diagrams are the file. Until then CLAUDE.md's per-tick flow and
+     module boundaries are the accurate summary, and they were corrected in the same audit.
+   - **`docs/ADDING_SPELLS.md` is OWED by C-8** ("content leads, tooling is its exhaust" —
+     `ADDING_ITEMS.md` came out of C1, "the spells equivalent after"). The path has now been
+     walked twice and is fresh: slice A added a whole new spell KIND (three `SpellForm` fields,
+     the sustained-instance machinery) and two rows; slice B added `ENEMY_SCRIPT_STORE`. The
+     guide would cover a form row, the roster table's weakest-first order, the constant-built
+     description rule, `Defines.hpp`, the catalog JSON export, and the sweeps that review a row —
+     pinned by catalog-agreement tests the way ADDING_UNITS.md §5 is.
 
 Everything in the rest of this block is the squad/character/items front, which is FINISHED —
 decision 13 and slice 17 both shipped. It is kept as the record of how those systems got their
