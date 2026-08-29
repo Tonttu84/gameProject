@@ -11,9 +11,11 @@ import { startTestDb, stopTestDb } from './helpers/db.js'
 import { engineStatsFixture } from './fixtures/engineStats.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { RECRUIT_POOL, FALLBACK_HIRE } from '../services/recruit.js'
-import { researchView, spellsForSchool } from '../services/magic.js'
+import { enginePaths, researchView, spellsForSchool, withEnemyScripts } from '../services/magic.js'
 import {
   ENEMY_ARMY,
+  ENEMY_SCRIPT_STORE,
+  MAX_CHOSEN_SPELLS,
   STARTING_ROSTER,
   STARTING_SQUADS,
   SQUAD_ARCHETYPES,
@@ -515,6 +517,73 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
     const casts = await castingMage(['no_such_spell'])
     expect(casts.length).toBeGreaterThan(0)
     expect(casts.every((l) => l.includes('Ember'))).toBe(true)
+  }, 30000)
+
+  // ── The enemy script store against the real roster (slice B, E-7 / E-8) ───
+  //
+  // The store is HAND-AUTHORED campaign-side and names spells the ENGINE owns,
+  // which is exactly the hand-copied-facts loophole the fixtures above close for
+  // unit stats: a renamed or retired spell id would leave every unit test green
+  // (a row nobody qualifies for is a legal row) while the host quietly stopped
+  // scripting anything. Only a run against the real binary can see both halves.
+  test('every id in ENEMY_SCRIPT_STORE is a spell the engine actually carries', async () => {
+    const { spells } = await dumpSpells()
+    const known = new Set(spells.map((row) => row.spell))
+    const named = [...new Set(ENEMY_SCRIPT_STORE.flatMap((row) => row.spells))].sort()
+    expect(named.length).toBeGreaterThan(0)
+    expect(
+      named.filter((id) => !known.has(id)),
+      'scripted by ENEMY_SCRIPT_STORE but not in the engine roster',
+    ).toEqual([])
+    // The same two shape rules the player's own list is held to, restated here
+    // against the live roster so a row cannot grow past what the engine will
+    // read off a placement entry.
+    for (const row of ENEMY_SCRIPT_STORE) {
+      expect(row.spells.length, `${row.id} exceeds MAX_CHOSEN_SPELLS`)
+        .toBeLessThanOrEqual(MAX_CHOSEN_SPELLS)
+      expect(new Set(row.spells).size, `${row.id} names a spell twice`).toBe(row.spells.length)
+    }
+  })
+
+  // The whole of slice B in one run, and the twin of the player's chosen-spells
+  // case above: an authored store row, matched by the campaign's own walk
+  // against a sealed encounter, riding the ordinary `script` field, and the
+  // spell actually leaving an ENEMY caster's hands. Nothing here mocks anything.
+  //
+  // Leaden Air is the row worth proving because it is the one the pool locks
+  // (E-8): the red block below seals Enchantment 2 and 3 channels, which is
+  // precisely what qualifies it. Drop either and the cast does not happen.
+  test('a store-scripted enemy caster casts what the store gave him', async () => {
+    const { spells } = await dumpSpells()
+    const magic = {
+      schools: { evocation: 1, conjuration: 2, enchantment: 2, construction: 0 },
+      channels: 3,
+    }
+    // Composed exactly as buildEnemyPlacement and the raid route compose it:
+    // paths already on the entry, then the derived scripting pass over them.
+    const enemy = withEnemyScripts(
+      [{ unit_type: 'Necromancer', q: 4, r: 22, paths: enginePaths({ death: 2 }) }],
+      magic,
+      spells,
+    )
+    // The store, not the test, decided this — so say out loud what it decided,
+    // and fail here rather than in the log assertion if a retune moves it.
+    expect(enemy[0].script, 'the store no longer scripts Leaden Air for a Death 2 raiser')
+      .toContain('leaden_air')
+
+    const { replay } = await runBattle({
+      map: 'sample_battle',
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 7, count: 6 }],
+      enemy_placement: enemy,
+      max_turns: 40,
+      magic: {
+        blue: { schools: { evocation: 0, conjuration: 0, enchantment: 0, construction: 0 }, channels: 0 },
+        red: magic,
+      },
+    })
+    const casts = castsIn(replay)
+    expect(casts.length).toBeGreaterThan(0)
+    expect(casts.some((l) => l.includes('Leaden Air')), casts.join(' | ')).toBe(true)
   }, 30000)
 
   test('spellsForSchool keeps the engine order, so minor precedes major', async () => {

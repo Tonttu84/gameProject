@@ -245,8 +245,9 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
         // restriction, and an absent field is exactly the old behaviour.
         //
         // Rides the placement entry for both sides, like `paths`, because there
-        // is ONE magic system (M-17). The campaign layer sends none for the
-        // enemy today (S4-6) — the engine simply never learns whose list it is.
+        // is ONE magic system (M-17). Since slice B the campaign layer sends
+        // them for the enemy too — an authored store row assigned by the
+        // priority walk (E-7) — and the engine never learns whose list it is.
         //
         // Same never-throw discipline as `paths` above: a non-array, a
         // non-string entry or an id the roster does not carry is skipped rather

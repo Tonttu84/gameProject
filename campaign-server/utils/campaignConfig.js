@@ -1524,3 +1524,53 @@ export const ENEMY_SCHOOLS = {
 // S2-9 (bd): the host's army-wide channel pool. A flat number rather than a
 // tier lookup, because the enemy has no banners and no charters to hang them on.
 export const ENEMY_CHANNELS = 3
+
+// E-7: THE ENEMY SCRIPT STORE — the authored lists an enemy caster may be given,
+// amending S4-6's "random assignment" to a PRIORITY WALK. The array is the
+// priority: index 0 is tried first and the first row a caster qualifies for is
+// the row he gets, so assignment is DETERMINISTIC and nothing is drawn. That is
+// what lets services/magic.js `withEnemyScripts` DERIVE the scripts at
+// composition instead of sealing them onto the document (E-8) — there is no
+// roll for a reload to reroll, the same reasoning walledSides derives by.
+//
+// A caster qualifies for a row when he can cast EVERY spell on it: one of that
+// spell's catalog forms inside his own rolled paths, and that form's school gate
+// inside the ENEMY's sealed levels above ("the enemy's research is the
+// encounter", E-7). A row carrying a battlefield spell additionally needs
+// ENEMY_CHANNELS to cover its poolCost — the pool is the lock, and the only one
+// (E-8: no encounter level, no new field).
+//
+// PLACEHOLDERS, by the user's call: the roster is twelve spells, so these are
+// combinations worth having rather than a designed repertoire, and the file to
+// grow when the roster does. At most MAX_CHOSEN_SPELLS ids per row, no id twice
+// within a row — the same two limits planChosenSpells holds the player to,
+// because the engine reads both lists through one field.
+//
+// THE TOP TWO ROWS ARE AUTHORED LIVE-WHEN-BALANCE-RAISES, DELIBERATELY. Both
+// battlefield spells gate on Enchantment 2 and ENEMY_SCHOOLS seals Enchantment
+// at 1, so no encounter today can field either — the rows match nothing and the
+// walk falls through to the ones below them. They are written now anyway
+// because M-19's dial is exactly "a later act authors higher numbers": raising
+// that one constant is the whole of what turns the smart plays on, with no
+// second edit here.
+export const ENEMY_SCRIPT_STORE = [
+  // Thicken the air, then keep raising into it — the undead the litany makes do
+  // not tire, so the enchantment costs the raiser's own side nothing (E-6's
+  // structural "living"). The sharpest thing a Death caster can do with a pool.
+  { id: 'leaden_litany', spells: ['leaden_air', 'raise_dead'] },
+  // The mirror for a Nature caster: relief for his own line, and briars for
+  // whoever walks at it.
+  { id: 'gale_ward', spells: ['soothing_winds', 'briar_snare'] },
+  // What the host's eleven Necromancers actually get today (Death 2 declared by
+  // the craft, S2-14, against a sealed Conjuration 2): raise from turn one.
+  { id: 'graveharvest', spells: ['raise_dead'] },
+  // The fallback under gale_ward — a Nature 1 caster misses Soothing Winds, so
+  // he takes the briars alone rather than nothing.
+  { id: 'bramble_line', spells: ['briar_snare'] },
+  // Single-minor rows so an ordinary rolled caster matches SOMETHING. Ordinary
+  // scripts repeat freely (only a battlefield row is once per composition), so
+  // every fire mage in a host may carry the same one.
+  { id: 'pyre_song', spells: ['fireball'] },
+  { id: 'storm_call', spells: ['shock'] },
+  { id: 'hexing_hand', spells: ['hex_of_frailty'] },
+]

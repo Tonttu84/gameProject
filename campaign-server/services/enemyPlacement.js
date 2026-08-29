@@ -1,6 +1,8 @@
 import { getInfo } from './engine.js'
 import UnitType from '../models/unitType.js'
-import { withCasterPaths } from './magic.js'
+import { withCasterPaths, withEnemyScripts } from './magic.js'
+import { getSpellCatalog } from '../utils/spellCatalog.js'
+import { ENEMY_CHANNELS, ENEMY_SCHOOLS } from '../utils/campaignConfig.js'
 
 // Capacity-aware random spread of an army over a deployment zone — the shared
 // auto-placement core (Stage 4 Part 2 extraction): the enemy's daily plan and
@@ -142,7 +144,21 @@ export function spreadPlacement(army, zone, sizeOf) {
 // army: a random spread over the enemy zone. Stored on the campaign (HIDDEN)
 // so that (a) the engine receives exactly it, and (b) a scouting reveal can
 // show the player the truth rather than a guess.
-export async function buildEnemyPlacement(army) {
+//
+// `magic` is the encounter's sealed {schools, channels} — the ONLY thing that
+// decides which authored scripts this host's casters can carry (E-7/E-8), so it
+// is threaded in rather than read off a document this function does not have.
+// Creation passes the constants it is about to write onto the campaign;
+// end-of-turn passes enemyMagic(campaign). The default is those same constants,
+// which keeps a caller that has no campaign in hand honest rather than silently
+// scriptless. `spells` defaults to the boot-filled roster and degrades to an
+// empty one (utils/spellCatalog.js), so a test that never loaded a catalog gets
+// no scripts instead of a crash.
+export async function buildEnemyPlacement(
+  army,
+  magic = { schools: ENEMY_SCHOOLS, channels: ENEMY_CHANNELS },
+  spells = getSpellCatalog(),
+) {
   const info = await getInfo()
 
   // Sizes for ALL types (info.units only lists placeable ones; the enemy
@@ -167,5 +183,11 @@ export async function buildEnemyPlacement(army) {
   // Their Death is declared by the craft (S2-14) — that is what keeps the host
   // raising skeletons from the first battle while the player starts at nothing
   // (S2-9), which is the story M-6's fluff already tells.
-  return withCasterPaths(placement)
+  //
+  // The scripts go on AFTER the paths and are DERIVED rather than sealed with
+  // them (E-8): the walk needs the rolled paths to match against, and it draws
+  // nothing itself, so rebuilding this placement tomorrow from the same roll
+  // yields the same scripts. One pass over the whole host, which is also what
+  // makes "at most one battlefield script per side" mean the host and not a hex.
+  return withEnemyScripts(withCasterPaths(placement), magic, spells)
 }

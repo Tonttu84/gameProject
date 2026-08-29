@@ -31,7 +31,7 @@ import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyHost.js'
 import { meterFillAmount, meterBand } from './meter.js'
 import { wallSlowFactor, adjustResolve, garrisonSurrendered } from './garrison.js'
-import { accrueResearch } from './magic.js'
+import { accrueResearch, enemyMagic } from './magic.js'
 import { buildEnemyPlacement } from './enemyPlacement.js'
 import { generateRaidOpportunities } from './raid.js'
 import { resolveForaging, ageForageModifiers } from './forage.js'
@@ -466,7 +466,13 @@ export async function endDay(campaign) {
     // roster + eventFlags as this turn's fates left them), so a prerequisite
     // reads against next turn's state.
     campaign.augury = drawAugury(campaign)
-    campaign.enemy.plannedPlacement = await buildEnemyPlacement(campaign.enemy.army)
+    // Rebuilt against the encounter's OWN sealed magic (E-7) — read off the
+    // document rather than the authored constants, so a campaign whose host was
+    // written with different numbers scripts to those numbers.
+    campaign.enemy.plannedPlacement = await buildEnemyPlacement(
+      campaign.enemy.army,
+      enemyMagic(campaign),
+    )
     // Tomorrow's board: one base target (+ a counter per FRESH bad fate drawn
     // above); the field-points pool below is what backs its scouting-points
     // share.

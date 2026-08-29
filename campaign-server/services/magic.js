@@ -21,6 +21,7 @@ import {
   DECLARED_CASTERS_ROLL_SECOND,
   ENEMY_CHANNELS,
   ENEMY_SCHOOLS,
+  ENEMY_SCRIPT_STORE,
   HIRE_PATH_POOL,
   HIRE_PRIMARY_LEVEL,
   HIRE_SECOND_PATH_PERCENT,
@@ -139,6 +140,83 @@ export const withCasterPaths = (placement, sealed = null) => {
     if (!isCasterType(entry.unit_type)) return entry
     const rolled = sealed?.[next++] ?? rollPaths(entry.unit_type)
     return { ...entry, paths: enginePaths(rolled) }
+  })
+}
+
+// ── The enemy's scripts (E-7 / E-8) ─────────────────────────────────────────
+//
+// The host's half of slice 4's chosen spells, and the twin of withCasterPaths
+// above: run over a placement that already carries `paths`, it stamps `script`
+// onto the casters who qualify for an authored row. The engine receives it in
+// exactly the field a player character's list arrives in — there is ONE magic
+// system (M-17) and the wire never learns whose list it is holding.
+//
+// DERIVED, NEVER SEALED (E-8). withCasterPaths sealed because it ROLLS and a
+// reload must not reroll; this walk draws nothing — ENEMY_SCRIPT_STORE is
+// ordered and the first qualifying row wins — so the same inputs give the same
+// scripts every time it runs, and there is nothing to protect from a reload.
+// Sealing it would be a schema field carrying a value the code can recompute,
+// which is the trade walledSides already settled the other way.
+
+// Whether ANY id on a row names a battlefield form. Caster-independent on
+// purpose: it is a property of the ROW (what the once-per-composition rule
+// below counts), not of who happens to qualify for it.
+const carriesBattlefield = (row, spells) =>
+  row.spells.some((id) => spells.some((form) => form.spell === id && form.battlefield))
+
+// Can this enemy caster cast this SPELL — at least one of its forms, under the
+// encounter's sealed numbers? The fold castableSpellsFor does for the player,
+// asked as a yes/no: forms are per-form rows and a spell is reachable when any
+// one of them is.
+//
+// THE POOL IS THE LOCK (E-8). A battlefield form the sealed `channels` cannot
+// cover is not a form this encounter has, so it is skipped here rather than
+// checked after the fact — which is the same gate the engine applies at cast
+// (it qualifies on the pool in full), read one layer earlier so a script that
+// could only ever fizzle is never handed out.
+const enemyCanCast = (held, spellId, spells, schoolLevelOf, channels) =>
+  spells.some((form) => form.spell === spellId
+    && !(form.battlefield && (form.poolCost ?? 0) > channels)
+    && formQualifies(held, form, schoolLevelOf))
+
+// `magic` is the enemy block enemyMagic() builds — {schools, channels} — and is
+// the ONLY source of school levels here: the enemy's research is the encounter
+// (E-7), so a caster's row is judged against what the host was sealed with and
+// never against the player's study. `store` is injectable for the same reason
+// `rand` is elsewhere: a test pins the rows it is talking about.
+export const withEnemyScripts = (placement, magic, spells = [], store = ENEMY_SCRIPT_STORE) => {
+  const levels = levelBag(magic?.schools)
+  const schoolLevelOf = (school) => levels.get(school) ?? 0
+  const channels = Number(magic?.channels) || 0
+  const battlefieldRow = new Map(store.map((row) => [row.id, carriesBattlefield(row, spells)]))
+
+  // ONE GLOBAL PER SIDE PER PASS (E-8, the user's "only 1 mage should have it
+  // scripted"): a second caster carrying the same enchantment is a wasted line
+  // (E-4 — the second completion fizzles unpaid), so the walk simply refuses to
+  // hand a battlefield row out twice and the runner-up drops to the next row he
+  // qualifies for. Ordinary rows repeat freely; nothing is lost by two casters
+  // both raising skeletons. This is the campaign layer applying to its own
+  // authoring the warning alsoScriptedBy only PHRASES for the player.
+  let battlefieldTaken = false
+
+  return placement.map((entry) => {
+    if (!isCasterType(entry.unit_type)) return entry
+    const held = levelBag(entry.paths)
+    for (const row of store) {
+      const isBattlefield = battlefieldRow.get(row.id)
+      if (isBattlefield && battlefieldTaken) continue
+      // EVERY spell on the row, or the row is not his: a partial match would
+      // field a caster reaching for something he cannot cast, and the walk has
+      // a next row for him.
+      if (row.spells.length === 0) continue
+      if (!row.spells.every((id) => enemyCanCast(held, id, spells, schoolLevelOf, channels))) continue
+      if (isBattlefield) battlefieldTaken = true
+      return { ...entry, script: [...row.spells] }
+    }
+    // ABSENCE IS THE SIGNAL, the chosenSpells convention: a caster who matches
+    // nothing is sent no `script` key at all, which the engine reads as the
+    // default walk — not an empty list that would have to mean the same thing.
+    return entry
   })
 }
 
@@ -404,13 +482,31 @@ export const researchView = (campaign, spells = []) => ({
 // is what puts `bless` on a Priest's sheet from day one — the first screen in
 // the project to name a granted path's spell at all (S3-2 kept them off The
 // Study deliberately, because they are had rather than earned).
-const qualifiesFor = (paths, row, campaign) => {
-  const held = new Map(bagEntries(paths).map(([p, lvl]) => [p, Number(lvl) || 0]))
+//
+// SPLIT IN TWO for E-7, and the split IS M-19: the gates are identical for both
+// sides and only the SOURCE of the school number differs. `formQualifies` is
+// that one predicate — a caster's held paths, a catalog form, and a function
+// saying what level the side has in a school — and the enemy's script matching
+// passes it the encounter's sealed numbers where this passes it the player's
+// research. Copying the loop instead would be two readings of one rule, which is
+// exactly what M-19 exists to forbid. Both live HERE, beside the gate they were
+// cut out of, and withEnemyScripts reaches back up the file for them.
+
+// Named for what it holds rather than for paths alone: a {key: level} bag,
+// numeric and defaulted. Both gates read one — a caster's paths here, and a
+// side's four schools where withEnemyScripts above reads the sealed block.
+const levelBag = (bag) =>
+  new Map(bagEntries(bag).map(([k, lvl]) => [k, Number(lvl) || 0]))
+
+const formQualifies = (held, row, schoolLevelOf) => {
   for (const { path, level } of row.paths ?? [])
     if ((held.get(path) ?? 0) < level) return false
   if (row.school == null) return true
-  return schoolOf(campaign, row.school).level >= (row.schoolLevel ?? 0)
+  return schoolLevelOf(row.school) >= (row.schoolLevel ?? 0)
 }
+
+const qualifiesFor = (paths, row, campaign) =>
+  formQualifies(levelBag(paths), row, (school) => schoolOf(campaign, school).level)
 
 // The spells this caster can cast RIGHT NOW, one row per SPELL (S4-2/S4-3).
 //

@@ -44,7 +44,14 @@ import {
   generateRaidOpportunities, applyRaidReward, revealField, addScoutedTarget, thinsEnemyHost,
 } from '../services/raid.js'
 import { fortifyCost, fortifyWorkerCost, atFortCap, walledSides } from '../services/fortification.js'
-import { magicBlock, planChosenSpells, planResearchFocus, withCasterPaths } from '../services/magic.js'
+import {
+  enemyMagic,
+  magicBlock,
+  planChosenSpells,
+  planResearchFocus,
+  withCasterPaths,
+  withEnemyScripts,
+} from '../services/magic.js'
 import { findOverstackedHex } from '../services/placementCapacity.js'
 import { getInfo } from '../services/engine.js'
 import { getSpellCatalog } from '../utils/spellCatalog.js'
@@ -236,7 +243,14 @@ router.post('/', async (req, res) => {
       // S4: day 1, the host is camped on an untouched near ring — a surplus.
       // From here it's recomputed every end-day from what it managed to take.
       supplyState: ENEMY_SUPPLY_BANDS[0].label,
-      plannedPlacement: await buildEnemyPlacement(ENEMY_ARMY),
+      // The same two constants written onto `magic` below, handed to the
+      // placement builder so day one's casters are scripted against the
+      // encounter they are actually part of (E-7). Passed rather than read back
+      // off the document, which does not exist yet at this point in the literal.
+      plannedPlacement: await buildEnemyPlacement(
+        ENEMY_ARMY,
+        { schools: ENEMY_SCHOOLS, channels: ENEMY_CHANNELS },
+      ),
       // The host's champion (9-12), rolled ONCE and carried for the campaign.
       // Rolled at the TOP strength band, because the shadowing host is not a
       // detachment — whatever the decisive battle is, it is not "a handful".
@@ -976,13 +990,25 @@ router.post('/:id/raids/launch', async (req, res) => {
     // The casters on this target field the roll the CARD was dealt with (S2-10),
     // not a fresh one: the raid the player chose is the raid they get, and a
     // reload cannot reroll what they are walking into.
-    const enemyPlacement = withCasterPaths(
-      spreadPlacement(
-        Object.fromEntries(opportunity.targetForce),
-        zoneOf(info.enemyZone),
-        sizeOf,
+    // The scripts are DERIVED over that sealed roll (E-7/E-8), never sealed
+    // beside it: the card stores what was ROLLED because a roll must not be
+    // repeatable, and the priority walk stores nothing because it is. So a raid
+    // card dealt before this slice existed still fields scripted casters, and
+    // one relaunched after a reload fields the same ones. One pass over the raid
+    // target as a whole — its battlefield script, if any, is handed out once.
+    // The champion is pushed on BELOW, outside this pass: he carries no paths
+    // (the seam slice 2 left open) and so takes no script either.
+    const enemyPlacement = withEnemyScripts(
+      withCasterPaths(
+        spreadPlacement(
+          Object.fromEntries(opportunity.targetForce),
+          zoneOf(info.enemyZone),
+          sizeOf,
+        ),
+        [...(opportunity.casterPaths ?? [])],
       ),
-      [...(opportunity.casterPaths ?? [])],
+      enemyMagic(campaign),
+      getSpellCatalog(),
     )
     if (opportunity.bearer && enemyPlacement.length > 0) {
       const [head] = enemyPlacement

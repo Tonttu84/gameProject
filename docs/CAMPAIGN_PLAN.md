@@ -505,6 +505,22 @@ this order to pick the work up cold:
      (S2-9): "the enemy's research is the encounter". Placeholder scripts until the roster
      grows; the enemy pool sizing / encounter-level lock on battlefield spells is B's remaining
      decision. Competence without a decision anywhere in it — standing principle 1 untouched.
+   - **✅ SLICE B SHIPPED 2026-08-29 (no schema bump — assignment is DERIVED, nothing stored).**
+     What landed: `ENEMY_SCRIPT_STORE` (campaignConfig.js, 7 placeholder rows, priority = index;
+     the two battlefield-bearing rows at the top are authored LIVE-WHEN-BALANCE-RAISES — both
+     gate on Enchantment 2 against the sealed 1, so raising that one constant is the whole of
+     turning the smart plays on, M-19's dial). `withEnemyScripts` in services/magic.js is
+     withCasterPaths' twin (derive-don't-seal argued at the site); `formQualifies` is the ONE
+     per-form predicate both sides' matching now reads (M-19), with `qualifiesFor` and
+     `enemyCanCast` as its two school-level sources. The pool lock reads one layer early so a
+     script that could only fizzle is never handed out; one battlefield row per composition
+     pass. Applied at all three sites: creation (constants), endDay (enemyMagic(campaign)), and
+     the raid launch over the card's sealed casterPaths — a pre-slice card still scripts, a
+     reload scripts identically. The raid champion carries no paths and takes no script.
+     Scripts are invisible to the client: campaignView's whitelist destructure drops them like
+     it drops paths, and a test pins the RESPONSE's key set so a future spread fails loudly.
+     27 new tests (1296 total), incl. a real-binary battle where a store-scripted Necromancer's
+     Leaden Air cast line appears. UnitRegistry's "enemy sends none today" comment refreshed.
    - **E-8. THE POOL IS THE LOCK (user, 2026-08-28, closing B's open decision).** No encounter
      level, no new field: the enemy's sealed `enemy.magic.channels` alone decides which
      battlefield spells an encounter can field — a script containing one only matches when the
