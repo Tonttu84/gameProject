@@ -8,8 +8,9 @@ import useUiStore from './stores/useUiStore'
 import { guarded } from './stores/guarded'
 import {
   handleLogin, handleLogout, startCampaign, breakCamp, acceptFates,
-  startBattle, watchRaid, nextDay, watchDemo,
+  startBattle, watchRaid, nextDay, watchDemo, openBattleLab,
 } from './stores/flows'
+import useSandboxStore from './stores/useSandboxStore'
 import {
   useTotalUnits, usePlacedCount, useSquadPlacedCount, useInCamp, useCharacterPlacedCount,
 } from './stores/selectors'
@@ -29,6 +30,7 @@ import CampaignIntro from './components/CampaignIntro'
 import ScoutReport from './components/ScoutReport'
 import BattleResult from './components/BattleResult'
 import ReplayView from './components/ReplayView'
+import SandboxScreen from './components/SandboxScreen'
 import LoginForm from './components/LoginForm'
 import TutorialIntro from './components/TutorialIntro'
 import BugReportButton from './components/BugReportButton'
@@ -56,7 +58,13 @@ const App = () => {
     dayReport, setDayReport, demoBattle, setDemoBattle, demoLoading,
     tutorial, toggleTutorial, connectionError, setConnectionError,
     introSeen, setIntroSeen, storeRequest, squadScreen, studyOpen, forgeRequest,
+    labOpen,
   } = useUiStore()
+
+  // The lab's own battle, so App can put ReplayView over it — the lab is a
+  // takeover that itself has a takeover, which is the same two-step every
+  // battle screen has: fight, then watch what happened.
+  const labBattle = useSandboxStore((s) => s.battle)
 
   const { placements, squadPlacements } = usePlacementStore()
 
@@ -207,7 +215,9 @@ const App = () => {
   // server validates this against a fixed enum, so unknown values are harmless.
   const currentScreen = !user
     ? 'login'
-    : !campaign
+    : labOpen
+      ? 'sandbox'
+      : !campaign
       ? 'start'
       : campaign.status !== 'active'
         ? 'gameover'
@@ -228,6 +238,14 @@ const App = () => {
       <button className="login-toggle" data-testid="tutorial-toggle" onClick={toggleTutorial}>
         Tutorial: {tutorial ? 'on' : 'off'}
       </button>
+      {/* THE BATTLE LAB (SB-2): a login-only door, offered from every screen
+          because the lab is free-standing — it belongs to no turn and no
+          campaign, so there is no phase it would be wrong to open it from. */}
+      {user && (
+        <button className="login-toggle" data-testid="open-lab" onClick={openBattleLab}>
+          Battle Lab
+        </button>
+      )}
       {/* Reporting posts to a login-only route, so only offer it once logged in. */}
       {user && <BugReportButton screen={currentScreen} />}
       {authNotice && <span className="login-error" data-testid="auth-notice">{authNotice}</span>}
@@ -282,6 +300,40 @@ const App = () => {
             {demoLoading ? 'Mustering the armies…' : 'Watch a battle'}
           </button>
         </div>
+      </div>
+    )
+  }
+
+  // ── The battle lab ────────────────────────────────────────────────────────
+  // Sits here, above every campaign branch, because it is free-standing (SB-1):
+  // it needs a login and nothing else — no campaign, no turn, no phase — so a
+  // player with no campaign at all can open it, and one mid-turn keeps his turn
+  // untouched underneath while he tries something out.
+  //
+  // Its own battle takes over the lab exactly as a campaign battle takes over
+  // the turn: Back returns to the setup that produced it, still composed, so
+  // the next thing to try is one edit away.
+  if (labOpen) {
+    if (labBattle) {
+      return (
+        <div className="app">
+          {authBar}
+          <ReplayView
+            battleId={labBattle.id}
+            tickCount={labBattle.tickCount}
+            info={info}
+            map={map}
+            autoPlay
+            backLabel="Back to the lab"
+            onBack={() => useSandboxStore.getState().setBattle(null)}
+          />
+        </div>
+      )
+    }
+    return (
+      <div className="app">
+        {authBar}
+        <SandboxScreen info={info} map={map} />
       </div>
     )
   }

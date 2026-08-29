@@ -87,10 +87,16 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-08-29) — START HERE
 
-**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29, NOT ONE LINE BUILT.**
-Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX MODE" entry in
-the Deferred design backlog below; **start there, and do not re-derive them.** Slice S1 is the
-spine: extract the hex geometry, a screen that composes and places BOTH armies, launch, watch.
+**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29; SLICE S1 IS SHIPPED,
+S2 IS NEXT.** Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX
+MODE" entry in the Deferred design backlog below; **start there, and do not re-derive them.**
+S1 — the spine — landed 2026-08-29: the hex geometry is extracted, the Battle Lab composes and
+places BOTH armies from the full catalog, launches through the existing pipeline and plays the
+replay, with SB-12's per-launch retention behind it. **S2 is the casters, and it is where the
+original ask is actually met** — per-caster paths and scripts defaulting to the engine's own
+choice, the enemy's school levels and channel pool, and SB-8's real-host preset. Read the
+per-slice "what landed" note under THE SLICE PLAN for the shapes S2 extends (the placement-entry
+whitelist in `routes/sandbox.js` is the seam it widens, one field at a time).
 Everything else on `main` is SHIPPED and green — the front that closed just before this was ENEMY
 SCRIPTS + BATTLEFIELD ENCHANTMENTS (slices A and B, 2026-08-28/29 — item 5 below). The other
 candidates, each a decision already taken about what the thing IS and none of them started: the
@@ -7745,9 +7751,38 @@ sequence. So the server half is nearly free and the work is almost all in COMPOS
   The player's OWN data, so it raises no recon question. Explicitly outside the core slices.
 
 **THE SLICE PLAN — four slices, each finished and merged green on `main` on its own:**
-- **S1 — the spine.** Geometry extraction; the sandbox screen with a unit palette, manual
-  placement and auto-place for both sides; one battle launched through the existing pipeline;
-  watched in ReplayView; SB-12 retention. Useful the day it lands.
+- **S1 — the spine. ✅ SHIPPED 2026-08-29.** Geometry extraction; the sandbox screen with a unit
+  palette, manual placement and auto-place for both sides; one battle launched through the
+  existing pipeline; watched in ReplayView; SB-12 retention. Useful the day it lands.
+
+  **What landed, and the shapes the later slices extend:**
+  - **`frontend/src/utils/hexGeometry.js`** is SB-4's extraction, and it now has four users, not
+    three: `HexGrid`, `ReplayView`, the lab — and `stores/flows.js`, which turned out to be
+    carrying a fourth private copy of `toAxial`. LAYOUT only, as SB-4 said; `wallSegment` stayed
+    in `HexGrid` because it still has exactly one user, and S4's wall painting is when that
+    changes.
+  - **`POST /api/sandbox/battles`** and **`POST /api/sandbox/auto-place`** (`routes/sandbox.js`),
+    both login-only. The launch takes two placement arrays and NOTHING else: the map is stamped
+    server-side (only one map exists, and a map name from a client is a filesystem argument), and
+    every entry is **rebuilt from a whitelist** — `{unit_type, q, r}` — rather than passed
+    through. **That whitelist is S2's seam**: the caster fields go in one at a time, deliberately,
+    which is the review that shape exists to force.
+  - **Auto-place runs SERVER-side** through `spreadPlacement` — the very function the enemy's
+    daily plan and both sides of a raid already use — so the lab cannot pack a hex differently
+    from the real game. It is the reason SB-3 could call auto-placement "not new work".
+  - **SB-12's retention is a `sandbox` flag on the Battle document** plus `sweepSandboxBattles`,
+    which keeps the latest per user. The flag is a real field rather than a marker inside `input`
+    because `input` is Mixed and therefore un-queryable — and the sweep has to be able to ask
+    "which of this user's battles are lab battles" and get an exact answer.
+  - **The screen does NOT reuse `HexGrid`**, on purpose: that grid reads roster, squads,
+    characters, fortification and enemy placements straight from the campaign stores, and
+    teaching it to be campaign-less is the abstraction SB-4 declined to build. `useSandboxStore`
+    holds an `army` and a `placements` list PER SIDE — separate, exactly as a campaign's roster
+    and deployment are, which is what makes "composed but not placed" a visible mistake and what
+    auto-place converts between. That store IS the scenario S3 will serialise.
+  - **The lab fields loose troops, no `squad_id`.** Not an omission: the campaign's own loose
+    roster is placed the same way, so this is the case the engine already fights every turn.
+    Squads in the lab would be a design call, and it is not one S1 was asked to take.
 - **S2 — the casters.** Per-caster paths and scripts (default = the engine's own), the enemy's
   school levels and pool, and SB-8's real-host preset. This is where the original ask is met.
 - **S3 — the lab.** N runs, the seed, aggregate results, JSON export/import.

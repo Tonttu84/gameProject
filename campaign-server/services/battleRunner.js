@@ -1,6 +1,7 @@
 import Battle from '../models/battle.js'
 import Tick from '../models/tick.js'
 import { runBattle, runSample } from './engine.js'
+import { sweepSandboxBattles } from './battleRetention.js'
 
 // Persist a battle the engine already produced: one Battle doc plus one Tick doc
 // per turn (separate collection so long battles never approach the 16MB document
@@ -24,7 +25,7 @@ import { runBattle, runSample } from './engine.js'
 const logLine = (line) =>
   typeof line === 'string' ? { tier: 'basic', text: line } : line
 
-async function persistBattleResult(result, { input, userId, day = null }) {
+async function persistBattleResult(result, { input, userId, day = null, sandbox = false }) {
   const replay = result.replay ?? { map: input.map ?? 'unknown', cols: 0, rows: 0, ticks: [] }
 
   const battle = await Battle.create({
@@ -38,6 +39,7 @@ async function persistBattleResult(result, { input, userId, day = null }) {
     cols: replay.cols,
     rows: replay.rows,
     day,
+    sandbox,
   })
 
   if (replay.ticks.length > 0)
@@ -105,6 +107,26 @@ export async function runAndPersistBattle(input, userId, day = null) {
   const result = await runBattle(input)
   if (result.error) return { error: result.error }
   return persistBattleResult(result, { input, userId, day })
+}
+
+// Run one battle for the BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX
+// MODE") and persist it. The same pipeline as every other battle — SB-1's whole
+// point is that the lab needs no campaign document, so the only differences are
+// the `sandbox` mark and the per-launch retention it enables (SB-12).
+//
+// The sweep runs AFTER the new battle lands and keeps it by id, so a run that
+// fails leaves the previous replay watchable rather than deleting it for
+// nothing. A sweep failure is not allowed to fail the launch: the player has a
+// battle to watch either way, and the worst case of a missed sweep is one
+// extra replay that the next launch will collect.
+export async function runAndPersistSandboxBattle(input, userId) {
+  const result = await runBattle(input)
+  if (result.error) return { error: result.error }
+  const persisted = await persistBattleResult(result, { input, userId, sandbox: true })
+  await sweepSandboxBattles(userId, persisted.battle._id).catch((e) =>
+    console.error('sandbox battle sweep failed:', e.message),
+  )
+  return persisted
 }
 
 // Run the hardcoded sample scenario and persist it as an ownerless battle. Same

@@ -62,6 +62,16 @@ const initialState = () => ({
   // charter page). One request field like storeRequest, so the two doors are
   // two shapes of the same takeover and cannot drift apart.
   forgeRequest: null,
+  // THE BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE"). A takeover
+  // like the demo battle rather than a phase, and for a stronger reason than
+  // the others: the lab is FREE-STANDING (SB-1), so it is not a place inside a
+  // turn at all — it opens over whatever screen the player is on, campaign or
+  // no campaign, and Back puts them back exactly where they were.
+  //
+  // A boolean, because the lab has no sub-pages to address; what it is
+  // composing lives in useSandboxStore, which survives closing the screen so a
+  // player who ducks out to check something does not lose the army he built.
+  labOpen: false,
 })
 
 // UI-only campaign state: which screen is showing, in-progress battle
@@ -106,6 +116,9 @@ const useUiStore = create((set) => ({
   // the mage. Opening one replaces the other, same rule as the item store.
   openForge: (forgeRequest = {}) => set({ forgeRequest }),
   closeForge: () => set({ forgeRequest: null }),
+
+  openLab: () => set({ labOpen: true }),
+  closeLab: () => set({ labOpen: false }),
 
   toggleTutorial: () =>
     set((state) => {

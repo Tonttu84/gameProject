@@ -18,6 +18,22 @@
 export const DAYS_PER_TURN = 14
 export const MAP_NAME = 'sample_battle'
 
+// ── The battle lab (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE") ────────────
+//
+// SB-2 made the sandbox a PLAYER-FACING feature rather than a dev hatch, and
+// that is exactly what needs a cap: every launch spawns an engine subprocess
+// whose cost scales with the bodies on the field, and the lab is the one route
+// where the player names those bodies himself with no campaign economy in the
+// way. The public sample-battle route avoids the same exposure only by running
+// one fixed scenario.
+//
+// Per SIDE, counted in bodies (one placement entry is one body). Generous
+// enough that the fights worth testing fit — the campaign's own decisive battle
+// is a few hundred a side — and bounded enough that a scripted client cannot
+// ask for a battle that never returns. SB-5's "anything goes" is about RULES
+// (any path level, any script, any pool); it is not a promise about army size.
+export const SANDBOX_MAX_UNITS_PER_SIDE = 400
+
 // Retires the frontend STARTING_ROSTER hardcode (docs/ADDING_UNITS.md §6).
 // Mage and Priest USED to sit here at 3 apiece; slice 5 moved them out of the
 // roster entirely and into STARTING_CHARACTERS below (docs/CAMPAIGN_PLAN.md

@@ -28,6 +28,19 @@ const battleSchema = new mongoose.Schema(
     // stored before this field existed is likewise null, and reads as old,
     // which is the right answer: it cannot be watched either.
     day: { type: Number, default: null },
+    // Fought in the battle lab rather than in a campaign (docs/CAMPAIGN_PLAN.md,
+    // "TEST / SANDBOX MODE", SB-12). A sandbox battle belongs to NO campaign, so
+    // it appears in no `campaign.battles` list — and sweepOldBattles only ever
+    // deletes ids from such a list, which would make these battles unreachable
+    // by the sweep forever, at roughly 21 MB of tick documents apiece. This flag
+    // is what sweepSandboxBattles finds them by: one lab battle is kept per
+    // user, and each launch deletes the one before it.
+    //
+    // A field rather than a marker inside `input`, because `input` is Mixed and
+    // therefore unindexable and un-queryable in any way worth relying on: the
+    // sweep must be able to ask "which of this user's battles are lab battles"
+    // and get an exact answer.
+    sandbox: { type: Boolean, default: false },
     // Owner, once the auth module lands (same DB, users collection).
     // Nullable from day one so multi-user attaches without a migration.
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

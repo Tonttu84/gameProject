@@ -179,3 +179,20 @@ export const craftUnit = (id, { characterId, unitId }) =>
 // screen it was on. Requires a login. Returns { id, createdAt }.
 export const submitBugReport = (message, screen) =>
   axios.post('/api/bug-reports', { message, screen }, authed()).then(r => r.data)
+
+// ── The battle lab (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE") ────────────
+// Free-standing: no campaign id in either call, because there is no campaign
+// (SB-1). Both need a login (SB-2) — a launch spawns an engine subprocess.
+
+// Launch one lab battle from two hand-composed placement arrays. Returns the
+// same battle summary every other battle route returns, so ReplayView plays it
+// exactly like a campaign fight.
+export const postSandboxBattle = (payload) =>
+  axios.post('/api/sandbox/battles', payload, authed()).then(r => r.data)
+
+// Spread one side's army over its deployment zone, server-side, through the
+// very function the enemy's daily plan and both sides of a raid already use —
+// so the lab cannot pack a hex differently from the real game. Returns
+// { placement: [{unit_type, q, r}] } in AXIAL coords, as the engine speaks them.
+export const autoPlaceSandbox = (side, army) =>
+  axios.post('/api/sandbox/auto-place', { side, army }, authed()).then(r => r.data)

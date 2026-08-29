@@ -3,8 +3,12 @@ import useNoticeStore from './useNoticeStore'
 import useCampaignStore from './useCampaignStore'
 import usePlacementStore from './usePlacementStore'
 import useUiStore from './useUiStore'
-import { launchSampleBattle, getBattle } from '../services/api'
+import useSandboxStore from './useSandboxStore'
+import {
+  launchSampleBattle, getBattle, getUnits, postSandboxBattle, autoPlaceSandbox,
+} from '../services/api'
 import { guarded } from './guarded'
+import { toAxial, toOffset } from '../utils/hexGeometry'
 
 // Composite actions that span more than one store — the "conductor" layer.
 // Each individual store only ever mutates its own slice; this is the one
@@ -59,8 +63,6 @@ export const breakCamp = async () => {
   usePlacementStore.getState().clear()
   useUiStore.getState().setPhase('placement')
 }
-
-const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
 
 export const startBattle = guarded(async () => {
   const { placements, squadPlacements, characterPlacements } = usePlacementStore.getState()
@@ -145,3 +147,76 @@ export const watchDemo = async () => {
     ui.setDemoLoading(false)
   }
 }
+
+// ── THE BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE", slice S1) ──
+
+// Open the lab, fetching the FULL engine catalog once. Every type, not just the
+// placeable ones (SB-1): composing the hypothetical enemy is half of what the
+// lab is for, and Necromancers and Scorpions appear in no player roster.
+//
+// The catalog is fetched only if it isn't already held, and the composed armies
+// survive closing the screen — a player who ducks out to look something up
+// comes back to the setup he built.
+export const openBattleLab = async () => {
+  // The demo replay is checked BEFORE the lab in App's screen order (it is the
+  // one screen a logged-out visitor can reach), so a logged-in player watching
+  // the demo would otherwise press this and see nothing happen.
+  useUiStore.getState().setDemoBattle(null)
+  useUiStore.getState().openLab()
+  if (useSandboxStore.getState().catalog.length > 0) return
+  try {
+    useSandboxStore.getState().setCatalog(await getUnits())
+  } catch {
+    useNoticeStore.getState().show('Could not load the unit catalog — is the game server running?')
+  }
+}
+
+export const closeBattleLab = () => useUiStore.getState().closeLab()
+
+// Auto-place one side (SB-3). The spread happens SERVER-side, through the same
+// `spreadPlacement` the enemy's daily plan and both sides of a raid use, so the
+// lab packs hexes exactly as the real game does. What comes back is axial and
+// one entry per body; the grid draws offset stacks, so it is folded back into
+// {type, col, row, count} here — the one place that conversion belongs.
+export const autoPlaceLabSide = guarded(async (side) => {
+  const { army } = useSandboxStore.getState()[side]
+  const { placement } = await autoPlaceSandbox(side, army)
+
+  const stacks = new Map()
+  for (const entry of placement) {
+    const { col, row } = toOffset(entry.q, entry.r)
+    const key = `${entry.unit_type},${col},${row}`
+    const stack = stacks.get(key)
+    if (stack) stack.count += 1
+    else stacks.set(key, { type: entry.unit_type, col, row, count: 1 })
+  }
+  useSandboxStore.getState().setPlacements(side, [...stacks.values()])
+})
+
+// Launch the composed battle. Both sides expand to ONE ENTRY PER BODY, which is
+// the shape the engine's placement JSON takes everywhere else (see startBattle
+// above) — the count on a lab placement is a UI convenience, never a wire
+// format. No squad_id rides along: the lab fields loose troops, the same as the
+// campaign's own loose roster does, and squads are not part of this slice.
+export const launchLabBattle = guarded(async () => {
+  const state = useSandboxStore.getState()
+  const expand = (side) =>
+    state[side].placements.flatMap((p) => {
+      const { q, r } = toAxial(p.col, p.row)
+      return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r }))
+    })
+
+  const player_placement = expand('blue')
+  const enemy_placement = expand('red')
+  if (player_placement.length === 0 && enemy_placement.length === 0) return
+
+  state.setLaunching(true)
+  try {
+    // guarded() surfaces a refusal (the size cap, an unknown type) in the
+    // notice bar and returns undefined, so a failed launch simply leaves the
+    // player on his setup with the reason on screen.
+    state.setBattle(await postSandboxBattle({ player_placement, enemy_placement }))
+  } finally {
+    useSandboxStore.getState().setLaunching(false)
+  }
+})

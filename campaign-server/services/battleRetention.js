@@ -45,3 +45,34 @@ export async function sweepOldBattles(campaign) {
 
   return { deleted: staleIds.length }
 }
+
+// Keeping only the LATEST lab battle per user (docs/CAMPAIGN_PLAN.md,
+// "TEST / SANDBOX MODE", SB-12).
+//
+// The sweep above cannot do this job: it deletes ids listed in
+// `campaign.battles`, and a sandbox battle is listed in no campaign at all —
+// SB-1 made the lab free-standing. Left to that sweep a lab battle would be
+// immortal, and at ~21 MB of tick documents each (L-6's own figure) a player
+// pressing Launch a few dozen times would fill the disk with replays nothing
+// can open, since the lab screen only ever holds the id it just got back.
+//
+// So retention is per LAUNCH rather than per turn — the lab has no turns —
+// and it runs AFTER the new battle is persisted, keeping `keepId`: a failed
+// run must never cost the player the replay he is currently watching.
+export async function sweepSandboxBattles(userId, keepId) {
+  const stale = await Battle.find({
+    user: userId,
+    sandbox: true,
+    _id: { $ne: keepId },
+  }).select('_id')
+
+  if (stale.length === 0) return { deleted: 0 }
+  const staleIds = stale.map((b) => b._id)
+
+  // Ticks first, for the reason sweepOldBattles gives: an orphaned summary is
+  // harmless, an orphaned pile of ticks is the storage this exists to reclaim.
+  await Tick.deleteMany({ battle: { $in: staleIds } })
+  await Battle.deleteMany({ _id: { $in: staleIds } })
+
+  return { deleted: staleIds.length }
+}

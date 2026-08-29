@@ -930,3 +930,54 @@ body {
    death should still stand out from the forty rolls that produced it. */
 .replay-log-line.tier-detail { color: #9999bb; }
 .replay-log-line.tier-trace  { color: #77778f; font-size: 0.95em; }
+
+/* ── The battle lab (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE") ────────── */
+/* A full-height screen with three bands: header, side tabs, then palette +
+   field side by side. It borrows the deployment screen's scroll container
+   (.hex-grid-scroll) so both grids pan identically. */
+.sandbox-screen { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.lab-header  { padding: 0.8rem 1.2rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.lab-header h2 { margin: 0 0 0.3rem; color: var(--accent2); }
+.lab-blurb   { margin: 0 0 0.6rem; font-size: 12px; color: #999; max-width: 62ch; }
+.lab-actions { display: flex; gap: 0.5rem; align-items: center; }
+.lab-sides   { display: flex; gap: 0.4rem; padding: 0.5rem 1.2rem; background: var(--bg2); flex-shrink: 0; }
+.lab-side-tab {
+  padding: 0.35rem 0.9rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: #999;
+  cursor: pointer;
+  font-size: 12px;
+}
+.lab-side-tab.active { color: var(--text); border-color: var(--accent2); background: var(--bg); }
+.lab-body    { display: flex; flex: 1; overflow: hidden; }
+.lab-palette {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 0.8rem;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.lab-palette h3 { margin: 0 0 0.3rem; font-size: 13px; color: var(--accent2); }
+.lab-palette-row, .lab-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+  font-size: 12px;
+}
+.lab-unit-name { flex: 1; }
+.lab-palette-row input, .lab-hex-row input { width: 4rem; }
+.lab-hint { font-size: 11px; color: #888; }
+.lab-field { display: flex; flex: 1; overflow: hidden; }
+.lab-hex-menu {
+  width: 240px;
+  flex-shrink: 0;
+  padding: 0.8rem;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+}
+.lab-hex-menu h4 { margin: 0 0 0.6rem; font-size: 13px; color: var(--accent2); }

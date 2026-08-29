@@ -6,6 +6,7 @@ import infoRouter from './routes/info.js'
 import mapsRouter from './routes/maps.js'
 import battlesRouter from './routes/battles.js'
 import sampleBattleRouter from './routes/sampleBattle.js'
+import sandboxRouter from './routes/sandbox.js'
 import campaignsRouter from './routes/campaigns.js'
 import bugReportsRouter from './routes/bugReports.js'
 import usersRouter from './routes/users.js'
@@ -44,6 +45,7 @@ export const apiRoutes = [
   ['/api/map', mapsRouter],
   ['/api/battles', battlesRouter],
   ['/api/sample-battle', sampleBattleRouter],
+  ['/api/sandbox', sandboxRouter],
   ['/api/campaigns', campaignsRouter],
   ['/api/bug-reports', bugReportsRouter],
   ['/api/users', usersRouter],

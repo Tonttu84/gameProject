@@ -3,6 +3,7 @@ export { default as useNoticeStore } from './useNoticeStore'
 export { default as useCampaignStore } from './useCampaignStore'
 export { default as usePlacementStore } from './usePlacementStore'
 export { default as useUiStore } from './useUiStore'
+export { default as useSandboxStore } from './useSandboxStore'
 export * from './selectors'
 export { guarded } from './guarded'
 export * from './flows'
@@ -12,6 +13,7 @@ import useNoticeStore from './useNoticeStore'
 import useCampaignStore from './useCampaignStore'
 import usePlacementStore from './usePlacementStore'
 import useUiStore from './useUiStore'
+import useSandboxStore from './useSandboxStore'
 
 // Zustand stores are module singletons, so state would otherwise leak across
 // `it()` blocks within one test file (React's useState gave every mount a
@@ -25,4 +27,5 @@ export const resetAllStores = () => {
   useCampaignStore.getState().reset()
   usePlacementStore.getState().reset()
   useUiStore.getState().reset()
+  useSandboxStore.getState().reset()
 }

@@ -4,29 +4,7 @@ import usePlacementStore from '../stores/usePlacementStore'
 import useCampaignStore from '../stores/useCampaignStore'
 import useUiStore from '../stores/useUiStore'
 import { useAvailableRoster, useSquads, EMPTY_ARRAY } from '../stores/selectors'
-
-const HEX_SIZE = 20
-const SQRT3 = Math.sqrt(3)
-
-// row → x (left-to-right), col → y (top-to-bottom) so the map matches combat orientation.
-const hexCenter = (col, row) => ({
-  x: HEX_SIZE * 1.5 * row + HEX_SIZE,
-  y: HEX_SIZE * SQRT3 * (col + 0.5 * (row % 2)) + HEX_SIZE,
-})
-
-const hexPoints = (cx, cy) => {
-  const pts = []
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i - 90)
-    pts.push(`${(cx + HEX_SIZE * Math.cos(angle)).toFixed(2)},${(cy + HEX_SIZE * Math.sin(angle)).toFixed(2)}`)
-  }
-  return pts.join(' ')
-}
-
-// visual offset (col, row) → axial (q, r)
-const toAxial = (col, row) => ({ q: col - Math.floor(row / 2), r: row })
-// axial (q, r) → visual offset (col, row)
-const toOffset = (q, r) => ({ col: q + Math.floor(r / 2), row: r })
+import { HEX_SIZE, hexCenter, hexPoints, toAxial, toOffset, svgSize } from '../utils/hexGeometry'
 
 // Engine hexside direction → axial neighbor offset (mirrors HexGrid.cpp DQ/DR).
 const DIR_OFFSET = {
@@ -93,8 +71,7 @@ const HexGrid = ({ info, map }) => {
 
   const { grid, playerZone, enemyZone } = info
 
-  const svgW = Math.ceil(HEX_SIZE * 1.5 * grid.height + HEX_SIZE * 2)
-  const svgH = Math.ceil(HEX_SIZE * SQRT3 * (grid.width + 0.5) + HEX_SIZE * 2)
+  const { width: svgW, height: svgH } = svgSize(grid)
 
   // axial coord → hex entry from map JSON (only non-default hexes are present)
   const terrainByAxial = useMemo(() => {

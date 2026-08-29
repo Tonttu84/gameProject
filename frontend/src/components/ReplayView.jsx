@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import useReplay from '../hooks/useReplay'
 import useUiStore from '../stores/useUiStore'
 import TutorialIntro from './TutorialIntro'
+import { HEX_SIZE, hexCenter, hexPoints, toAxial, toOffset, svgSize } from '../utils/hexGeometry'
 
 // The battle log's three tiers (docs/CAMPAIGN_PLAN.md, "TIERED BATTLE LOGGING").
 //
@@ -22,27 +23,6 @@ const tierDepth = (tier) => {
   const i = LOG_TIERS.indexOf(tier)
   return i === -1 ? 0 : i
 }
-
-// Same geometry as HexGrid.jsx (kept in sync — extract if a third user appears).
-const HEX_SIZE = 20
-const SQRT3 = Math.sqrt(3)
-
-const hexCenter = (col, row) => ({
-  x: HEX_SIZE * 1.5 * row + HEX_SIZE,
-  y: HEX_SIZE * SQRT3 * (col + 0.5 * (row % 2)) + HEX_SIZE,
-})
-
-const hexPoints = (cx, cy) => {
-  const pts = []
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i - 90)
-    pts.push(`${(cx + HEX_SIZE * Math.cos(angle)).toFixed(2)},${(cy + HEX_SIZE * Math.sin(angle)).toFixed(2)}`)
-  }
-  return pts.join(' ')
-}
-
-// axial (q, r) → visual offset (col, row) — inverse of HexGrid's toAxial
-const toOffset = (q, r) => ({ col: q + Math.floor(r / 2), row: r })
 
 const TEAM_COLOR = { blue: '#88aaff', red: '#ff8888' }
 
@@ -102,8 +82,7 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack, autoPlay = false, 
   }, [autoPlay, setPlaying])
 
   const { grid } = info
-  const svgW = Math.ceil(HEX_SIZE * 1.5 * grid.height + HEX_SIZE * 2)
-  const svgH = Math.ceil(HEX_SIZE * SQRT3 * (grid.width + 0.5) + HEX_SIZE * 2)
+  const { width: svgW, height: svgH } = svgSize(grid)
 
   const terrainByAxial = useMemo(() => {
     const m = {}
@@ -125,7 +104,7 @@ const ReplayView = ({ battleId, tickCount, info, map, onBack, autoPlay = false, 
   for (let row = 0; row < grid.height; row++) {
     for (let col = 0; col < grid.width; col++) {
       const { x, y } = hexCenter(col, row)
-      const q = col - Math.floor(row / 2)
+      const { q } = toAxial(col, row)
       const hexData = terrainByAxial[`${q},${row}`] ?? { terrain: 'Open', impassable: false }
       const fill = hexData.impassable
         ? '#1a1a1a'
