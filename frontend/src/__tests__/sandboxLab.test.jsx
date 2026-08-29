@@ -171,6 +171,31 @@ describe('composing both armies', () => {
     fireEvent.click(screen.getByTestId('lab-hex-5-5'))
     expect(screen.getByTestId('lab-place-Soldier')).toHaveAttribute('max', '4')
   })
+
+  it('offers a hex its own stack back, not that stack twice over', async () => {
+    // Re-opening a hex that already holds 6 of a 10-strong army must offer 10 —
+    // its own 6 plus the 4 still in the wings. Counting the stack on top of a
+    // budget that already excludes it offered 16, and the extra 6 were bodies
+    // the army did not have.
+    await openLab()
+    compose('Soldier', 10)
+    fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+    placeHere('Soldier', 6)
+
+    expect(screen.getByTestId('lab-place-Soldier')).toHaveAttribute('max', '10')
+  })
+
+  it('reports bodies placed beyond an army that was composed back down', async () => {
+    // Lowering a composed count leaves the placements alone — they are what
+    // actually fights — so the palette says so rather than showing "-4".
+    await openLab()
+    compose('Soldier', 10)
+    fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+    placeHere('Soldier', 10)
+    compose('Soldier', 6)
+
+    expect(screen.getByTestId('lab-unplaced')).toHaveTextContent('4 placed beyond the composed army')
+  })
 })
 
 describe('auto-place (SB-3)', () => {

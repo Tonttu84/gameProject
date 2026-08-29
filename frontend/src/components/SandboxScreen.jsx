@@ -172,8 +172,12 @@ const SandboxScreen = ({ info, map }) => {
     const maxFor = (type) => {
       if (forbiddenFor(type).includes(terrain)) return 0
       const room = Math.floor((grid.hexCapacity - usedByOthers(type)) / sizeOf(type))
+      // `remaining` already leaves THIS hex out of its sum, so what it returns
+      // is the whole budget available here — the army minus everything standing
+      // elsewhere. Adding the stack already on this hex back on top of that
+      // would count it twice, and let a hex holding 6 of 10 offer 16.
       return Math.min(
-        (here[type] ?? 0) + useSandboxStore.getState().remaining(side, type, selectedHex),
+        useSandboxStore.getState().remaining(side, type, selectedHex),
         Math.max(0, room),
       )
     }
@@ -252,9 +256,12 @@ const SandboxScreen = ({ info, map }) => {
         <div className="lab-palette" data-testid="lab-palette">
           <h3>{SIDE_LABEL[side]}</h3>
           <p className="lab-hint" data-testid="lab-unplaced">
-            {unplaced(side) > 0
-              ? `${unplaced(side)} still to place`
-              : 'every composed body is on the field'}
+            {/* Lowering a composed count does NOT retract bodies already
+                placed — the placements are what actually fights, so they are
+                left alone and the mismatch is reported instead of hidden. */}
+            {unplaced(side) > 0 && `${unplaced(side)} still to place`}
+            {unplaced(side) === 0 && 'every composed body is on the field'}
+            {unplaced(side) < 0 && `${-unplaced(side)} placed beyond the composed army`}
           </p>
           <div className="lab-actions">
             <button data-testid="lab-auto-place" onClick={() => autoPlaceLabSide(side)}>
