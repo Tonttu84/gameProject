@@ -799,8 +799,10 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		// honestly: a major that degraded reports the minor.
 		//
 		// Same symbol->name lookup and (red)/(blue) tag Battlefield::logDeaths
-		// uses, for one voice across the log. The tiered logging system is a
-		// TODO of its own; this line will sit in its default tier.
+		// uses, for one voice across the log. Tiered logging (L-1..L-6) shipped
+		// after this line was written and the prediction held: the bare
+		// logEvent() overload is Basic, so a spell that FIRES is visible at
+		// every depth, while the wind-up above it sits a tier deeper.
 		{
 			Utility::getBattlefield().logEvent(
 				logName() + " casts " + std::string(form->label));

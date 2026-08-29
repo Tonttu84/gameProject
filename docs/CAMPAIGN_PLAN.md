@@ -6464,7 +6464,16 @@ Cleared the 07-16 "not-yet-done" list. On the laptop (LAPTOP-FGJQ8QNB), on `main
     the non-undead dead it pruned and `cleanup()` adds BOTH teams' into the shared corpse
     pool; `test_corpses.cpp` flipped from pinning the asymmetry to asserting symmetry.
     Engine suite + campaign-server 227/227 re-verified against the rebuilt `./game`.
-  - *Top missing coverage (backlog, ranked):* engine — squad cohesion bonus in combat
+  - *Top missing coverage (backlog, ranked)* — **⚠ AUDITED 2026-08-29 AND ALL BUT SPENT; do
+    not work this list as written.** Every engine item now has a dedicated suite
+    (`test_cohesion.cpp`, `test_elevation.cpp`, `test_archer.cpp`, `test_corpses.cpp`), and
+    campaign-server grew `placementCapacity.test.js`/`enemyPlacement.test.js`,
+    `bugReports.test.js` and `auth.test.js` over the rest. The first campaign-server item is
+    worse than stale, it names DELETED machinery: the enemy stance machine went in v19 and
+    `services/enemyAi.js` was renamed `enemyHost.js` in 2026-08-09 precisely so nobody would
+    rebuild it (standing principle 1). Treat what follows as a 2026-07 snapshot; a real
+    coverage push should re-derive its own list against the suites that exist now. The
+    original text, kept as the record: engine — squad cohesion bonus in combat
     (the main mechanical reason squads exist; zero assertions), elevation effects, archer
     target-scoring internals, corpse economy from real deaths; campaign-server — enemy
     stance machine + withdrawal win (`services/enemyAi.js`, `dayResolution.js:117-120`),
@@ -7654,6 +7663,35 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 ---
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
+
+**TODO — A TEST / SANDBOX MODE FOR ARBITRARY BATTLES (user, 2026-08-29 — the ask, recorded before
+the interview).** In the user's words: *"Test mode where I can just easily recruit both my units,
+and enemy units, choose scripts, encounter lvls etc for enemy, make it use the default script
+normally but then allow swapping it and then launch the battle so I can actually test things that
+dont come up with the basic game"*.
+
+**The problem it solves, and it is a real one:** the campaign is the only way to reach a battle
+today, so testing a mechanic means playing turns until the campaign happens to hand you the
+situation — and some situations it will essentially never hand you. Two shipped examples this
+front produced on its own: both battlefield enchantments need Enchantment 2 while `ENEMY_SCHOOLS`
+seals the host at 1, so **no encounter can currently field either one**; and the enemy script
+store's top two rows are authored live-when-balance-raises for the same reason. Neither can be
+seen in play at all right now. The balance pass will multiply this problem, because tuning wants
+to compare A against B on demand rather than once a campaign.
+
+**What the ask names, unsorted:** compose BOTH armies by hand; set the enemy's encounter numbers
+(school levels, the channel pool — E-8 made the pool the lock, so it is the dial that decides
+what the host may cast); pick scripts per caster on both sides, defaulting to what the game would
+choose by itself and overridable from there; then launch and watch the replay.
+
+**Not yet interviewed — do not build from this entry.** Genuinely open: whether it is a screen,
+a CLI mode or a dev-only route; whether it composes a real campaign document or bypasses the
+campaign entirely; how it reaches the placement grid; and how it is kept out of a real player's
+hands (`auth/` is a `.gitkeep` and every engine endpoint is unauthenticated — see
+SECURITY_NOTES.md). The engine half may already be nearly free: `./game battle` takes a complete
+BattleInput on stdin, and `BattleInput` already carries both placements, per-entry `paths` and
+`script`, and the per-side `magic` block — which is exactly the surface this asks to drive.
+
 
 **~~TODO~~ ~~DESIGNED 2026-07-20~~ ✅ BUILT 2026-07-21 — multi-turn campaign loop: persistent enemy
 army + a "final battle" meter.** Grilled, designed, and shipped — see the "Boss-fight campaign loop
