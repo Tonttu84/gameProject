@@ -981,3 +981,42 @@ body {
   overflow-y: auto;
 }
 .lab-hex-menu h4 { margin: 0 0 0.6rem; font-size: 13px; color: var(--accent2); }
+
+/* S2's caster column: the side's magic block, the list of caster BODIES, and
+   the editor for whichever one is open. Its own column rather than more of the
+   palette, because a body's ten path spinners and its script are a second
+   conversation from "how many Soldiers" and reading them side by side is the
+   whole point of SB-6 — two casters on one side differing is what the lab was
+   asked to make visible. */
+.lab-casting {
+  width: 290px;
+  flex-shrink: 0;
+  padding: 0.8rem;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.lab-casting h3 { margin: 0 0 0.3rem; font-size: 13px; color: var(--accent2); }
+.lab-casting h4 { margin: 0.7rem 0 0.4rem; font-size: 12px; color: var(--accent2); }
+.lab-casting section { margin-bottom: 1rem; }
+.lab-casting select, .lab-casting > section > button { margin-top: 0.4rem; font-size: 12px; }
+.lab-casting input { width: 4rem; }
+/* One row per BODY, so the hex and the index within the stack both have to be
+   readable at a glance — "Mage · (4,2) #2" is the whole address. */
+.lab-caster-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.25rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: #bbb;
+  cursor: pointer;
+  font-size: 12px;
+}
+.lab-caster-row.active { color: var(--text); border-color: var(--accent2); background: var(--bg); }
+.lab-caster-editor { border-top: 1px solid var(--border); padding-top: 0.6rem; }
+.lab-script { margin: 0.2rem 0; padding-left: 1.2rem; font-size: 12px; }
+.lab-script li { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; }

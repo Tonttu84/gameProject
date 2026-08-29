@@ -505,9 +505,6 @@ const formQualifies = (held, row, schoolLevelOf) => {
   return schoolLevelOf(row.school) >= (row.schoolLevel ?? 0)
 }
 
-const qualifiesFor = (paths, row, campaign) =>
-  formQualifies(levelBag(paths), row, (school) => schoolOf(campaign, school).level)
-
 // The spells this caster can cast RIGHT NOW, one row per SPELL (S4-2/S4-3).
 //
 // The catalog is one row per FORM, so the fold is the work: a spell is offered
@@ -519,10 +516,22 @@ const qualifiesFor = (paths, row, campaign) =>
 //
 // Forms arrive weakest-first (the roster's own order, which chooseSpellToCast
 // relies on), so the last qualifying one wins.
-export const castableSpellsFor = (character, campaign, spells = []) => {
+//
+// TAKEN IN LEVELS, NOT IN CAMPAIGN STATE (S2 of the battle lab). The fold needs
+// exactly two bags — what the caster holds and what his SIDE has open — and a
+// campaign is only ever one way of producing the second. The battle lab has no
+// campaign at all (SB-1) and still has to answer "what can this man cast", so
+// the rule lives here in the form that has no campaign in it and
+// castableSpellsFor below is the campaign's way of asking. One rules site, two
+// callers — the same shape M-19 forced on formQualifies one layer down.
+export const castableSpellsForLevels = (paths, schoolLevels, spells = []) => {
+  const held = levelBag(paths)
+  const levels = levelBag(schoolLevels)
+  const schoolLevelOf = (school) => levels.get(school) ?? 0
+
   const rows = new Map()
   for (const row of spells) {
-    if (!qualifiesFor(character?.paths, row, campaign)) continue
+    if (!formQualifies(held, row, schoolLevelOf)) continue
     rows.set(row.spell, {
       spell: row.spell,
       label: row.label,
@@ -536,6 +545,13 @@ export const castableSpellsFor = (character, campaign, spells = []) => {
   }
   return [...rows.values()]
 }
+
+// The campaign's way of asking the above: his paths against the four schools
+// his army's research has opened. `schoolLevels` is the same projection the
+// engine's `magic.blue.schools` is built from, so what The Study offers and
+// what the engine will actually let him cast are read off one number.
+export const castableSpellsFor = (character, campaign, spells = []) =>
+  castableSpellsForLevels(character?.paths, schoolLevels(campaign), spells)
 
 // Who ELSE is carrying this battlefield spell in his own script (E-4/E-5).
 //

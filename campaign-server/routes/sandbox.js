@@ -4,7 +4,23 @@ import { getInfo } from '../services/engine.js'
 import { spreadPlacement } from '../services/enemyPlacement.js'
 import { runAndPersistSandboxBattle } from '../services/battleRunner.js'
 import { userExtractor } from '../middleware/auth.js'
-import { MAP_NAME, SANDBOX_MAX_UNITS_PER_SIDE } from '../utils/campaignConfig.js'
+import { castableSpellsForLevels, isCasterType } from '../services/magic.js'
+import { getSpellCatalog } from '../utils/spellCatalog.js'
+import {
+  CASTER_CHARACTER_TYPES,
+  DECLARED_CASTER_PATH,
+  ENEMY_CHANNELS,
+  ENEMY_SCHOOLS,
+  MAP_NAME,
+  SANDBOX_MAX_CHANNELS,
+  SANDBOX_MAX_PATH_LEVEL,
+  SANDBOX_MAX_SCHOOL_LEVEL,
+  SANDBOX_MAX_UNITS_PER_SIDE,
+  SPELL_PATHS,
+  SPELL_PATH_TEXT,
+  SPELL_SCHOOLS,
+  SPELL_SCHOOL_TEXT,
+} from '../utils/campaignConfig.js'
 
 // THE BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE", slice S1).
 //
@@ -35,6 +51,47 @@ const sizeCatalog = async () => {
   return new Map(types.map((t) => [t.name, t.size]))
 }
 
+// A {key: level} bag rebuilt KEY BY KEY from a fixed vocabulary — the same
+// by-construction discipline the placement whitelist below follows, applied to
+// the two bags S2 lets the client name (a caster's paths, a side's schools).
+//
+// The walk is over the VOCABULARY, never over the client's own keys: an unknown
+// key is not "rejected" so much as never looked at, which is the version of the
+// guard that cannot be forgotten when the engine grows an eleventh path. Values
+// are truncated, clamped into the engine's own 0..9 range, and dropped outright
+// when they are not finite — `Number('lots')` is NaN, and NaN on the wire is
+// `null` in JSON, which the engine would read as a level it never checks.
+const levelBagFrom = (bag, vocabulary, max) => {
+  const source = bag && typeof bag === 'object' && !Array.isArray(bag) ? bag : {}
+  const out = {}
+  for (const key of vocabulary) {
+    if (source[key] === undefined || source[key] === null) continue
+    const level = Math.trunc(Number(source[key]))
+    if (!Number.isFinite(level)) continue
+    out[key] = Math.min(max, Math.max(0, level))
+  }
+  return out
+}
+
+// A caster's script: ordered spell ids, and POSITION IS PRIORITY (S4-1), so the
+// order the client sent is the one thing here that must survive untouched.
+//
+// Every id is checked against the engine's own roster rather than against a
+// list kept here — the catalog is what the engine will actually be asked to
+// cast, and an id it does not know is a line the caster could only ever skip.
+// Duplicates are dropped rather than refused, exactly as planChosenSpells'
+// campaign-side twin treats them as a mistake with an obvious repair.
+const sanitizeScript = (script) => {
+  if (!Array.isArray(script)) return []
+  const known = new Set(getSpellCatalog().map((row) => row.spell))
+  const out = []
+  for (const id of script) {
+    if (typeof id !== 'string' || !known.has(id) || out.includes(id)) continue
+    out.push(id)
+  }
+  return out
+}
+
 // One placement entry, rebuilt from scratch rather than passed through. The
 // body is untrusted (SECURITY_NOTES.md), and the engine reads fields — squad
 // ids, character ids, caster paths — that mean things in the campaign layer
@@ -42,12 +99,73 @@ const sizeCatalog = async () => {
 // the version of that guard which cannot be forgotten when a field is added.
 //
 // S2 adds the caster fields (paths and scripts) to this whitelist deliberately,
-// one at a time, which is exactly the review this shape is meant to force.
-const sanitizeEntry = (entry) => ({
-  unit_type: String(entry?.unit_type ?? ''),
-  q: Math.trunc(Number(entry?.q)),
-  r: Math.trunc(Number(entry?.r)),
-})
+// one at a time, which is exactly the review this shape is meant to force. Two
+// rules govern the pair, and both are about what ABSENCE means:
+//
+//   • only a CASTER carries them. `paths` and `script` mean nothing to the
+//     engine on a Soldier, and a bag of zeros on a body that can cast nothing
+//     is a field claiming a decision nobody made.
+//   • an EMPTY field is omitted, never sent as `{}` or `[]`. Absence is the
+//     engine's own default (SB-7): no `script` is the default walk (E-3), and
+//     no `paths` leaves the engine's constructor seeding alone — a Mage keeps
+//     his Fire 1. An empty bag would OVERWRITE that seed with nothing and hand
+//     back a mute mage, so "I did not configure this one" has to travel as
+//     silence for the lab's default to be the game's own choice.
+const sanitizeEntry = (entry) => {
+  const unitType = String(entry?.unit_type ?? '')
+  const base = {
+    unit_type: unitType,
+    q: Math.trunc(Number(entry?.q)),
+    r: Math.trunc(Number(entry?.r)),
+  }
+  if (!isCasterType(unitType)) return base
+
+  const paths = levelBagFrom(entry?.paths, SPELL_PATHS, SANDBOX_MAX_PATH_LEVEL)
+  const script = sanitizeScript(entry?.script)
+  return {
+    ...base,
+    ...(Object.keys(paths).length > 0 ? { paths } : {}),
+    ...(script.length > 0 ? { script } : {}),
+  }
+}
+
+// The top-level `magic` block, one side at a time (D1: the lab holds one per
+// SIDE, not just for the enemy — SB-8 named the enemy because that was the ask,
+// but the lab composes both armies and SB-5's "anything goes" is per side).
+//
+// Same absence rule as the entry above, one layer up: a side the client did not
+// send is omitted, and an omitted side leaves the ENGINE'S defaults standing —
+// every school at SPELL_SCHOOL_OPEN_DEFAULT and no pool. That is what makes the
+// lab's own default ("all nine, zero channels") reproduce today's behaviour
+// exactly rather than quietly closing a door the moment the block appears.
+const sanitizeSideMagic = (block) => {
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return null
+  const out = {}
+  const schools = levelBagFrom(block.schools, SPELL_SCHOOLS, SANDBOX_MAX_SCHOOL_LEVEL)
+  if (Object.keys(schools).length > 0) out.schools = schools
+  const channels = Math.trunc(Number(block.channels))
+  if (Number.isFinite(channels))
+    out.channels = Math.min(SANDBOX_MAX_CHANNELS, Math.max(0, channels))
+  return Object.keys(out).length > 0 ? out : null
+}
+
+const sanitizeMagic = (magic) => {
+  const out = {}
+  for (const side of ['blue', 'red']) {
+    const block = sanitizeSideMagic(magic?.[side])
+    if (block) out[side] = block
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+// Every type isCasterType() accepts, DERIVED rather than listed a second time.
+// The two config keys are the whole universe it can say yes to, and running the
+// union back through the predicate is what keeps this honest the day a third
+// source of casterhood appears: the list cannot drift from the rule, because
+// the rule is what filters it.
+const CASTER_TYPES = [
+  ...new Set([...CASTER_CHARACTER_TYPES, ...Object.keys(DECLARED_CASTER_PATH)]),
+].filter(isCasterType)
 
 // Validate one side's placement: an array, within the cap, every type known to
 // the catalog and every coordinate a real number. Returns an error STRING (the
@@ -63,8 +181,9 @@ const placementError = (entries, side, sizes) => {
   return null
 }
 
-// Launch one lab battle. Body is {player_placement, enemy_placement}: axial
-// entries, one per BODY, exactly as the campaign's battle route builds them.
+// Launch one lab battle. Body is {player_placement, enemy_placement, magic}:
+// axial entries, one per BODY, exactly as the campaign's battle route builds
+// them, plus S2's per-side school levels and channel pool.
 //
 // The map is stamped here rather than taken from the body — only
 // maps/sample_battle.json exists, so there is nothing to pick between, and a
@@ -86,8 +205,18 @@ router.post('/battles', userExtractor, async (req, res) => {
   if (playerPlacement.length === 0 && enemyPlacement.length === 0)
     return res.status(400).json({ error: 'place at least one unit before launching' })
 
+  // Omitted entirely when the client sent nothing usable, rather than sent as
+  // an empty object: the engine's defaults are the lab's defaults (SB-7), and
+  // the only way to say "leave them alone" on this wire is to say nothing.
+  const magic = sanitizeMagic(req.body?.magic)
+
   const { error: engineError, summary } = await runAndPersistSandboxBattle(
-    { map: MAP_NAME, player_placement: playerPlacement, enemy_placement: enemyPlacement },
+    {
+      map: MAP_NAME,
+      player_placement: playerPlacement,
+      enemy_placement: enemyPlacement,
+      ...(magic ? { magic } : {}),
+    },
     req.user._id,
   )
   if (engineError) return res.status(400).json({ error: engineError })
@@ -131,6 +260,62 @@ router.post('/auto-place', userExtractor, async (req, res) => {
   )
 
   res.json({ placement })
+})
+
+// The lab's STATIC VOCABULARY, in one call (S2). Everything the caster panels
+// need to render themselves and nothing that changes between two of them: the
+// ten paths and four schools with their player-facing words, the caster types,
+// SB-8's preset, and the bounds the spinners clamp to.
+//
+// PHRASED SERVER-SIDE, like everything else the client renders (17-5) — the lab
+// never holds its own copy of "Fire" or "Evocation", so a renamed path is one
+// edit in campaignConfig.js and not two.
+//
+// SB-8'S PRESET READS THE LIVE CONSTANTS. `ENEMY_SCHOOLS`/`ENEMY_CHANNELS` are
+// balance-deferred and the balance pass will move them; served from here, the
+// button loads whatever the campaign's host is actually sealed with today,
+// which is the whole reason the preset was chosen over an authored tier table.
+// It reveals nothing about a particular campaign either — these are the
+// authored constants every campaign starts from, not one encounter's card.
+router.get('/reference', userExtractor, (req, res) => {
+  res.json({
+    paths: SPELL_PATHS.map((key) => ({ key, label: SPELL_PATH_TEXT[key] })),
+    schools: SPELL_SCHOOLS.map((key) => ({ key, label: SPELL_SCHOOL_TEXT[key] })),
+    casterTypes: CASTER_TYPES,
+    enemyPreset: { schools: { ...ENEMY_SCHOOLS }, channels: ENEMY_CHANNELS },
+    limits: {
+      maxPathLevel: SANDBOX_MAX_PATH_LEVEL,
+      maxSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
+      maxChannels: SANDBOX_MAX_CHANNELS,
+      // The same number as maxSchoolLevel, and the same CONSTANT: it is the
+      // engine's SPELL_SCHOOL_OPEN_DEFAULT, which is both the top of the scale
+      // and the level a side sits at when no magic block is sent. The lab
+      // initialises its schools to it so that touching nothing changes nothing.
+      openSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
+    },
+  })
+})
+
+// What ONE caster could cast, under his own paths and his side's school levels
+// (D3). The picker asks; it does not work it out.
+//
+// This is the lab's single rules site, and it is the campaign's: the fold is
+// `castableSpellsForLevels`, the level-driven half of the very function The
+// Study's own picker is built on. A client-side copy would be a second reading
+// of M-6's gate, and the two would drift the first time a form grows a
+// requirement — which is the mistake M-19 exists to forbid one layer down.
+//
+// Both bags go through the launch route's own sanitizers, so what the picker is
+// answered about is exactly what a launch would send: raise a path here and the
+// list grows by the same rule the engine will apply at cast.
+//
+// No cap and no refusal — SB-5's "anything goes" means a level 9 in a path the
+// campaign could never grant is a legitimate question to ask, and the honest
+// answer is the longer list.
+router.post('/castable', userExtractor, (req, res) => {
+  const paths = levelBagFrom(req.body?.paths, SPELL_PATHS, SANDBOX_MAX_PATH_LEVEL)
+  const schools = levelBagFrom(req.body?.schools, SPELL_SCHOOLS, SANDBOX_MAX_SCHOOL_LEVEL)
+  res.json({ options: castableSpellsForLevels(paths, schools, getSpellCatalog()) })
 })
 
 export default router

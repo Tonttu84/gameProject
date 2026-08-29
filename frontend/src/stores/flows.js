@@ -6,6 +6,7 @@ import useUiStore from './useUiStore'
 import useSandboxStore from './useSandboxStore'
 import {
   launchSampleBattle, getBattle, getUnits, postSandboxBattle, autoPlaceSandbox,
+  getSandboxReference, postSandboxCastable,
 } from '../services/api'
 import { guarded } from './guarded'
 import { toAxial, toOffset } from '../utils/hexGeometry'
@@ -154,22 +155,53 @@ export const watchDemo = async () => {
 // placeable ones (SB-1): composing the hypothetical enemy is half of what the
 // lab is for, and Necromancers and Scorpions appear in no player roster.
 //
-// The catalog is fetched only if it isn't already held, and the composed armies
-// survive closing the screen — a player who ducks out to look something up
-// comes back to the setup he built.
+// S2 adds a second fetch on the same terms — the caster vocabulary (paths,
+// schools, caster types, SB-8's live host preset and the spinner bounds), which
+// is static for the life of the build and therefore fetched exactly once, in
+// the same try as the catalog: neither is any use without the other, and one
+// dead server is one message.
+//
+// Both are fetched only if not already held, and the composed armies survive
+// closing the screen — a player who ducks out to look something up comes back
+// to the setup he built.
 export const openBattleLab = async () => {
   // The demo replay is checked BEFORE the lab in App's screen order (it is the
   // one screen a logged-out visitor can reach), so a logged-in player watching
   // the demo would otherwise press this and see nothing happen.
   useUiStore.getState().setDemoBattle(null)
   useUiStore.getState().openLab()
-  if (useSandboxStore.getState().catalog.length > 0) return
+  const held = useSandboxStore.getState()
+  const needCatalog = held.catalog.length === 0
+  const needReference = held.reference === null
+  if (!needCatalog && !needReference) return
   try {
-    useSandboxStore.getState().setCatalog(await getUnits())
+    if (needCatalog) useSandboxStore.getState().setCatalog(await getUnits())
+    if (needReference) useSandboxStore.getState().setReference(await getSandboxReference())
   } catch {
     useNoticeStore.getState().show('Could not load the unit catalog — is the game server running?')
   }
 }
+
+// What ONE caster body could cast, under his own paths and his SIDE's school
+// levels (D3). Asked of the server, which folds the catalog through the very
+// gate The Study's own picker uses — the lab holds no copy of the rule, so
+// raising a path grows the list by exactly the rule the engine applies at cast.
+//
+// The answer is stored under the KEY it was asked for, so a reply that arrives
+// after the player has selected a different body (or moved a level again) is
+// shown against nobody rather than against the wrong man.
+export const loadLabCastable = guarded(async (side, placement, index) => {
+  const state = useSandboxStore.getState()
+  const stack = state[side].placements.find(
+    (p) => p.col === placement.col && p.row === placement.row && p.type === placement.type,
+  )
+  const key = `${side},${placement.type},${placement.col},${placement.row},${index}`
+  const { options } = await postSandboxCastable({
+    paths: stack?.casters?.[index]?.paths ?? {},
+    schools: state[side].magic.schools,
+  })
+  useSandboxStore.getState().setCastable(key, options)
+})
 
 export const closeBattleLab = () => useUiStore.getState().closeLab()
 
@@ -200,22 +232,48 @@ export const autoPlaceLabSide = guarded(async (side) => {
 // campaign's own loose roster does, and squads are not part of this slice.
 export const launchLabBattle = guarded(async () => {
   const state = useSandboxStore.getState()
+
+  // A caster's config rides on the BODY it configures (SB-6/D2), and an EMPTY
+  // field is left OFF rather than sent as {} or []: absence is how the engine's
+  // own default is asked for (SB-7) — no `script` is the default walk, and no
+  // `paths` leaves the constructor's own seeding alone, so an untouched Mage
+  // still walks in with his Fire 1. Sending empties would overwrite that seed
+  // with nothing and field a mute mage.
+  const configOf = (stack, index) => {
+    const caster = stack.casters?.[index]
+    if (!caster) return {}
+    const paths = caster.paths ?? {}
+    const script = caster.script ?? []
+    return {
+      ...(Object.keys(paths).length > 0 ? { paths } : {}),
+      ...(script.length > 0 ? { script } : {}),
+    }
+  }
+
   const expand = (side) =>
     state[side].placements.flatMap((p) => {
       const { q, r } = toAxial(p.col, p.row)
-      return Array.from({ length: p.count }, () => ({ unit_type: p.type, q, r }))
+      return Array.from({ length: p.count }, (_, i) => ({
+        unit_type: p.type, q, r, ...configOf(p, i),
+      }))
     })
 
   const player_placement = expand('blue')
   const enemy_placement = expand('red')
   if (player_placement.length === 0 && enemy_placement.length === 0) return
 
+  // BOTH blocks, always (D1). The lab's default is the engine's own — every
+  // school at its open level and no pool — so sending them changes nothing
+  // until the player moves a spinner, and the numbers on screen are then the
+  // numbers fought with rather than a silent override appearing on first touch.
+  const magic = { blue: state.blue.magic, red: state.red.magic }
+
   state.setLaunching(true)
   try {
     // guarded() surfaces a refusal (the size cap, an unknown type) in the
     // notice bar and returns undefined, so a failed launch simply leaves the
     // player on his setup with the reason on screen.
-    state.setBattle(await postSandboxBattle({ player_placement, enemy_placement }))
+    state.setBattle(await postSandboxBattle({ player_placement, enemy_placement, magic }))
   } finally {
     useSandboxStore.getState().setLaunching(false)
   }

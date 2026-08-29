@@ -14,12 +14,50 @@ import { create } from 'zustand'
 
 export const SIDES = ['blue', 'red']
 
+// A side's magic block (D1). BOTH sides get one, not just the enemy: SB-8 names
+// the enemy because that was the ask, but the lab composes both armies (SB-1)
+// and "anything goes" is per side (SB-5).
+//
+// THE DEFAULT REPRODUCES TODAY'S BEHAVIOUR EXACTLY. Every school at 9 is the
+// engine's `SPELL_SCHOOL_OPEN_DEFAULT` — what a side sits at when a BattleInput
+// carries no magic block at all — and the pool starts at 0 for the same reason.
+// So the lab starts OPEN and VISIBLE rather than starting silently open and
+// closing the moment the player touches a spinner. A literal, so the store is
+// usable before the reference fetch lands; setReference fills in any school
+// this list does not know about, and never overwrites a level already set.
+const OPEN_SCHOOL_LEVEL = 9
+const openMagic = () => ({
+  schools: {
+    evocation: OPEN_SCHOOL_LEVEL,
+    conjuration: OPEN_SCHOOL_LEVEL,
+    enchantment: OPEN_SCHOOL_LEVEL,
+    construction: OPEN_SCHOOL_LEVEL,
+  },
+  channels: 0,
+})
+
 // One side's slate. `army` is what has been composed ({type: count}); the
-// `placements` are where those bodies stand ({type, col, row, count}). They are
-// SEPARATE on purpose, exactly as a campaign's roster and deployment are: an
-// army composed but not placed is a mistake worth being able to see, and
-// auto-place is the button that turns one into the other.
-const emptySide = () => ({ army: {}, placements: [] })
+// `placements` are where those bodies stand ({type, col, row, count}, plus S2's
+// optional per-body `casters`); `magic` is what that side's school levels and
+// channel pool are. Army and placements are SEPARATE on purpose, exactly as a
+// campaign's roster and deployment are: an army composed but not placed is a
+// mistake worth being able to see, and auto-place is the button that turns one
+// into the other.
+const emptySide = () => ({ army: {}, placements: [], magic: openMagic() })
+
+// One caster BODY's configuration (SB-6, D2). Both halves default EMPTY, and
+// empty means ABSENT ON THE WIRE — which is the engine's own default: no
+// `script` is the default walk (SB-7/E-3), and no `paths` leaves the engine's
+// constructor seeding alone, so a Mage the player never opened still walks in
+// with his Fire 1. That is what lets "default to what the game would choose by
+// itself, override from there" need no new concept.
+const emptyCaster = () => ({ paths: {}, script: [] })
+
+// A stack's caster list, trimmed to the bodies that actually exist. Called
+// wherever a count can shrink: a config left behind for a body that is no
+// longer on the field would be silently re-attached the next time the stack
+// grew, which is the one way this store could lie about who is scripted.
+const trimCasters = (casters, count) => (casters ?? []).slice(0, Math.max(0, count))
 
 const initialState = () => ({
   // Which side the palette and the grid are editing. The lab places BOTH
@@ -35,6 +73,14 @@ const initialState = () => ({
   // EVERY type, including the ones no player can recruit, because composing
   // the hypothetical enemy is half of what the lab is for.
   catalog: [],
+  // The lab's static vocabulary from /api/sandbox/reference — paths, schools,
+  // caster types, SB-8's preset and the spinner bounds — or null until the
+  // fetch lands. Server-phrased (17-5): the lab names no path itself.
+  reference: null,
+  // The answer to the last "what could THIS body cast" question (D3), kept with
+  // the key it was asked for so a reply that arrives after the player has moved
+  // on is dropped rather than shown against the wrong caster.
+  castable: { key: null, options: [] },
   launching: false,
   // The summary of the battle just launched, or null. The lab holds only the
   // latest — which is also all the server keeps (SB-12).
@@ -46,6 +92,25 @@ const useSandboxStore = create((set, get) => ({
 
   setSide: (side) => set({ side, selectedHex: null }),
   setCatalog: (catalog) => set({ catalog }),
+
+  // Take the fetched vocabulary, and fill in any school the literal default
+  // above does not know about — MISSING KEYS ONLY. A level the player has
+  // already moved is his, and a fetch landing late must not walk it back.
+  setReference: (reference) =>
+    set((s) => {
+      const open = reference?.limits?.openSchoolLevel ?? OPEN_SCHOOL_LEVEL
+      const fromReference = Object.fromEntries(
+        (reference?.schools ?? []).map((school) => [school.key, open]),
+      )
+      const filled = (side) => ({
+        ...s[side],
+        magic: { ...s[side].magic, schools: { ...fromReference, ...s[side].magic.schools } },
+      })
+      return { reference, blue: filled('blue'), red: filled('red') }
+    }),
+
+  setCastable: (key, options) => set({ castable: { key, options } }),
+
   setSelectedHex: (selectedHex) => set({ selectedHex }),
   setLaunching: (launching) => set({ launching }),
   setBattle: (battle) => set({ battle }),
@@ -63,15 +128,82 @@ const useSandboxStore = create((set, get) => ({
   // Place `count` of `type` on one hex for this side. Zero clears that type
   // from that hex — the same set-to-zero-to-remove contract HexGrid's own
   // handlePlace uses, so the two grids behave identically under the hand.
+  //
+  // A SHRINKING STACK DROPS THE CONFIGS IT NO LONGER HAS BODIES FOR, and
+  // clearing it drops them all: `casters[i]` configures the i-th body (D2), so
+  // an index past the count configures nobody. Keeping one would let it come
+  // back to life — and silently script a different man — the next time the
+  // stack grew.
   place: (side, col, row, type, count) =>
     set((s) => {
+      const here = s[side].placements.find(
+        (p) => p.col === col && p.row === row && p.type === type,
+      )
       const rest = s[side].placements.filter(
         (p) => !(p.col === col && p.row === row && p.type === type),
       )
+      if (count <= 0) return { [side]: { ...s[side], placements: rest } }
+
+      const casters = trimCasters(here?.casters, count)
       return {
         [side]: {
           ...s[side],
-          placements: count > 0 ? [...rest, { type, col, row, count }] : rest,
+          placements: [
+            ...rest,
+            { type, col, row, count, ...(casters.length > 0 ? { casters } : {}) },
+          ],
+        },
+      }
+    }),
+
+  // Configure the `index`-th BODY of one caster stack (SB-6: individually, not
+  // per type — the mechanics this was asked for, the second caster fizzling and
+  // the duplicate-script warning, only appear when two casters on the same side
+  // differ). `patch` is merged, so paths and script are set independently.
+  setCasterConfig: (side, { col, row, type }, index, patch) =>
+    set((s) => ({
+      [side]: {
+        ...s[side],
+        placements: s[side].placements.map((p) => {
+          if (!(p.col === col && p.row === row && p.type === type)) return p
+          // No body, no config: an index past the stack is a stale row in a
+          // panel the player has already shrunk out from under.
+          if (index < 0 || index >= p.count) return p
+          const casters = trimCasters(p.casters, p.count)
+          while (casters.length <= index) casters.push(emptyCaster())
+          casters[index] = { ...casters[index], ...patch }
+          return { ...p, casters }
+        }),
+      },
+    })),
+
+  // A side's school levels and channel pool (D1). Clamped by the server, which
+  // is where the engine's scale is written; the spinner's own max comes off the
+  // reference so the two cannot disagree.
+  setSchoolLevel: (side, school, level) =>
+    set((s) => ({
+      [side]: {
+        ...s[side],
+        magic: { ...s[side].magic, schools: { ...s[side].magic.schools, [school]: level } },
+      },
+    })),
+
+  setChannels: (side, channels) =>
+    set((s) => ({ [side]: { ...s[side], magic: { ...s[side].magic, channels } } })),
+
+  // SB-8: load the REAL host's numbers as a starting point. Offered on either
+  // side rather than only on red — the host's sealed levels are as good a
+  // baseline for "what if my own army were this poor" as for the enemy, and the
+  // preset is a starting point wherever the player wants it. A no-op before the
+  // reference has landed: there is nothing yet to load.
+  loadEnemyPreset: (side) =>
+    set((s) => {
+      const preset = s.reference?.enemyPreset
+      if (!preset) return {}
+      return {
+        [side]: {
+          ...s[side],
+          magic: { schools: { ...s[side].magic.schools, ...preset.schools }, channels: preset.channels },
         },
       }
     }),
@@ -80,6 +212,12 @@ const useSandboxStore = create((set, get) => ({
   // Clear empties. Auto-place OVERWRITES rather than merges: it is an answer to
   // "where does this whole army go", and a merge would silently overstack the
   // hexes the player had already filled by hand.
+  //
+  // WHICH MEANS AUTO-PLACE DISCARDS CASTER CONFIGS, deliberately. Same contract:
+  // it answers where the WHOLE army goes, so the placements it returns are the
+  // whole answer, and a config from the old layout belongs to a body that is no
+  // longer standing where it stood. Configure the casters after the spread, not
+  // before it.
   setPlacements: (side, placements) => set((s) => ({ [side]: { ...s[side], placements } })),
 
   clearPlacements: (side) => set((s) => ({ [side]: { ...s[side], placements: [] }, selectedHex: null })),

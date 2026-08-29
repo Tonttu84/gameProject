@@ -34,6 +34,28 @@ export const MAP_NAME = 'sample_battle'
 // (any path level, any script, any pool); it is not a promise about army size.
 export const SANDBOX_MAX_UNITS_PER_SIDE = 400
 
+// S2's three bounds on the caster numbers the lab lets the player type.
+//
+// The first two are THE ENGINE'S OWN SCALE, not a balance call: both are 9 in
+// backend/engine/include/Spell.hpp — `SPELL_PATH_MAX_LEVEL`, which
+// AUnit::setPathLevel clamps to, and `SPELL_SCHOOL_OPEN_DEFAULT`, the level
+// every school sits at when a BattleInput carries no `magic` block at all. So
+// the lab's ceiling is exactly the height the engine already reaches, which is
+// what lets SB-5's "anything goes" be true without the wire ever seeing a
+// number the engine would silently clamp itself.
+// SANDBOX_MAX_SCHOOL_LEVEL doubles as the level the lab INITIALISES a side's
+// schools to, for the same reason: starting anywhere else would quietly close
+// a door the engine leaves open.
+export const SANDBOX_MAX_PATH_LEVEL = 9
+export const SANDBOX_MAX_SCHOOL_LEVEL = 9
+
+// A SANITY BOUND ON AN UNTRUSTED NUMBER, and deliberately not a balance number:
+// the channel pool has no engine ceiling, so this exists only so a scripted
+// client cannot post a pool that makes the engine's own arithmetic silly. The
+// campaign's real pools are single digits (CHANNELS_BY_BANNER_TIER); anything
+// approaching this is already far past every fight worth testing.
+export const SANDBOX_MAX_CHANNELS = 99
+
 // Retires the frontend STARTING_ROSTER hardcode (docs/ADDING_UNITS.md §6).
 // Mage and Priest USED to sit here at 3 apiece; slice 5 moved them out of the
 // roster entirely and into STARTING_CHARACTERS below (docs/CAMPAIGN_PLAN.md

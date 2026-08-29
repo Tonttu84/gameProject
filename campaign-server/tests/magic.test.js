@@ -1,6 +1,8 @@
 import { describe, expect, test, beforeEach } from 'vitest'
 import {
   accrueResearch,
+  castableSpellsFor,
+  castableSpellsForLevels,
   channelsForSquads,
   emptySchools,
   enemyMagic,
@@ -23,6 +25,7 @@ import {
 import { applyEffect, describeEffect, eventValence, EVENT_POOL } from '../services/events.js'
 import { priceEffect } from '../services/balanceSheet.js'
 import { clearRolls, pushRoll } from '../utils/dice.js'
+import { spellsFixture } from './fixtures/spells.js'
 import {
   CHANNELS_BY_BANNER_TIER,
   ENEMY_CHANNELS,
@@ -461,5 +464,47 @@ describe('the `research` effect and the sources that grant it (S2-11)', () => {
   test('an ally fate lends a mage', () => {
     const lends = EVENT_POOL.filter((e) => JSON.stringify(e.effect).includes('"allies"'))
     expect(lends.length).toBeGreaterThan(0)
+  })
+})
+
+// ── The level-driven fold (the battle lab's S2) ─────────────────────────────
+//
+// castableSpellsForLevels is castableSpellsFor with the campaign taken out of
+// it: two {key: level} bags and the catalog, which is all the gate ever needed.
+// The lab has no campaign at all (SB-1) and still has to answer "what can this
+// man cast", so the rule had to be reachable without one.
+//
+// This case exists to make the EXTRACTION unable to drift. Everything else
+// about the fold — which forms qualify, which label wins — is pinned in
+// chosenSpells.test.js against the function the campaign calls; what is pinned
+// here is only that the two are the same function underneath.
+describe('castableSpellsForLevels (the battle lab S2)', () => {
+  const campaignAt = (schools) => ({
+    research: {
+      schools: Object.fromEntries(
+        Object.entries(schools).map(([s, level]) => [s, { level, points: 0 }]),
+      ),
+    },
+  })
+
+  test('answers exactly what the campaign-shaped call answers, given the same levels', () => {
+    const paths = { fire: 3, holy: 1, death: 2 }
+    const schools = { evocation: 1, conjuration: 1, enchantment: 2, construction: 0 }
+    const campaign = campaignAt(schools)
+
+    const viaCampaign = castableSpellsFor({ paths }, campaign, spellsFixture)
+    const viaLevels = castableSpellsForLevels(paths, schoolLevels(campaign), spellsFixture)
+
+    expect(viaLevels).toEqual(viaCampaign)
+    // Not vacuous: these levels really do open something, and something else
+    // stays shut — Evocation 1 is Ember, never the level-3 Fireball.
+    expect(viaLevels.map((r) => r.spell).sort())
+      .toEqual(['bless', 'fireball', 'leaden_air', 'raise_dead'])
+    expect(viaLevels.find((r) => r.spell === 'fireball').label).toBe('Ember')
+  })
+
+  test('a caster with nothing is offered nothing, however open the side is', () => {
+    const wideOpen = { evocation: 9, conjuration: 9, enchantment: 9, construction: 9 }
+    expect(castableSpellsForLevels({}, wideOpen, spellsFixture)).toEqual([])
   })
 })

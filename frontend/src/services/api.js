@@ -184,11 +184,27 @@ export const submitBugReport = (message, screen) =>
 // Free-standing: no campaign id in either call, because there is no campaign
 // (SB-1). Both need a login (SB-2) — a launch spawns an engine subprocess.
 
-// Launch one lab battle from two hand-composed placement arrays. Returns the
-// same battle summary every other battle route returns, so ReplayView plays it
-// exactly like a campaign fight.
+// Launch one lab battle. The payload is {player_placement, enemy_placement,
+// magic}: axial entries one per BODY — a caster's may carry `paths` and
+// `script`, and only when the player actually set them, since absence is how
+// the engine's own default is asked for (SB-7) — plus S2's per-side
+// {schools, channels}. Returns the same battle summary every other battle route
+// returns, so ReplayView plays it exactly like a campaign fight.
 export const postSandboxBattle = (payload) =>
   axios.post('/api/sandbox/battles', payload, authed()).then(r => r.data)
+
+// The lab's static vocabulary, fetched once when the lab opens: the paths and
+// schools with their labels, the caster types, SB-8's live host preset and the
+// spinner bounds. Server-phrased (17-5), so the lab holds no copy of the words.
+export const getSandboxReference = () =>
+  axios.get('/api/sandbox/reference', authed()).then(r => r.data)
+
+// What one caster could cast under these paths and these school levels (D3).
+// Asked rather than computed: the server folds the catalog through the very
+// gate The Study's own picker uses, so the lab cannot come to hold a second
+// reading of the rule. Returns { options: [{spell, label, description, …}] }.
+export const postSandboxCastable = ({ paths, schools }) =>
+  axios.post('/api/sandbox/castable', { paths, schools }, authed()).then(r => r.data)
 
 // Spread one side's army over its deployment zone, server-side, through the
 // very function the enemy's daily plan and both sides of a raid already use —

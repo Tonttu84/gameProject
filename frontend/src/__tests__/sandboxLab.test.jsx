@@ -33,6 +33,8 @@ vi.mock('../services/api', () => ({
   getCampaigns: vi.fn(),
   postSandboxBattle: vi.fn(),
   autoPlaceSandbox: vi.fn(),
+  getSandboxReference: vi.fn(),
+  postSandboxCastable: vi.fn(),
   launchSampleBattle: vi.fn(),
   getBattle: vi.fn(),
   login: vi.fn(),
@@ -43,6 +45,7 @@ vi.mock('../services/api', () => ({
 
 import {
   getInfo, getMap, getUnits, getTicks, getCampaigns, postSandboxBattle, autoPlaceSandbox,
+  getSandboxReference, postSandboxCastable,
 } from '../services/api'
 import App from '../App'
 
@@ -60,7 +63,40 @@ const catalog = [
   { name: 'Soldier', symbol: 'X', size: 10, category: 'Foot', forbiddenTerrain: [], roles: ['Player', 'Enemy'] },
   { name: 'Cavalry', symbol: 'C', size: 20, category: 'Mounted', forbiddenTerrain: ['Forest'], roles: ['Player'] },
   { name: 'Zombie', symbol: 'Z', size: 10, category: 'Foot', forbiddenTerrain: [], roles: ['Summon'] },
+  { name: 'Mage', symbol: 'M', size: 10, category: 'Foot', forbiddenTerrain: [], roles: ['Player'] },
 ]
+
+// GET /api/sandbox/reference, as the server serves it: the vocabulary PHRASED
+// (17-5 — the lab holds no copy of "Fire"), the caster types derived from
+// isCasterType, SB-8's preset read off the live balance constants, and the
+// bounds the spinners clamp to.
+const reference = {
+  paths: [
+    { key: 'fire', label: 'Fire' }, { key: 'earth', label: 'Earth' },
+    { key: 'water', label: 'Water' }, { key: 'air', label: 'Air' },
+    { key: 'high', label: 'High' }, { key: 'low', label: 'Low' },
+    { key: 'nature', label: 'Nature' }, { key: 'death', label: 'Death' },
+    { key: 'holy', label: 'Holy' }, { key: 'unholy', label: 'Unholy' },
+  ],
+  schools: [
+    { key: 'evocation', label: 'Evocation' }, { key: 'conjuration', label: 'Conjuration' },
+    { key: 'enchantment', label: 'Enchantment' }, { key: 'construction', label: 'Construction' },
+  ],
+  casterTypes: ['Mage', 'Priest', 'Necromancer'],
+  enemyPreset: {
+    schools: { evocation: 1, conjuration: 2, enchantment: 1, construction: 0 },
+    channels: 3,
+  },
+  limits: { maxPathLevel: 9, maxSchoolLevel: 9, maxChannels: 99, openSchoolLevel: 9 },
+}
+
+// The lab's own default magic block: every school at the engine's own open
+// level and no pool, which is what a battle sent no block at all is fought
+// with. It rides on EVERY launch, so it is worth naming once.
+const openMagic = {
+  schools: { evocation: 9, conjuration: 9, enchantment: 9, construction: 9 },
+  channels: 0,
+}
 
 const sessionUser = { token: 'jwt-token', username: 'tonttu', name: 'Tonttu T' }
 
@@ -77,6 +113,8 @@ beforeEach(() => {
   getTicks.mockResolvedValue(ticks)
   getCampaigns.mockResolvedValue([])
   postSandboxBattle.mockResolvedValue(summary)
+  getSandboxReference.mockResolvedValue(reference)
+  postSandboxCastable.mockResolvedValue({ options: [] })
 })
 
 // A logged-in player with NO campaign at all — the strongest statement of SB-1:
@@ -85,7 +123,11 @@ const openLab = async () => {
   window.localStorage.setItem('loggedGameUser', JSON.stringify(sessionUser))
   render(<App />)
   fireEvent.click(await screen.findByTestId('open-lab'))
-  return screen.findByTestId('lab-palette')
+  await screen.findByTestId('lab-palette')
+  // The caster vocabulary is a second fetch on the same open (S2), and every
+  // magic control below is drawn from it — so the lab is not "open" for a test
+  // until it has landed.
+  return screen.findByTestId('lab-school-evocation')
 }
 
 // Compose n of a type on the side currently being edited.
@@ -268,6 +310,10 @@ describe('launching', () => {
         { unit_type: 'Soldier', q: 2, r: 4 },
       ],
       enemy_placement: [{ unit_type: 'Zombie', q: -9, r: 25 }],
+      // Both blocks always ride along (D1), and both are the engine's own
+      // defaults until a spinner moves — so this launch is byte-for-byte the
+      // battle S1 fought, which is the point of starting open.
+      magic: { blue: openMagic, red: openMagic },
     }))
 
     // The one and only renderer, reading ticks back from the DB.
@@ -301,5 +347,186 @@ describe('launching', () => {
     expect(await screen.findByTestId('auth-notice')).toHaveTextContent(/too many units/)
     expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toBeInTheDocument()
     expect(screen.getByTestId('lab-launch')).toBeEnabled()
+  })
+})
+
+// ── S2: the casters ─────────────────────────────────────────────────────────
+//
+// This is where the original ask is met: per-caster paths and scripts that
+// DEFAULT to the engine's own choice, the school levels and channel pool per
+// side, and SB-8's preset. What is pinned is the per-BODY grain (SB-6) — two
+// casters in one stack are two men — and the absence rule that makes the
+// default free: an untouched caster crosses the wire carrying nothing.
+
+// The bodies of a caster stack, placed on the currently edited side.
+const placeCasters = (n) => {
+  compose('Mage', n)
+  fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+  placeHere('Mage', n)
+}
+
+const openBody = (index) =>
+  fireEvent.click(screen.getByTestId(`lab-caster-Mage-4-4-${index}`))
+
+const setPath = (path, level) =>
+  fireEvent.change(screen.getByTestId(`lab-path-${path}`), { target: { value: String(level) } })
+
+describe("the side's magic (D1)", () => {
+  it("starts at the engine's own open default, so touching nothing changes nothing", async () => {
+    await openLab()
+    expect(screen.getByTestId('lab-school-evocation')).toHaveValue(9)
+    expect(screen.getByTestId('lab-channels')).toHaveValue(0)
+  })
+
+  it('sets a school level and a pool per side, not once for the field', async () => {
+    await openLab()
+    fireEvent.change(screen.getByTestId('lab-school-enchantment'), { target: { value: '2' } })
+    fireEvent.change(screen.getByTestId('lab-channels'), { target: { value: '4' } })
+
+    fireEvent.click(screen.getByTestId('lab-side-red'))
+    expect(screen.getByTestId('lab-school-enchantment')).toHaveValue(9)
+    expect(screen.getByTestId('lab-channels')).toHaveValue(0)
+
+    fireEvent.click(screen.getByTestId('lab-side-blue'))
+    expect(screen.getByTestId('lab-school-enchantment')).toHaveValue(2)
+    expect(screen.getByTestId('lab-channels')).toHaveValue(4)
+  })
+
+  it("loads the campaign host's real numbers on demand (SB-8)", async () => {
+    await openLab()
+    fireEvent.click(screen.getByTestId('lab-side-red'))
+    fireEvent.click(screen.getByTestId('lab-enemy-preset'))
+
+    // Straight off the live ENEMY_SCHOOLS/ENEMY_CHANNELS the server served —
+    // the lab authors no tier table of its own, so a balance retune moves this
+    // button for free.
+    expect(screen.getByTestId('lab-school-conjuration')).toHaveValue(2)
+    expect(screen.getByTestId('lab-school-construction')).toHaveValue(0)
+    expect(screen.getByTestId('lab-channels')).toHaveValue(3)
+  })
+})
+
+describe('the casters panel (SB-6)', () => {
+  it('lists ONE ROW PER BODY, each addressable by its place in the stack', async () => {
+    await openLab()
+    placeCasters(3)
+
+    expect(screen.getByTestId('lab-caster-Mage-4-4-0')).toHaveTextContent('Mage · (4,4) #1')
+    expect(screen.getByTestId('lab-caster-Mage-4-4-1')).toHaveTextContent('Mage · (4,4) #2')
+    expect(screen.getByTestId('lab-caster-Mage-4-4-2')).toHaveTextContent('Mage · (4,4) #3')
+  })
+
+  it('leaves non-casters out of it entirely', async () => {
+    await openLab()
+    compose('Soldier', 4)
+    fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+    placeHere('Soldier', 4)
+
+    expect(screen.queryByTestId('lab-caster-Soldier-4-4-0')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lab-casters')).toHaveTextContent(/No casters placed/)
+  })
+
+  it("editing body #2's paths does not touch body #1 — that difference IS the point", async () => {
+    await openLab()
+    placeCasters(2)
+
+    openBody(1)
+    setPath('fire', 4)
+    expect(screen.getByTestId('lab-path-fire')).toHaveValue(4)
+
+    openBody(0)
+    expect(screen.getByTestId('lab-path-fire')).toHaveValue(0)
+  })
+
+  it('drops the config of a body the stack no longer has', async () => {
+    await openLab()
+    placeCasters(2)
+    openBody(1)
+    setPath('fire', 4)
+
+    // Shrink the stack to one (the hex menu is still open on 4,4): #2 is gone,
+    // so his configuration is gone with him — keeping it would silently
+    // re-attach it to a different man the next time the stack grew.
+    placeHere('Mage', 1)
+    expect(screen.queryByTestId('lab-caster-Mage-4-4-1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('lab-caster-editor')).not.toBeInTheDocument()
+
+    placeHere('Mage', 2)
+    openBody(1)
+    expect(screen.getByTestId('lab-path-fire')).toHaveValue(0)
+  })
+
+  it('offers exactly what the server says he can cast, and refetches as a path rises (D3)', async () => {
+    postSandboxCastable.mockResolvedValue({
+      options: [{ spell: 'fireball', label: 'Ember', description: 'A bolt.' }],
+    })
+    await openLab()
+    placeCasters(1)
+    openBody(0)
+
+    // The question is asked with HIS paths and HIS SIDE's schools — one rules
+    // site, on the server, which is what keeps the lab from holding a second
+    // reading of M-6's gate.
+    await waitFor(() => expect(postSandboxCastable).toHaveBeenCalledWith({
+      paths: {}, schools: openMagic.schools,
+    }))
+
+    setPath('fire', 3)
+    await waitFor(() => expect(postSandboxCastable).toHaveBeenLastCalledWith({
+      paths: { fire: 3 }, schools: openMagic.schools,
+    }))
+
+    await waitFor(() => expect(screen.getByTestId('lab-script-add')).toHaveTextContent('Ember'))
+    fireEvent.change(screen.getByTestId('lab-script-add'), { target: { value: 'fireball' } })
+    expect(screen.getByTestId('lab-script-remove-fireball')).toBeInTheDocument()
+  })
+})
+
+describe('what the launch carries (D1 / D2)', () => {
+  it('attaches per-body paths and scripts, and omits what was never set', async () => {
+    postSandboxCastable.mockResolvedValue({
+      options: [{ spell: 'fireball', label: 'Ember', description: 'A bolt.' }],
+    })
+    await openLab()
+    placeCasters(2)
+
+    // Only the SECOND body is configured; the first is left as the engine
+    // would have him.
+    openBody(1)
+    setPath('fire', 3)
+    await waitFor(() => expect(screen.getByTestId('lab-script-add')).toHaveTextContent('Ember'))
+    fireEvent.change(screen.getByTestId('lab-script-add'), { target: { value: 'fireball' } })
+
+    fireEvent.change(screen.getByTestId('lab-school-evocation'), { target: { value: '4' } })
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalledWith({
+      player_placement: [
+        // Body #1 carries NOTHING — absence is how the engine's own default is
+        // asked for (SB-7), and an empty bag would overwrite his craft's seed.
+        { unit_type: 'Mage', q: 2, r: 4 },
+        { unit_type: 'Mage', q: 2, r: 4, paths: { fire: 3 }, script: ['fireball'] },
+      ],
+      enemy_placement: [],
+      magic: {
+        blue: { schools: { ...openMagic.schools, evocation: 4 }, channels: 0 },
+        red: openMagic,
+      },
+    }))
+  })
+
+  it("sends a caster back to the engine's own choice on demand", async () => {
+    await openLab()
+    placeCasters(1)
+    openBody(0)
+    setPath('death', 2)
+    fireEvent.click(screen.getByTestId('lab-caster-reset'))
+
+    fireEvent.click(screen.getByTestId('lab-launch'))
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        player_placement: [{ unit_type: 'Mage', q: 2, r: 4 }],
+      }),
+    ))
   })
 })

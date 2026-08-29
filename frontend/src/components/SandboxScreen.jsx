@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import useSandboxStore, { SIDES } from '../stores/useSandboxStore'
-import { autoPlaceLabSide, launchLabBattle, closeBattleLab } from '../stores/flows'
+import {
+  autoPlaceLabSide, launchLabBattle, closeBattleLab, loadLabCastable,
+} from '../stores/flows'
 import { HEX_SIZE, hexCenter, hexPoints, toAxial, svgSize } from '../utils/hexGeometry'
 
 // THE BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE", slice S1).
@@ -32,6 +34,34 @@ const SIDE_COLOR = { blue: '#88aaff', red: '#ff8888' }
 const ROLE_ORDER = ['Player', 'Enemy', 'Summon', 'Mount', 'Crafted']
 const roleBadges = (roles = []) => ROLE_ORDER.filter((r) => roles.includes(r)).join(' · ')
 
+// One caster BODY's identity — the stack it stands in plus its index within it.
+// The index is the whole point of SB-6: the mechanics the lab was asked for (the
+// second caster fizzling on a battlefield spell, the duplicate-script warning)
+// only appear when two casters on the SAME side differ, so a body has to be
+// addressable as itself and not as "a Mage on (4,2)".
+const bodyKey = (side, b) => `${side},${b.type},${b.col},${b.row},${b.index}`
+const sameBody = (a, b) =>
+  Boolean(a && b && a.type === b.type && a.col === b.col && a.row === b.row && a.index === b.index)
+
+// A spinner's value, trimmed to a whole number inside the server's own bound —
+// the client never invents the ceiling, it reads it off the reference so the
+// two cannot disagree about what "9" means.
+const clamp = (value, max) => {
+  const n = Math.max(0, Math.floor(Number(value) || 0))
+  return Number.isFinite(max) ? Math.min(max, n) : n
+}
+
+// What a body's row says about itself: nothing at all when nothing is set,
+// which is the honest description of a caster the engine will seed its own way.
+const describeConfig = (config) => {
+  const paths = Object.keys(config?.paths ?? {}).length
+  const script = (config?.script ?? []).length
+  const parts = []
+  if (paths > 0) parts.push(`${paths} path${paths === 1 ? '' : 's'}`)
+  if (script > 0) parts.push(`${script} scripted`)
+  return parts.length > 0 ? `— ${parts.join(', ')}` : ''
+}
+
 const SandboxScreen = ({ info, map }) => {
   const side = useSandboxStore((s) => s.side)
   const setSide = useSandboxStore((s) => s.setSide)
@@ -44,8 +74,59 @@ const SandboxScreen = ({ info, map }) => {
   const place = useSandboxStore((s) => s.place)
   const clearPlacements = useSandboxStore((s) => s.clearPlacements)
   const launching = useSandboxStore((s) => s.launching)
+  const reference = useSandboxStore((s) => s.reference)
+  const castable = useSandboxStore((s) => s.castable)
+  const setSchoolLevel = useSandboxStore((s) => s.setSchoolLevel)
+  const setChannels = useSandboxStore((s) => s.setChannels)
+  const loadEnemyPreset = useSandboxStore((s) => s.loadEnemyPreset)
+  const setCasterConfig = useSandboxStore((s) => s.setCasterConfig)
+
+  // Which caster body the editor is open on — SCREEN state, not store state:
+  // it is a cursor into the setup, not part of it, and S3's export would have
+  // no business serialising where the player's eye was.
+  const [openCaster, setOpenCaster] = useState(null)
 
   const armies = { blue, red }
+
+  // ONE ROW PER BODY, never per stack (SB-6): three Mages on one hex are three
+  // men who may each want a different script, and the lab exists precisely to
+  // put them beside each other and watch what the once-per-side rules do.
+  const casterTypes = reference?.casterTypes ?? []
+  const casterBodies = armies[side].placements
+    .filter((p) => casterTypes.includes(p.type))
+    .flatMap((p) => Array.from({ length: p.count }, (_, index) => ({
+      type: p.type, col: p.col, row: p.row, index, config: p.casters?.[index] ?? null,
+    })))
+
+  // The body the editor is open on, re-read off the CURRENT list.
+  const editing = casterBodies.find((b) => sameBody(b, openCaster)) ?? null
+
+  // A stack the player shrank out from under the panel leaves the cursor
+  // pointing at a body that no longer exists. The cursor is DROPPED rather than
+  // merely hidden: the store has already thrown that body's config away, so a
+  // cursor that survived would silently re-open on whoever next took the index.
+  useEffect(() => {
+    if (openCaster && !editing) setOpenCaster(null)
+  }, [openCaster, editing])
+
+  // Ask the server what the open body can cast, whenever the question changes:
+  // a different body, a moved path level, or a moved school level on his side
+  // (D3 — raise a path and the list grows immediately). Keyed on the values
+  // themselves rather than on object identity, so a re-render that changed
+  // nothing asks nothing.
+  const openSchools = JSON.stringify(armies[side].magic.schools)
+  const openPaths = JSON.stringify(
+    openCaster
+      ? armies[side].placements.find(
+        (p) => p.col === openCaster.col && p.row === openCaster.row && p.type === openCaster.type,
+      )?.casters?.[openCaster.index]?.paths ?? {}
+      : {},
+  )
+  useEffect(() => {
+    if (!openCaster) return
+    loadLabCastable(side, openCaster, openCaster.index)
+  }, [side, openCaster, openPaths, openSchools])
+
   const { grid, playerZone, enemyZone } = info
   const zoneFor = (s) => (s === 'red' ? enemyZone : playerZone)
   const { width: svgW, height: svgH } = svgSize(grid)
@@ -214,6 +295,167 @@ const SandboxScreen = ({ info, map }) => {
     )
   }
 
+  // ── The side's magic (D1) ───────────────────────────────────────────────
+  // BOTH sides get a block, not just the enemy: SB-8 named the enemy because
+  // that was the ask, but the lab composes both armies (SB-1) and SB-5's
+  // "anything goes" is per side. The numbers start at the engine's own open
+  // default, so what is on screen when the panel first appears is exactly what
+  // a battle would have been fought with anyway.
+  const magic = armies[side].magic
+  const limits = reference?.limits ?? {}
+
+  const magicPanel = () => (
+    <section className="lab-magic" data-testid="lab-magic">
+      <h3>{SIDE_LABEL[side]} — magic</h3>
+      <p className="lab-hint">
+        School levels open the forms a caster may reach; the channel pool is what the whole side
+        can spend on battlefield enchantments. Both start where the engine leaves them when
+        nothing is sent.
+      </p>
+      {(reference?.schools ?? []).map(({ key, label }) => (
+        <label key={key} className="lab-hex-row">
+          <span className="lab-unit-name">{label}</span>
+          <input
+            type="number"
+            min="0"
+            max={limits.maxSchoolLevel}
+            value={magic.schools[key] ?? 0}
+            data-testid={`lab-school-${key}`}
+            onChange={(e) => setSchoolLevel(side, key, clamp(e.target.value, limits.maxSchoolLevel))}
+          />
+        </label>
+      ))}
+      <label className="lab-hex-row">
+        <span className="lab-unit-name">Channel pool</span>
+        <input
+          type="number"
+          min="0"
+          max={limits.maxChannels}
+          value={magic.channels}
+          data-testid="lab-channels"
+          onChange={(e) => setChannels(side, clamp(e.target.value, limits.maxChannels))}
+        />
+      </label>
+      {/* SB-8: the REAL host's sealed numbers, read live off the balance
+          constants, so the button stays accurate for free as they move. Offered
+          on either side — the host's numbers are a starting point wherever you
+          want them, not a fact about red. */}
+      <button data-testid="lab-enemy-preset" onClick={() => loadEnemyPreset(side)}>
+        Load the campaign host&apos;s numbers
+      </button>
+    </section>
+  )
+
+  // ── The casters (SB-6) ──────────────────────────────────────────────────
+  const castersPanel = () => (
+    <section className="lab-casters" data-testid="lab-casters">
+      <h3>Casters on this side</h3>
+      {casterBodies.length === 0 && (
+        <p className="lab-hint">
+          No casters placed here yet — place a Mage, a Priest or a Necromancer and each body
+          gets its own paths and script.
+        </p>
+      )}
+      {casterBodies.map((b) => (
+        <button
+          key={bodyKey(side, b)}
+          className={`lab-caster-row ${sameBody(b, editing) ? 'active' : ''}`}
+          data-testid={`lab-caster-${b.type}-${b.col}-${b.row}-${b.index}`}
+          onClick={() => setOpenCaster(sameBody(b, editing) ? null : b)}
+        >
+          {b.type} · ({b.col},{b.row}) #{b.index + 1}
+          {/* What this body actually overrides, so the list says at a glance
+              which men are the game's own default and which are not. */}
+          <span className="lab-hint"> {describeConfig(b.config)}</span>
+        </button>
+      ))}
+    </section>
+  )
+
+  const casterEditor = () => {
+    if (!editing) return null
+    const paths = editing.config?.paths ?? {}
+    const script = editing.config?.script ?? []
+    const at = { type: editing.type, col: editing.col, row: editing.row }
+    const options = castable.key === bodyKey(side, editing) ? castable.options : []
+    const labelOf = (id) => options.find((o) => o.spell === id)?.label ?? id
+
+    return (
+      <section className="lab-caster-editor" data-testid="lab-caster-editor">
+        <h4>{editing.type} · ({editing.col},{editing.row}) #{editing.index + 1}</h4>
+        <p className="lab-hint">
+          Anything left untouched is sent as nothing at all, which is how the engine is asked
+          for its own choice — an unopened Mage still walks in with the path his craft seeds.
+        </p>
+
+        {(reference?.paths ?? []).map(({ key, label }) => (
+          <label key={key} className="lab-hex-row">
+            <span className="lab-unit-name">{label}</span>
+            <input
+              type="number"
+              min="0"
+              max={limits.maxPathLevel}
+              value={paths[key] ?? 0}
+              data-testid={`lab-path-${key}`}
+              onChange={(e) => setCasterConfig(side, at, editing.index, {
+                paths: { ...paths, [key]: clamp(e.target.value, limits.maxPathLevel) },
+              })}
+            />
+          </label>
+        ))}
+
+        {/* POSITION IS PRIORITY (S4-1), so the list is ordered and the only
+            edits are remove and append — the same contract the campaign's own
+            chosen-spells picker holds the player to. */}
+        <h4>Script</h4>
+        {script.length === 0 && (
+          <p className="lab-hint">Empty — he casts whatever the engine would pick for him.</p>
+        )}
+        <ol className="lab-script">
+          {script.map((id, i) => (
+            <li key={id}>
+              <span className="lab-unit-name">{labelOf(id)}</span>
+              <button
+                data-testid={`lab-script-remove-${id}`}
+                onClick={() => setCasterConfig(side, at, editing.index, {
+                  script: script.filter((_, k) => k !== i),
+                })}
+              >
+                remove
+              </button>
+            </li>
+          ))}
+        </ol>
+        {/* Fed by the server (D3): exactly what THIS body can cast under his own
+            paths and this side's school levels, refetched whenever either
+            moves. The lab holds no copy of the qualification rule. */}
+        <select
+          data-testid="lab-script-add"
+          value=""
+          onChange={(e) => {
+            if (!e.target.value) return
+            setCasterConfig(side, at, editing.index, { script: [...script, e.target.value] })
+          }}
+        >
+          <option value="">Add a spell…</option>
+          {options.filter((o) => !script.includes(o.spell)).map((o) => (
+            <option key={o.spell} value={o.spell}>{o.label}</option>
+          ))}
+        </select>
+
+        {/* Back to silence — the one edit that cannot be made with a spinner,
+            since a path typed back to 0 is an explicit "no Fire" and not the
+            same statement as never having said anything. */}
+        <button
+          data-testid="lab-caster-reset"
+          onClick={() => setCasterConfig(side, at, editing.index, { paths: {}, script: [] })}
+        >
+          Back to the engine&apos;s own choice
+        </button>
+      </section>
+    )
+  }
+
   const nothingPlaced = totalPlaced('blue') + totalPlaced('red') === 0
 
   return (
@@ -286,6 +528,12 @@ const SandboxScreen = ({ info, map }) => {
               />
             </label>
           ))}
+        </div>
+
+        <div className="lab-casting" data-testid="lab-casting">
+          {magicPanel()}
+          {castersPanel()}
+          {casterEditor()}
         </div>
 
         <div className="lab-field">

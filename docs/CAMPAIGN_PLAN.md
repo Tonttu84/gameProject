@@ -87,16 +87,19 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-08-29) — START HERE
 
-**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29; SLICE S1 IS SHIPPED,
-S2 IS NEXT.** Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX
+**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29; SLICES S1 AND S2 ARE
+SHIPPED, S3 IS NEXT.** Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX
 MODE" entry in the Deferred design backlog below; **start there, and do not re-derive them.**
 S1 — the spine — landed 2026-08-29: the hex geometry is extracted, the Battle Lab composes and
 places BOTH armies from the full catalog, launches through the existing pipeline and plays the
-replay, with SB-12's per-launch retention behind it. **S2 is the casters, and it is where the
-original ask is actually met** — per-caster paths and scripts defaulting to the engine's own
-choice, the enemy's school levels and channel pool, and SB-8's real-host preset. Read the
-per-slice "what landed" note under THE SLICE PLAN for the shapes S2 extends (the placement-entry
-whitelist in `routes/sandbox.js` is the seam it widens, one field at a time).
+replay, with SB-12's per-launch retention behind it. S2 — the casters — landed the same day and is where the original ask is met: per-caster paths
+and scripts defaulting to the engine's own choice, per-side school levels and channel pool, and
+SB-8's real-host preset off the live constants. **S3 is the lab itself** — N runs, the fixed
+seed, aggregate win rate and average survivors (SB-10), and the browser-local JSON export/import
+that makes a setup a checkable fixture (SB-11). Read the per-slice "what landed" notes under THE
+SLICE PLAN for the shapes each slice extends (the placement-entry whitelist in
+`routes/sandbox.js` is the seam they widen, one field at a time; `useSandboxStore` is the
+scenario S3 serialises).
 Everything else on `main` is SHIPPED and green — the front that closed just before this was ENEMY
 SCRIPTS + BATTLEFIELD ENCHANTMENTS (slices A and B, 2026-08-28/29 — item 5 below). The other
 candidates, each a decision already taken about what the thing IS and none of them started: the
@@ -7783,8 +7786,53 @@ sequence. So the server half is nearly free and the work is almost all in COMPOS
   - **The lab fields loose troops, no `squad_id`.** Not an omission: the campaign's own loose
     roster is placed the same way, so this is the case the engine already fights every turn.
     Squads in the lab would be a design call, and it is not one S1 was asked to take.
-- **S2 — the casters.** Per-caster paths and scripts (default = the engine's own), the enemy's
-  school levels and pool, and SB-8's real-host preset. This is where the original ask is met.
+- **S2 — the casters. ✅ SHIPPED 2026-08-29.** Per-caster paths and scripts (default = the
+  engine's own), per-side school levels and channel pool, and SB-8's real-host preset. The
+  original ask is met.
+
+  **Three calls the slice had to take:**
+  - **D1. BOTH SIDES GET A MAGIC BLOCK, not just the enemy.** SB-8 names the enemy because that
+    was the ask, but the lab composes both armies (SB-1) and SB-5's "anything goes" is a
+    per-side promise. The load-bearing part is the DEFAULT: every school starts at 9 and the
+    pool at 0, which is exactly where the engine sits when a `BattleInput` carries no `magic`
+    block at all (`SPELL_SCHOOL_OPEN_DEFAULT`, deliberately open so slice 1's gate never
+    stripped magic out of a battle that already had it). So the lab starts open and VISIBLE
+    rather than starting silently open and closing the first time a spinner is touched.
+  - **D2. CASTER CONFIG IS PER BODY (SB-6), carried on the placement stack** as `casters[i]`.
+    Both halves default empty, and **empty means ABSENT ON THE WIRE** — which is how the
+    engine's own default is asked for (SB-7: no `script` is the default walk; no `paths` leaves
+    the constructor's seeding alone, so an untouched Mage still walks in with his Fire 1). An
+    empty bag would OVERWRITE that seed and field a mute mage, so "I did not configure this one"
+    has to travel as silence. A shrinking stack drops the configs it no longer has bodies for:
+    an index past the count configures nobody, and a survivor would silently re-attach to a
+    different man the next time the stack grew.
+  - **D3. THE SCRIPT PICKER ASKS THE SERVER what that body can cast**, under his own paths and
+    his side's schools — `POST /api/sandbox/castable`, folding through
+    `castableSpellsForLevels`, the level-driven half extracted out of `castableSpellsFor` so The
+    Study's picker and the lab's are ONE rules site. A client-side copy would be a second
+    reading of M-6's gate and would drift the first time a form grew a requirement. Not a cap in
+    SB-5's sense: levels stay uncapped at the engine's own 0..9, and the honest answer to a
+    level 9 no campaign could grant is the longer list.
+
+  **The shapes S3 and S4 extend:**
+  - **`GET /api/sandbox/reference`** is the lab's static vocabulary in one call — paths and
+    schools with their player-facing words (17-5: the lab names no path itself), the caster
+    types DERIVED by running both config keys back through `isCasterType`, SB-8's preset read
+    off the LIVE `ENEMY_SCHOOLS`/`ENEMY_CHANNELS` so the balance pass moves it for free, and the
+    spinner bounds. `openSchoolLevel` is `SANDBOX_MAX_SCHOOL_LEVEL` and not a fourth constant:
+    the engine's open default is both the top of the scale and the no-block level.
+  - **The whitelist widened BY CONSTRUCTION, as S1 promised it would.** `levelBagFrom` walks the
+    VOCABULARY rather than the client's keys — an unknown path is never looked at rather than
+    rejected, which is the version of the guard that cannot be forgotten when the engine grows
+    an eleventh path — and `sanitizeScript` checks every id against the engine's own roster,
+    dedupes, and keeps order, because position IS priority. **S4 widens the same seam for
+    `fortified_sides` and `reinforcements`.**
+  - **The store is still the scenario, and it has grown two things for S3 to serialise:**
+    per-side `magic` and per-stack `casters`.
+  - One control the spec did not name and the design needed: **"back to the engine's own
+    choice" per body.** `AUnit::setPathLevel` honours an explicit 0, so a path typed down to
+    zero is a real statement ("this Mage has no Fire") and is NOT the same as never having
+    configured him. Without the reset there was no way back to the absence D2 rests on.
 - **S3 — the lab.** N runs, the seed, aggregate results, JSON export/import.
 - **S4 — the extras.** Walls painting, reinforcements, and SB-13's campaign prefill.
 
