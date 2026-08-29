@@ -505,6 +505,16 @@ this order to pick the work up cold:
      (S2-9): "the enemy's research is the encounter". Placeholder scripts until the roster
      grows; the enemy pool sizing / encounter-level lock on battlefield spells is B's remaining
      decision. Competence without a decision anywhere in it — standing principle 1 untouched.
+   - **E-8. THE POOL IS THE LOCK (user, 2026-08-28, closing B's open decision).** No encounter
+     level, no new field: the enemy's sealed `enemy.magic.channels` alone decides which
+     battlefield spells an encounter can field — a script containing one only matches when the
+     sealed pool covers its poolCost, and the engine's own qualify gate enforces the same rule
+     at cast. Later acts author bigger pools (M-19's dial doing what it already does). Two
+     follow-ons the walk implies rather than adds: assignment is DERIVED at composition, never
+     sealed (deterministic priority walk — nothing random to protect from a reload; the
+     walledSides precedent), and within one composition pass a battlefield-bearing script is
+     assigned at most once ("only 1 mage should have it scripted" applied to the enemy's own
+     authoring).
 
 Everything in the rest of this block is the squad/character/items front, which is FINISHED —
 decision 13 and slice 17 both shipped. It is kept as the record of how those systems got their
