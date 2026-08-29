@@ -87,13 +87,15 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-08-29) — START HERE
 
-**▶▶ THERE IS NO LIVE FRONT: every front opened so far is SHIPPED and on `main`, CI green.** The
-last to close was ENEMY SCRIPTS + BATTLEFIELD ENCHANTMENTS (slices A and B, 2026-08-28/29 — item 5
-below). Nothing is half-built and nothing is waiting to be picked up; the next session CHOOSES a
-front rather than resuming one. The candidates, each a decision already taken about what the thing
-IS: the real cast AI (M-22), stances (M-12), empowerment (M-5), and the BALANCE PASS — which now
-has the most to chew on, since every number the magic and Construction fronts shipped is
-balance-deferred. **The magic system is the biggest built thing and it is NOT in this block** — it
+**▶▶ THE LIVE FRONT IS THE SANDBOX / TEST MODE — INTERVIEWED 2026-08-29, NOT ONE LINE BUILT.**
+Thirteen decisions (SB-1..SB-13) and a four-slice plan are in the "TEST / SANDBOX MODE" entry in
+the Deferred design backlog below; **start there, and do not re-derive them.** Slice S1 is the
+spine: extract the hex geometry, a screen that composes and places BOTH armies, launch, watch.
+Everything else on `main` is SHIPPED and green — the front that closed just before this was ENEMY
+SCRIPTS + BATTLEFIELD ENCHANTMENTS (slices A and B, 2026-08-28/29 — item 5 below). The other
+candidates, each a decision already taken about what the thing IS and none of them started: the
+real cast AI (M-22), stances (M-12), empowerment (M-5), and the BALANCE PASS — which has the most
+to chew on, since every number the magic and Construction fronts shipped is balance-deferred. **The magic system is the biggest built thing and it is NOT in this block** — it
 is under "THE MAGIC SYSTEM" further down. Schema is **v44** (`CAMPAIGN_SCHEMA_VERSION` in models/campaign.js is the
 authority; the v35/v36 talk below is 2026-08-24 history that was true when it was written). Read
 this order to pick the work up cold:
@@ -7684,13 +7686,75 @@ to compare A against B on demand rather than once a campaign.
 what the host may cast); pick scripts per caster on both sides, defaulting to what the game would
 choose by itself and overridable from there; then launch and watch the replay.
 
-**Not yet interviewed — do not build from this entry.** Genuinely open: whether it is a screen,
-a CLI mode or a dev-only route; whether it composes a real campaign document or bypasses the
-campaign entirely; how it reaches the placement grid; and how it is kept out of a real player's
-hands (`auth/` is a `.gitkeep` and every engine endpoint is unauthenticated — see
-SECURITY_NOTES.md). The engine half may already be nearly free: `./game battle` takes a complete
-BattleInput on stdin, and `BattleInput` already carries both placements, per-entry `paths` and
-`script`, and the per-side `magic` block — which is exactly the surface this asks to drive.
+**▶ INTERVIEWED 2026-08-29 — thirteen decisions, SB-1..SB-13, all the user's. NOT YET BUILT.**
+The ask grew in the interview: it is **not dev-only** — *"Player should also be able to plan
+strategies"* — so this ships as a real feature rather than a test harness.
+
+**What the exploration found first, because three facts decided most of the design:**
+`runAndPersistBattle(input, userId, day)` takes a complete BattleInput and needs NO campaign
+document; replay playback is already public and campaign-free (`GET /api/battles/:id/ticks`, which
+is how the logged-out demo works); and `GAME_RNG_SEED` already repeats the engine's entire draw
+sequence. So the server half is nearly free and the work is almost all in COMPOSING the input.
+
+- **SB-1. A FREE-STANDING LAB, not a campaign view.** No campaign involved; both sides composed
+  from the full engine catalogs. It therefore cannot leak campaign state or undermine recon — the
+  player composes the hypothetical enemy himself, so he learns nothing about the real host. The
+  rejected alternative (anchor it to the live campaign) returns as SB-13, a bonus.
+- **SB-2. PLAYER-FACING, SO IT SHIPS.** Logged-in only, with caps on runs-per-launch and army
+  size. (Assistant's call, flagged: the sandbox spawns engine subprocesses on demand, which is a
+  resource-exhaustion vector the public `sample-battle` route avoids only by running one fixed
+  scenario.)
+- **SB-3. MANUAL PLACEMENT FOR BOTH SIDES**, with an AUTO-PLACE button per side. Auto-placement is
+  not new work: `makeZonePlacer`/`spreadPlacement` already place both zones in production, because
+  a raid has no placement screen.
+- **SB-4. THE HEX GEOMETRY IS EXTRACTED**, doing what `ReplayView.jsx:26` already instructs —
+  *"Same geometry as HexGrid.jsx (kept in sync — extract if a third user appears)"*. The sandbox
+  grid is that third user. One shared module for HexGrid, ReplayView and the sandbox; `HexGrid`
+  stays campaign-wired and otherwise untouched (it reads roster, squads, characters, fortification
+  and enemy placements straight from stores, and generalising that is an abstraction nobody needs
+  yet). What gets de-duplicated is LAYOUT, never rules.
+- **SB-5. ANYTHING GOES, UNFLAGGED.** Any path level 0-9, any script length, any school level and
+  pool — no campaign caps and no warnings. Capping the lab to what a campaign can produce would
+  defeat the thing it exists for.
+- **SB-6. CASTERS ARE CONFIGURED INDIVIDUALLY**, per placement entry. Forced rather than chosen:
+  the mechanics this was asked for — once-per-side globals, the second caster fizzling, the
+  duplicate-script warning — only appear when two casters on the SAME side differ.
+- **SB-7. SCRIPTS DEFAULT TO THE ENGINE'S OWN CHOICE**, overridden per caster. Needs no new
+  concept: an absent `script` already means the default walk (E-3), so *"use the default script
+  normally but then allow swapping it"* is the wire's existing behaviour.
+- **SB-8. ENEMY MAGIC: DIRECT NUMBER INPUTS, PLUS ONE PRESET** that loads the real host's numbers.
+  The preset reads the live `ENEMY_SCHOOLS`/`ENEMY_CHANNELS` constants rather than an authored
+  tier table, so it stays accurate for free as the balance pass moves them. Rejected: a single
+  invented "encounter level" dial — E-8 deliberately made the sealed pool itself the lock, and a
+  derived dial would be a mechanic that exists nowhere else.
+- **SB-9. WALLS AND REINFORCEMENTS ARE EXPOSED; BATTLE LENGTH IS NOT.** `fortified_sides` and
+  `reinforcements` are both wire fields with no other way to be tested. `max_turns` was offered
+  and declined — a one-line spinner whenever it is wanted.
+- **SB-10. N RUNS PLUS A FIXED-SEED OPTION.** One battle is one sample from a noisy distribution,
+  so a batch reports win rate and average survivors; the seed answers *why did THAT happen*. Only
+  ONE replay is persisted per launch regardless of N.
+- **SB-11. BROWSER-LOCAL SETUP WITH JSON EXPORT/IMPORT.** No new schema and no new collection, and
+  a saved scenario is a plain file — checkable into the repo as a regression fixture, or handed
+  over to reproduce a bug exactly.
+- **SB-12. SANDBOX BATTLES KEEP ONLY THE LATEST PER USER**, each launch deleting the previous one
+  and its ticks. **This is a bug the design would otherwise have shipped:** `sweepOldBattles` only
+  ever touches ids listed in `campaign.battles`, so a battle belonging to no campaign is
+  unreachable by the sweep forever — at roughly 21 MB of tick documents each (L-6's own figure).
+- **SB-13. BONUS, DEFERRED — PREFILL BLUE FROM YOUR CAMPAIGN** (user: *"allow the player to easily
+  export his research level, units etc to plan better. But it is a bonus quality of life thing"*).
+  The player's OWN data, so it raises no recon question. Explicitly outside the core slices.
+
+**THE SLICE PLAN — four slices, each finished and merged green on `main` on its own:**
+- **S1 — the spine.** Geometry extraction; the sandbox screen with a unit palette, manual
+  placement and auto-place for both sides; one battle launched through the existing pipeline;
+  watched in ReplayView; SB-12 retention. Useful the day it lands.
+- **S2 — the casters.** Per-caster paths and scripts (default = the engine's own), the enemy's
+  school levels and pool, and SB-8's real-host preset. This is where the original ask is met.
+- **S3 — the lab.** N runs, the seed, aggregate results, JSON export/import.
+- **S4 — the extras.** Walls painting, reinforcements, and SB-13's campaign prefill.
+
+**One constraint, not a decision:** only `maps/sample_battle.json` exists, so there is no map
+picker — every sandbox battle is fought on the sample map's terrain until a second map does.
 
 
 **~~TODO~~ ~~DESIGNED 2026-07-20~~ ✅ BUILT 2026-07-21 — multi-turn campaign loop: persistent enemy
