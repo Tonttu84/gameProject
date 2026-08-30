@@ -7707,7 +7707,8 @@ to compare A against B on demand rather than once a campaign.
 what the host may cast); pick scripts per caster on both sides, defaulting to what the game would
 choose by itself and overridable from there; then launch and watch the replay.
 
-**▶ INTERVIEWED 2026-08-29 — thirteen decisions, SB-1..SB-13, all the user's. NOT YET BUILT.**
+**▶ INTERVIEWED 2026-08-29 — thirteen decisions, SB-1..SB-13, all the user's. ✅ ALL FOUR
+SLICES SHIPPED THE SAME DAY; see the per-slice notes at the end of this entry.**
 The ask grew in the interview: it is **not dev-only** — *"Player should also be able to plan
 strategies"* — so this ships as a real feature rather than a test harness.
 
