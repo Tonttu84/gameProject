@@ -85,7 +85,14 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-08-29) — START HERE
+### Where the work stands (2026-09-02) — START HERE
+
+**▶▶ THE LIVE FRONT IS CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02, NOT ONE
+LINE BUILT.** Eight decisions (R-1..R-8) and a two-slice plan are in the "CHARTER RECRUITMENT" entry
+at the top of the Deferred design backlog below; **start there, and do not re-derive them.** R1 is
+the campaign half (the charter catalog, the `squad` effect, the set-turn offer beats, schema v45);
+R2 is the lab half and cannot start before R1 exists. Also parked there, deferred on the user's
+call: the spell-targeting design ask (2026-09-02), with its audit. The previous front is closed:
 
 **▶▶ THE SANDBOX / TEST MODE FRONT IS CLOSED — INTERVIEWED AND BUILT 2026-08-29, ALL FOUR
 SLICES SHIPPED AND GREEN ON `main`.** Thirteen decisions (SB-1..SB-13) and the four-slice plan
@@ -7686,6 +7693,65 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 ---
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
+
+**▶ CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02, decisions R-1..R-8, all the
+user's. NOT YET BUILT.** The ask, in the user's words: *"The battle lab needs the ability to pick
+squads. I guess we are going to make the squads not dynamically created so we can just go through
+the squad recruitment process with infinite money and you can set the XP to how much you want. But
+we need to first then do the squad recruitment for campaign."*
+
+**What was true first:** the three charters are fixed rows (`STARTING_SQUADS`) stamped at creation
+and NO route creates one; decision 11 only sketched acquisition ("events arriving on set turns hand
+over an archetype"). "XP" is prestige — the permanent rank behind `SQUAD_RANKS` → upgrade slots and
+the Seasoned banner. The lab has zero squad support BY CONSTRUCTION: `sanitizeEntry` whitelists
+`unit_type/q/r` and the caster fields, so `squad_id`/`squad_mods`/`squad_abilities` never reach the
+engine from the lab. Three precedents decided most of the shape: the draft pattern exists twice
+(`drawUpgradeOffer`, the recruit offer — both through the queueable dice seam, never padded); the
+mission fate already SEALS a drawn set on the pending decision (`pending.missionOffer.picks`,
+checked at answer time); and the deploy route composes a charter into engine fields with
+`statMods`/`squadAbilities`, which the lab can call unchanged.
+
+- **R-1. EVENTS HAND CHARTERS OVER — DECISION 11 STANDS.** No purchase route. The lab replays the
+  RESULT of the process (a charter with a sheet), never the money gate: the money was only ever a
+  gate, and the user's "infinite money" is satisfied by setting the sheet directly (R-7).
+- **R-2. A ROGUELITE DRAFT FROM AN AUTHORED CATALOG** (user: *"roguelite, we offer random and you
+  choose from them"*). `STARTING_SQUADS` becomes `CHARTER_CATALOG`: named rows with archetype,
+  opening composition and prestige, the starting three flagged as the opening set. An offer draws
+  random rows and the player picks one — the draft pattern a third time, same dice seam. **Rarity /
+  tiers DEFERRED** (user: *"we might tier the choices or even do some common rare thing"*): a
+  later weight on the draw, and rows are config, so it is not a schema change.
+- **R-3. IT ARRIVES WITH ITS ROW'S OPENING COMPOSITION.** The veteran pikemen come as pikemen —
+  that is what makes a draft a real choice. Free bodies via a fate is already the house norm (the
+  relief column grants +30 Soldiers). Scarcity lives in offer timing (R-5), not in an empty charter.
+- **R-4. PRESTIGE IS PER-ROW, DEFAULT 0.** Most rows arrive Untested; a row may arrive Blooded and
+  so with a slot already open — the obvious lever for rarity when it is wanted, with no new
+  mechanism. The lab ignores the row's number (R-7).
+- **R-5. OFFERS FIRE ON GUARANTEED SET-TURN BEATS**, seeded on `scheduledEvents` at creation
+  exactly like the siege spine (v23). No charter cap: three starting rows plus the beats IS the
+  count.
+- **R-6. MUST PICK ONE.** A choice event with one option per drawn row and no "none" — the recruit
+  phase's own rule (v27: "the hire is the only exit"). The drawn ids are SEALED on the pending
+  decision (the mission precedent) so a reload cannot reroll them; the answer route accepts only a
+  sealed pick.
+- **R-7. THE LAB SETS EVERYTHING DIRECTLY** (SB-5 extended to squads): any catalog charter, any
+  prestige, composition within the archetype's caps (the caps are what make it that archetype, and
+  the hex budget holds no more), any upgrades regardless of slots, any banner item, any attached
+  lab caster. `squad_mods`/`squad_abilities` are composed server-side by the deploy route's own
+  `statMods`/`squadAbilities`, so the engine sees exactly what a campaign squad with that sheet
+  sends. Rejected: replaying the five campaign routes against a bottomless pool (the draft's
+  randomness fights "I want THIS upgrade to test it").
+- **R-8. TWO SLICES, CAMPAIGN FIRST.**
+  - **R1 — charter recruitment.** `CHARTER_CATALOG`; a `squad` effect type in applyEffect /
+    describeEffect / eventValence AND the balance sheet (the UNPRICED tripwire must see it); the
+    set-turn beats; the offer as a choice event carrying its drawn ids on the pending
+    (`charterOffer.picks`, schema **v45**); tests incl. a catalog sweep (every row's archetype
+    exists, compositions respect caps, ids unique). Numbers (which turns, draw size — reuse the
+    upgrade draw count) balance-deferred.
+  - **R2 — squads in the lab.** Squad fields enter the sanitizer whitelist composed SERVER-SIDE
+    from a lab squad sheet (never trusted from the body); a squad palette and sheet in
+    `SandboxScreen`; tests. Known constraint: exactly ONE banner item exists today
+    (`banner_unbroken_line`), so the banner picker is a one-entry list until content grows.
+
 
 **TODO — HOW SPELLS GENERALLY WORK AND TARGET (user, 2026-09-02 — DEFERRED on the user's call,
 recorded, NOT interviewed, do not build).** The ask: *"plan first how spells should generally work
