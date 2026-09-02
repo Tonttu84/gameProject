@@ -8,7 +8,8 @@ import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { fortifiedSidesFor } from '../services/fortification.js'
-import { EVENT_POOL } from '../services/events.js'
+import { CHARTER_BEATS, EVENT_POOL } from '../services/events.js'
+import { findCharter } from '../services/charters.js'
 import { RECRUIT_POOL } from '../services/recruit.js'
 import {
   FREE_MILITIA_AMOUNT,
@@ -22,6 +23,8 @@ import {
   SQUAD_RANKS,
   SQUAD_UPGRADE_POOL,
   SQUAD_ARCHETYPES,
+  CHARTER_CATALOG,
+  CHARTER_DRAW,
   ITEM_CATALOG,
 } from '../utils/campaignConfig.js'
 
@@ -146,9 +149,19 @@ const expectNoHiddenInfo = (body) => {
       // nothing hidden: the charters are the player's OWN, named with their own
       // rank, and the locked slot's blocker is a fact about their own army. It
       // is null on every fate that is not a mission, which is most of them.
-      expect(Object.keys(p).sort()).toEqual(['description', 'missionOffer', 'options', 'slot', 'title'])
+      // `charterOffer` (R1, "CHARTER RECRUITMENT") is the same kind of
+      // deliberate widening as `missionOffer`, and discloses nothing hidden
+      // either: a charter card is CONFIG — an authored CHARTER_CATALOG row —
+      // gated by nothing and revealed by no recon band, and the composition is
+      // exactly what the player is being asked to choose between (R-3). A
+      // draft that named three companies and withheld what each brings would
+      // be three coin-flips wearing a card. Null on every non-charter fate.
+      expect(Object.keys(p).sort()).toEqual(['charterOffer', 'description', 'missionOffer', 'options', 'slot', 'title'])
       for (const pick of p.missionOffer?.picks ?? [])
         expect(Object.keys(pick).sort()).toEqual(['id', 'name', 'rank'])
+      for (const pick of p.charterOffer?.picks ?? [])
+        expect(Object.keys(pick).sort())
+          .toEqual(['archetype', 'blurb', 'composition', 'id', 'name', 'prestige', 'rank'])
       if (p.missionOffer?.locked)
         expect(Object.keys(p.missionOffer.locked).sort()).toEqual(['blocker', 'id', 'name'])
       for (const o of p.options) expect(Object.keys(o).sort()).toEqual(OPTION_KEYS)
@@ -2831,6 +2844,175 @@ describe('missions', () => {
   })
 })
 
+// Charter recruitment (docs/CAMPAIGN_PLAN.md "CHARTER RECRUITMENT + SQUADS IN
+// THE LAB", R1) through the real routes: the beat fires, the fate deals a hand
+// of companies, the pick is checked against the hand THIS decision sealed, and
+// the company that takes service lands on the rolls with its bodies in the
+// roster. The pure layer — the catalog sweep, the draft and enrolment — is
+// charters.test.js.
+describe('charter recruitment (R1)', () => {
+  const BEAT = EVENT_POOL.find((e) => e.id === 'charter_comes_forward_1')
+  const choose = (id, slot, body) =>
+    auth(api.post(`/api/campaigns/${id}/choices/${slot}`)).send(body)
+
+  // Fire the charter beat into every slot and end the turn, so slot 0 owes a
+  // charter decision — the mission tests' technique exactly.
+  const pendCharter = async () => {
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, BEAT)
+    const res = await endTurn(c.id)
+    return { id: c.id, res }
+  }
+  const offerOf = (res) => res.body.campaign.pendingChoices[0].charterOffer
+
+  test('the fate deals a hand of companies, each card whole', async () => {
+    // R-3: the composition IS the choice, so a card that named a company and
+    // withheld what it brings would be a coin-flip wearing a card.
+    const { res } = await pendCharter()
+    const offer = offerOf(res)
+    expect(offer.picks).toHaveLength(CHARTER_DRAW)
+    for (const pick of offer.picks) {
+      expect(Object.keys(pick).sort())
+        .toEqual(['archetype', 'blurb', 'composition', 'id', 'name', 'prestige', 'rank'])
+      expect(findCharter(pick.id).opening).toBeFalsy()
+      expect(Object.keys(pick.composition).length).toBeGreaterThan(0)
+    }
+    // Never a company already on the rolls: the opening three are held.
+    const held = new Set(CHARTER_CATALOG.filter((r) => r.opening).map((r) => r.id))
+    for (const pick of offer.picks) expect(held.has(pick.id)).toBe(false)
+    expectNoHiddenInfo(res.body)
+  })
+
+  test('the offer is SEALED: reading the view again never reshuffles it', async () => {
+    // The upgrade-draft lesson for the third time. A redrawn hand is a reroll
+    // the player gets free by refreshing until they like it.
+    const { id } = await pendCharter()
+    const first = (await getView(id)).pendingChoices[0].charterOffer
+    for (let i = 0; i < 5; i++) {
+      const again = (await getView(id)).pendingChoices[0].charterOffer
+      expect(again.picks.map((p) => p.id)).toEqual(first.picks.map((p) => p.id))
+    }
+  })
+
+  test('a company the fate did not offer is refused', async () => {
+    const { id, res } = await pendCharter()
+    const offered = offerOf(res).picks.map((p) => p.id)
+    const notOffered = CHARTER_CATALOG.find((r) => !r.opening && !offered.includes(r.id)).id
+    const out = await choose(id, 0, { choice: 'take_charter', charterId: notOffered })
+    expect(out.status).toBe(400)
+    expect(out.body.error).toMatch(/companies this fate offered/)
+  })
+
+  test('a charter branch naming nobody is refused', async () => {
+    const { id } = await pendCharter()
+    const out = await choose(id, 0, { choice: 'take_charter' })
+    expect(out.status).toBe(400)
+  })
+
+  test('taking a company puts it on the rolls, its bodies in the roster, and says so', async () => {
+    const { id, res } = await pendCharter()
+    const before = await getView(id)
+    const [pick] = offerOf(res).picks
+    const out = await choose(id, 0, { choice: 'take_charter', charterId: pick.id })
+    expect(out.status).toBe(200)
+
+    const after = out.body.campaign
+    expect(after.squads).toHaveLength(before.squads.length + 1)
+    const squad = after.squads.at(-1)
+    expect(squad.name).toBe(pick.name)
+    expect(squad.composition).toEqual(pick.composition)
+    expect(squad.prestige).toBe(pick.prestige)
+    // A squad's composition is always a subset of the roster (R-3): the bodies
+    // arrive, or the company is men who do not eat and cannot take the field.
+    for (const [type, n] of Object.entries(pick.composition))
+      expect(after.roster[type] ?? 0).toBe((before.roster[type] ?? 0) + n)
+    // The decision is spent, and the log names the company.
+    expect(after.pendingChoices.some((p) => p.slot === 0)).toBe(false)
+    const today = after.log.at(-1)
+    expect(today.entries.join(' ')).toMatch(new RegExp(pick.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    expect(today.entries.join(' ')).toMatch(/takes service under your banner/)
+    expectNoHiddenInfo(out.body)
+  })
+
+  test('answering the same fate twice is a 404 — the decision is gone', async () => {
+    const { id, res } = await pendCharter()
+    const [pick] = offerOf(res).picks
+    await choose(id, 0, { choice: 'take_charter', charterId: pick.id })
+    const again = await choose(id, 0, { choice: 'take_charter', charterId: pick.id })
+    expect(again.status).toBe(404)
+  })
+
+  test('a company already on the rolls cannot be taken twice', async () => {
+    // Every slot was pinned to the same beat, so slot 1's hand was drawn before
+    // slot 0 was answered and may still name the company just enrolled.
+    const { id, res } = await pendCharter()
+    const [pick] = offerOf(res).picks
+    await choose(id, 0, { choice: 'take_charter', charterId: pick.id })
+    const view = await getView(id)
+    const later = view.pendingChoices.find((p) => p.charterOffer?.picks.some((c) => c.id === pick.id))
+    if (!later) return // the other hands did not deal it; nothing to prove here
+    const out = await choose(id, later.slot, { choice: 'take_charter', charterId: pick.id })
+    expect(out.status).toBe(400)
+    expect(out.body.error).toMatch(/already on your rolls/)
+  })
+
+  test('a DEFERRED charter decision enrols its company at end-day, not before', async () => {
+    // The pick rides on the augury slot (chosenCharterId) because the fate has
+    // not come to pass yet — a counter-raid may still unmake it.
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, BEAT)
+    const before = (await getView(c.id)).squads.length
+
+    // Mark slot 0 deferred by hand: acceptFates defers a slot a live
+    // counter_event raid targets, and the raid board is not what is under test.
+    const doc = await Campaign.findById(c.id)
+    doc.day = 3
+    doc.augury.accepted = true
+    doc.augury.slots[0].firedRungName = 'blind'
+    doc.pendingChoices = [{
+      slot: 0, eventId: BEAT.id, rung: 'blind', day: doc.day, deferred: true,
+      charterOffer: { picks: [CHARTER_CATALOG.find((r) => !r.opening).id] },
+    }]
+    await doc.save()
+
+    const pickId = CHARTER_CATALOG.find((r) => !r.opening).id
+    const out = await choose(c.id, 0, { choice: 'take_charter', charterId: pickId })
+    expect(out.status).toBe(200)
+    // Nothing yet: the fate comes to pass at nightfall.
+    expect(out.body.campaign.squads).toHaveLength(before)
+    const held = await Campaign.findById(c.id)
+    expect(held.augury.slots[0].chosenCharterId).toBe(pickId)
+
+    const end = await endTurn(c.id)
+    expect(end.status).toBe(200)
+    const after = end.body.campaign.squads
+    expect(after).toHaveLength(before + 1)
+    expect(after.at(-1).name).toBe(findCharter(pickId).name)
+  })
+
+  test('an exhausted catalog answers the fate and enrols nobody, rather than deadlocking', async () => {
+    // R-6 makes the branch the only exit, so a hand that came back empty must
+    // still be answerable. Unreachable in a fresh campaign (the catalog sweep
+    // guarantees more rows than the seeded beats can spend) — but a gate that
+    // can deadlock must not lean on that.
+    const { body: c } = await createCampaign()
+    await pinAugury(c.id, BEAT)
+    const doc = await Campaign.findById(c.id)
+    doc.day = 3
+    doc.pendingChoices = [{
+      slot: 0, eventId: BEAT.id, rung: 'blind', day: doc.day, deferred: false,
+      charterOffer: { picks: [] },
+    }]
+    await doc.save()
+    const before = (await getView(c.id)).squads.length
+
+    const out = await choose(c.id, 0, { choice: 'take_charter' })
+    expect(out.status).toBe(200)
+    expect(out.body.campaign.squads).toHaveLength(before)
+    expect(out.body.campaign.log.at(-1).entries.join(' ')).toMatch(/No company came forward/)
+  })
+})
+
 describe('events with choices', () => {
   const REFUGEES = EVENT_POOL.find((e) => e.id === 'refugees')
   const BAGGAGE_PLAGUE = EVENT_POOL.find((e) => e.id === 'baggage_plague')
@@ -3084,7 +3266,10 @@ describe('siege spine (S8): scripted guaranteed beats', () => {
     await doc.save()
   }
 
-  test('a fresh campaign is seeded with the three siege beats', async () => {
+  test('a fresh campaign is seeded with the three siege beats AND the three charter beats', async () => {
+    // Two seeded schedules now (R1, R-5): the charter beats ride the same
+    // machinery and are seeded in the same place, on turns that interleave
+    // with the spine's so no day carries two forced beats.
     const { body: c } = await createCampaign()
     const doc = await Campaign.findById(c.id)
     expect(doc.scheduledEvents.map((s) => ({ eventId: s.eventId, day: s.day })))
@@ -3092,6 +3277,7 @@ describe('siege spine (S8): scripted guaranteed beats', () => {
         { eventId: 'siege_lines_close', day: 2 },
         { eventId: 'breach_threatens', day: 5 },
         { eventId: 'wardens_van', day: 8 },
+        ...CHARTER_BEATS.map(({ eventId, day }) => ({ eventId, day })),
       ])
   })
 
@@ -3104,10 +3290,14 @@ describe('siege spine (S8): scripted guaranteed beats', () => {
 
     const next = await Campaign.findById(c.id)
     expect(next.augury.slots.some((s) => s.trueEvent.id === 'siege_lines_close')).toBe(true)
+    // Only the DUE beat drains. The rest keep their seeded order — the two
+    // later spine beats, then the three charter beats, none of them due on
+    // turn 2 (R-5 interleaves them at 3/6/9 precisely so).
     expect(next.scheduledEvents.map((s) => ({ eventId: s.eventId, day: s.day })))
       .toEqual([
         { eventId: 'breach_threatens', day: 5 },
         { eventId: 'wardens_van', day: 8 },
+        ...CHARTER_BEATS.map(({ eventId, day }) => ({ eventId, day })),
       ])
   })
 })

@@ -26,7 +26,8 @@ import {
   missionEffectFor,
 } from './events.js'
 import { drawMissionOffer, onMission, returnMissions } from './missions.js'
-import { missionOfferView } from './campaignView.js'
+import { drawCharterOffer } from './charters.js'
+import { charterOfferView, missionOfferView } from './campaignView.js'
 import { drawAugury, auguryReveal } from './augury.js'
 import { enemyTurn, armyTotal } from './enemyHost.js'
 import { meterFillAmount, meterBand } from './meter.js'
@@ -105,6 +106,12 @@ const pendChoice = (campaign, revealSlot, i, slotDoc, fired, day, deferred) => {
   // player liked them — the same reason the upgrade draft is sealed at newDay.
   const offersMission = fired.choices.some((c) => c.effect?.type === 'mission')
   const missionOffer = offersMission ? drawMissionOffer(campaign) : undefined
+  // A charter fate offers COMPANIES the same way and is sealed the same way
+  // (R1, R-6): the drawn ids ride on the decision, and the answer route
+  // accepts only one of them. Same one draw, same one moment — a second draw
+  // anywhere is a reroll the player did not earn.
+  const offersCharter = fired.choices.some((c) => c.effect?.type === 'squad')
+  const charterOffer = offersCharter ? drawCharterOffer(campaign) : undefined
   campaign.pendingChoices.push({
     slot: i,
     eventId: slotDoc.trueEvent.id,
@@ -112,6 +119,7 @@ const pendChoice = (campaign, revealSlot, i, slotDoc, fired, day, deferred) => {
     day,
     deferred,
     missionOffer,
+    charterOffer,
   })
   // The reveal card needs the offer as much as the choices-only overlay does —
   // the tent is where most players will meet this fate. Resolved through the
@@ -119,6 +127,7 @@ const pendChoice = (campaign, revealSlot, i, slotDoc, fired, day, deferred) => {
   revealSlot.pendingChoice = {
     options: fired.choices.map(optionCard),
     missionOffer: missionOfferView(campaign, missionOffer),
+    charterOffer: charterOfferView(charterOffer),
   }
 }
 
@@ -260,7 +269,16 @@ export async function endDay(campaign) {
           const squad = slot.chosenSquadId != null
             ? campaign.squads.find((sq) => sq.id === slot.chosenSquadId && !onMission(sq))
             : null
-          entries.push(...applyEffect(campaign, option.effect, { squad, eventId: slot.trueEvent?.id }))
+          // The company picked when a deferred CHARTER decision was made (R1).
+          // Same reason as the charter above: the pick was made a turn before
+          // this fate comes to pass, and without it the fate would enrol
+          // nobody. applyEffect re-checks eligibility, so a row taken in the
+          // meantime is inert rather than a duplicate.
+          entries.push(...applyEffect(campaign, option.effect, {
+            squad,
+            charterId: slot.chosenCharterId ?? undefined,
+            eventId: slot.trueEvent?.id,
+          }))
         }
         revealed.push(card)
         return

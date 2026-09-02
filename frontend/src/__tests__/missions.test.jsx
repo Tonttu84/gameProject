@@ -139,7 +139,9 @@ describe('the charter picker (12-1)', () => {
     fireEvent.click(screen.getByTestId('mission-pick-2'))
     fireEvent.click(screen.getByTestId('choice-hold_the_ford'))
     await waitFor(() =>
-      expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'hold_the_ford', 2))
+      // The fifth argument is the COMPANY a charter fate enrols (R1); null on
+      // a mission fate, and on every other fate that asks for no company.
+      expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'hold_the_ford', 2, null))
   })
 
   it('lets the player change their mind before committing', async () => {
@@ -156,7 +158,9 @@ describe('the charter picker (12-1)', () => {
 
     fireEvent.click(screen.getByTestId('choice-hold_the_ford'))
     await waitFor(() =>
-      expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'hold_the_ford', 2))
+      // The fifth argument is the COMPANY a charter fate enrols (R1); null on
+      // a mission fate, and on every other fate that asks for no company.
+      expect(postCampaignChoice).toHaveBeenCalledWith('c1', 0, 'hold_the_ford', 2, null))
   })
 
   it('shows no picker at all on a fate that asks for no charter', async () => {

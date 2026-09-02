@@ -37,6 +37,7 @@ import { bannerTier, describeItem, findItem, squadBanner, storedItems } from './
 import { forgeView, craftedUnitView } from './forge.js'
 import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
+import { findCharter } from './charters.js'
 import { garrisonLevel } from './garrison.js'
 import { chosenSpellsView, isCasterType, pathEntries, researchView } from './magic.js'
 import { displayBracket } from './recon.js'
@@ -66,6 +67,41 @@ export const missionOfferView = (campaign, offer) => {
     locked: locked
       ? { id: locked.id, name: locked.name, blocker: missionBlocker(locked) }
       : null,
+  }
+}
+
+// The companies a charter fate offered, resolved for display (R1,
+// docs/CAMPAIGN_PLAN.md "CHARTER RECRUITMENT", R-3). One resolver for the same
+// reason missionOfferView is one: the offer appears on the tent's reveal card
+// AND on the choices-only overlay, and two of these would disagree the first
+// time the card gained a field.
+//
+// EVERYTHING THE ROW HAS crosses, and that hides nothing. The catalog is
+// config, not hidden state — no gate reads it, no recon band licenses it — and
+// the composition IS the choice (R-3): a draft that showed three names and
+// withheld what each company brings would be three coin-flips wearing a card.
+// Prestige crosses with its rank WORD beside it because that is the vocabulary
+// the squad screen already speaks, and a company arriving Blooded is the one
+// thing on the card that is worth more than it looks (R-4).
+//
+// Read off the SEALED offer, never redrawn: a view that redrew it would hand
+// the player a fresh hand every screen refresh. A row that has left the
+// catalog is dropped rather than blanked, the degrade-safely convention.
+export const charterOfferView = (offer) => {
+  if (!offer) return null
+  return {
+    picks: [...(offer.picks ?? [])]
+      .map(findCharter)
+      .filter(Boolean)
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        archetype: row.archetype,
+        composition: { ...row.composition },
+        prestige: row.prestige ?? 0,
+        rank: squadRank(row.prestige ?? 0),
+        blurb: row.blurb,
+      })),
   }
 }
 
@@ -839,7 +875,7 @@ export async function campaignView(campaign) {
     // only — branch effects, the pool id, and the fired rung stay server-side
     // (looked up again at choose time). An entry whose event has left the
     // pool is dropped, the same degrade-safely convention as elsewhere.
-    pendingChoices: (campaign.pendingChoices ?? []).flatMap(({ slot, eventId, rung, missionOffer }) => {
+    pendingChoices: (campaign.pendingChoices ?? []).flatMap(({ slot, eventId, rung, missionOffer, charterOffer }) => {
       const def = choiceRung(eventId, rung)
       if (!def) return []
       return [{
@@ -854,6 +890,10 @@ export async function campaignView(campaign) {
         // show. Sent from the SEALED offer, never redrawn here — a view that
         // redrew it would hand the player a reroll every screen refresh.
         missionOffer: missionOfferView(campaign, missionOffer),
+        // The companies this fate offered (R1), from the SEALED draw for the
+        // same reason the mission pair is — a redraw at view time is a free
+        // reroll. Null on every fate that is not a charter fate.
+        charterOffer: charterOfferView(charterOffer),
       }]
     }),
     // Scouting: derived at view time (like foodNeedPerTurn), no schema field.

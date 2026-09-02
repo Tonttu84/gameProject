@@ -181,11 +181,12 @@ describe('EventRevealScreen: one card per click', () => {
     await screen.findByTestId('choice-outcome-1')
     expect(screen.getByTestId('reveal-next')).toBeEnabled()
 
-    // The third argument is the CHARTER a mission fate spends (decision 12).
-    // Null here, and on every fate that does not ask for one — which is most of
-    // them; the picker only appears when the server sends an offer.
-    expect(onChoose).toHaveBeenCalledWith(0, 'quarantine', null)
-    expect(onChoose).toHaveBeenCalledWith(1, 'buy_provisions', null)
+    // The third argument is the CHARTER a mission fate spends (decision 12) and
+    // the fourth the COMPANY a charter fate enrols (R1). Null here, and on every
+    // fate that asks for neither — which is most of them; each picker only
+    // appears when the server sends its offer.
+    expect(onChoose).toHaveBeenCalledWith(0, 'quarantine', null, null)
+    expect(onChoose).toHaveBeenCalledWith(1, 'buy_provisions', null, null)
   })
 
   // Every card states what it does (user, 2026-08-10). A branch used to carry
@@ -259,7 +260,7 @@ describe('EventRevealScreen: one card per click', () => {
     fireEvent.click(await screen.findByTestId('choice-mount_veterans'))
     await screen.findByTestId('choice-outcome-2')
     expect(screen.getByTestId('reveal-next')).toBeEnabled()
-    expect(onChoose).toHaveBeenCalledWith(2, 'mount_veterans', null)
+    expect(onChoose).toHaveBeenCalledWith(2, 'mount_veterans', null, null)
   })
 
   it('shows the tutorial intro only when the flag is on', () => {
@@ -270,5 +271,122 @@ describe('EventRevealScreen: one card per click', () => {
     useUiStore.getState().toggleTutorial()
     render(<EventRevealScreen report={fullReport} onContinue={() => {}} />)
     expect(screen.queryByTestId('tutorial-reveal')).not.toBeInTheDocument()
+  })
+})
+
+// The company picker on a charter fate (docs/CAMPAIGN_PLAN.md "CHARTER
+// RECRUITMENT + SQUADS IN THE LAB", R1 — R-2/R-3/R-6). One branch and no
+// "none": the decision is WHICH company, made on these cards, so the branch
+// button waits for one to be picked exactly as the mission branch waits for a
+// charter. Route-side sealing and the answer gate are campaigns.test.js's.
+describe('the charter picker (R1)', () => {
+  const CHARTER_OPTION = {
+    id: 'take_charter',
+    label: 'Take a company into service',
+    description: 'Sign their charter and put them on the rolls.',
+    effectText: ['A company comes forward to take service under your banner — you choose which of those offered'],
+  }
+  const OFFER = {
+    picks: [
+      {
+        id: 'fen_bows', name: 'The Fen Bows', archetype: 'skirmish', rank: 'Untested',
+        prestige: 0, composition: { Archer: 26 }, blurb: 'Wildfowlers off the Marn fen.',
+      },
+      {
+        id: 'broken_lances', name: 'The Broken Lances', archetype: 'vanguard', rank: 'Blooded',
+        prestige: 10, composition: { Cavalry: 4, LightCavalry: 4 }, blurb: 'A great house\'s lances, minus the great house.',
+      },
+    ],
+  }
+  const reportWith = (charterOffer) => ({
+    day: 6,
+    kind: 'fates',
+    augury: [{
+      predicted: { id: 'a', title: 'Foretold' },
+      actual: { id: 'charter_comes_forward_1', title: 'Drums in the Lower Camp' },
+      wasAccurate: true,
+      pendingChoice: { options: [CHARTER_OPTION], charterOffer },
+    }],
+    entries: [],
+  })
+
+  it('deals one card per company, with what each brings', () => {
+    // R-3: the composition IS the choice, so the card states it — a picker
+    // showing names alone would be a coin-flip wearing a card.
+    render(<EventRevealScreen report={reportWith(OFFER)} onChoose={vi.fn()} onContinue={() => {}} />)
+    expect(screen.getByTestId('charter-picker')).toBeInTheDocument()
+
+    const fen = screen.getByTestId('charter-pick-fen_bows')
+    expect(fen).toHaveTextContent('The Fen Bows')
+    expect(fen).toHaveTextContent('skirmish')
+    expect(fen).toHaveTextContent('Untested')
+    expect(fen).toHaveTextContent('26 Archer')
+    expect(fen).toHaveTextContent('Wildfowlers off the Marn fen.')
+
+    const lances = screen.getByTestId('charter-pick-broken_lances')
+    expect(lances).toHaveTextContent('Blooded')
+    expect(lances).toHaveTextContent('4 Cavalry · 4 LightCavalry')
+  })
+
+  it('holds the branch back until a company is picked', () => {
+    // The server refuses a charter pick that names nobody, so an enabled
+    // button here could only buy a 400.
+    render(<EventRevealScreen report={reportWith(OFFER)} onChoose={vi.fn()} onContinue={() => {}} />)
+    expect(screen.getByTestId('choice-take_charter')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('charter-pick-fen_bows'))
+    expect(screen.getByTestId('charter-pick-fen_bows')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('choice-take_charter')).toBeEnabled()
+  })
+
+  it('sends the company the player picked', async () => {
+    const onChoose = vi.fn(async () => ({ slot: 0, label: 'Take a company into service' }))
+    render(<EventRevealScreen report={reportWith(OFFER)} onChoose={onChoose} onContinue={() => {}} />)
+    fireEvent.click(screen.getByTestId('charter-pick-broken_lances'))
+    fireEvent.click(screen.getByTestId('choice-take_charter'))
+    await screen.findByTestId('choice-outcome-0')
+    expect(onChoose).toHaveBeenCalledWith(0, 'take_charter', null, 'broken_lances')
+  })
+
+  it('lets the player change their mind before committing', async () => {
+    const onChoose = vi.fn(async () => ({ slot: 0, label: 'Take a company into service' }))
+    render(<EventRevealScreen report={reportWith(OFFER)} onChoose={onChoose} onContinue={() => {}} />)
+    fireEvent.click(screen.getByTestId('charter-pick-fen_bows'))
+    fireEvent.click(screen.getByTestId('charter-pick-broken_lances'))
+    expect(screen.getByTestId('charter-pick-fen_bows')).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(screen.getByTestId('choice-take_charter'))
+    await screen.findByTestId('choice-outcome-0')
+    expect(onChoose).toHaveBeenCalledWith(0, 'take_charter', null, 'broken_lances')
+  })
+
+  it('shows no picker on a fate that offers no company', () => {
+    // Which is most of them: the picker is driven by the server's offer.
+    render(<EventRevealScreen report={reportWith(null)} onChoose={vi.fn()} onContinue={() => {}} />)
+    expect(screen.queryByTestId('charter-picker')).not.toBeInTheDocument()
+  })
+
+  it('an EMPTY hand leaves the branch answerable rather than stranding the player', () => {
+    // The catalog exhausted (R-6 makes the branch the only exit): the server
+    // accepts it and enrols nobody, so the button must not be held back.
+    render(<EventRevealScreen report={reportWith({ picks: [] })} onChoose={vi.fn()} onContinue={() => {}} />)
+    expect(screen.queryByTestId('charter-picker')).not.toBeInTheDocument()
+    expect(screen.getByTestId('choice-take_charter')).toBeEnabled()
+  })
+
+  it('renders on the choices-only overlay too (a reload while the decision was owed)', () => {
+    render(
+      <EventRevealScreen
+        pendingChoices={[{
+          slot: 1,
+          title: 'Drums in the Lower Camp',
+          description: 'A company sends its captain up to the tent.',
+          options: [CHARTER_OPTION],
+          charterOffer: OFFER,
+        }]}
+        onChoose={vi.fn()}
+        onContinue={() => {}}
+      />,
+    )
+    expect(screen.getByTestId('charter-picker')).toBeInTheDocument()
+    expect(screen.getByTestId('charter-pick-fen_bows')).toBeInTheDocument()
   })
 })

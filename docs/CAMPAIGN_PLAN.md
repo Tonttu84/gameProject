@@ -87,12 +87,15 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-02) — START HERE
 
-**▶▶ THE LIVE FRONT IS CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02, NOT ONE
-LINE BUILT.** Eight decisions (R-1..R-8) and a two-slice plan are in the "CHARTER RECRUITMENT" entry
-at the top of the Deferred design backlog below; **start there, and do not re-derive them.** R1 is
-the campaign half (the charter catalog, the `squad` effect, the set-turn offer beats, schema v45);
-R2 is the lab half and cannot start before R1 exists. Also parked there, deferred on the user's
-call: the spell-targeting design ask (2026-09-02), with its audit. The previous front is closed:
+**▶▶ THE LIVE FRONT IS CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02; R1 SHIPPED
+THE SAME DAY (schema v45), R2 IN PROGRESS.** Eight decisions (R-1..R-8) and a two-slice plan are in
+the "CHARTER RECRUITMENT" entry at the top of the Deferred design backlog below; **start there, and
+do not re-derive them.** R1, the campaign half, is on `main` and green: `CHARTER_CATALOG`, the
+`squad` effect, three set-turn beats (days 3/6/9), the sealed offer on the pending decision and the
+picker at the tent — its "what landed" note is under R-8. R2 is the lab half (squad sheets in the
+Battle Lab, composed server-side); it is being built now and its own note will land under R-8 when
+it ships. Also parked there, deferred on the user's call: the spell-targeting design ask
+(2026-09-02), with its audit. The previous front is closed:
 
 **▶▶ THE SANDBOX / TEST MODE FRONT IS CLOSED — INTERVIEWED AND BUILT 2026-08-29, ALL FOUR
 SLICES SHIPPED AND GREEN ON `main`.** Thirteen decisions (SB-1..SB-13) and the four-slice plan
@@ -7695,7 +7698,7 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
 **▶ CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02, decisions R-1..R-8, all the
-user's. NOT YET BUILT.** The ask, in the user's words: *"The battle lab needs the ability to pick
+user's. R1 ✅ SHIPPED 2026-09-02 (schema v45); R2 in progress.** The ask, in the user's words: *"The battle lab needs the ability to pick
 squads. I guess we are going to make the squads not dynamically created so we can just go through
 the squad recruitment process with infinite money and you can set the XP to how much you want. But
 we need to first then do the squad recruitment for campaign."*
@@ -7747,6 +7750,37 @@ checked at answer time); and the deploy route composes a charter into engine fie
     (`charterOffer.picks`, schema **v45**); tests incl. a catalog sweep (every row's archetype
     exists, compositions respect caps, ids unique). Numbers (which turns, draw size — reuse the
     upgrade draw count) balance-deferred.
+
+    **R1 — what landed (2026-09-02, one commit, green on `main`).** The shape to reuse, and the
+    four implementation calls the interview had not needed to make:
+    - **`CHARTER_CATALOG` (campaignConfig.js): 15 rows, the opening three flagged `opening` and
+      `STARTING_SQUADS` DERIVED from them** (same export name and shape, so its seven importers
+      never noticed). Twelve draftable rows, four per archetype, three arriving Blooded (prestige
+      10); the sweep in `tests/charters.test.js` requires draftable rows ≥ beats × `CHARTER_DRAW`
+      so a fresh campaign can never draw an empty hand — nine would satisfy it but makes the third
+      beat deal the whole remaining pool, hence twelve. `CHARTER_DRAW = SQUAD_UPGRADE_DRAW` (R-8).
+    - **ONE branch per beat, the picker is the choice.** Each of the three `chained` events
+      (`charter_comes_forward_1|2|3`, severity 2, distinct prose) has a single `take_charter`
+      branch with `effect: { type: 'squad' }` and no "none" (R-6). The drawn rows ride on
+      `pendingChoices[].charterOffer.picks` (catalog ids, sealed in `pendChoice` exactly like
+      `missionOffer`), the client sends `{ choice, charterId }`, and the route accepts only a
+      sealed pick that is not already on the rolls. `tests/augury.test.js`'s "every choice event
+      has ≥2 branches" tripwire now allows exactly one for a `squad` branch, and says why.
+    - **`squads[].charterId`** (ids only) exists for ONE reader: `eligibleCharters` excludes rows
+      already held, so a company is never offered twice. Composition, prestige and archetype are
+      COPIED onto the document at enrolment because from that moment they are the company's own.
+      `enrolCharter` (services/charters.js — imports config and the dice only, the missions.js
+      rule) allocates `max(id)+1` and ADDS the bodies to `roster`, since a composition is always a
+      subset of it. The deferred path rides `augury.slots[].chosenCharterId` like `chosenSquadId`.
+    - **The exhausted-catalog edge is unreachable but handled:** an empty sealed hand is still
+      answerable (the branch is the only exit), applies nothing and logs "No company came
+      forward." The frontend keys its `CharterPicker` off describeEffect's phrase "take service
+      under your banner", as the mission picker keys off "charter marches out".
+    - `CHARTER_BEATS` sits beside `SIEGE_SPINE` in events.js and is seeded at creation with it;
+      the balance sheet's `spineDay` spans both so the beats price as door `spine (turn N)`.
+      Numbers balance-deferred as R-8 says. `charterOfferView` sends every field of the row (own
+      info: the catalog is config and the composition IS the choice, R-3); the public-shape test
+      pins the pick keys.
   - **R2 — squads in the lab.** Squad fields enter the sanitizer whitelist composed SERVER-SIDE
     from a lab squad sheet (never trusted from the body); a squad palette and sheet in
     `SandboxScreen`; tests. Known constraint: exactly ONE banner item exists today

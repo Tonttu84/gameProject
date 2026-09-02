@@ -202,18 +202,150 @@ export const STARTING_CHARACTERS = [
   { type: 'Mage' }, { type: 'Mage' }, { type: 'Mage' },
   { type: 'Priest' }, { type: 'Priest' }, { type: 'Priest' },
 ]
-// Persistent starting squads (playtest item 1): a subset of STARTING_ROSTER
-// organized into named, deployable formations so squads are testable from
-// turn 1. Sized to fit one hex (Hex::CAPACITY = 640 size-points; Soldier/
-// Archer are 10, Cavalry/LightCavalry are 20 — see `./game info`). At least
-// one is mixed-type (Vanguard Riders) to exercise that path. `id` is a small
-// int, not an ObjectId — it flows straight into the engine's placement JSON
-// as squad_id. The remainder of STARTING_ROSTER stays loose (unassigned).
-export const STARTING_SQUADS = [
-  { id: 1, name: '1st Cohort',      archetype: 'line',     composition: { Soldier: 40 } },
-  { id: 2, name: 'Skirmishers',     archetype: 'skirmish', composition: { Archer: 30 } },
-  { id: 3, name: 'Vanguard Riders', archetype: 'vanguard', composition: { Cavalry: 6, LightCavalry: 6 } },
+// ── The charter catalog (docs/CAMPAIGN_PLAN.md "CHARTER RECRUITMENT + SQUADS
+// IN THE LAB", R-2/R-3/R-4) ─────────────────────────────────────────────────
+// Every company that can ever stand under your banner, authored as a row. The
+// three the campaign opens with are the rows flagged `opening`; the rest are
+// what the recruitment beats DRAFT from — random rows offered, one taken
+// (R-2's roguelite draft, the same shape as the upgrade draft and the recruit
+// offer, through the same dice seam).
+//
+// A ROW IS CONFIG, NEVER A DOCUMENT. A squad stores `charterId` and nothing
+// else from here — the same convention as `archetype` and `upgrades` — so a
+// rewritten blurb or a retuned composition reaches campaigns already in
+// flight, and adding a row is not a schema change. That is also why RARITY IS
+// DEFERRED (R-2): a tier is a weight on the draw over these same rows, and it
+// can arrive without touching a document.
+//
+// IT ARRIVES WITH ITS COMPOSITION (R-3). The veteran pikemen come as pikemen —
+// a draft where every pick is an empty charter is not a choice, it is three
+// synonyms. Free bodies through a fate is already the house norm (the relief
+// column hands over +30 Soldiers), and the bodies join `roster` exactly as
+// that fate's do; scarcity lives in how RARELY an offer comes (R-5), never in
+// an empty company.
+//
+// PRESTIGE IS PER ROW, DEFAULT 0 (R-4). Most companies arrive Untested. A few
+// arrive Blooded — the first SQUAD_RANKS rung, so they come with an upgrade
+// slot already open — which is the whole lever rarity needs, with no new
+// mechanism behind it. Every number here is BALANCE-DEFERRED: how many rows,
+// how many arrive blooded and how big each opens are the balancing pass's
+// business, not this file's.
+//
+// COMPOSITIONS ARE FENCED BY THE ARCHETYPE'S CAPS, not by taste. A row may
+// only name types the archetype permits (the keys of its `caps`) and may not
+// exceed one — the caps are what MAKE it that archetype, and a row over them
+// would hand out a charter its own reinforcement rules would refuse to refill.
+// charters.test.js sweeps every row against SQUAD_ARCHETYPES for exactly this.
+export const CHARTER_CATALOG = [
+  // ── the opening three (playtest item 1) ── A subset of STARTING_ROSTER
+  // organized into named, deployable formations so squads are testable from
+  // turn 1. Sized to fit one hex (Hex::CAPACITY = 640 size-points; Soldier/
+  // Archer are 10, Cavalry/LightCavalry are 20 — see `./game info`). At least
+  // one is mixed-type (Vanguard Riders) to exercise that path. The remainder
+  // of STARTING_ROSTER stays loose (unassigned).
+  {
+    id: 'first_cohort', name: '1st Cohort', archetype: 'line',
+    composition: { Soldier: 40 }, prestige: 0, opening: true,
+    blurb: 'Forty spears of your own muster, drilled to stand where they are put and not much else yet.',
+  },
+  {
+    id: 'skirmishers', name: 'Skirmishers', archetype: 'skirmish',
+    composition: { Archer: 30 }, prestige: 0, opening: true,
+    blurb: 'Thirty bows with no shield among them — they shoot from the flank and go elsewhere when answered.',
+  },
+  {
+    id: 'vanguard_riders', name: 'Vanguard Riders', archetype: 'vanguard',
+    composition: { Cavalry: 6, LightCavalry: 6 }, prestige: 0, opening: true,
+    blurb: 'Six lances and six scouts riding together: the heavy horse breaks, the light horse finds what to break.',
+  },
+
+  // ── line ── The big, ordinary archetype, so the rows differ by what they
+  // have DONE rather than by what they carry.
+  {
+    id: 'marching_fifth', name: 'The Marching Fifth', archetype: 'line',
+    composition: { Soldier: 36 }, prestige: 0,
+    blurb: 'Five years escorting the Warden\'s wagons and not one battle among them: thirty-six whole, unblooded men who are extremely tired of walking.',
+  },
+  {
+    id: 'hedgerow_company', name: 'Hedgerow Company', archetype: 'line',
+    composition: { Soldier: 24, Pikeman: 10 }, prestige: 0,
+    blurb: 'Ten long pikes fronting a wall of shields. Nothing mounted charges them twice, and they know it well enough to say so.',
+  },
+  {
+    id: 'ashmoor_remnant', name: 'Remnant of Ashmoor', archetype: 'line',
+    composition: { Soldier: 30, Pikeman: 6 }, prestige: 10,
+    blurb: 'What walked out of Ashmoor when the gate came down. Blooded already, and they would very much rather be outside the next siege than in it.',
+  },
+  {
+    id: 'quarryhands', name: 'The Quarryhands', archetype: 'line',
+    composition: { Soldier: 40 }, prestige: 0,
+    blurb: 'Stone-cutters sworn in a body, forty strong and full-sized from the first day. Drill is another matter entirely.',
+  },
+
+  // ── skirmish ── Missile foot, and the Militia half of the caps is where the
+  // character lives: who is carrying a billhook instead of a bow, and why.
+  {
+    id: 'fen_bows', name: 'The Fen Bows', archetype: 'skirmish',
+    composition: { Archer: 26 }, prestige: 0,
+    blurb: 'Wildfowlers off the Marn fen. They shoot standing, kneeling and lying flat in water, and they will not stand to be shot at.',
+  },
+  {
+    id: 'tollgate_company', name: 'Tollgate Company', archetype: 'skirmish',
+    composition: { Archer: 18, Militia: 10 }, prestige: 0,
+    blurb: 'Kept a toll road honest for a decade on their own account. Ten of them carry billhooks rather than bows and firm opinions about who goes first.',
+  },
+  {
+    id: 'grey_warren_men', name: 'Grey Warren Men', archetype: 'skirmish',
+    composition: { Archer: 22, Militia: 6 }, prestige: 10,
+    blurb: 'Poachers, mostly. The Warden hanged two and hired the rest, and they arrive blooded in a dozen ambushes nobody wrote down.',
+  },
+  {
+    id: 'ninepenny_levy', name: 'The Ninepenny Levy', archetype: 'skirmish',
+    composition: { Archer: 14, Militia: 10 }, prestige: 0,
+    blurb: 'A market town\'s own, paid ninepence a week and worth about that — until the day somebody puts a torch to the market.',
+  },
+
+  // ── vanguard ── Small and slow to refill by design (intake 2), so a row here
+  // is a lasting decision about how the horse is shaped, not a stopgap.
+  {
+    id: 'longshadow_troop', name: 'The Longshadow Troop', archetype: 'vanguard',
+    composition: { LightCavalry: 6 }, prestige: 0,
+    blurb: 'Six light horse who have scouted for three armies and outlived two of them. Fast, thin, and no use whatever in a shieldwall.',
+  },
+  {
+    id: 'broken_lances', name: 'The Broken Lances', archetype: 'vanguard',
+    composition: { Cavalry: 4, LightCavalry: 4 }, prestige: 10,
+    blurb: 'A great house\'s lances, minus the great house. Eight riders in good harness, blooded, with nobody left alive to pay them.',
+  },
+  {
+    id: 'marn_couriers', name: 'Marn Courier Horse', archetype: 'vanguard',
+    composition: { Cavalry: 2, LightCavalry: 6 }, prestige: 0,
+    blurb: 'Dispatch riders turned raiders. They know every ford between here and the enemy\'s camp, which is worth rather more than their sabres are.',
+  },
+  {
+    id: 'winter_company', name: 'The Winter Company', archetype: 'vanguard',
+    composition: { Cavalry: 6, LightCavalry: 4 }, prestige: 0,
+    blurb: 'Ten horse who rode out a winter siege and will tell you about it at length. The heaviest company on offer, and the slowest to make good.',
+  },
 ]
+
+// Persistent starting squads (playtest item 1), DERIVED from the catalog's
+// `opening` rows rather than authored twice — the opening three are charters
+// like any other, and a second literal here would be the first thing to drift
+// when a name or a composition changed. `id` is a small campaign-scoped int,
+// not an ObjectId, since it flows straight into the engine's placement JSON as
+// squad_id; ids 1..3 in catalog order, so a fresh campaign is reproducible.
+// `charterId` is carried for the same reason every other squad carries one: it
+// is what keeps a later draft from offering you a company you already have.
+export const STARTING_SQUADS = CHARTER_CATALOG
+  .filter((row) => row.opening)
+  .map((row, i) => ({
+    id: i + 1,
+    name: row.name,
+    archetype: row.archetype,
+    composition: { ...row.composition },
+    charterId: row.id,
+  }))
 
 // ── Squad archetypes (docs/CAMPAIGN_PLAN.md "NEXT UP — THE SQUAD OVERHAUL",
 // decisions 2-4) ─────────────────────────────────────────────────────────────
@@ -832,6 +964,14 @@ export const GARRISON_BANNER_RESOLVE = 75
 // Rows offered at each pick; the player keeps ONE, permanently. Fewer are
 // offered when fewer remain eligible — the draw never pads itself.
 export const SQUAD_UPGRADE_DRAW = 3
+
+// Companies offered by a charter beat (R-8): the SAME number as an upgrade
+// pick, deliberately reused rather than given a figure of its own. The two
+// drafts are the same gesture — three cards, keep one, no padding — and one
+// constant is one place to retune them. BALANCE-DEFERRED: whether a charter
+// draft should be wider or narrower than an upgrade draft is a question for
+// the balancing pass, and the day it has an answer this stops being an alias.
+export const CHARTER_DRAW = SQUAD_UPGRADE_DRAW
 
 // The catalog. `archetypes` is the eligibility fence (the shared-pool-gated-by-
 // archetype half of decision 8); a row naming several is shared, a row naming

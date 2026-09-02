@@ -622,7 +622,16 @@ describe('EVENT_POOL: events with choices', () => {
   test('every option is a complete card: unique id, phrase-only label/description, an effect', () => {
     for (const e of choiceEvents)
       for (const choices of allChoiceSets(e)) {
-        expect(choices.length).toBeGreaterThanOrEqual(2)
+        // Two branches is the rule and a SINGLE branch is the one exception,
+        // declared here rather than left to look like an authoring slip: a
+        // charter beat has exactly one option and no "none" (R-6, "must pick
+        // one" — the recruit phase's own rule, where the hire is the only
+        // exit). The decision that fate poses is WHICH company, made on the
+        // offer cards the pending seals, so a second branch would be a card
+        // reading "refuse free men".
+        expect(choices.length).toBeGreaterThanOrEqual(
+          e.choices?.some((c) => c.effect?.type === 'squad') ? 1 : 2,
+        )
         expect(new Set(choices.map((c) => c.id)).size).toBe(choices.length)
         for (const c of choices) {
           expect(c.id).toBeTruthy()

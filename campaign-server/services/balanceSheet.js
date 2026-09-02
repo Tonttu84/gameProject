@@ -1,8 +1,10 @@
 import {
+  CHARTER_BEATS,
   EVENT_POOL,
   GARRISON_SORTIE_EVENTS,
   SIEGE_SPINE,
 } from './events.js'
+import { CHARTER_CATALOG, CHARTER_DRAW } from '../utils/campaignConfig.js'
 import { findItem, describeItem } from './items.js'
 import { forgeRows, forgePathsText, craftedUnitRows } from './forge.js'
 import { constructionRows, constructionEffectsText } from './constructions.js'
@@ -144,6 +146,24 @@ const addInto = (acc, effect) => {
       acc.notes.push(`mission: ${effect.turns} turns away, +${effect.prestige} prestige`)
       break
     }
+    case 'squad': {
+      // A charter (R1). A NOTE, like an item and a mission, and for the same
+      // reason: what it hands over is a whole company — bodies, an archetype,
+      // sometimes a rank — and no one of those is the number. Nor is there a
+      // single composition to price, because the fate offers a DRAFT and the
+      // player picks: the sheet's honest statement is how wide the draft is
+      // and how many rows it can reach, and the compositions themselves are
+      // read off CHARTER_CATALOG where they are authored.
+      //
+      // The eligible count is the FRESH-CAMPAIGN one (every non-opening row),
+      // which is the widest the draw can ever be — it only narrows as
+      // companies are taken, and the sheet prices content, not a save.
+      const eligible = CHARTER_CATALOG.filter((row) => !row.opening).length
+      acc.notes.push(
+        `charter: draft of ${CHARTER_DRAW} from ${eligible} catalog rows, arrives with its composition`,
+      )
+      break
+    }
     case 'multi':
       for (const sub of effect.effects ?? []) addInto(acc, sub)
       break
@@ -168,7 +188,13 @@ export const priceEffect = (effect) => addInto(zeroed(), effect)
 // Three doors, and they have completely different frequencies: the random
 // draw (which is what the per-turn EV below is about), the schedule queue
 // (guaranteed, once), and the siege spine (guaranteed, on a named turn).
-const spineDay = new Map(SIEGE_SPINE.map(({ eventId, day }) => [eventId, day]))
+// Both seeded-at-creation schedules, one map: a charter beat reaches the
+// player exactly as a spine beat does — guaranteed, once, on a named turn —
+// so the sheet must say "turn 3" rather than filing it under `chain` as
+// "scheduled only", which is what its `chained: true` would otherwise buy it.
+const spineDay = new Map(
+  [...SIEGE_SPINE, ...CHARTER_BEATS].map(({ eventId, day }) => [eventId, day]),
+)
 
 const gateText = (requires) => {
   if (!requires) return null

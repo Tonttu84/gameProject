@@ -5,7 +5,7 @@ import { userExtractor } from '../middleware/auth.js'
 import { campaignView } from '../services/campaignView.js'
 import { runAndPersistBattle } from '../services/battleRunner.js'
 import { endDay, acceptFates, checkAnnihilation } from '../services/dayResolution.js'
-import { applyEffect, choiceRung, SIEGE_SPINE } from '../services/events.js'
+import { applyEffect, choiceRung, CHARTER_BEATS, SIEGE_SPINE } from '../services/events.js'
 import { drawAugury, consultAugury, rerollAugurySlot } from '../services/augury.js'
 import {
   canAfford,
@@ -227,7 +227,11 @@ router.post('/', async (req, res) => {
     // day's augury by drawAugury's schedule drain (turns 2/5/8). Seeded here so
     // they ride the same `chained`/scheduledEvents machinery as an event chain,
     // but guaranteed from the campaign's first turn rather than a player choice.
-    scheduledEvents: SIEGE_SPINE.map((s) => ({ ...s })),
+    // ...and beside it the charter beats (R1, docs/CAMPAIGN_PLAN.md "CHARTER
+    // RECRUITMENT", R-5): an event is the ONLY way a company is acquired, so
+    // the acquisitions are seeded here too — guaranteed, on named turns
+    // interleaved with the spine's so no day carries two forced beats.
+    scheduledEvents: [...SIEGE_SPINE, ...CHARTER_BEATS].map((s) => ({ ...s })),
     // Day-1 raid board: one base target (+ any counters), plus the scouting
     // slice of the day-1 pool. end-day redeals both each new turn.
     raid: {
@@ -1733,6 +1737,9 @@ router.post('/:id/choices/:slot', async (req, res) => {
   // sealed decision. Re-checked for availability too, because the offer was
   // drawn before the player answered and a charter can leave in between.
   const ctx = { eventId: pending.eventId }
+  // Set only on the exhausted-catalog edge below, so the log can say what
+  // happened rather than reporting a silent nothing.
+  let noCompanyCameForward = false
   if (option.effect?.type === 'mission') {
     const offered = [...(pending.missionOffer?.picks ?? [])]
     const squadId = Number(req.body?.squadId)
@@ -1742,6 +1749,31 @@ router.post('/:id/choices/:slot', async (req, res) => {
     if (!squad) return res.status(404).json({ error: 'no such squad' })
     if (onMission(squad)) return res.status(400).json({ error: 'that charter is already away' })
     ctx.squad = squad
+  }
+
+  // A charter branch needs its company (R-6). Same discipline as the mission
+  // above and for the same reasons: the pick must be one of the ids THIS
+  // decision sealed, never any row the client cares to name, and it is
+  // re-checked against the rolls because the offer was drawn before the player
+  // answered and a company can arrive in between.
+  if (option.effect?.type === 'squad') {
+    const offered = [...(pending.charterOffer?.picks ?? [])]
+    // The catalog exhausted: every row is already on the rolls, so the sealed
+    // offer is empty and there is nothing to pick. The branch is still the
+    // only exit (R-6), so it is ACCEPTED and applies nothing rather than
+    // stranding the campaign behind a gate it cannot pass. Unreachable in a
+    // fresh campaign — the catalog sweep guarantees more rows than the seeded
+    // beats can spend — but a route that can deadlock must not rely on that.
+    if (offered.length === 0) {
+      noCompanyCameForward = true
+    } else {
+      const charterId = String(req.body?.charterId ?? '')
+      if (!offered.includes(charterId))
+        return res.status(400).json({ error: 'choose one of the companies this fate offered' })
+      if ((campaign.squads ?? []).some((sq) => sq.charterId === charterId))
+        return res.status(400).json({ error: 'that company is already on your rolls' })
+      ctx.charterId = charterId
+    }
   }
 
   // A deferred pending (its slot is counter-raid-targeted): record the pick
@@ -1755,6 +1787,10 @@ router.post('/:id/choices/:slot', async (req, res) => {
       // charter cannot already be gone. The mission begins when the FATE does,
       // at end-day, and the pick rides on the slot until then.
       if (ctx.squad) slotDoc.chosenSquadId = ctx.squad.id
+      // The company rides on the slot for exactly the same reason (R1): a
+      // deferred fate has not come to pass, so nobody has taken service yet,
+      // and the pick has to survive until end-day or the fate enrols nobody.
+      if (ctx.charterId) slotDoc.chosenCharterId = ctx.charterId
     }
     campaign.pendingChoices.splice(idx, 1)
     campaign.log.push({
@@ -1769,6 +1805,7 @@ router.post('/:id/choices/:slot', async (req, res) => {
   }
 
   const entries = [`${def.title}: you chose "${option.label}".`]
+  if (noCompanyCameForward) entries.push('No company came forward.')
   entries.push(...applyEffect(campaign, option.effect, ctx))
   campaign.pendingChoices.splice(idx, 1)
   entries.push(...checkAnnihilation(campaign))

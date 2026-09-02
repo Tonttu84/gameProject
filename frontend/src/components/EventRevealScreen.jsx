@@ -72,16 +72,65 @@ const MissionPicker = ({ offer, chosen, onChoose, busy }) => (
   </div>
 )
 
-const ChoiceOptions = ({ slot, options, onPick, busy, missionOffer }) => {
+// The companies a charter fate offers (docs/CAMPAIGN_PLAN.md "CHARTER
+// RECRUITMENT", R-2/R-3/R-6). A DRAFT of three rows, and picking the option
+// means picking the company — one decision, one click, exactly as the mission
+// picker works.
+//
+// Each card carries everything the server sent, because the COMPOSITION IS THE
+// CHOICE (R-3): a draft that named three companies and withheld what each
+// brings would be three coin-flips wearing a card. The rank word rides along
+// because a company arriving Blooded comes with an upgrade slot already open
+// (R-4) — the one thing on the card worth more than it looks.
+//
+// No locked row, unlike the mission picker: a company that was not drawn is
+// simply one the drums did not reach, so there is nobody to name.
+const CharterPicker = ({ offer, chosen, onChoose, busy }) => (
+  <div className="charter-picker" data-testid="charter-picker">
+    <span className="charter-picker-label">Which company takes service?</span>
+    {offer.picks.map((row) => (
+      <button
+        key={row.id}
+        className={`charter-pick${chosen === row.id ? ' is-chosen' : ''}`}
+        data-testid={`charter-pick-${row.id}`}
+        aria-pressed={chosen === row.id}
+        disabled={busy}
+        onClick={() => onChoose(row.id)}
+      >
+        <strong>{row.name}</strong>
+        <span>{row.archetype} · {row.rank}</span>
+        <span className="charter-pick-bodies">{composition(row.composition)}</span>
+        <span>{row.blurb}</span>
+      </button>
+    ))}
+  </div>
+)
+
+// What the company brings, in the roster's own words: "40 Soldier",
+// "6 Cavalry · 6 LightCavalry". Not a total — which types is half of what
+// makes one company different from another.
+const composition = (bag) =>
+  Object.entries(bag ?? {})
+    .map(([type, n]) => `${n} ${type}`)
+    .join(' · ')
+
+const ChoiceOptions = ({ slot, options, onPick, busy, missionOffer, charterOffer }) => {
   // Which charter the player has picked for THIS card, before they commit by
   // clicking the option. Local: nothing is owed to the server until the option
   // is taken, and the sealed offer is what the server checks against anyway.
   const [squadId, setSquadId] = useState(null)
+  // The same, for the company a charter branch enrols.
+  const [charterId, setCharterId] = useState(null)
   const missionOption = options.find((o) => o.effectText?.length && isMissionOption(o))
+  const charterOption = options.find((o) => o.effectText?.length && isCharterOption(o))
+  const hasCharters = (charterOffer?.picks?.length ?? 0) > 0
   return (
     <>
       {missionOffer && missionOffer.picks.length > 0 && (
         <MissionPicker offer={missionOffer} chosen={squadId} onChoose={setSquadId} busy={busy} />
+      )}
+      {hasCharters && (
+        <CharterPicker offer={charterOffer} chosen={charterId} onChoose={setCharterId} busy={busy} />
       )}
       <ChoiceButtons
         slot={slot}
@@ -89,7 +138,13 @@ const ChoiceOptions = ({ slot, options, onPick, busy, missionOffer }) => {
         onPick={onPick}
         busy={busy}
         squadId={squadId}
+        charterId={charterId}
         missionOptionId={missionOption?.id ?? null}
+        // Only when there is something to pick: an offer that came back empty
+        // (the catalog exhausted) is still answerable — the server accepts the
+        // branch and enrols nobody — so holding the button back would strand
+        // the player behind an unmakeable decision.
+        charterOptionId={hasCharters ? (charterOption?.id ?? null) : null}
       />
     </>
   )
@@ -102,17 +157,28 @@ const ChoiceOptions = ({ slot, options, onPick, busy, missionOffer }) => {
 const isMissionOption = (option) =>
   (option.effectText ?? []).some((line) => /charter marches out/i.test(line))
 
-const ChoiceButtons = ({ slot, options, onPick, busy, squadId, missionOptionId }) => (
+// The same trick for the branch that ENROLS a company — keyed off the phrase
+// describeEffect writes for a `squad` effect, so the pairing is stated once,
+// server-side, and read here rather than declared twice.
+const isCharterOption = (option) =>
+  (option.effectText ?? []).some((line) => /take service under your banner/i.test(line))
+
+const ChoiceButtons = ({ slot, options, onPick, busy, squadId, charterId, missionOptionId, charterOptionId }) => (
   <div className="choice-options">
     {options.map((option) => (
       <button
         key={option.id}
         className="choice-option"
         data-testid={`choice-${option.id}`}
-        // A mission branch waits for its charter: the server refuses a pick
-        // that names nobody, so offering the button would only buy a 400.
-        disabled={busy || (option.id === missionOptionId && !squadId)}
-        onClick={() => onPick(slot, option, squadId)}
+        // A mission branch waits for its charter, and a charter branch for its
+        // company: the server refuses a pick that names nobody, so offering
+        // the button would only buy a 400.
+        disabled={
+          busy
+          || (option.id === missionOptionId && !squadId)
+          || (option.id === charterOptionId && !charterId)
+        }
+        onClick={() => onPick(slot, option, squadId, charterId)}
       >
         <strong>{option.label}</strong>
         <span>{option.description}</span>
@@ -248,6 +314,7 @@ const FateBeat = ({ slot, index, outcome, onPick, busy }) => {
           onPick={onPick}
           busy={busy}
           missionOffer={slot.pendingChoice.missionOffer}
+          charterOffer={slot.pendingChoice.charterOffer}
         />
       )}
       {outcome != null && (
@@ -308,12 +375,12 @@ const EventRevealScreen = ({ report, pendingChoices, onChoose, onContinue }) => 
   const [outcomes, setOutcomes] = useState({})
   const [busy, setBusy] = useState(false)
 
-  const pick = async (slot, option, squadId) => {
+  const pick = async (slot, option, squadId, charterId) => {
     setBusy(true)
     try {
       // onChoose is guarded(): a failed post returns undefined and the
       // options stay up for another try.
-      const resolved = await onChoose(slot, option.id, squadId)
+      const resolved = await onChoose(slot, option.id, squadId, charterId)
       if (resolved)
         setOutcomes((prev) => ({ ...prev, [slot]: resolved.label ?? option.label }))
     } finally {
@@ -351,6 +418,7 @@ const EventRevealScreen = ({ report, pendingChoices, onChoose, onContinue }) => 
               onPick={pick}
               busy={busy}
               missionOffer={pending.missionOffer}
+              charterOffer={pending.charterOffer}
             />
           </div>
         ))}

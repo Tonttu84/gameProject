@@ -189,8 +189,8 @@ const useCampaignStore = create((set, get) => ({
   // Resolve a pending choice-fate. The refreshed view drops the entry from
   // campaign.pendingChoices; the returned `resolved` carries the chosen
   // label for the reveal screen's outcome line.
-  resolveChoice: async (slot, choice, squadId) => {
-    const res = await postCampaignChoice(get().campaign.id, slot, choice, squadId)
+  resolveChoice: async (slot, choice, squadId, charterId) => {
+    const res = await postCampaignChoice(get().campaign.id, slot, choice, squadId, charterId)
     set({ campaign: res.campaign })
     return res.resolved
   },

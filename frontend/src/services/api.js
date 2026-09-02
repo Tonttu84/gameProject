@@ -150,12 +150,13 @@ export const postAcceptFates = (id) =>
   axios.post(`/api/campaigns/${id}/augury/accept`, {}, authed()).then(r => r.data)
 // Resolve a pending choice-fate (events with choices): pick one option of the
 // decision owed on `slot`. Returns { campaign, resolved: {slot, choice, label} }.
-// `squadId` rides along only for a mission branch (docs/CAMPAIGN_PLAN.md 12-1),
-// where choosing the option and choosing the charter are one decision. The
-// server validates it against the pair IT sealed, so this is a courtesy, not a
-// grant of trust.
-export const postCampaignChoice = (id, slot, choice, squadId) =>
-  axios.post(`/api/campaigns/${id}/choices/${slot}`, { choice, squadId }, authed()).then(r => r.data)
+// `squadId` rides along only for a mission branch (docs/CAMPAIGN_PLAN.md 12-1)
+// and `charterId` only for a charter branch (R1, "CHARTER RECRUITMENT", R-6),
+// where in both cases choosing the option and choosing the company are one
+// decision. The server validates each against the set IT sealed, so these are
+// a courtesy, not a grant of trust.
+export const postCampaignChoice = (id, slot, choice, squadId, charterId) =>
+  axios.post(`/api/campaigns/${id}/choices/${slot}`, { choice, squadId, charterId }, authed()).then(r => r.data)
 
 // One forging (Construction slice C1, C-6): the named smith and the row, the
 // same call whichever of the two doors it came through. The server holds every

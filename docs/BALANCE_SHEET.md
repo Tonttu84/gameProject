@@ -70,6 +70,9 @@ one row per rung. Food in tonnes; blank means the outcome does not touch that co
 | The Garrison Calls `garrison_call` | draw | 2 | Keep your men and stores at their own work |  |  |  |  |  |  |  |  |
 | The Ford Must Be Held `ford_watch` | draw | 2 | Send a charter to hold the ford |  |  |  |  |  |  |  | mission: 3 turns away, +12 prestige |
 | The Ford Must Be Held `ford_watch` | draw | 2 | Leave the fords unwatched |  |  |  |  |  |  |  |  |
+| Drums in the Lower Camp `charter_comes_forward_1` | spine (turn 3) | 2 | Take a company into service |  |  |  |  |  |  |  | charter: draft of 3 from 12 catalog rows, arrives with its composition |
+| What Walked Out of the Gate `charter_comes_forward_2` | spine (turn 6) | 2 | Take a company into service |  |  |  |  |  |  |  | charter: draft of 3 from 12 catalog rows, arrives with its composition |
+| A Captain Out of Contract `charter_comes_forward_3` | spine (turn 9) | 2 | Take a company into service |  |  |  |  |  |  |  | charter: draft of 3 from 12 catalog rows, arrives with its composition |
 | Word from the Ramparts `garrison_lookout` | gated draw (resolve ≥60) | 2 | — |  |  |  |  |  |  |  | enemy reveal (1 turn) |
 | The Garrison Turns Its Back `garrison_spurned` | gated draw (resolve ≤33) | 2 | — |  |  |  |  |  | Soldier ×0.97 |  |  |
 | Stores from the Wall `garrison_stores` | gated draw (resolve ≥67) | 1 | — | +2 |  |  |  |  |  |  |  |

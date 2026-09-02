@@ -11,6 +11,10 @@ import { findItem, grantItem, holdsItem } from './items.js'
 // One-way by design: missions.js imports nothing, so this file can own the pool
 // and still ask it what "free" means. See the note at the top of missions.js.
 import { availableSquads, beginMission } from './missions.js'
+// Same one-way rule, same reason: charters.js imports config and the dice and
+// nothing else, so the `squad` effect can enrol a company without this file
+// and that one importing each other.
+import { eligibleCharters, enrolCharter, findCharter } from './charters.js'
 
 // Fortnightly event pool + effect application. Events reach the player only
 // as the augur's prophecy (services/augury.js): each turn one TRUE event and
@@ -195,6 +199,42 @@ export const EVENT_POOL = [
     choices: [
       { id: 'hold_the_ford', label: 'Send a charter to hold the ford', description: 'They will be gone a good while, and the camp will feel their absence — but a company trusted with the army\'s back comes home knowing its own worth.', effect: { type: 'mission', turns: 3, prestige: 12 } },
       { id: 'leave_it_unwatched', label: 'Leave the fords unwatched', description: 'Every man stays where you can use him. The steadings must look to themselves.', effect: { type: 'none' } },
+    ],
+  },
+  // ── charter recruitment (docs/CAMPAIGN_PLAN.md "CHARTER RECRUITMENT +
+  // SQUADS IN THE LAB", R-1..R-8) ── The fates that hand over a COMPANY. Three
+  // of them, `chained` so they never enter a random draw, forced into their
+  // day's augury by CHARTER_BEATS below — guaranteed set-turn beats (R-5),
+  // exactly the siege spine's machinery.
+  //
+  // ONE branch each, and no "none" (R-6: must pick one). That is not a missing
+  // option: the recruit phase already rules this way ("the hire is the only
+  // exit"), and a fate whose whole content is a gift of men has nothing to
+  // refuse. THE DECISION IS WHICH COMPANY, and it is made on the offer cards
+  // the pending seals, not here — which is also why the branch's effect names
+  // no charter (see describeEffect's `squad` line).
+  //
+  // Three distinct cards rather than one card three times, because a beat the
+  // player meets on turns 3, 6 and 9 should not read as a bug.
+  {
+    id: 'charter_comes_forward_1', title: 'Drums in the Lower Camp', description: 'A company that has been following your line of march for a week finally sends its captain up to the tent. They heard your drums at Ashmoor, he says, and they have decided they would rather march behind them than behind anyone else on this road.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good', chained: true,
+    choices: [
+      { id: 'take_charter', label: 'Take a company into service', description: 'Sign their charter, put them on the rolls and feed them like your own. They came to you; the only question left is which of the companies at your fire you want.', effect: { type: 'squad' } },
+    ],
+  },
+  {
+    id: 'charter_comes_forward_2', title: 'What Walked Out of the Gate', description: 'Survivors of a garrison that did not hold have been coming in for days, in twos and tens, and the sergeants among them have sorted themselves back into something with a shape. They have no wall left to stand on and would like one of your banners to stand under instead.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good', chained: true,
+    choices: [
+      { id: 'take_charter', label: 'Take a company into service', description: 'Give them a charter and a place in the line. Men who have already watched a siege end from the wrong side rarely need telling twice what is at stake here.', effect: { type: 'squad' } },
+    ],
+  },
+  {
+    id: 'charter_comes_forward_3', title: 'A Captain Out of Contract', description: 'A captain rides in with his company behind him and his last paymaster\'s letter in his glove — expired, unrenewed, and by the look of it unpaid. He is not begging. He is comparing offers, and yours is the only army in the valley still moving forward.', severity: 2,
+    effect: { type: 'choice' }, valence: 'good', chained: true,
+    choices: [
+      { id: 'take_charter', label: 'Take a company into service', description: 'Meet his terms and write him into your order of battle. A company that chose you can leave the same way, so it is worth choosing carefully which one you keep.', effect: { type: 'squad' } },
     ],
   },
   { id: 'garrison_lookout', title: 'Word from the Ramparts', description: 'Trusting the banner that has stood with them, Karrowgate\'s watch signal down what they can see from the high walls — the enemy\'s dispositions, laid plain.', severity: 2, effect: { type: 'enemy_reveal' }, requires: { minResolve: 60 } },
@@ -401,6 +441,27 @@ export const SIEGE_SPINE = [
   { eventId: 'wardens_van', day: 8 },
 ]
 
+// The charter beats (R-5): the same seeded-at-creation schedule as the siege
+// spine, for the fates that hand over a COMPANY. Guaranteed, once each, on a
+// named turn — because R-1 makes events the ONLY way a charter is acquired,
+// and an acquisition route that might never fire is not a route.
+//
+// The days INTERLEAVE with the spine's 2/5/8 on purpose. drainScheduled forces
+// at most AUGURY_SLOTS beats into any one day's augury, and a day carrying two
+// forced beats would spend two thirds of the turn's fates on scripted content
+// — so the two schedules take alternate turns rather than sharing one.
+//
+// BALANCE-DEFERRED (R-8), both halves: which turns these land on and how many
+// there are is the balancing pass's call. NO CAP on charters is deliberate and
+// is not a number to tune (R-5) — the opening three plus however many beats
+// are seeded IS the count, so adding a fourth beat is the only way to hand out
+// a fourth company, and it is visible right here.
+export const CHARTER_BEATS = [
+  { eventId: 'charter_comes_forward_1', day: 3 },
+  { eventId: 'charter_comes_forward_2', day: 6 },
+  { eventId: 'charter_comes_forward_3', day: 9 },
+]
+
 export const rosterTotal = (roster) =>
   [...roster.values()].reduce((a, b) => a + b, 0)
 
@@ -528,6 +589,12 @@ export const eventValence = (effect) => {
     // off the board; calling it bad would hide the rung it buys.
     case 'mission':
       return 'neutral'
+    // A company taking service is a GAIN, flatly (R-3): it arrives with its
+    // own bodies, which join the roster, and it costs nothing to accept. Not
+    // the mission's trade — nothing goes away — so the augur's header may
+    // promise a boon without lying about it.
+    case 'squad':
+      return 'good'
     // A standing forage pressure (S3). The two targets read in OPPOSITE
     // directions: more of the player's own capacity is a gain, but more enemy
     // drain strips the shared rings faster, so it's a loss. Both levers point
@@ -637,6 +704,17 @@ export const describeEffect = (effect) => {
     // charter is not named here — the player picks that when they answer.
     case 'mission':
       return [`A charter marches out for ${effect.turns} turns — +${effect.prestige} prestige when it returns`]
+    // A charter (R-3). GENERIC on purpose: the effect row names no company,
+    // because which company is the decision, and it is made on the offer cards
+    // the pending sealed — those carry the names, archetypes, ranks and
+    // compositions in full. A line here naming one row would either be a lie
+    // or a second place the draw had to be resolved.
+    //
+    // The frontend keys the charter-picker off this exact phrase, the same way
+    // it keys the mission picker off "charter marches out" — so the wording is
+    // load-bearing, not decorative.
+    case 'squad':
+      return ['A company comes forward to take service under your banner — you choose which of those offered']
     case 'forage_modifier': {
       if (effect.target === 'enemyDrain')
         return [
@@ -924,6 +1002,24 @@ export function applyEffect(campaign, effect, ctx = {}) {
     // and a scheduled mission beat with no picker in front of it must not throw
     // either. The route is what guarantees a real pick reaches here.
     if (ctx.squad) log.push(beginMission(campaign, ctx.squad, { turns: effect.turns, eventId: ctx.eventId }))
+  } else if (effect.type === 'squad') {
+    // A company takes service (R1, docs/CAMPAIGN_PLAN.md "CHARTER
+    // RECRUITMENT"). Like `mission`, the TARGET is the player's pick and rides
+    // in on ctx from the choice route — this effect says only that a charter
+    // is on offer, never which, because which is the whole decision the card
+    // exists to pose (R-6).
+    //
+    // No charter in ctx means nothing happens and NO LINE, deliberately, and
+    // the mission branch's reasoning applies word for word: the structural
+    // sweeps push every authored fate through applyEffect against skeleton
+    // campaigns with no ctx at all, and a scheduled beat with no picker in
+    // front of it must be inert rather than a throw. A row that has left the
+    // catalog, or one already on the rolls (a replayed request against a stale
+    // offer), is the same case — the route is what guarantees a real, eligible
+    // pick reaches here, and this is the belt to its braces.
+    const row = ctx.charterId ? findCharter(ctx.charterId) : null
+    if (row && eligibleCharters(campaign).some((r) => r.id === row.id))
+      log.push(enrolCharter(campaign, row))
   } else if (effect.type === 'multi') {
     // A bundled fate: every part lands, in order.
     for (const part of effect.effects) log.push(...applyEffect(campaign, part, ctx))
