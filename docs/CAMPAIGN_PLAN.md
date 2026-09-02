@@ -87,15 +87,21 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-02) — START HERE
 
-**▶▶ THE LIVE FRONT IS CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02; R1 SHIPPED
-THE SAME DAY (schema v45), R2 IN PROGRESS.** Eight decisions (R-1..R-8) and a two-slice plan are in
-the "CHARTER RECRUITMENT" entry at the top of the Deferred design backlog below; **start there, and
-do not re-derive them.** R1, the campaign half, is on `main` and green: `CHARTER_CATALOG`, the
-`squad` effect, three set-turn beats (days 3/6/9), the sealed offer on the pending decision and the
-picker at the tent — its "what landed" note is under R-8. R2 is the lab half (squad sheets in the
-Battle Lab, composed server-side); it is being built now and its own note will land under R-8 when
-it ships. Also parked there, deferred on the user's call: the spell-targeting design ask
-(2026-09-02), with its audit. The previous front is closed:
+**▶▶ THE CHARTER RECRUITMENT + SQUADS IN THE LAB FRONT IS CLOSED — INTERVIEWED 2026-09-02, BOTH
+SLICES SHIPPED THE SAME DAY AND GREEN ON `main` (schema v45).** Eight decisions (R-1..R-8) and the
+two-slice plan are in the "CHARTER RECRUITMENT" entry at the top of the Deferred design backlog
+below, each slice carrying a "what landed" note; **start there, and do not re-derive them.** R1 is
+the campaign half: `CHARTER_CATALOG`, the `squad` effect, three set-turn beats (days 3/6/9), the
+sealed offer on the pending decision and the picker at the tent. R2 is the lab half: a squad SHEET
+per company in the Battle Lab, its engine fields composed server-side by the deploy route's own
+`statMods`/`squadAbilities`, the caps asked of `POST /api/sandbox/squad-caps` (the D3 pattern),
+blocks laid first by auto-place, scenario file v3, and the campaign prefill carrying the player's
+charters. **Nothing in this front is outstanding.** Also parked in that entry, deferred on the
+user's call: the spell-targeting design ask (2026-09-02), with its audit.
+
+**So the next front is a choice again, not a continuation** — the candidates are the same ones
+listed further down in this block (the real cast AI M-22, stances M-12, empowerment M-5, the
+balance pass, the deferred spell-targeting interview). The previous front is closed:
 
 **▶▶ THE SANDBOX / TEST MODE FRONT IS CLOSED — INTERVIEWED AND BUILT 2026-08-29, ALL FOUR
 SLICES SHIPPED AND GREEN ON `main`.** Thirteen decisions (SB-1..SB-13) and the four-slice plan
@@ -7698,7 +7704,7 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
 **▶ CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02, decisions R-1..R-8, all the
-user's. R1 ✅ SHIPPED 2026-09-02 (schema v45); R2 in progress.** The ask, in the user's words: *"The battle lab needs the ability to pick
+user's. ✅ BOTH SLICES SHIPPED 2026-09-02 (schema v45).** The ask, in the user's words: *"The battle lab needs the ability to pick
 squads. I guess we are going to make the squads not dynamically created so we can just go through
 the squad recruitment process with infinite money and you can set the XP to how much you want. But
 we need to first then do the squad recruitment for campaign."*
@@ -7785,6 +7791,46 @@ checked at answer time); and the deploy route composes a charter into engine fie
     from a lab squad sheet (never trusted from the body); a squad palette and sheet in
     `SandboxScreen`; tests. Known constraint: exactly ONE banner item exists today
     (`banner_unbroken_line`), so the banner picker is a one-entry list until content grows.
+
+    **R2 — what landed (2026-09-02, one commit, green on `main`).** Seven design calls
+    (D-R2-1..7) were made by the planner before the code and are recorded here so the shape is
+    reused rather than re-derived:
+    - **A lab squad is a SHEET plus a BLOCK (D-R2-1).** Per side the store holds
+      `squads: [{ id, name, archetype, prestige, composition, attached, upgrades, banner }]` with a
+      side-local `nextSquadId`; a company's BODIES are ordinary placement entries carrying
+      `squadId`, written one per type on ONE hex by `placeSquad` and re-synced (or unplaced when
+      the block no longer fits) whenever the sheet changes. `place`/`remaining`/the hex menu's
+      spinners concern loose entries only; a block shows on the hex menu as one row. Attached
+      casters are caster-type counts on the sheet: outside the caps (decision 3), inside the hex,
+      and configured through the EXISTING caster panel because they are placement bodies.
+    - **The sheet asks the server for its caps (D-R2-2).** `POST /api/sandbox/squad-caps
+      { archetype, upgrades }` answers `squadCaps(sheet)` — the campaign's rule site, resolving the
+      archetype through the upgrades (type swap before caps bonus). The composition spinners wait
+      for the answer; the D3 pattern one field over.
+    - **`GET /api/sandbox/reference` serves the vocabulary (D-R2-3):** every `CHARTER_CATALOG` row
+      (opening ones included), the archetypes with caps, the upgrade pool with slot costs, the
+      banner items, `SQUAD_RANKS`, and two new limits — `SANDBOX_MAX_PRESTIGE` (999, a sanity
+      bound, not a balance number) and `SANDBOX_MAX_SQUADS_PER_SIDE` (12).
+    - **Auto-place lays blocks first (D-R2-4):** `POST /auto-place` takes `squads: [{id, army}]`
+      and uses `makeZonePlacer.addBlock` (the raid route's own) before `add` scatters the loose
+      army; the answer's `squad_id` tags rebuild the blocks client-side. A block too fat for a hex
+      is a 400 naming the company.
+    - **The wire and the whitelist (D-R2-5):** the launch body carries `squads: {blue, red}` of
+      sheets `{id, name, archetype, prestige, upgrades, banner}` (composition NOT sent — the bodies
+      are the composition) and entries may carry `squad_id`. `sanitizeSquadSheet` rebuilds by
+      construction (unknown archetype drops the sheet; prestige clamped; unknown upgrades and
+      banners dropped; NO slot check and NO rank check, R-7); `squad_id` survives only when it
+      names a sheet on ITS OWN side, and `squad_name`/`squad_mods`/`squad_abilities` are composed
+      from the sheet whatever the body said. Two fences after rebuilding: one company, one hex;
+      per-type counts within `squadCaps(sheet)` and only types the caps name (casters excluded).
+      Over-count sheet lists are a 400 like the wall and wave lists.
+    - **Scenario file v3 (D-R2-7):** `squads` per side and `squadId` on placements, validated
+      before anything is applied; v1/v2 files still load with no companies. **The SB-13 prefill
+      now carries the campaign's charters** as sheets (campaign squad ids reused so attached
+      characters resolve), the loose army is roster − Σ compositions plus loose characters, and
+      the channel pool is still left alone (the comment says why that survives companies).
+    - Not built, by design: no formation-fighter packing discount in the client's fit check or in
+      auto-place (real size is the conservative measure; the server is the fence).
 
 
 **TODO — HOW SPELLS GENERALLY WORK AND TARGET (user, 2026-09-02 — DEFERRED on the user's call,

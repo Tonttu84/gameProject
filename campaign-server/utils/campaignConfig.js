@@ -121,6 +121,27 @@ export const SANDBOX_MAX_REINFORCE_COUNT = 500
 // one like it without letting a client park a novel in a battle document.
 export const SANDBOX_MAX_REINFORCE_MESSAGE = 120
 
+// ── R2's two squad bounds (R-7) ─────────────────────────────────────────────
+//
+// A SANITY BOUND ON AN UNTRUSTED NUMBER, exactly like SANDBOX_MAX_CHANNELS and
+// SANDBOX_MAX_WALL_DURABILITY and for the same reason: prestige has no ceiling
+// anywhere in the campaign (SQUAD_RANKS' top rung absorbs everything above its
+// threshold), so nothing but this stops a scripted client posting a number the
+// rank walk would still answer for but no arithmetic should have to hold.
+// R-7 says the lab sets prestige DIRECTLY — any rank, no campaign gate — so
+// this must never be read as a balance figure: the whole ladder tops out at 70,
+// and 999 is far past the point where a bigger number changes anything.
+export const SANDBOX_MAX_PRESTIGE = 999
+
+// How many companies one side may field in a lab battle. Each sheet is a
+// composition the route then measures against its archetype's caps and against
+// ONE hex, so this bounds the number of SHEETS, which is what a client could
+// otherwise post thousands of — the bodies themselves stay bounded by
+// SANDBOX_MAX_UNITS_PER_SIDE, which counts a squad body like any other.
+// A campaign holds three charters and acquires a few more (R-5); twelve is more
+// companies than the deployment zone has room to stand apart on.
+export const SANDBOX_MAX_SQUADS_PER_SIDE = 12
+
 // Retires the frontend STARTING_ROSTER hardcode (docs/ADDING_UNITS.md §6).
 // Mage and Priest USED to sit here at 3 apiece; slice 5 moved them out of the
 // roster entirely and into STARTING_CHARACTERS below (docs/CAMPAIGN_PLAN.md

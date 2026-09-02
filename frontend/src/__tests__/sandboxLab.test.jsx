@@ -35,6 +35,7 @@ vi.mock('../services/api', () => ({
   autoPlaceSandbox: vi.fn(),
   getSandboxReference: vi.fn(),
   postSandboxCastable: vi.fn(),
+  postSandboxSquadCaps: vi.fn(),
   launchSampleBattle: vi.fn(),
   getBattle: vi.fn(),
   login: vi.fn(),
@@ -45,7 +46,7 @@ vi.mock('../services/api', () => ({
 
 import {
   getInfo, getMap, getUnits, getTicks, getCampaigns, postSandboxBattle, autoPlaceSandbox,
-  getSandboxReference, postSandboxCastable,
+  getSandboxReference, postSandboxCastable, postSandboxSquadCaps,
 } from '../services/api'
 import App from '../App'
 import useCampaignStore from '../stores/useCampaignStore'
@@ -91,9 +92,41 @@ const reference = {
     schools: { evocation: 1, conjuration: 2, enchantment: 1, construction: 0 },
     channels: 3,
   },
+  // R2's squad vocabulary, phrased server-side like the rest of it: the
+  // charter catalog the picker offers, the archetypes behind a blank company,
+  // the whole upgrade pool priced in slots, every banner ROW there is (one),
+  // and the rank ladder so the sheet can print the word beside the number.
+  charters: [
+    {
+      id: 'first_cohort', name: '1st Cohort', archetype: 'line',
+      composition: { Soldier: 4 }, prestige: 0, blurb: 'Forty spears of your own muster.',
+    },
+    {
+      id: 'ashmoor_remnant', name: 'Remnant of Ashmoor', archetype: 'line',
+      composition: { Soldier: 3 }, prestige: 10, blurb: 'What walked out of Ashmoor.',
+    },
+  ],
+  archetypes: [
+    { id: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10 },
+    { id: 'vanguard', caps: { Cavalry: 6, LightCavalry: 6 }, intake: 2 },
+  ],
+  upgrades: [
+    { id: 'honed_edge', name: 'Honed Edge', blurb: '+1 attack.', slots: 1 },
+    { id: 'deeper_ranks', name: 'Deeper Ranks', blurb: '+2 to every cap.', slots: 1 },
+    { id: 'royal_guard', name: 'Royal Guard', blurb: 'Soldiers become Royal Guards.', slots: 2 },
+  ],
+  banners: [
+    { id: 'banner_unbroken_line', name: 'The Unbroken Line', blurb: 'They do not break.' },
+  ],
+  ranks: [
+    { min: 70, label: 'Legendary' }, { min: 45, label: 'Renowned' },
+    { min: 25, label: 'Seasoned' }, { min: 10, label: 'Blooded' },
+    { min: 0, label: 'Untested' },
+  ],
   limits: {
     maxPathLevel: 9, maxSchoolLevel: 9, maxChannels: 99, openSchoolLevel: 9, maxRuns: 20,
     maxWallSides: 120, maxWallDurability: 5000, maxReinforcements: 20, maxReinforceCount: 500,
+    maxPrestige: 999, maxSquadsPerSide: 12,
   },
 }
 
@@ -122,6 +155,10 @@ beforeEach(() => {
   postSandboxBattle.mockResolvedValue(summary)
   getSandboxReference.mockResolvedValue(reference)
   postSandboxCastable.mockResolvedValue({ options: [] })
+  // The caps a company may field, answered by the server (R2, the D3 pattern):
+  // squadCaps resolves the archetype row THROUGH the upgrades, so the sheet
+  // asks rather than working it out. The default answer is the line row.
+  postSandboxSquadCaps.mockResolvedValue({ caps: { Soldier: 40, Pikeman: 10 } })
 })
 
 // A logged-in player with NO campaign at all — the strongest statement of SB-1:
@@ -261,7 +298,9 @@ describe('auto-place (SB-3)', () => {
     compose('Soldier', 3)
     fireEvent.click(screen.getByTestId('lab-auto-place'))
 
-    await waitFor(() => expect(autoPlaceSandbox).toHaveBeenCalledWith('blue', { Soldier: 3 }))
+    // The third argument is R2's BLOCKS (D-R2-4), empty here: a lab with no
+    // companies makes the very request every slice before R2 made.
+    await waitFor(() => expect(autoPlaceSandbox).toHaveBeenCalledWith('blue', { Soldier: 3 }, []))
     // Two on one hex fold into one stack of 2; the axial pairs land on the
     // offset hexes the grid draws (q + floor(r/2), r).
     // A glyph is the type's INITIAL plus the count, the same shorthand the
@@ -755,7 +794,7 @@ describe('the scenario file (SB-11)', () => {
     // fixture, and refusable by a build that does not know the shape.
     // BUMPED BY S4: the format grew the walls and the waves, and the version
     // is what a file is refused by, so a format change has to move it.
-    expect(scenario.version).toBe(2)
+    expect(scenario.version).toBe(3)
     expect(scenario.runs).toBe(6)
     expect(scenario.seed).toBe(20260829)
     expect(scenario.walls).toEqual([{ q: 2, r: 4, dir: 'SE', durability: 250 }])
@@ -864,7 +903,7 @@ describe('the scenario file (SB-11)', () => {
 
     importFile(JSON.stringify({ ...good, version: 99 }))
     await waitFor(() =>
-      expect(screen.getByTestId('auth-notice')).toHaveTextContent(/versions 1 and 2 are read here/))
+      expect(screen.getByTestId('auth-notice')).toHaveTextContent(/versions 1, 2 and 3 are read here/))
     expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
 
     // A side whose placements are not a list of stacks: refused whole, rather
@@ -1081,7 +1120,7 @@ describe('prefilling blue from the campaign (SB-13 / F5)', () => {
     // dead one is not.
     await waitFor(() => expect(autoPlaceSandbox).toHaveBeenCalledWith('blue', {
       Soldier: 13, Mage: 2,
-    }))
+    }, []))
     expect(await screen.findByTestId('lab-glyph-blue-4-4-Mage')).toHaveTextContent('M2')
     expect(screen.getByTestId('lab-glyph-blue-5-5-Soldier')).toHaveTextContent('S13')
     expect(screen.getByTestId('lab-recruit-Soldier')).toHaveValue(13)
@@ -1122,6 +1161,501 @@ describe('prefilling blue from the campaign (SB-13 / F5)', () => {
     expect(screen.getByTestId('lab-script-remove-fireball')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('lab-caster-Mage-4-4-1'))
+    expect(await screen.findByTestId('lab-path-fire')).toHaveValue(0)
+    expect(screen.queryByTestId('lab-script-remove-fireball')).not.toBeInTheDocument()
+  })
+})
+
+// ── R2: the companies (docs/CAMPAIGN_PLAN.md, R-7) ──────────────────────────
+//
+// A lab company is a SHEET plus a BLOCK (D-R2-1). The sheet is what the company
+// IS — any catalog charter, any prestige, any upgrades regardless of the slots a
+// campaign makes you earn, any banner regardless of the rank it makes you reach
+// — and the block is its bodies, standing together on ONE hex because that is
+// how the engine builds a formation. What is pinned here is the seam between
+// the two: a company's bodies are on the field like everyone else's (they fill
+// a hex, they show as glyphs, an attached caster is configured in the same
+// panel) and budgeted like nobody else's (they never came out of the palette,
+// so the loose army neither pays for them nor misses them).
+
+const addCompany = (value) =>
+  fireEvent.change(screen.getByTestId('lab-squad-add'), { target: { value } })
+
+// The sheet's own row opens its editor.
+const openCompany = (id) => fireEvent.click(screen.getByTestId(`lab-squad-${id}`))
+
+const pickHex = (col, row) => fireEvent.click(screen.getByTestId(`lab-hex-${col}-${row}`))
+
+describe('enrolling a company (R-7)', () => {
+  it('prefills the sheet from a catalog charter, rank word and all', async () => {
+    await openLab()
+    addCompany('charter:ashmoor_remnant')
+    openCompany(1)
+
+    // The sheet ASKS what it may field (the D3 pattern): squadCaps resolves the
+    // archetype row through the upgrades, so the spinners take their ceilings
+    // from the server rather than from a table in the browser.
+    await waitFor(() => expect(postSandboxSquadCaps).toHaveBeenCalledWith({
+      archetype: 'line', upgrades: [],
+    }))
+
+    expect(screen.getByTestId('lab-squad-name-1')).toHaveValue('Remnant of Ashmoor')
+    // R-4: a row may arrive Blooded, and the word beside the number comes off
+    // the served ladder — the lab holds no copy of the thresholds.
+    expect(screen.getByTestId('lab-squad-prestige-1')).toHaveValue(10)
+    expect(screen.getByTestId('lab-squad-1')).toHaveTextContent('Blooded')
+    // R-3: it arrives with its row's opening composition.
+    expect(await screen.findByTestId('lab-squad-comp-1-Soldier')).toHaveValue(3)
+    expect(screen.getByTestId('lab-squad-comp-1-Pikeman')).toHaveValue(0)
+  })
+
+  it('offers a blank company per archetype, and re-asks the caps when an upgrade is ticked', async () => {
+    await openLab()
+    addCompany('custom:line')
+    openCompany(1)
+
+    expect(screen.getByTestId('lab-squad-name-1')).toHaveValue('Company 1')
+    expect(await screen.findByTestId('lab-squad-comp-1-Soldier')).toHaveValue(0)
+
+    // A type-swap row rewrites which type a cap is FOR, and a caps row raises
+    // it — both are squadCaps' business, so ticking one asks again rather than
+    // recomputing anything here.
+    postSandboxSquadCaps.mockResolvedValue({ caps: { RoyalGuard: 40, Pikeman: 10 } })
+    fireEvent.click(screen.getByTestId('lab-squad-upgrade-1-royal_guard'))
+
+    await waitFor(() => expect(postSandboxSquadCaps).toHaveBeenLastCalledWith({
+      archetype: 'line', upgrades: ['royal_guard'],
+    }))
+    expect(await screen.findByTestId('lab-squad-comp-1-RoyalGuard')).toBeInTheDocument()
+  })
+
+  it('takes a banner and an upgrade at any rank at all (R-7)', async () => {
+    await openLab()
+    addCompany('custom:line')
+    openCompany(1)
+    await screen.findByTestId('lab-squad-comp-1-Soldier')
+
+    // Untested, with no slot and no banner rung — and it carries both, because
+    // the lab is where you ask what they DO.
+    expect(screen.getByTestId('lab-squad-1')).toHaveTextContent('Untested')
+    fireEvent.click(screen.getByTestId('lab-squad-upgrade-1-honed_edge'))
+    fireEvent.change(screen.getByTestId('lab-squad-banner-1'), {
+      target: { value: 'banner_unbroken_line' },
+    })
+
+    expect(screen.getByTestId('lab-squad-upgrade-1-honed_edge')).toBeChecked()
+    expect(screen.getByTestId('lab-squad-banner-1')).toHaveValue('banner_unbroken_line')
+  })
+})
+
+describe('placing a company (D-R2-1)', () => {
+  it('lands as ONE block on one hex, and comes up whole', async () => {
+    await openLab()
+    addCompany('charter:first_cohort')
+    openCompany(1)
+    await screen.findByTestId('lab-squad-comp-1-Soldier')
+
+    // Nowhere to stand until a hex in this side's zone is picked.
+    expect(screen.getByTestId('lab-squad-place-1')).toBeDisabled()
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+
+    // One entry per type, all on the one hex and all tagged — drawn as the
+    // company's own stack rather than folded into whatever else stands there.
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier-sq1')).toHaveTextContent('S4')
+    expect(screen.getByTestId('lab-squad-1')).toHaveTextContent('at (4,4)')
+
+    // The hex menu shows the block as ONE row: a company is placed and taken up
+    // whole, so there is nothing per-type to offer.
+    expect(screen.getByTestId('lab-hex-squad-1')).toHaveTextContent('1st Cohort — 4 bodies')
+
+    fireEvent.click(screen.getByTestId('lab-hex-squad-unplace-1'))
+    expect(screen.queryByTestId('lab-glyph-blue-4-4-Soldier-sq1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lab-squad-1')).toHaveTextContent('not placed')
+  })
+
+  it('moves rather than clones when it is placed again', async () => {
+    await openLab()
+    addCompany('charter:first_cohort')
+    openCompany(1)
+    await screen.findByTestId('lab-squad-comp-1-Soldier')
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+    pickHex(5, 5)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+
+    expect(screen.queryByTestId('lab-glyph-blue-4-4-Soldier-sq1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lab-glyph-blue-5-5-Soldier-sq1')).toHaveTextContent('S4')
+  })
+
+  it('is outside the loose budget and inside the hex', async () => {
+    await openLab()
+    compose('Soldier', 100)
+    addCompany('custom:line')
+    openCompany(1)
+    fireEvent.change(await screen.findByTestId('lab-squad-comp-1-Soldier'), {
+      target: { value: '40' },
+    })
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+
+    // The loose army neither paid for those forty bodies nor misses them: they
+    // came off the SHEET, not out of the palette.
+    expect(screen.getByTestId('lab-unplaced')).toHaveTextContent('100 still to place')
+    expect(screen.getByTestId('lab-place-Soldier')).toHaveValue(0)
+    // But the hex has met them. 640 capacity − 400 size points = 24 more foot.
+    expect(screen.getByTestId('lab-hex-menu')).toHaveTextContent('max 24')
+
+    // And a loose stack of the same type on the same hex is its own stack.
+    placeHere('Soldier', 24)
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S24')
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier-sq1')).toHaveTextContent('S40')
+  })
+
+  it('unplaces a block that its own edit has outgrown, rather than overfilling the hex', async () => {
+    await openLab()
+    addCompany('custom:line')
+    openCompany(1)
+    fireEvent.change(await screen.findByTestId('lab-squad-comp-1-Soldier'), {
+      target: { value: '40' },
+    })
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier-sq1')).toHaveTextContent('S40')
+
+    // Attached casters sit outside the CAPS and very much inside the hex, so
+    // they are what pushes a full company over: 40 foot and 20 Mages is 600 of
+    // the hex's 640 points, and the block re-syncs where it stands.
+    fireEvent.change(screen.getByTestId('lab-squad-attached-1-Mage'), { target: { value: '20' } })
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Mage-sq1')).toHaveTextContent('M20')
+
+    fireEvent.change(screen.getByTestId('lab-squad-attached-1-Mage'), { target: { value: '30' } })
+    // ONE COMPANY, ONE HEX: it comes off the field rather than being split or
+    // silently overstacked, and its row says so.
+    expect(screen.queryByTestId('lab-glyph-blue-4-4-Soldier-sq1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lab-squad-1')).toHaveTextContent('not placed')
+  })
+
+  it('takes the block with it when the company is struck off', async () => {
+    await openLab()
+    addCompany('charter:first_cohort')
+    openCompany(1)
+    await screen.findByTestId('lab-squad-comp-1-Soldier')
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+
+    fireEvent.click(screen.getByTestId('lab-squad-remove-1'))
+    expect(screen.queryByTestId('lab-squad-1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('lab-glyph-blue-4-4-Soldier-sq1')).not.toBeInTheDocument()
+  })
+
+  it("lists an attached caster in the casters panel, alongside a loose one on the same hex", async () => {
+    await openLab()
+    addCompany('custom:line')
+    openCompany(1)
+    await screen.findByTestId('lab-squad-comp-1-Soldier')
+    fireEvent.change(screen.getByTestId('lab-squad-attached-1-Mage'), { target: { value: '1' } })
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+
+    // A loose Mage on the SAME hex is a different man, and the panel says so:
+    // the company's own body carries its charter's number.
+    compose('Mage', 1)
+    placeHere('Mage', 1)
+
+    const attached = screen.getByTestId('lab-caster-sq1-Mage-4-4-0')
+    expect(attached).toHaveTextContent('Company 1')
+    expect(screen.getByTestId('lab-caster-Mage-4-4-0')).toBeInTheDocument()
+
+    // …and each is configured with the ONE editor, not a second one.
+    fireEvent.click(attached)
+    fireEvent.change(await screen.findByTestId('lab-path-fire'), { target: { value: '3' } })
+    fireEvent.click(screen.getByTestId('lab-caster-Mage-4-4-0'))
+    expect(await screen.findByTestId('lab-path-fire')).toHaveValue(0)
+  })
+})
+
+describe('what the launch carries about a company (D-R2-7)', () => {
+  it('tags every body and sends the sheets, but never the composition', async () => {
+    await openLab()
+    addCompany('charter:first_cohort')
+    openCompany(1)
+    await screen.findByTestId('lab-squad-comp-1-Soldier')
+    fireEvent.change(screen.getByTestId('lab-squad-prestige-1'), { target: { value: '30' } })
+    fireEvent.click(screen.getByTestId('lab-squad-upgrade-1-honed_edge'))
+    fireEvent.change(screen.getByTestId('lab-squad-banner-1'), {
+      target: { value: 'banner_unbroken_line' },
+    })
+    fireEvent.change(screen.getByTestId('lab-squad-attached-1-Mage'), { target: { value: '1' } })
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalledWith({
+      player_placement: [
+        // One entry per body, each carrying its company's number. Nothing else
+        // about the company rides on a body: squad_mods, squad_abilities and
+        // squad_name are composed SERVER-side from the sheet (R-7).
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Mage', q: 2, r: 4, squad_id: 1 },
+      ],
+      enemy_placement: [],
+      // The sheet is WHO the company is. Its composition and its attached
+      // casters are the bodies above, and sending them twice would be inviting
+      // the two to disagree.
+      squads: {
+        blue: [{
+          id: 1,
+          name: '1st Cohort',
+          archetype: 'line',
+          prestige: 30,
+          upgrades: ['honed_edge'],
+          banner: 'banner_unbroken_line',
+        }],
+        red: [],
+      },
+      magic: { blue: openMagic, red: openMagic },
+      runs: 1,
+      seed: null,
+    }))
+  })
+
+  it('sends no squads block at all when neither side has enrolled one', async () => {
+    await openLab()
+    placeSoldiers(2)
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    // Byte-for-byte the launch the lab made before R2 — the absence rule this
+    // wire keeps everywhere else.
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalled())
+    expect('squads' in postSandboxBattle.mock.calls[0][0]).toBe(false)
+  })
+
+  it('sends the blocks to auto-place so they land before the loose army', async () => {
+    autoPlaceSandbox.mockResolvedValue({
+      placement: [
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 },
+        { unit_type: 'Soldier', q: 3, r: 5 },
+      ],
+    })
+    await openLab()
+    compose('Soldier', 1)
+    addCompany('charter:first_cohort')
+    fireEvent.click(screen.getByTestId('lab-auto-place'))
+
+    await waitFor(() => expect(autoPlaceSandbox).toHaveBeenCalledWith(
+      'blue', { Soldier: 1 }, [{ id: 1, army: { Soldier: 4 } }],
+    ))
+    // The spread ANSWERS with the blocks, so the company survives an auto-place
+    // rather than being wiped by the wholesale replace.
+    expect(await screen.findByTestId('lab-glyph-blue-4-4-Soldier-sq1')).toHaveTextContent('S4')
+    expect(screen.getByTestId('lab-glyph-blue-5-5-Soldier')).toHaveTextContent('S1')
+  })
+})
+
+describe('the scenario file carries the companies (v3)', () => {
+  const captureDownload = () => {
+    const saved = {}
+    global.URL.createObjectURL = vi.fn((blob) => { saved.blob = blob; return 'blob:lab-scenario' })
+    global.URL.revokeObjectURL = vi.fn()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    return saved
+  }
+  const blobText = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+  const importFile = (text) =>
+    fireEvent.change(screen.getByTestId('lab-import'), {
+      target: { files: [new File([text], 'lab-scenario.json', { type: 'application/json' })] },
+    })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('round-trips a placed company, sheet and block alike', async () => {
+    const saved = captureDownload()
+    await openLab()
+    addCompany('charter:first_cohort')
+    openCompany(1)
+    await screen.findByTestId('lab-squad-comp-1-Soldier')
+    fireEvent.click(screen.getByTestId('lab-squad-upgrade-1-honed_edge'))
+    fireEvent.change(screen.getByTestId('lab-squad-attached-1-Mage'), { target: { value: '1' } })
+    pickHex(4, 4)
+    fireEvent.click(screen.getByTestId('lab-squad-place-1'))
+
+    fireEvent.click(screen.getByTestId('lab-export'))
+    const text = await blobText(saved.blob)
+    const scenario = JSON.parse(text)
+
+    // The version is what a file is refused BY, so a format change has to move
+    // it — R2 added the companies, so this is 3.
+    expect(scenario.version).toBe(3)
+    // The SHEET travels whole, composition and attached included: a scenario is
+    // a setup rather than a battle, so it must be able to rebuild a company
+    // that was never placed.
+    expect(scenario.blue.squads).toEqual([{
+      id: 1,
+      name: '1st Cohort',
+      archetype: 'line',
+      prestige: 0,
+      composition: { Soldier: 4 },
+      attached: { Mage: 1 },
+      upgrades: ['honed_edge'],
+      banner: null,
+    }])
+    expect(scenario.blue.placements).toEqual([
+      { type: 'Soldier', col: 4, row: 4, count: 4, squadId: 1 },
+      { type: 'Mage', col: 4, row: 4, count: 1, squadId: 1 },
+    ])
+
+    // Tear the whole thing down — the company off the rolls, not merely off the
+    // field — so nothing that comes back could have simply survived.
+    fireEvent.click(screen.getByTestId('lab-squad-remove-1'))
+    expect(screen.queryByTestId('lab-squad-1')).not.toBeInTheDocument()
+
+    importFile(text)
+
+    expect(await screen.findByTestId('lab-glyph-blue-4-4-Soldier-sq1')).toHaveTextContent('S4')
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Mage-sq1')).toHaveTextContent('M1')
+    openCompany(1)
+    expect(screen.getByTestId('lab-squad-name-1')).toHaveValue('1st Cohort')
+    expect(await screen.findByTestId('lab-squad-upgrade-1-honed_edge')).toBeChecked()
+    expect(screen.getByTestId('lab-squad-attached-1-Mage')).toHaveValue(1)
+  })
+
+  it('still reads a v2 file, taking its silence about companies as none', async () => {
+    await openLab()
+    placeSoldiers(3)
+
+    importFile(JSON.stringify({
+      version: 2,
+      blue: {
+        army: { Zombie: 2 },
+        placements: [{ type: 'Zombie', col: 5, row: 5, count: 2 }],
+        magic: { schools: { evocation: 4 }, channels: 2 },
+      },
+      red: { army: {}, placements: [], magic: { schools: {}, channels: 0 } },
+      runs: 1, seed: null, walls: [], reinforcements: [],
+    }))
+
+    expect(await screen.findByTestId('lab-glyph-blue-5-5-Zombie')).toHaveTextContent('Z2')
+    // A build that could enrol no company has nothing to say about them, and
+    // "no companies" is a complete answer rather than a shape to guess at.
+    expect(screen.queryByTestId('lab-squad-1')).not.toBeInTheDocument()
+  })
+
+  it('refuses a placement that names a company the file does not carry', async () => {
+    await openLab()
+    placeSoldiers(3)
+
+    importFile(JSON.stringify({
+      version: 3,
+      blue: {
+        army: {},
+        placements: [{ type: 'Soldier', col: 5, row: 5, count: 2, squadId: 9 }],
+        magic: { schools: {}, channels: 0 },
+        squads: [],
+      },
+      red: { army: {}, placements: [], magic: { schools: {}, channels: 0 }, squads: [] },
+      runs: 1, seed: null,
+    }))
+
+    // A tag with no sheet behind it is a state the store itself could never
+    // have produced — refused whole, with the standing setup untouched.
+    await waitFor(() => expect(screen.getByTestId('auth-notice')).toHaveTextContent(/malformed/))
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
+    expect(screen.queryByTestId('lab-glyph-blue-5-5-Soldier-sq9')).not.toBeInTheDocument()
+  })
+})
+
+describe('prefilling companies from the campaign (SB-13 / D-R2-7)', () => {
+  // A campaign with a charter and a Mage posted to it — the two things R1 made
+  // real and the prefill now has to carry across.
+  const campaign = {
+    id: 'campaign-2',
+    status: 'active',
+    roster: { Soldier: 10, Mage: 1 },
+    research: { schools: { evocation: { level: 3 } } },
+    squads: [{
+      id: 1,
+      name: '1st Cohort',
+      archetype: 'line',
+      prestige: 30,
+      composition: { Soldier: 4 },
+      upgrades: [{ id: 'honed_edge', name: 'Honed Edge', blurb: '+1 attack.' }],
+      banner: 'item',
+      bannerItem: { id: 'banner_unbroken_line', name: 'The Unbroken Line', blurb: '' },
+    }],
+    characters: [
+      {
+        id: 'c1', name: 'Elrid', type: 'Mage', alive: true, squadId: 1,
+        paths: [{ path: 'fire', label: 'Fire', level: 3 }],
+        chosenSpells: { chosen: [{ spell: 'fireball', label: 'Ember' }] },
+      },
+    ],
+  }
+
+  const spread = [
+    ...Array.from({ length: 4 }, () => ({ unit_type: 'Soldier', q: 2, r: 4, squad_id: 1 })),
+    { unit_type: 'Mage', q: 2, r: 4, squad_id: 1 },
+    ...Array.from({ length: 6 }, () => ({ unit_type: 'Soldier', q: 3, r: 5 })),
+    { unit_type: 'Mage', q: 3, r: 5 },
+  ]
+
+  it('turns each charter into a placed block, with its attached caster on it', async () => {
+    autoPlaceSandbox.mockResolvedValue({ placement: spread })
+    await openLab()
+    useCampaignStore.setState({ campaign })
+    fireEvent.click(await screen.findByTestId('lab-prefill'))
+
+    // THE LOOSE ARMY IS THE ROSTER MINUS EVERY COMPOSITION (a composition is
+    // always a subset of the roster), plus one body per living UNATTACHED
+    // character — Elrid rides with his charter, so he is one of its bodies
+    // rather than a loose one, and the roster's own Mage stays loose.
+    await waitFor(() => expect(autoPlaceSandbox).toHaveBeenCalledWith(
+      'blue',
+      { Soldier: 6, Mage: 1 },
+      [{ id: 1, army: { Soldier: 4, Mage: 1 } }],
+    ))
+
+    expect(await screen.findByTestId('lab-glyph-blue-4-4-Soldier-sq1')).toHaveTextContent('S4')
+    expect(screen.getByTestId('lab-glyph-blue-4-4-Mage-sq1')).toHaveTextContent('M1')
+    expect(screen.getByTestId('lab-glyph-blue-5-5-Soldier')).toHaveTextContent('S6')
+
+    // The sheet is the campaign's own: its rank, the upgrades it has earned and
+    // the banner bound to it — which is exactly the typing R-7 lets you do by
+    // hand, done for you.
+    openCompany(1)
+    expect(screen.getByTestId('lab-squad-name-1')).toHaveValue('1st Cohort')
+    expect(screen.getByTestId('lab-squad-prestige-1')).toHaveValue(30)
+    expect(screen.getByTestId('lab-squad-1')).toHaveTextContent('Seasoned')
+    expect(await screen.findByTestId('lab-squad-upgrade-1-honed_edge')).toBeChecked()
+    expect(screen.getByTestId('lab-squad-banner-1')).toHaveValue('banner_unbroken_line')
+  })
+
+  it('attaches the posted caster to his OWN company, not to a loose body', async () => {
+    autoPlaceSandbox.mockResolvedValue({ placement: spread })
+    await openLab()
+    useCampaignStore.setState({ campaign })
+    fireEvent.click(await screen.findByTestId('lab-prefill'))
+
+    // He queues behind his charter rather than behind the first Mage on the
+    // field: the block he stands in is the one the campaign would have put him
+    // in, and the roster's own loose Mage is left at the engine's own choice.
+    fireEvent.click(await screen.findByTestId('lab-caster-sq1-Mage-4-4-0'))
+    expect(await screen.findByTestId('lab-path-fire')).toHaveValue(3)
+    expect(screen.getByTestId('lab-script-remove-fireball')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('lab-caster-Mage-5-5-0'))
     expect(await screen.findByTestId('lab-path-fire')).toHaveValue(0)
     expect(screen.queryByTestId('lab-script-remove-fireball')).not.toBeInTheDocument()
   })

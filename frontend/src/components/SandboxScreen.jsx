@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import useSandboxStore, { SIDES } from '../stores/useSandboxStore'
 import useCampaignStore from '../stores/useCampaignStore'
 import {
-  autoPlaceLabSide, launchLabBattle, closeBattleLab, loadLabCastable,
-  exportLabScenario, importLabScenario, prefillLabFromCampaign,
+  autoPlaceLabSide, launchLabBattle, closeBattleLab, loadLabCastable, loadLabSquadCaps,
+  squadCapsKey, exportLabScenario, importLabScenario, prefillLabFromCampaign,
 } from '../stores/flows'
 import { HEX_SIZE, hexCenter, hexPoints, toAxial, svgSize, wallSegment } from '../utils/hexGeometry'
 
@@ -41,9 +41,18 @@ const roleBadges = (roles = []) => ROLE_ORDER.filter((r) => roles.includes(r)).j
 // second caster fizzling on a battlefield spell, the duplicate-script warning)
 // only appear when two casters on the SAME side differ, so a body has to be
 // addressable as itself and not as "a Mage on (4,2)".
-const bodyKey = (side, b) => `${side},${b.type},${b.col},${b.row},${b.index}`
+//
+// R2 adds the COMPANY to the address, because a company's attached Mage and a
+// loose Mage may stand on the same hex and are two different men. Loose bodies
+// keep the shorter test id they have always had; a company's carry their
+// charter's number, which is also what tells the two rows apart on screen.
+const bodyKey = (side, b) =>
+  `${side},${b.squadId ?? 'loose'},${b.type},${b.col},${b.row},${b.index}`
+const bodyTestId = (b) =>
+  `lab-caster-${b.squadId == null ? '' : `sq${b.squadId}-`}${b.type}-${b.col}-${b.row}-${b.index}`
 const sameBody = (a, b) =>
-  Boolean(a && b && a.type === b.type && a.col === b.col && a.row === b.row && a.index === b.index)
+  Boolean(a && b && a.type === b.type && a.col === b.col && a.row === b.row && a.index === b.index
+    && (a.squadId ?? null) === (b.squadId ?? null))
 
 // A spinner's value, trimmed to a whole number inside the server's own bound —
 // the client never invents the ceiling, it reads it off the reference so the
@@ -96,6 +105,15 @@ const SandboxScreen = ({ info, map }) => {
   const addReinforcement = useSandboxStore((s) => s.addReinforcement)
   const setReinforcement = useSandboxStore((s) => s.setReinforcement)
   const removeReinforcement = useSandboxStore((s) => s.removeReinforcement)
+  // R2's companies. The sheets are per side like the armies; the caps answer is
+  // one slot, like the castable answer, because one sheet is open at a time.
+  const addSquad = useSandboxStore((s) => s.addSquad)
+  const setSquad = useSandboxStore((s) => s.setSquad)
+  const removeSquad = useSandboxStore((s) => s.removeSquad)
+  const placeSquad = useSandboxStore((s) => s.placeSquad)
+  const unplaceSquad = useSandboxStore((s) => s.unplaceSquad)
+  const setHexCapacity = useSandboxStore((s) => s.setHexCapacity)
+  const squadCapsAnswer = useSandboxStore((s) => s.squadCaps)
   // SB-13's prefill is offered only when there is a campaign to read (F5). The
   // lab itself needs none — that is SB-1 — so this is the one place the screen
   // looks at campaign state at all, and it looks at the player's OWN.
@@ -105,17 +123,32 @@ const SandboxScreen = ({ info, map }) => {
   // it is a cursor into the setup, not part of it, and S3's export would have
   // no business serialising where the player's eye was.
   const [openCaster, setOpenCaster] = useState(null)
+  // Which company's sheet is open, by id, for the same reason (R2).
+  const [openSquad, setOpenSquad] = useState(null)
 
   const armies = { blue, red }
+
+  // The engine's per-hex capacity, handed to the store so "does this block
+  // still fit where it stands" is answered in ONE place — by the control that
+  // offers to place a company and by the re-sync that follows an edit to it.
+  useEffect(() => {
+    setHexCapacity(info.grid.hexCapacity)
+  }, [info.grid.hexCapacity, setHexCapacity])
 
   // ONE ROW PER BODY, never per stack (SB-6): three Mages on one hex are three
   // men who may each want a different script, and the lab exists precisely to
   // put them beside each other and watch what the once-per-side rules do.
   const casterTypes = reference?.casterTypes ?? []
+  //
+  // A COMPANY'S ATTACHED CASTERS APPEAR HERE TOO (D-R2-1) and are configured
+  // with this same editor: they are caster bodies on the field like any other,
+  // so a second editor for them would be a second place to keep the same rule.
   const casterBodies = armies[side].placements
     .filter((p) => casterTypes.includes(p.type))
     .flatMap((p) => Array.from({ length: p.count }, (_, index) => ({
-      type: p.type, col: p.col, row: p.row, index, config: p.casters?.[index] ?? null,
+      type: p.type, col: p.col, row: p.row, index,
+      squadId: p.squadId ?? null,
+      config: p.casters?.[index] ?? null,
     })))
 
   // The body the editor is open on, re-read off the CURRENT list.
@@ -138,7 +171,8 @@ const SandboxScreen = ({ info, map }) => {
   const openPaths = JSON.stringify(
     openCaster
       ? armies[side].placements.find(
-        (p) => p.col === openCaster.col && p.row === openCaster.row && p.type === openCaster.type,
+        (p) => p.col === openCaster.col && p.row === openCaster.row && p.type === openCaster.type
+          && (p.squadId ?? null) === (openCaster.squadId ?? null),
       )?.casters?.[openCaster.index]?.paths ?? {}
       : {},
   )
@@ -146,6 +180,25 @@ const SandboxScreen = ({ info, map }) => {
     if (!openCaster) return
     loadLabCastable(side, openCaster, openCaster.index)
   }, [side, openCaster, openPaths, openSchools])
+
+  // The open company's sheet, re-read off the current list, and the ONE
+  // question its composition spinners are drawn from: what may this company
+  // field, per type? Asked of the server (R2, the D3 pattern) and re-asked
+  // whenever the archetype or the upgrades move, because a caps row and a
+  // type-swap row both change the answer — and `squadCaps` resolves them in an
+  // order the lab must not hold a second copy of.
+  //
+  // Keyed on the values themselves rather than on the sheet's identity, exactly
+  // as the castable question above is: renaming a company is not a new question
+  // about its caps, and a re-render that changed neither asks nothing.
+  const openSheet = armies[side].squads.find((q) => q.id === openSquad) ?? null
+  const openArchetype = openSheet?.archetype ?? ''
+  const openUpgrades = (openSheet?.upgrades ?? []).join('|')
+  useEffect(() => {
+    if (openSquad === null) return
+    const sheet = useSandboxStore.getState()[side].squads.find((q) => q.id === openSquad)
+    if (sheet) loadLabSquadCaps(side, sheet)
+  }, [side, openSquad, openArchetype, openUpgrades])
 
   const { grid, playerZone, enemyZone } = info
   const zoneFor = (s) => (s === 'red' ? enemyZone : playerZone)
@@ -185,12 +238,21 @@ const SandboxScreen = ({ info, map }) => {
   // Everything this side has composed but not yet placed. Shown as the palette's
   // running total, because an army left in the wings is the one mistake this
   // screen can make silently — the battle would simply be fought without them.
+  //
+  // LOOSE BODIES ONLY, both halves (D-R2-1): `army` is what the palette
+  // composed, and a company's bodies come from its sheet rather than from that
+  // budget — counting them here would report a surplus no spinner could close.
+  // A company that is not placed says so on its own row instead.
   const unplaced = (s) => {
-    const placed = armies[s].placements.reduce((sum, p) => sum + p.count, 0)
+    const placed = armies[s].placements
+      .filter((p) => p.squadId == null)
+      .reduce((sum, p) => sum + p.count, 0)
     const composed = Object.values(armies[s].army).reduce((sum, n) => sum + n, 0)
     return composed - placed
   }
 
+  // Every body on the field, companies included — this is what the side tab
+  // counts and what decides whether there is a battle to launch at all.
   const totalPlaced = (s) => armies[s].placements.reduce((sum, p) => sum + p.count, 0)
 
   // ANY passable hex may be SELECTED, not only one in the side being edited:
@@ -238,14 +300,25 @@ const SandboxScreen = ({ info, map }) => {
           />
           {stacks.map((p, i) => (
             <text
-              key={`${p.side}-${p.type}`}
-              data-testid={`lab-glyph-${p.side}-${col}-${row}-${p.type}`}
+              key={`${p.side}-${p.squadId ?? 'loose'}-${p.type}`}
+              // A company's stack is its OWN row on the hex, even where a loose
+              // stack of the same type stands beside it — they are budgeted and
+              // edited apart, so they are named apart.
+              data-testid={
+                `lab-glyph-${p.side}-${col}-${row}-${p.type}`
+                + (p.squadId == null ? '' : `-sq${p.squadId}`)
+              }
               x={x}
               y={rowY(i)}
               textAnchor="middle"
               dominantBaseline="middle"
               fontSize="8"
               fill={SIDE_COLOR[p.side]}
+              // Companies wear an outline (D-R2-6): a block on a hex is a
+              // different thing from bodies that merely happen to share one,
+              // and the field is where that has to be visible at a glance.
+              stroke={p.squadId == null ? 'none' : '#ffcc66'}
+              strokeWidth={p.squadId == null ? 0 : 0.4}
             >
               {p.type[0]}{p.count}
             </text>
@@ -268,15 +341,29 @@ const SandboxScreen = ({ info, map }) => {
     // wall panel and nothing else.
     if (!inZone(side, row)) return null
     const terrain = hexData(col, row).terrain
-    const here = Object.fromEntries(placementsAt(side, col, row).map((p) => [p.type, p.count]))
+    const standing = placementsAt(side, col, row)
+    // The LOOSE stacks are what the spinners edit; a company's bodies are
+    // edited through its sheet and nowhere else (D-R2-1), so the menu shows the
+    // block as ONE row rather than offering its types as loose counts.
+    const here = Object.fromEntries(
+      standing.filter((p) => p.squadId == null).map((p) => [p.type, p.count]),
+    )
     const composed = Object.keys(armies[side].army)
+    const blocks = armies[side].squads
+      .map((sheet) => ({
+        sheet,
+        bodies: standing.filter((p) => p.squadId === sheet.id),
+      }))
+      .filter((b) => b.bodies.length > 0)
 
-    // Room left on this hex once every OTHER type standing here is counted —
+    // Room left on this hex once every OTHER body standing here is counted —
     // the same capacity arithmetic the deployment screen does, so an army that
-    // fits in the lab fits in a real battle.
+    // fits in the lab fits in a real battle. A COMPANY'S BODIES COUNT LIKE ANY
+    // OTHERS: they are outside the loose budget, not outside the hex.
     const usedByOthers = (type) =>
-      Object.entries(here).reduce(
-        (sum, [t, n]) => (t === type ? sum : sum + n * sizeOf(t)), 0,
+      standing.reduce(
+        (sum, p) => (p.type === type && p.squadId == null ? sum : sum + p.count * sizeOf(p.type)),
+        0,
       )
 
     const maxFor = (type) => {
@@ -295,6 +382,21 @@ const SandboxScreen = ({ info, map }) => {
     return (
       <div className="lab-hex-menu" data-testid="lab-hex-menu">
         <h4>Hex {col},{row} — {terrain}</h4>
+        {/* The companies standing here, one row each — a block is placed and
+            taken up whole, so there is nothing per-type to offer. */}
+        {blocks.map(({ sheet, bodies }) => (
+          <div key={sheet.id} className="lab-hex-row" data-testid={`lab-hex-squad-${sheet.id}`}>
+            <span className="lab-unit-name">
+              {sheet.name} — {bodies.reduce((sum, p) => sum + p.count, 0)} bodies
+            </span>
+            <button
+              data-testid={`lab-hex-squad-unplace-${sheet.id}`}
+              onClick={() => unplaceSquad(side, sheet.id)}
+            >
+              Unplace
+            </button>
+          </div>
+        ))}
         {composed.length === 0 && <p>Compose an army first — nothing to place yet.</p>}
         {composed.map((type) => {
           const max = maxFor(type)
@@ -389,10 +491,18 @@ const SandboxScreen = ({ info, map }) => {
         <button
           key={bodyKey(side, b)}
           className={`lab-caster-row ${sameBody(b, editing) ? 'active' : ''}`}
-          data-testid={`lab-caster-${b.type}-${b.col}-${b.row}-${b.index}`}
+          data-testid={bodyTestId(b)}
           onClick={() => setOpenCaster(sameBody(b, editing) ? null : b)}
         >
           {b.type} · ({b.col},{b.row}) #{b.index + 1}
+          {/* Whose company he rides with, if any — an attached caster is
+              covered by its banner and carries its mods (13-17), so which
+              charter he is in is a fact about him, not decoration. */}
+          {b.squadId != null && (
+            <span className="lab-hint">
+              {' '}· {armies[side].squads.find((q) => q.id === b.squadId)?.name ?? `Company ${b.squadId}`}
+            </span>
+          )}
           {/* What this body actually overrides, so the list says at a glance
               which men are the game's own default and which are not. */}
           <span className="lab-hint"> {describeConfig(b.config)}</span>
@@ -405,7 +515,9 @@ const SandboxScreen = ({ info, map }) => {
     if (!editing) return null
     const paths = editing.config?.paths ?? {}
     const script = editing.config?.script ?? []
-    const at = { type: editing.type, col: editing.col, row: editing.row }
+    const at = {
+      type: editing.type, col: editing.col, row: editing.row, squadId: editing.squadId ?? null,
+    }
     const options = castable.key === bodyKey(side, editing) ? castable.options : []
     const labelOf = (id) => options.find((o) => o.spell === id)?.label ?? id
 
@@ -626,6 +738,256 @@ const SandboxScreen = ({ info, map }) => {
     </section>
   )
 
+  // ── The companies (R2 / R-7 / D-R2-6) ───────────────────────────────────
+  //
+  // THE LAB SETS THE WHOLE SHEET DIRECTLY: any catalog charter, any prestige,
+  // any upgrades regardless of the slots a campaign would make you earn, any
+  // banner regardless of the rank a campaign would make you reach, and any
+  // attached lab caster. What it does NOT set is what the engine is told about
+  // all that — `squad_mods` and `squad_abilities` are composed server-side from
+  // this sheet, so what fights here is exactly what a campaign company with
+  // this sheet would field.
+  //
+  // The one rule kept is the ARCHETYPE'S CAPS, and the spinners take their
+  // ceilings from the server's own answer rather than from a table here.
+  const ranks = reference?.ranks ?? []
+  const rankWord = (prestige) =>
+    (ranks.find((rung) => (prestige ?? 0) >= rung.min) ?? ranks.at(-1))?.label ?? ''
+  const capsFor = (sheet) =>
+    (squadCapsAnswer.key === squadCapsKey(side, sheet) ? squadCapsAnswer.caps : null)
+
+  const describeComposition = (composition) =>
+    Object.entries(composition ?? {})
+      .filter(([, n]) => n > 0)
+      .map(([type, n]) => `${n} ${type}`)
+      .join(', ')
+
+  // Enrol a company from the picker. A CHARTER prefills the sheet from its row
+  // (name, archetype, composition, prestige) — R-3's "it arrives with its row's
+  // opening composition", which is what makes the catalog worth offering at all
+  // — while a blank one is that archetype and nothing else yet.
+  const enrol = (value) => {
+    const [kind, id] = value.split(':')
+    if (kind === 'charter') {
+      const row = (reference?.charters ?? []).find((c) => c.id === id)
+      if (!row) return
+      addSquad(side, {
+        name: row.name,
+        archetype: row.archetype,
+        prestige: row.prestige ?? 0,
+        composition: { ...row.composition },
+      })
+      return
+    }
+    if (kind === 'custom') addSquad(side, { archetype: id })
+  }
+
+  const squadEditor = (sheet) => {
+    const caps = capsFor(sheet)
+    const at = useSandboxStore.getState().squadHex(side, sheet.id)
+    const canPlace = Boolean(selectedHex) && inZone(side, selectedHex?.row)
+      && useSandboxStore.getState().squadFits(side, sheet.id, selectedHex.col, selectedHex.row)
+
+    return (
+      <div className="lab-squad-editor">
+        <label className="lab-hex-row">
+          <span className="lab-unit-name">Name</span>
+          <input
+            type="text"
+            className="lab-squad-name"
+            value={sheet.name}
+            data-testid={`lab-squad-name-${sheet.id}`}
+            onChange={(e) => setSquad(side, sheet.id, { name: e.target.value })}
+          />
+        </label>
+        <label className="lab-hex-row">
+          <span className="lab-unit-name">Prestige</span>
+          <input
+            type="number"
+            min="0"
+            max={limits.maxPrestige}
+            value={sheet.prestige}
+            data-testid={`lab-squad-prestige-${sheet.id}`}
+            onChange={(e) => setSquad(side, sheet.id, {
+              prestige: clamp(e.target.value, limits.maxPrestige),
+            })}
+          />
+          {/* The rank WORD beside the number, off the served ladder — the lab
+              holds no copy of the thresholds (17-5). */}
+          <span className="lab-hint">{rankWord(sheet.prestige)}</span>
+        </label>
+
+        <h4>Composition</h4>
+        {caps === null && <p className="lab-hint">Asking what this charter may field…</p>}
+        {caps !== null && Object.keys(caps).length === 0 && (
+          <p className="lab-hint">
+            This archetype fields nothing the catalog knows — pick another one.
+          </p>
+        )}
+        {Object.entries(caps ?? {}).map(([type, cap]) => (
+          <label key={type} className="lab-hex-row">
+            <span className="lab-unit-name">{type}</span>
+            <input
+              type="number"
+              min="0"
+              max={cap}
+              value={sheet.composition[type] ?? 0}
+              data-testid={`lab-squad-comp-${sheet.id}-${type}`}
+              onChange={(e) => setSquad(side, sheet.id, {
+                composition: { ...sheet.composition, [type]: clamp(e.target.value, cap) },
+              })}
+            />
+            <span className="lab-hint">of {cap}</span>
+          </label>
+        ))}
+
+        {/* Attached casters sit OUTSIDE the caps (decision 3, as characters do)
+            and inside the hex — they are the lab's version of a character
+            posted to a charter, and they are configured in the casters panel
+            like every other caster body on the field. */}
+        <h4>Attached casters</h4>
+        {casterTypes.map((type) => (
+          <label key={type} className="lab-hex-row">
+            <span className="lab-unit-name">{type}</span>
+            <input
+              type="number"
+              min="0"
+              value={sheet.attached[type] ?? 0}
+              data-testid={`lab-squad-attached-${sheet.id}-${type}`}
+              onChange={(e) => setSquad(side, sheet.id, {
+                attached: { ...sheet.attached, [type]: clamp(e.target.value) },
+              })}
+            />
+          </label>
+        ))}
+
+        {/* ANY upgrades, regardless of slots (R-7). The slot cost is printed
+            because it is what the row would cost a campaign, not because
+            anything here charges it. */}
+        <h4>Upgrades</h4>
+        {(reference?.upgrades ?? []).map((row) => (
+          <label key={row.id} className="lab-squad-upgrade">
+            <input
+              type="checkbox"
+              checked={sheet.upgrades.includes(row.id)}
+              data-testid={`lab-squad-upgrade-${sheet.id}-${row.id}`}
+              onChange={(e) => setSquad(side, sheet.id, {
+                upgrades: e.target.checked
+                  ? [...sheet.upgrades, row.id]
+                  : sheet.upgrades.filter((id) => id !== row.id),
+              })}
+            />
+            <span className="lab-unit-name">{row.name}</span>
+            <span className="lab-hint">
+              {row.slots} slot{row.slots === 1 ? '' : 's'} — {row.blurb}
+            </span>
+          </label>
+        ))}
+
+        {/* One entry today (banner_unbroken_line), which is a fact about the
+            item catalog rather than about this picker: the list is every row
+            whose kind is `banner`, so a second one appears the day it is
+            authored. No rank check — R-7 again. */}
+        <h4>Banner</h4>
+        <select
+          value={sheet.banner ?? ''}
+          data-testid={`lab-squad-banner-${sheet.id}`}
+          onChange={(e) => setSquad(side, sheet.id, { banner: e.target.value || null })}
+        >
+          <option value="">No banner</option>
+          {(reference?.banners ?? []).map((row) => (
+            <option key={row.id} value={row.id}>{row.name}</option>
+          ))}
+        </select>
+
+        <div className="lab-actions">
+          <button
+            data-testid={`lab-squad-place-${sheet.id}`}
+            disabled={!canPlace}
+            onClick={() => placeSquad(side, sheet.id, selectedHex.col, selectedHex.row)}
+          >
+            {at ? 'Move to selected hex' : 'Place on selected hex'}
+          </button>
+          <button
+            data-testid={`lab-squad-unplace-${sheet.id}`}
+            disabled={!at}
+            onClick={() => unplaceSquad(side, sheet.id)}
+          >
+            Unplace
+          </button>
+          <button
+            data-testid={`lab-squad-remove-${sheet.id}`}
+            onClick={() => {
+              removeSquad(side, sheet.id)
+              setOpenSquad(null)
+            }}
+          >
+            Remove
+          </button>
+        </div>
+        {!canPlace && !at && (
+          <p className="lab-hint">
+            Select a hex in this side&apos;s zone with room for the whole block — one company
+            stands on one hex.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  const squadsPanel = () => (
+    <section className="lab-squads" data-testid="lab-squads">
+      <h3>Companies</h3>
+      <p className="lab-hint">
+        A charter fights as one block on one hex. Set its sheet however you like — any prestige,
+        any upgrades, any banner — and what the engine is told is composed from it, exactly as it
+        would be for a campaign company with the same sheet.
+      </p>
+      <select
+        value=""
+        data-testid="lab-squad-add"
+        disabled={!reference}
+        onChange={(e) => {
+          if (!e.target.value) return
+          enrol(e.target.value)
+          e.target.value = ''
+        }}
+      >
+        <option value="">Add a company…</option>
+        {(reference?.charters ?? []).map((row) => (
+          <option key={row.id} value={`charter:${row.id}`}>
+            {row.name} — {row.archetype} — {describeComposition(row.composition)}
+            {' — '}{rankWord(row.prestige)}
+          </option>
+        ))}
+        {(reference?.archetypes ?? []).map((row) => (
+          <option key={`custom-${row.id}`} value={`custom:${row.id}`}>
+            Custom company — {row.id}
+          </option>
+        ))}
+      </select>
+
+      {armies[side].squads.map((sheet) => {
+        const at = useSandboxStore.getState().squadHex(side, sheet.id)
+        return (
+          <div key={sheet.id} className="lab-squad">
+            <button
+              className={`lab-caster-row ${openSquad === sheet.id ? 'active' : ''}`}
+              data-testid={`lab-squad-${sheet.id}`}
+              onClick={() => setOpenSquad(openSquad === sheet.id ? null : sheet.id)}
+            >
+              {sheet.name} · {sheet.archetype || 'no archetype'} · {rankWord(sheet.prestige)}
+              <span className="lab-hint">
+                {' '}{at ? `— at (${at.col},${at.row})` : '— not placed'}
+              </span>
+            </button>
+            {openSquad === sheet.id && squadEditor(sheet)}
+          </div>
+        )
+      })}
+    </section>
+  )
+
   // ── The batch readout (SB-10 / E3) ──────────────────────────────────────
   //
   // What a batch can honestly say and nothing more: how often each side won,
@@ -820,6 +1182,10 @@ const SandboxScreen = ({ info, map }) => {
               />
             </label>
           ))}
+          {/* R2's companies, under the loose palette: the two are composed the
+              same way and budgeted apart, so they read best one above the
+              other rather than in separate columns. */}
+          {squadsPanel()}
         </div>
 
         <div className="lab-casting" data-testid="lab-casting">

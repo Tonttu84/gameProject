@@ -1,25 +1,32 @@
 import { Router } from 'express'
 import UnitType from '../models/unitType.js'
 import { getInfo } from '../services/engine.js'
-import { spreadPlacement } from '../services/enemyPlacement.js'
+import { makeZonePlacer, spreadPlacement } from '../services/enemyPlacement.js'
 import { runAndPersistSandboxBattle } from '../services/battleRunner.js'
 import { userExtractor } from '../middleware/auth.js'
 import { castableSpellsForLevels, isCasterType } from '../services/magic.js'
+import { squadAbilities } from '../services/items.js'
+import { statMods, upgradeSlotCost } from '../services/squadUpgrades.js'
+import { squadCaps } from '../services/squadReinforce.js'
 import { getSpellCatalog } from '../utils/spellCatalog.js'
 import {
   CASTER_CHARACTER_TYPES,
+  CHARTER_CATALOG,
   DECLARED_CASTER_PATH,
   ENEMY_CHANNELS,
   ENEMY_SCHOOLS,
   HEX_DIRECTIONS,
+  ITEM_CATALOG,
   MAP_NAME,
   SANDBOX_MAX_CHANNELS,
   SANDBOX_MAX_PATH_LEVEL,
+  SANDBOX_MAX_PRESTIGE,
   SANDBOX_MAX_REINFORCEMENTS,
   SANDBOX_MAX_REINFORCE_COUNT,
   SANDBOX_MAX_REINFORCE_MESSAGE,
   SANDBOX_MAX_RUNS,
   SANDBOX_MAX_SCHOOL_LEVEL,
+  SANDBOX_MAX_SQUADS_PER_SIDE,
   SANDBOX_MAX_UNITS_PER_SIDE,
   SANDBOX_MAX_WALL_DURABILITY,
   SANDBOX_MAX_WALL_SIDES,
@@ -27,6 +34,9 @@ import {
   SPELL_PATH_TEXT,
   SPELL_SCHOOLS,
   SPELL_SCHOOL_TEXT,
+  SQUAD_ARCHETYPES,
+  SQUAD_RANKS,
+  SQUAD_UPGRADE_POOL,
 } from '../utils/campaignConfig.js'
 
 // THE BATTLE LAB (docs/CAMPAIGN_PLAN.md, "TEST / SANDBOX MODE", slice S1).
@@ -99,6 +109,117 @@ const sanitizeScript = (script) => {
   return out
 }
 
+// ── R2: the squad sheet (docs/CAMPAIGN_PLAN.md, R-7) ────────────────────────
+//
+// THE LAB SETS EVERYTHING DIRECTLY (R-7, which is SB-5 extended to squads): any
+// catalog charter, any prestige, any upgrades REGARDLESS OF SLOTS, any banner
+// item regardless of rank, any attached lab caster. What it does NOT set is
+// what the engine is then told about all that: `squad_mods`, `squad_abilities`
+// and `squad_name` are composed HERE from the sheet, by the deploy route's very
+// own `statMods`/`squadAbilities`, so the engine sees exactly what a campaign
+// company with this sheet would send and nothing squad-shaped is ever trusted
+// from the body.
+//
+// The one rule the lab does keep is the ARCHETYPE'S CAPS — checked below,
+// against the entries rather than the sheet — because the caps are what MAKE a
+// company that archetype, and the hex holds no more anyway.
+
+// A sheet's display name, capped for the same reason a reinforcement's message
+// is: it is stored on the battle input and rendered into the replay, and a
+// client should not be able to park a novel in a battle document. Forty is a
+// little longer than the longest name in CHARTER_CATALOG.
+const SANDBOX_MAX_SQUAD_NAME = 40
+
+// The upgrade ids a sheet holds. Known rows only, DEDUPED, order kept — the
+// sanitizeScript discipline one field over, and for the same reasons: an id the
+// catalog does not know is a row nothing could apply, and a duplicate is a
+// mistake with an obvious repair rather than a request to refuse.
+//
+// NO SLOT CHECK AND NO ARCHETYPE CHECK (R-7: "any upgrades regardless of
+// slots"). The campaign's ladder is a gate on EARNING a row; the lab is where
+// you ask what a row does, and a rank you have not reached is exactly the
+// question it exists to answer.
+const sanitizeUpgrades = (upgrades) => {
+  if (!Array.isArray(upgrades)) return []
+  const known = new Set(SQUAD_UPGRADE_POOL.map((row) => row.id))
+  const out = []
+  for (const id of upgrades) {
+    if (typeof id !== 'string' || !known.has(id) || out.includes(id)) continue
+    out.push(id)
+  }
+  return out
+}
+
+// One squad sheet, REBUILT BY CONSTRUCTION like every other shape on this wire.
+// Returns null for a sheet that cannot be rebuilt, and the caller drops it.
+//
+// The archetype is the one field that DROPS THE WHOLE SHEET rather than
+// degrading: it decides which types may stand in the company and how many
+// (squadCaps), so a company with an archetype nobody knows is a company with no
+// caps at all — which would turn R-7's one remaining fence off silently.
+// Everything else degrades: an unknown upgrade or banner is simply not there,
+// which is what "the lab sets it directly" means when the id is junk.
+const sanitizeSquadSheet = (sheet) => {
+  const id = Math.trunc(Number(sheet?.id))
+  if (!Number.isFinite(id) || id <= 0) return null
+  if (!SQUAD_ARCHETYPES[sheet?.archetype]) return null
+
+  const name = typeof sheet?.name === 'string' ? sheet.name.trim() : ''
+  const prestige = Math.trunc(Number(sheet?.prestige))
+  const banner = ITEM_CATALOG.find(
+    (row) => row.kind === 'banner' && row.id === sheet?.banner,
+  )
+  return {
+    id,
+    // A company always has a name, because the engine prints it: an empty one
+    // falls back to its number rather than travelling as ''.
+    name: name.length > 0 ? name.slice(0, SANDBOX_MAX_SQUAD_NAME) : `Company ${id}`,
+    archetype: sheet.archetype,
+    // Clamped, never refused — R-7 sets prestige directly, and the bound is the
+    // sanity one SANDBOX_MAX_PRESTIGE exists to be. Junk reads as Untested.
+    prestige: Number.isFinite(prestige)
+      ? Math.min(SANDBOX_MAX_PRESTIGE, Math.max(0, prestige))
+      : 0,
+    upgrades: sanitizeUpgrades(sheet?.upgrades),
+    // NO RANK CHECK (R-7). The campaign makes a squad earn the Seasoned rung
+    // before a banner may be bound to it; the lab is where you ask what the
+    // banner does, so an Untested company may carry one here.
+    ...(banner ? { banner: banner.id } : {}),
+  }
+}
+
+// One side's sheets, by id. A DUPLICATE ID KEEPS THE FIRST SHEET: `squad_id` on
+// an entry has to name exactly one company, and a Map that let the last writer
+// win would silently re-badge every body already tagged with that number.
+const sheetsById = (sheets) => {
+  const out = new Map()
+  for (const sheet of Array.isArray(sheets) ? sheets : []) {
+    const clean = sanitizeSquadSheet(sheet)
+    if (clean && !out.has(clean.id)) out.set(clean.id, clean)
+  }
+  return out
+}
+
+// What the ENGINE is told about a company, composed from the sheet and only
+// from the sheet — the deploy route's rule (routes/campaigns.js), moved here
+// unchanged: the client sends placements, never stat modifiers, so a forged
+// `squad_mods` in the body is overwritten rather than trusted.
+//
+// Empty mods and empty abilities are OMITTED rather than sent as `{}`/`[]` —
+// the lab's absence rule, which the caster fields below already keep: an
+// unupgraded, bannerless company's entry is byte-for-byte the entry a loose
+// body sends plus its two tags.
+const squadFieldsFor = (sheet) => {
+  const mods = statMods(sheet)
+  const abilities = squadAbilities(sheet)
+  return {
+    squad_id: sheet.id,
+    squad_name: sheet.name,
+    ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
+    ...(abilities.length > 0 ? { squad_abilities: abilities } : {}),
+  }
+}
+
 // One placement entry, rebuilt from scratch rather than passed through. The
 // body is untrusted (SECURITY_NOTES.md), and the engine reads fields — squad
 // ids, character ids, caster paths — that mean things in the campaign layer
@@ -118,12 +239,31 @@ const sanitizeScript = (script) => {
 //     his Fire 1. An empty bag would OVERWRITE that seed with nothing and hand
 //     back a mute mage, so "I did not configure this one" has to travel as
 //     silence for the lab's default to be the game's own choice.
-const sanitizeEntry = (entry) => {
+// R2 adds the squad fields on the same terms — and the terms bite harder here,
+// because the engine reads three of them and only ONE arrives from the client:
+//
+//   • `squad_id` survives only when it names a sanitised sheet ON THIS SIDE.
+//     Anything else — an id nobody sent a sheet for, a number that is not one,
+//     the other side's company — DROPS, and the body simply fights loose. That
+//     is the version of the guard that cannot be forgotten: a tag with no sheet
+//     behind it could carry no mods anyway.
+//   • `squad_name`, `squad_mods` and `squad_abilities` are COMPOSED from the
+//     sheet whatever the entry said (squadFieldsFor above). A forged one is
+//     overwritten when the sheet has something to say and stripped when it does
+//     not — the deploy route's own rule, and the reason nothing squad-shaped is
+//     ever read off an entry.
+//   • A CASTER BODY IN A COMPANY GETS THE COMPANY'S MODS AND ABILITIES, which
+//     is `modsFor`/`abilitiesFor` at the deploy route: an attached character
+//     rides with their squad and is covered by its banner (5-0, 13-17).
+const sanitizeEntry = (entry, sheets) => {
   const unitType = String(entry?.unit_type ?? '')
+  const squadId = Math.trunc(Number(entry?.squad_id))
+  const sheet = Number.isFinite(squadId) ? sheets?.get(squadId) : undefined
   const base = {
     unit_type: unitType,
     q: Math.trunc(Number(entry?.q)),
     r: Math.trunc(Number(entry?.r)),
+    ...(sheet ? squadFieldsFor(sheet) : {}),
   }
   if (!isCasterType(unitType)) return base
 
@@ -134,6 +274,50 @@ const sanitizeEntry = (entry) => {
     ...(Object.keys(paths).length > 0 ? { paths } : {}),
     ...(script.length > 0 ? { script } : {}),
   }
+}
+
+// What a company may look like once its bodies are on the field — the two
+// fences R-7 keeps, checked against the ENTRIES rather than against the sheet
+// (the bodies are the composition here; the sheet never carries one).
+//
+//   1. ONE COMPANY, ONE HEX. The engine groups a formation by hex + squad_id,
+//      so a company spread over two hexes arrives as two formations with no
+//      cohesion between them — the very degradation enemyPlacement.addBlock
+//      throws rather than performs. A refusal is the only honest answer.
+//   2. THE ARCHETYPE'S CAPS, resolved THROUGH the sheet's upgrades (squadCaps
+//      applies the type swap and then the caps bonus), because the caps are
+//      what MAKE a company that archetype. A type the caps do not name may not
+//      stand in it at all — that is what an archetype is — and a type over its
+//      cap is a company its own reinforcement rules could never have refilled.
+//
+// CASTERS ARE OUTSIDE THE CAPS, as characters are in the campaign (decision 3):
+// an attached lab caster sits outside the caps and inside the hex, which is
+// exactly where SQUAD_CHARACTER_RESERVE puts a campaign one.
+const squadShapeError = (entries, sheets) => {
+  const blocks = new Map()
+  for (const entry of entries) {
+    if (entry.squad_id === undefined) continue
+    const block = blocks.get(entry.squad_id) ?? { hexes: new Set(), troops: new Map() }
+    block.hexes.add(`${entry.q},${entry.r}`)
+    if (!isCasterType(entry.unit_type))
+      block.troops.set(entry.unit_type, (block.troops.get(entry.unit_type) ?? 0) + 1)
+    blocks.set(entry.squad_id, block)
+  }
+
+  for (const [id, block] of blocks) {
+    const sheet = sheets.get(id)
+    if (block.hexes.size > 1)
+      return `${sheet.name} stands on more than one hex — one company, one hex`
+    const caps = squadCaps(sheet)
+    for (const [type, count] of block.troops) {
+      const cap = caps[type]
+      if (cap === undefined)
+        return `${sheet.name} is a ${sheet.archetype} company and has no place for ${type}`
+      if (count > cap)
+        return `${sheet.name} may field ${cap} ${type}, not ${count}`
+    }
+  }
+  return null
 }
 
 // The top-level `magic` block, one side at a time (D1: the lab holds one per
@@ -334,14 +518,37 @@ const seedFrom = (value) => {
 // map name from the client is a filesystem argument the engine would read.
 router.post('/battles', userExtractor, async (req, res) => {
   const sizes = await sizeCatalog()
+
+  // R2's sheets, per side, CAPPED BY COUNT on what the client actually sent —
+  // before anything is rebuilt, the same order the wall and wave lists below
+  // are checked in, so a body of a hundred thousand sheets is refused rather
+  // than sanitized one sheet at a time.
+  const sheets = {}
+  for (const [side, key] of [['blue', 'player'], ['red', 'enemy']]) {
+    const sent = Array.isArray(req.body?.squads?.[side]) ? req.body.squads[side] : []
+    if (sent.length > SANDBOX_MAX_SQUADS_PER_SIDE)
+      return res.status(400).json({
+        error: `too many companies on the ${key} side (${sent.length}; the lab allows`
+          + ` ${SANDBOX_MAX_SQUADS_PER_SIDE})`,
+      })
+    sheets[side] = sheetsById(sent)
+  }
+
+  // Each side's entries are rebuilt against ITS OWN sheets, which is what makes
+  // "a squad_id naming the other side's company" a tag that simply drops.
   const playerPlacement = (Array.isArray(req.body?.player_placement) ? req.body.player_placement : [])
-    .map(sanitizeEntry)
+    .map((entry) => sanitizeEntry(entry, sheets.blue))
   const enemyPlacement = (Array.isArray(req.body?.enemy_placement) ? req.body.enemy_placement : [])
-    .map(sanitizeEntry)
+    .map((entry) => sanitizeEntry(entry, sheets.red))
 
   const error =
     placementError(playerPlacement, 'player', sizes) ?? placementError(enemyPlacement, 'enemy', sizes)
   if (error) return res.status(400).json({ error })
+
+  // R-7's two remaining fences, once the bodies are known.
+  const squadError =
+    squadShapeError(playerPlacement, sheets.blue) ?? squadShapeError(enemyPlacement, sheets.red)
+  if (squadError) return res.status(400).json({ error: squadError })
 
   // Both sides empty is a battle with nothing in it; ONE side empty is a
   // legitimate thing to test (does a lone host walk the field? does a garrison
@@ -430,26 +637,84 @@ router.post('/auto-place', userExtractor, async (req, res) => {
     return res.status(400).json({ error: 'army must be an object of {unitType: count}' })
 
   const sizes = await sizeCatalog()
-  let total = 0
-  for (const [type, count] of Object.entries(army)) {
-    if (!sizes.has(type)) return res.status(400).json({ error: `unknown unit type "${type}"` })
-    const n = Number(count)
-    if (!Number.isInteger(n) || n < 0) return res.status(400).json({ error: `bad count for "${type}"` })
-    total += n
+  // One army bag, walked the same way whether it is the loose troops or one
+  // company's own bodies. Returns an error STRING or null, the placementError
+  // shape the routes turn into a 400.
+  const armyError = (bag, what) => {
+    if (!bag || typeof bag !== 'object' || Array.isArray(bag))
+      return `${what} must be an object of {unitType: count}`
+    for (const [type, count] of Object.entries(bag)) {
+      if (!sizes.has(type)) return `unknown unit type "${type}" in ${what}`
+      const n = Number(count)
+      if (!Number.isInteger(n) || n < 0) return `bad count for "${type}" in ${what}`
+    }
+    return null
   }
+  const bodiesIn = (bag) => Object.values(bag).reduce((sum, n) => sum + Number(n), 0)
+
+  // R2 (D-R2-4): BLOCKS FIRST, THEN THE LOOSE ARMY. `addBlock` is what puts a
+  // company on ONE hex — the engine groups a formation by hex + squad_id, so a
+  // block scattered unit by unit arrives as N one-member companies — and it
+  // prefers an untouched hex, which is why the blocks are laid before `add`
+  // scatters the rest around them. The raid route places a campaign party the
+  // same way; this is that placement asked for from the lab.
+  //
+  // CAPPED BY COUNT before anything is built, like the sheets at the launch
+  // route above.
+  const squadsSent = Array.isArray(req.body?.squads) ? req.body.squads : []
+  if (squadsSent.length > SANDBOX_MAX_SQUADS_PER_SIDE)
+    return res.status(400).json({
+      error: `too many companies on the ${side} side (${squadsSent.length}; the lab allows`
+        + ` ${SANDBOX_MAX_SQUADS_PER_SIDE})`,
+    })
+
+  const squads = []
+  for (const squad of squadsSent) {
+    const id = Math.trunc(Number(squad?.id))
+    // An id that is not a company number tags bodies with a squad nobody could
+    // then name, so it is refused rather than dropped: unlike a sheet at the
+    // launch route, there is no loose fallback here — the client asked for a
+    // block and a block has to be identifiable.
+    if (!Number.isFinite(id) || id <= 0)
+      return res.status(400).json({ error: 'each company needs an id (a whole number above zero)' })
+    const bad = armyError(squad?.army, `company ${id}`)
+    if (bad) return res.status(400).json({ error: bad })
+    squads.push({ id, army: squad.army })
+  }
+
+  const loose = armyError(army, 'army')
+  if (loose) return res.status(400).json({ error: loose })
+
+  // The cap counts a squad body like any other, exactly as the launch route
+  // does: a company is bodies that stand together, not bodies that are free.
+  const total = bodiesIn(army) + squads.reduce((sum, s) => sum + bodiesIn(s.army), 0)
   if (total > SANDBOX_MAX_UNITS_PER_SIDE)
     return res.status(400).json({
       error: `too many units on the ${side} side (${total}; the lab allows ${SANDBOX_MAX_UNITS_PER_SIDE})`,
     })
 
   const info = await getInfo()
-  const placement = spreadPlacement(
-    army,
-    { ...zoneFor(info, side), width: info.grid.width, hexCapacity: info.grid.hexCapacity },
-    sizes,
-  )
+  const zone = { ...zoneFor(info, side), width: info.grid.width, hexCapacity: info.grid.hexCapacity }
 
-  res.json({ placement })
+  // No squads at all is the launch every slice before this one made, and it
+  // stays literally that call — one placer used once.
+  if (squads.length === 0) return res.json({ placement: spreadPlacement(army, zone, sizes) })
+
+  const placer = makeZonePlacer(zone, sizes)
+  for (const squad of squads) {
+    try {
+      placer.addBlock(squad.army, { squad_id: squad.id })
+    } catch (err) {
+      // addBlock THROWS rather than degrading (no silent fallbacks while the
+      // design is early) — a block too fat for one hex, or a zone with no room
+      // left for it. Both are answers the player has to see, so the throw
+      // becomes a 400 naming the company rather than a 500 naming nothing.
+      return res.status(400).json({ error: `company ${squad.id}: ${err.message}` })
+    }
+  }
+  placer.add(army)
+
+  res.json({ placement: placer.result() })
 })
 
 // The lab's STATIC VOCABULARY, in one call (S2). Everything the caster panels
@@ -478,6 +743,45 @@ router.get('/reference', userExtractor, (req, res) => {
     // a seventh direction or spell one of the six differently.
     hexDirections: HEX_DIRECTIONS,
     enemyPreset: { schools: { ...ENEMY_SCHOOLS }, channels: ENEMY_CHANNELS },
+    // ── R2's squad vocabulary (R-7) ──────────────────────────────────────
+    //
+    // Served for the same reason the paths and the six hexside names are: the
+    // lab holds no copy of the campaign's own words or numbers, so a retuned
+    // archetype, a re-priced upgrade or a renamed charter reaches the sheet
+    // for free (17-5).
+    //
+    // EVERY CHARTER ROW, the opening three included. The lab may field the
+    // companies a campaign starts with as readily as the ones it drafts — R-7
+    // sets the sheet directly, and "which rows exist" is config the player can
+    // read off the catalog anyway (R-3: the composition IS the choice).
+    charters: CHARTER_CATALOG.map((row) => ({
+      id: row.id,
+      name: row.name,
+      archetype: row.archetype,
+      composition: { ...row.composition },
+      prestige: row.prestige ?? 0,
+      blurb: row.blurb,
+    })),
+    // The caps a composition is fenced by and the intake it would refill at.
+    // The sheet reads the caps back off POST /squad-caps once upgrades are on
+    // it (they move the caps); these are what an unupgraded company may hold.
+    archetypes: Object.entries(SQUAD_ARCHETYPES).map(([id, row]) => ({
+      id, caps: { ...row.caps }, intake: row.intake,
+    })),
+    // `slots` is what the row COSTS a campaign, sent so the sheet can say so
+    // beside the box — and then let it be ticked anyway (R-7).
+    upgrades: SQUAD_UPGRADE_POOL.map((row) => ({
+      id: row.id, name: row.name, blurb: row.blurb, slots: upgradeSlotCost(row),
+    })),
+    // Exactly ONE row exists today (banner_unbroken_line), so this is a
+    // one-entry list until the item catalog grows — which is a fact about the
+    // content, not about the picker.
+    banners: ITEM_CATALOG
+      .filter((row) => row.kind === 'banner')
+      .map((row) => ({ id: row.id, name: row.name, blurb: row.blurb })),
+    // The rank ladder, so the sheet prints the word beside the prestige number
+    // without holding the thresholds — retuning SQUAD_RANKS moves the lab too.
+    ranks: SQUAD_RANKS.map((rung) => ({ ...rung })),
     limits: {
       maxPathLevel: SANDBOX_MAX_PATH_LEVEL,
       maxSchoolLevel: SANDBOX_MAX_SCHOOL_LEVEL,
@@ -497,7 +801,34 @@ router.get('/reference', userExtractor, (req, res) => {
       maxWallDurability: SANDBOX_MAX_WALL_DURABILITY,
       maxReinforcements: SANDBOX_MAX_REINFORCEMENTS,
       maxReinforceCount: SANDBOX_MAX_REINFORCE_COUNT,
+      // R2's two. `maxPrestige` is a sanity bound on an untrusted number, like
+      // maxChannels — the rank ladder itself has no ceiling — and
+      // `maxSquadsPerSide` bounds the number of SHEETS a launch may carry.
+      maxPrestige: SANDBOX_MAX_PRESTIGE,
+      maxSquadsPerSide: SANDBOX_MAX_SQUADS_PER_SIDE,
     },
+  })
+})
+
+// What THIS company may field, per type (R2, the D3 pattern one field over):
+// the sheet asks, it does not work the rules out.
+//
+// `squadCaps` is the campaign's own rule site — it resolves the archetype row
+// THROUGH the sheet's upgrades, applying a type-swap row before the caps bonus,
+// and that ordering is load-bearing. A client-side copy would be a second
+// reading of it and would drift the first time an upgrade kind is added, which
+// is exactly what D3 refused for the script picker.
+//
+// Both halves go through the launch route's own sanitizer, so what the spinners
+// are answered about is what a launch would actually be measured against. An
+// archetype nobody knows answers `{}` rather than 400ing: the sheet is being
+// typed, and "no types yet" is the honest answer to a half-made company.
+router.post('/squad-caps', userExtractor, (req, res) => {
+  res.json({
+    caps: squadCaps({
+      archetype: String(req.body?.archetype ?? ''),
+      upgrades: sanitizeUpgrades(req.body?.upgrades),
+    }),
   })
 })
 

@@ -3,10 +3,10 @@ import useNoticeStore from './useNoticeStore'
 import useCampaignStore from './useCampaignStore'
 import usePlacementStore from './usePlacementStore'
 import useUiStore from './useUiStore'
-import useSandboxStore from './useSandboxStore'
+import useSandboxStore, { squadBodies } from './useSandboxStore'
 import {
   launchSampleBattle, getBattle, getUnits, postSandboxBattle, autoPlaceSandbox,
-  getSandboxReference, postSandboxCastable,
+  getSandboxReference, postSandboxCastable, postSandboxSquadCaps,
 } from '../services/api'
 import { guarded } from './guarded'
 import { toAxial, toOffset } from '../utils/hexGeometry'
@@ -192,15 +192,39 @@ export const openBattleLab = async () => {
 // shown against nobody rather than against the wrong man.
 export const loadLabCastable = guarded(async (side, placement, index) => {
   const state = useSandboxStore.getState()
+  // The address carries the COMPANY too (R2): a company's attached Mage and a
+  // loose Mage may share a hex and a type, and they are two different men.
+  const squadId = placement.squadId ?? null
   const stack = state[side].placements.find(
-    (p) => p.col === placement.col && p.row === placement.row && p.type === placement.type,
+    (p) => p.col === placement.col && p.row === placement.row && p.type === placement.type
+      && (p.squadId ?? null) === squadId,
   )
-  const key = `${side},${placement.type},${placement.col},${placement.row},${index}`
+  const key = `${side},${squadId ?? 'loose'},${placement.type},${placement.col},${placement.row},${index}`
   const { options } = await postSandboxCastable({
     paths: stack?.casters?.[index]?.paths ?? {},
     schools: state[side].magic.schools,
   })
   useSandboxStore.getState().setCastable(key, options)
+})
+
+// What ONE company may field per type (R2, the D3 pattern one field over). The
+// sheet ASKS: `squadCaps` resolves the archetype row through the upgrades — a
+// type-swap row before the caps bonus, an ordering that is load-bearing — so a
+// copy of it here would drift the first time an effect kind is added.
+//
+// Keyed by the question, exactly as the castable answer is, so a reply that
+// lands after the player has ticked another upgrade is shown against nobody
+// rather than against a sheet it does not describe.
+export const squadCapsKey = (side, sheet) =>
+  `${side},${sheet?.id},${sheet?.archetype},${[...(sheet?.upgrades ?? [])].join('|')}`
+
+export const loadLabSquadCaps = guarded(async (side, sheet) => {
+  const key = squadCapsKey(side, sheet)
+  const { caps } = await postSandboxSquadCaps({
+    archetype: sheet?.archetype ?? '',
+    upgrades: [...(sheet?.upgrades ?? [])],
+  })
+  useSandboxStore.getState().setSquadCaps(key, caps)
 })
 
 export const closeBattleLab = () => useUiStore.getState().closeLab()
@@ -214,16 +238,34 @@ export const closeBattleLab = () => useUiStore.getState().closeLab()
 // and needs a failure to abort that flow rather than be swallowed into an
 // undefined the next step would build on.
 const spreadLabSide = async (side) => {
-  const { army } = useSandboxStore.getState()[side]
-  const { placement } = await autoPlaceSandbox(side, army)
+  const { army, squads } = useSandboxStore.getState()[side]
+  // THE BLOCKS GO WITH IT (D-R2-4). A company is placed by `addBlock` — one
+  // company, one hex — and the loose army is scattered around the blocks
+  // afterwards, so the server has to be told about both in one call or the two
+  // halves would be laid without knowing about each other. What each company
+  // sends is its BODIES: its composition plus its attached casters.
+  const blocks = squads
+    .map((sheet) => ({
+      id: sheet.id,
+      army: Object.fromEntries(squadBodies(sheet).map(({ type, count }) => [type, count])),
+    }))
+    .filter((block) => Object.keys(block.army).length > 0)
+
+  const { placement } = await autoPlaceSandbox(side, army, blocks)
 
   const stacks = new Map()
   for (const entry of placement) {
     const { col, row } = toOffset(entry.q, entry.r)
-    const key = `${entry.unit_type},${col},${row}`
+    // A company's bodies fold into their OWN stack: the same type on the same
+    // hex may be two stacks, one loose and one in a company, and the two are
+    // budgeted, edited and drawn differently.
+    const squadId = entry.squad_id ?? null
+    const key = `${squadId ?? 'loose'},${entry.unit_type},${col},${row}`
     const stack = stacks.get(key)
     if (stack) stack.count += 1
-    else stacks.set(key, { type: entry.unit_type, col, row, count: 1 })
+    else stacks.set(key, {
+      type: entry.unit_type, col, row, count: 1, ...(squadId === null ? {} : { squadId }),
+    })
   }
   useSandboxStore.getState().setPlacements(side, [...stacks.values()])
 }
@@ -241,8 +283,15 @@ const seedNumber = (seed) => {
 // Launch the composed battle. Both sides expand to ONE ENTRY PER BODY, which is
 // the shape the engine's placement JSON takes everywhere else (see startBattle
 // above) — the count on a lab placement is a UI convenience, never a wire
-// format. No squad_id rides along: the lab fields loose troops, the same as the
-// campaign's own loose roster does, and squads are not part of this slice.
+// format.
+//
+// R2 adds the companies, and adds them in TWO pieces that must not be confused:
+// each body of a company carries `squad_id`, and the SHEETS ride at the top
+// level. The sheet sends who the company is (name, archetype, prestige,
+// upgrades, banner) and NOT what it is made of — the bodies above are the
+// composition, and sending it twice would be inviting the two to disagree. The
+// server composes `squad_mods`/`squad_abilities`/`squad_name` from the sheet
+// (R-7), so nothing here computes what the engine is told about a company.
 export const launchLabBattle = guarded(async () => {
   const state = useSandboxStore.getState()
 
@@ -267,13 +316,23 @@ export const launchLabBattle = guarded(async () => {
     state[side].placements.flatMap((p) => {
       const { q, r } = toAxial(p.col, p.row)
       return Array.from({ length: p.count }, (_, i) => ({
-        unit_type: p.type, q, r, ...configOf(p, i),
+        unit_type: p.type, q, r,
+        ...(p.squadId == null ? {} : { squad_id: p.squadId }),
+        ...configOf(p, i),
       }))
     })
 
   const player_placement = expand('blue')
   const enemy_placement = expand('red')
   if (player_placement.length === 0 && enemy_placement.length === 0) return
+
+  // The sheets, per side — identity only, since the bodies above are the
+  // composition. Omitted entirely when neither side has enrolled one, so a lab
+  // with no companies sends byte-for-byte the launch it sent before R2.
+  const sheetOf = ({ id, name, archetype, prestige, upgrades, banner }) =>
+    ({ id, name, archetype, prestige, upgrades: [...upgrades], banner })
+  const squads = { blue: state.blue.squads.map(sheetOf), red: state.red.squads.map(sheetOf) }
+  const anyCompanies = squads.blue.length > 0 || squads.red.length > 0
 
   // Scenario-level, not per side (F1/F3): a wall belongs to the FIELD, and one
   // wave list carries both sides' arrivals with each row naming whose it is.
@@ -292,6 +351,7 @@ export const launchLabBattle = guarded(async () => {
     // player on his setup with the reason on screen.
     const summary = await postSandboxBattle({
       player_placement, enemy_placement, magic,
+      ...(anyCompanies ? { squads } : {}),
       // S4's two extras, and both are OMITTED when empty — a scenario with no
       // walls sends no `fortified_sides`, which is byte-for-byte the launch the
       // lab made before this slice. A wall's `durability` follows the same rule
@@ -351,8 +411,13 @@ export const launchLabBattle = guarded(async () => {
 // Refusing it would have thrown away every fixture already saved to buy
 // nothing, since there is no v1 shape this build would read wrongly. A version
 // this build has never heard of is still refused rather than guessed at.
-export const LAB_SCENARIO_VERSION = 2
-const LAB_SCENARIO_READABLE = [1, 2]
+// BUMPED TO 3 BY R2, which added the companies: a side's SHEETS, and the
+// `squadId` that says which body belongs to which. v1 and v2 files still load
+// for the same reason a v1 file still loaded into S4 — a build that could
+// enrol no company has nothing to say about them, and "no companies" is a
+// complete answer rather than a shape this build would read wrongly.
+export const LAB_SCENARIO_VERSION = 3
+const LAB_SCENARIO_READABLE = [1, 2, 3]
 
 const scenarioSide = (side) => ({
   army: { ...side.army },
@@ -361,11 +426,28 @@ const scenarioSide = (side) => ({
   // stack, and it would mean nothing anywhere else.
   placements: side.placements.map((p) => ({
     type: p.type, col: p.col, row: p.row, count: p.count,
+    // Which company this stack belongs to, or nothing at all for a loose one —
+    // the absence rule this file keeps everywhere else.
+    ...(p.squadId == null ? {} : { squadId: p.squadId }),
     ...(p.casters?.length > 0
       ? { casters: p.casters.map((c) => ({ paths: { ...c?.paths }, script: [...(c?.script ?? [])] })) }
       : {}),
   })),
   magic: { schools: { ...side.magic.schools }, channels: side.magic.channels },
+  // The SHEETS, whole — composition and attached included, unlike the launch
+  // wire. A scenario is a setup rather than a battle: the file has to be able
+  // to rebuild a company that was never placed, so it carries what the company
+  // IS and lets the import lay the bodies out again from it.
+  squads: side.squads.map((q) => ({
+    id: q.id,
+    name: q.name,
+    archetype: q.archetype,
+    prestige: q.prestige,
+    composition: { ...q.composition },
+    attached: { ...q.attached },
+    upgrades: [...q.upgrades],
+    banner: q.banner ?? null,
+  })),
 })
 
 // The scenario object as it is written to file. Split out from the download so
@@ -415,14 +497,34 @@ export const exportLabScenario = () => {
 const isBag = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 const isCount = (v) => Number.isFinite(v) && v >= 0
 
+// One company sheet, on the same terms as everything else here: the shape the
+// store's own setters could have produced. A v1/v2 file has no `squads` field
+// at all, which reads as the empty list a side is born with.
+const isBagOfCounts = (bag) => isBag(bag) && Object.values(bag).every(isCount)
+
+const validSquad = (q) =>
+  isBag(q) && Number.isInteger(q.id) && q.id > 0
+  && typeof q.name === 'string' && typeof q.archetype === 'string' && isCount(q.prestige)
+  && isBagOfCounts(q.composition) && isBagOfCounts(q.attached)
+  && Array.isArray(q.upgrades) && q.upgrades.every((id) => typeof id === 'string')
+  && (q.banner === null || typeof q.banner === 'string')
+
 const validSide = (side) => {
   if (!isBag(side) || !isBag(side.army) || !Array.isArray(side.placements)) return false
   if (!Object.values(side.army).every(isCount)) return false
   if (!isBag(side.magic) || !isBag(side.magic.schools) || !isCount(side.magic.channels)) return false
   if (!Object.values(side.magic.schools).every(isCount)) return false
+  if (side.squads !== undefined && !(Array.isArray(side.squads) && side.squads.every(validSquad)))
+    return false
+  // A placement's `squadId` must NAME A COMPANY OF THIS SIDE. It is the same
+  // guard placing the bodies before configuring their casters is: a tag with no
+  // sheet behind it would enter the store in a state the store itself could
+  // never have produced, and nothing downstream could then say whose body it is.
+  const ids = new Set((side.squads ?? []).map((q) => q.id))
   return side.placements.every((p) =>
     isBag(p) && typeof p.type === 'string' && Number.isFinite(p.col) && Number.isFinite(p.row)
     && isCount(p.count) && p.count > 0
+    && (p.squadId === undefined || p.squadId === null || ids.has(p.squadId))
     && (p.casters === undefined || (Array.isArray(p.casters) && p.casters.every((c) =>
       isBag(c) && isBag(c.paths) && Object.values(c.paths).every(isCount)
       && Array.isArray(c.script) && c.script.every((id) => typeof id === 'string')))),
@@ -452,17 +554,33 @@ const applySide = (side, data) => {
   // already being replaced.
   for (const type of Object.keys(store[side].army)) store.setArmyCount(side, type, 0)
   store.clearPlacements(side)
+  // The SHEETS go in before anything is placed (D-R2-7): a company's bodies are
+  // written from its sheet by placeSquad, so a block placed before its sheet
+  // existed would be a block of nothing.
+  store.setSquads(side, data.squads ?? [])
 
   for (const [type, count] of Object.entries(data.army)) store.setArmyCount(side, type, count)
+  const laid = new Set()
   for (const p of data.placements) {
-    store.place(side, p.col, p.row, p.type, p.count)
+    // A COMPANY IS PLACED THROUGH THE SQUAD PLACER, never through `place`: its
+    // bodies come from the sheet, so the file names only WHERE the block
+    // stands and the store rebuilds what stands there. Once per company — the
+    // file carries one row per type and they are all on the one hex.
+    if (p.squadId == null) store.place(side, p.col, p.row, p.type, p.count)
+    else if (!laid.has(p.squadId)) {
+      store.placeSquad(side, p.squadId, p.col, p.row)
+      laid.add(p.squadId)
+    }
     // The bodies are placed FIRST, because setCasterConfig refuses an index
     // past the stack — which is exactly the guard that keeps an imported file
     // from configuring a man who is not there.
     ;(p.casters ?? []).forEach((caster, index) =>
-      store.setCasterConfig(side, { col: p.col, row: p.row, type: p.type }, index, {
-        paths: { ...caster.paths }, script: [...caster.script],
-      }))
+      store.setCasterConfig(
+        side,
+        { col: p.col, row: p.row, type: p.type, squadId: p.squadId ?? null },
+        index,
+        { paths: { ...caster.paths }, script: [...caster.script] },
+      ))
   }
 
   for (const [school, level] of Object.entries(data.magic.schools))
@@ -500,9 +618,14 @@ export const importLabScenario = async (source) => {
   // scenario is a fixture other people's builds will read, and half-applying a
   // future format would be a worse answer than saying no.
   if (!isBag(scenario) || !LAB_SCENARIO_READABLE.includes(scenario.version)) {
+    // "1, 2 and 3" rather than a join: the list grows by one every slice that
+    // moves the format, and "1 and 2 and 3" reads as a bug in the sentence.
+    const readable = LAB_SCENARIO_READABLE.length > 1
+      ? `${LAB_SCENARIO_READABLE.slice(0, -1).join(', ')} and ${LAB_SCENARIO_READABLE.at(-1)}`
+      : String(LAB_SCENARIO_READABLE[0])
     notice.show(
       'That file is not a lab scenario this build can read (versions '
-      + `${LAB_SCENARIO_READABLE.join(' and ')} are read here) — the setup is unchanged.`,
+      + `${readable} are read here) — the setup is unchanged.`,
     )
     return false
   }
@@ -551,64 +674,118 @@ export const prefillLabFromCampaign = guarded(async () => {
   if (!campaign) return
   const notice = useNoticeStore.getState()
 
-  // 1. THE ARMY: the roster plus ONE BODY PER LIVING CHARACTER. A character is
-  // not a roster count (5-1) — the campaign budgets the two separately all the
-  // way through — so the Mage who leads the army has to be added here or he
-  // would not take the field at all. The dead stay on the rolls (5-9) and off
-  // the field.
+  // 1. THE COMPANIES (R2). Every charter becomes a lab SHEET carrying its own
+  // id, so the characters posted to it (character.squadId) still name the right
+  // company on this side of the copy. It is the campaign's own sheet — name,
+  // archetype, prestige, composition, the upgrades it has earned and the banner
+  // bound to it — which is precisely what R-7 lets the lab set by hand: the
+  // prefill is that typing done for you.
   const living = (campaign.characters ?? []).filter((c) => c.alive)
+  const casterTypes = useSandboxStore.getState().reference?.casterTypes ?? []
+  const attachedTo = (squadId) => {
+    const counts = {}
+    for (const character of living) {
+      if (character.squadId !== squadId || !casterTypes.includes(character.type)) continue
+      counts[character.type] = (counts[character.type] ?? 0) + 1
+    }
+    return counts
+  }
+  const squads = (campaign.squads ?? []).map((squad) => ({
+    id: squad.id,
+    name: squad.name,
+    archetype: squad.archetype ?? '',
+    prestige: squad.prestige ?? 0,
+    composition: { ...(squad.composition ?? {}) },
+    // An attached character rides with their company (5-8) — no separate
+    // placement step, because the block places as one. In the lab that is a
+    // caster BODY on the company's own hex, which is what `attached` is.
+    attached: attachedTo(squad.id),
+    upgrades: (squad.upgrades ?? []).map((row) => row.id),
+    // The view sends the tier WORD in `banner` and the bound relic in
+    // `bannerItem` (6-8); the sheet wants the item id, and no relic is null.
+    banner: squad.bannerItem?.id ?? null,
+  }))
+
+  // 2. THE LOOSE ARMY: the roster MINUS every company's composition (a
+  // composition is always a subset of the roster, which is the standing
+  // campaign invariant), plus ONE BODY PER LIVING UNATTACHED CHARACTER. A
+  // character is not a roster count (5-1), so the Mage who leads the army has
+  // to be added here or he would not take the field at all; a Mage posted to a
+  // company is already one of its bodies above. The dead stay on the rolls
+  // (5-9) and off the field.
   const army = { ...(campaign.roster ?? {}) }
-  for (const character of living) army[character.type] = (army[character.type] ?? 0) + 1
+  for (const squad of squads)
+    for (const [type, count] of Object.entries(squad.composition))
+      army[type] = Math.max(0, (army[type] ?? 0) - count)
+  for (const [type, count] of Object.entries(army)) if (count === 0) delete army[type]
+  for (const character of living) {
+    if (character.squadId != null) continue
+    army[character.type] = (army[character.type] ?? 0) + 1
+  }
 
   const store = useSandboxStore.getState()
   for (const type of Object.keys(store.blue.army)) store.setArmyCount('blue', type, 0)
+  store.setSquads('blue', squads)
   for (const [type, count] of Object.entries(army)) store.setArmyCount('blue', type, count)
 
-  // 2. THE SCHOOLS, straight off the research the player has already paid for.
+  // 3. THE SCHOOLS, straight off the research the player has already paid for.
   //
   // THE CHANNEL POOL IS LEFT ALONE, DELIBERATELY. A campaign's pool is decided
-  // by which BANNERED SQUADS take the field (channelsForSquads), and the lab
-  // fields loose troops with no squads at all (S1) — so there is no number here
-  // to carry across, and inventing one would be the lab quietly answering a
-  // question the campaign answers a different way.
+  // by which BANNERED SQUADS take the field (channelsForSquads) — and the lab
+  // does NOT derive it even now that it has companies: SB-8 made the pool a
+  // direct input here, so a number computed from the charters would be the lab
+  // quietly answering a question its own spinner already asks.
   for (const [school, block] of Object.entries(campaign.research?.schools ?? {}))
     store.setSchoolLevel('blue', school, block?.level ?? 0)
 
-  // 3. PLACE THEM THROUGH THE SERVER'S OWN SPREAD, so the lab packs hexes
+  // 4. PLACE THEM THROUGH THE SERVER'S OWN SPREAD, so the lab packs hexes
   // exactly as the real game does — the same function the enemy's daily plan
-  // and both sides of a raid use.
+  // and both sides of a raid use. The companies go with it (D-R2-4): each block
+  // lands on ONE hex and the loose army is scattered around them.
   await spreadLabSide('blue')
 
-  // 4. THE CASTERS, matched to bodies OF THEIR OWN TYPE IN PLACEMENT ORDER —
+  // 5. THE CASTERS, matched to bodies OF THEIR OWN TYPE IN PLACEMENT ORDER —
   // the same rule withCasterPaths already follows server-side, because eleven
   // Necromancers are eleven individuals and the only thing that can tell them
   // apart is the order they were laid out in. A character with no paths and no
   // script attaches nothing, which leaves that body at the engine's own choice.
+  //
+  // A POSTED CHARACTER QUEUES BEHIND HIS OWN COMPANY (R2), never behind a loose
+  // body of the same type: he rides with the charter he is attached to, and the
+  // block he is standing in is what the campaign would have put him in.
   const after = useSandboxStore.getState()
-  const casterTypes = after.reference?.casterTypes ?? []
+  const queueKey = (squadId, type) => `${squadId ?? 'loose'},${type}`
   const queues = new Map()
   for (const character of living) {
     if (!casterTypes.includes(character.type)) continue
-    const queue = queues.get(character.type) ?? []
+    const key = queueKey(character.squadId, character.type)
+    const queue = queues.get(key) ?? []
     queue.push(character)
-    queues.set(character.type, queue)
+    queues.set(key, queue)
   }
 
   for (const stack of after.blue.placements) {
-    const queue = queues.get(stack.type)
+    const queue = queues.get(queueKey(stack.squadId, stack.type))
     if (!queue?.length) continue
     for (let index = 0; index < stack.count && queue.length > 0; index++) {
       const character = queue.shift()
-      after.setCasterConfig('blue', { col: stack.col, row: stack.row, type: stack.type }, index, {
-        // The view sends `paths: [{path, label, level}]` phrased (17-5); the
-        // store wants the engine's own {path: level} bag.
-        paths: Object.fromEntries((character.paths ?? []).map((p) => [p.path, p.level])),
-        // His chosen script, in the order he chose it — position is priority
-        // (S4-1) on both sides of this copy.
-        script: (character.chosenSpells?.chosen ?? []).map((row) => row.spell),
-      })
+      after.setCasterConfig(
+        'blue',
+        { col: stack.col, row: stack.row, type: stack.type, squadId: stack.squadId ?? null },
+        index,
+        {
+          // The view sends `paths: [{path, label, level}]` phrased (17-5); the
+          // store wants the engine's own {path: level} bag.
+          paths: Object.fromEntries((character.paths ?? []).map((p) => [p.path, p.level])),
+          // His chosen script, in the order he chose it — position is priority
+          // (S4-1) on both sides of this copy.
+          script: (character.chosenSpells?.chosen ?? []).map((row) => row.spell),
+        },
+      )
     }
   }
 
-  notice.show("Blue is now your campaign army — roster, characters, research and all.")
+  notice.show(
+    'Blue is now your campaign army — roster, charters, characters, research and all.',
+  )
 })

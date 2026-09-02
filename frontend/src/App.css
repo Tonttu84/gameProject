@@ -1104,3 +1104,21 @@ body {
 }
 .lab-reinforce-row select { max-width: 9rem; }
 .lab-reinforce-row input[type="text"] { width: 100%; }
+
+/* R2's companies (docs/CAMPAIGN_PLAN.md, R-7): the sheet sits under the loose
+   palette, since the two compose the same side and are budgeted apart. The
+   editor borrows .lab-caster-row for its header, because a company and a caster
+   body are the same gesture on screen — a row you open. */
+.lab-squads { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
+.lab-squads h3 { margin: 0 0 0.3rem; font-size: 13px; color: var(--accent2); }
+.lab-squads h4 { margin: 0.6rem 0 0.3rem; font-size: 12px; color: var(--accent2); }
+.lab-squads > select { max-width: 100%; font-size: 12px; margin: 0.4rem 0; }
+.lab-squad-editor { border-left: 2px solid var(--border); padding-left: 0.5rem; margin-bottom: 0.6rem; }
+.lab-squad-editor input[type="text"] { width: 100%; }
+.lab-squad-editor select { max-width: 100%; font-size: 12px; }
+.lab-squad-upgrade {
+  display: flex; align-items: baseline; gap: 0.35rem;
+  margin-bottom: 0.3rem; font-size: 12px;
+}
+.lab-squad-upgrade input { width: auto; }
+.lab-squad-upgrade .lab-hint { flex: 2; }

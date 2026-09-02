@@ -45,7 +45,49 @@ const openMagic = () => ({
 // campaign's roster and deployment are: an army composed but not placed is a
 // mistake worth being able to see, and auto-place is the button that turns one
 // into the other.
-const emptySide = () => ({ army: {}, placements: [], magic: openMagic() })
+// R2's addition: `squads` are the side's SHEETS (D-R2-1) — a company's identity
+// (name, archetype, prestige, composition, attached casters, upgrades, banner),
+// with no coordinates on it. A sheet's BODIES are ordinary placement entries
+// carrying its `squadId`, written by placeSquad below, because one company is
+// one block on one hex (the engine groups a formation by hex + squad_id) and
+// the campaign places a charter exactly that way.
+//
+// `nextSquadId` is per SIDE and never goes backwards: an id is what a placement
+// entry points at, so reusing one would silently re-badge bodies that belonged
+// to a company the player deleted.
+const emptySide = () => ({
+  army: {}, placements: [], magic: openMagic(), squads: [], nextSquadId: 1,
+})
+
+// A fresh sheet's defaults — everything a company can be before anything is
+// typed into it. `banner: null` rather than absent, so the picker has a value
+// to sit on; `attached` is caster types only (they sit OUTSIDE the archetype's
+// caps, as characters do, and inside the hex).
+const emptySquad = (id) => ({
+  id,
+  name: `Company ${id}`,
+  archetype: '',
+  prestige: 0,
+  composition: {},
+  attached: {},
+  upgrades: [],
+  banner: null,
+})
+
+// A sheet's bodies as {type, count} rows — its composition plus its attached
+// casters, merged by type so a type named twice is one stack rather than two on
+// the same hex. This is the ONE place a sheet becomes bodies; the launch, the
+// auto-place request and the placement below all read it, so what the server is
+// asked to place and what the grid draws can never disagree.
+export const squadBodies = (sheet) => {
+  const bodies = new Map()
+  for (const bag of [sheet?.composition, sheet?.attached])
+    for (const [type, count] of Object.entries(bag ?? {})) {
+      const n = Math.max(0, Math.floor(Number(count) || 0))
+      if (n > 0) bodies.set(type, (bodies.get(type) ?? 0) + n)
+    }
+  return [...bodies.entries()].map(([type, count]) => ({ type, count }))
+}
 
 // One caster BODY's configuration (SB-6, D2). Both halves default EMPTY, and
 // empty means ABSENT ON THE WIRE — which is the engine's own default: no
@@ -83,6 +125,18 @@ const initialState = () => ({
   // the key it was asked for so a reply that arrives after the player has moved
   // on is dropped rather than shown against the wrong caster.
   castable: { key: null, options: [] },
+  // The same shape one field over (R2): what THIS company may field per type,
+  // answered by POST /squad-caps. The sheet asks, it does not work the rules
+  // out — squadCaps resolves the archetype row THROUGH the upgrades, and a
+  // client-side copy would drift the first time an effect kind is added.
+  squadCaps: { key: null, caps: {} },
+  // The engine's per-hex capacity, stamped by the screen off `./game info`. The
+  // store needs it to answer "does this block still fit where it stands" in ONE
+  // place — the button that offers to place a company and the re-sync that
+  // follows an edit to it must not measure a hex differently. Null until the
+  // screen says, and a null capacity fences nothing: the server is the fence
+  // that cannot be bypassed.
+  hexCapacity: null,
   launching: false,
   // The summary of the battle just launched, or null. The lab holds only the
   // latest — which is also all the server keeps (SB-12).
@@ -148,6 +202,10 @@ const useSandboxStore = create((set, get) => ({
     }),
 
   setCastable: (key, options) => set({ castable: { key, options } }),
+
+  setSquadCaps: (key, caps) => set({ squadCaps: { key, caps } }),
+
+  setHexCapacity: (hexCapacity) => set({ hexCapacity }),
 
   setSelectedHex: (selectedHex) => set({ selectedHex }),
   setLaunching: (launching) => set({ launching }),
@@ -230,14 +288,16 @@ const useSandboxStore = create((set, get) => ({
   // an index past the count configures nobody. Keeping one would let it come
   // back to life — and silently script a different man — the next time the
   // stack grew.
+  //
+  // LOOSE ENTRIES ONLY (D-R2-1). A company's bodies stand on the same hexes as
+  // everyone else's and may share a type with them, but they are edited through
+  // their SHEET and nowhere else — a spinner that could reach them would let
+  // the hex menu field a company its own composition does not describe.
   place: (side, col, row, type, count) =>
     set((s) => {
-      const here = s[side].placements.find(
-        (p) => p.col === col && p.row === row && p.type === type,
-      )
-      const rest = s[side].placements.filter(
-        (p) => !(p.col === col && p.row === row && p.type === type),
-      )
+      const isLoose = (p) => p.col === col && p.row === row && p.type === type && p.squadId == null
+      const here = s[side].placements.find(isLoose)
+      const rest = s[side].placements.filter((p) => !isLoose(p))
       if (count <= 0) return { [side]: { ...s[side], placements: rest } }
 
       const casters = trimCasters(here?.casters, count)
@@ -256,12 +316,18 @@ const useSandboxStore = create((set, get) => ({
   // per type — the mechanics this was asked for, the second caster fizzling and
   // the duplicate-script warning, only appear when two casters on the same side
   // differ). `patch` is merged, so paths and script are set independently.
-  setCasterConfig: (side, { col, row, type }, index, patch) =>
+  //
+  // R2 widens the ADDRESS by one field: a company's attached Mage and a loose
+  // Mage may stand on the same hex, and they are two different men. `squadId`
+  // defaults to null on both sides of the comparison, so every caller written
+  // before companies existed still addresses the loose stack it meant.
+  setCasterConfig: (side, { col, row, type, squadId = null }, index, patch) =>
     set((s) => ({
       [side]: {
         ...s[side],
         placements: s[side].placements.map((p) => {
           if (!(p.col === col && p.row === row && p.type === type)) return p
+          if ((p.squadId ?? null) !== squadId) return p
           // No body, no config: an index past the stack is a stale row in a
           // panel the player has already shrunk out from under.
           if (index < 0 || index >= p.count) return p
@@ -314,18 +380,158 @@ const useSandboxStore = create((set, get) => ({
   // whole answer, and a config from the old layout belongs to a body that is no
   // longer standing where it stood. Configure the casters after the spread, not
   // before it.
+  //
+  // R2 KEEPS THE COMPANIES THROUGH IT (D-R2-4), and the way it keeps them is
+  // that the spread now ANSWERS with them: the auto-place route places each
+  // block first (one company, one hex) and scatters the loose army around them,
+  // so the list handed here already carries every squad body with its tag.
+  // Preserving them here instead would double every block the server just laid.
   setPlacements: (side, placements) => set((s) => ({ [side]: { ...s[side], placements } })),
 
   clearPlacements: (side) => set((s) => ({ [side]: { ...s[side], placements: [] }, selectedHex: null })),
+
+  // ── R2: the companies (docs/CAMPAIGN_PLAN.md, R-7 / D-R2-1) ──────────────
+  //
+  // A SHEET plus a BLOCK. The sheet is what the company IS and lives in
+  // `squads`; the block is its bodies, written into `placements` as ordinary
+  // entries carrying `squadId`. Nothing else in this store treats those entries
+  // specially except by excluding them from the LOOSE budget, because to the
+  // grid and to the hex's capacity a company body is a body like any other.
+
+  // Enrol a company. The sheet is prefilled from a catalog charter or blank,
+  // and its id is allocated here so nothing outside the store can invent one.
+  addSquad: (side, sheet = {}) =>
+    set((s) => {
+      const id = s[side].nextSquadId
+      return {
+        [side]: {
+          ...s[side],
+          squads: [...s[side].squads, { ...emptySquad(id), ...sheet, id }],
+          nextSquadId: id + 1,
+        },
+      }
+    }),
+
+  // Merge a patch into one sheet, then RE-SYNC its block if it has one: the
+  // bodies on the field are the composition, so an edit that does not reach
+  // them would leave the sheet and the block describing different companies.
+  //
+  // A BLOCK THAT NO LONGER FITS ITS HEX IS UNPLACED rather than half-written or
+  // silently overstacked — one company, one hex is the invariant, and the sheet
+  // then reads "not placed" so the player can put it somewhere it fits.
+  setSquad: (side, id, patch) => {
+    set((s) => ({
+      [side]: {
+        ...s[side],
+        squads: s[side].squads.map((q) => (q.id === id ? { ...q, ...patch } : q)),
+      },
+    }))
+    const state = get()
+    const standing = state[side].placements.find((p) => p.squadId === id)
+    if (!standing) return
+    if (state.squadFits(side, id, standing.col, standing.row))
+      state.placeSquad(side, id, standing.col, standing.row)
+    else state.unplaceSquad(side, id)
+  },
+
+  // Off the rolls entirely, block and all. The id is NOT returned to the pool:
+  // `nextSquadId` only ever climbs, so a later company can never inherit the
+  // tag a placement entry might still be pointing at.
+  removeSquad: (side, id) =>
+    set((s) => ({
+      [side]: {
+        ...s[side],
+        squads: s[side].squads.filter((q) => q.id !== id),
+        placements: s[side].placements.filter((p) => p.squadId !== id),
+      },
+    })),
+
+  // Put the company on one hex: one entry per type, all tagged, and its old
+  // entries dropped first — so placing again MOVES the block rather than
+  // cloning it. Caster configs on the surviving bodies are carried across and
+  // trimmed exactly as `place` trims them, since the i-th attached Mage of a
+  // company is the same man before and after the composition below him changed.
+  placeSquad: (side, id, col, row) =>
+    set((s) => {
+      const sheet = s[side].squads.find((q) => q.id === id)
+      if (!sheet) return {}
+      const held = new Map(
+        s[side].placements.filter((p) => p.squadId === id).map((p) => [p.type, p.casters]),
+      )
+      const rest = s[side].placements.filter((p) => p.squadId !== id)
+      const block = squadBodies(sheet).map(({ type, count }) => {
+        const casters = trimCasters(held.get(type), count)
+        return { type, col, row, count, squadId: id, ...(casters.length > 0 ? { casters } : {}) }
+      })
+      return { [side]: { ...s[side], placements: [...rest, ...block] } }
+    }),
+
+  // Off the field, still on the rolls: the sheet survives so the company can be
+  // put down again without being rebuilt.
+  unplaceSquad: (side, id) =>
+    set((s) => ({
+      [side]: { ...s[side], placements: s[side].placements.filter((p) => p.squadId !== id) },
+    })),
+
+  // Replace one side's sheets wholesale — what the scenario import applies and
+  // what the campaign prefill writes, the same contract setPlacements and
+  // setWalls hold. `nextSquadId` is lifted CLEAR of every id that arrived, so a
+  // company enrolled afterwards cannot collide with an imported one.
+  setSquads: (side, squads) =>
+    set((s) => ({
+      [side]: {
+        ...s[side],
+        squads,
+        nextSquadId: squads.reduce((next, q) => Math.max(next, (q?.id ?? 0) + 1), 1),
+      },
+    })),
+
+  // Would this company stand on that hex? ONE RULE SITE, read by the control
+  // that offers to place it and by the re-sync that follows an edit to it —
+  // two answers to this question would mean a block the button allowed and the
+  // store then threw away.
+  //
+  // Measured in the engine's own size points against the side's own bodies
+  // already standing there, minus this company's (it is moving, not joining
+  // itself). Packing (a formation-fighters company takes less room) is NOT
+  // applied: it would let the browser promise a fit on a rule the auto-place
+  // route does not apply either, and being the conservative one of the two is
+  // the safe direction to be wrong in.
+  squadFits: (side, id, col, row) => {
+    const s = get()
+    const sheet = s[side].squads.find((q) => q.id === id)
+    if (!sheet) return false
+    if (s.hexCapacity === null || s.hexCapacity === undefined) return true
+
+    const sizeOf = new Map(s.catalog.map((u) => [u.name, u.size]))
+    const points = (type, count) => (sizeOf.get(type) ?? 0) * count
+    const mine = squadBodies(sheet).reduce((sum, b) => sum + points(b.type, b.count), 0)
+    const others = s[side].placements
+      .filter((p) => p.col === col && p.row === row && p.squadId !== id)
+      .reduce((sum, p) => sum + points(p.type, p.count), 0)
+    return mine > 0 && mine + others <= s.hexCapacity
+  },
+
+  // Where this company stands, or null. Derived here rather than in a component
+  // so "placed at (4,4)" and "not placed" are read off one computation.
+  squadHex: (side, id) => {
+    const at = get()[side].placements.find((p) => p.squadId === id)
+    return at ? { col: at.col, row: at.row } : null
+  },
 
   // How many of `type` this side has left to place — the army minus everything
   // already standing somewhere. `excludeHex` leaves one hex out of the sum, so
   // the menu editing that hex offers the budget as it would be WITHOUT its own
   // current stack (otherwise raising a stack from 4 to 5 reads as over budget).
+  //
+  // LOOSE BODIES ONLY (D-R2-1): `army` is what the palette composed, and a
+  // company's bodies come from its SHEET rather than from that budget — they
+  // were never in the army bag, so counting them against it would report a
+  // shortfall that no spinner could ever close.
   remaining: (side, type, excludeHex = null) => {
     const { army, placements } = get()[side]
     const placed = placements
-      .filter((p) => p.type === type)
+      .filter((p) => p.type === type && p.squadId == null)
       .filter((p) => !(excludeHex && p.col === excludeHex.col && p.row === excludeHex.row))
       .reduce((sum, p) => sum + p.count, 0)
     return Math.max(0, (army[type] ?? 0) - placed)

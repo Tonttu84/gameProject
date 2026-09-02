@@ -40,10 +40,12 @@ const { default: Battle } = await import('../models/battle.js')
 const { default: Tick } = await import('../models/tick.js')
 const { default: UnitType } = await import('../models/unitType.js')
 const {
-  ENEMY_CHANNELS, ENEMY_SCHOOLS, HEX_DIRECTIONS, SANDBOX_MAX_CHANNELS, SANDBOX_MAX_PATH_LEVEL,
+  CHARTER_CATALOG, ENEMY_CHANNELS, ENEMY_SCHOOLS, HEX_DIRECTIONS, ITEM_CATALOG,
+  SANDBOX_MAX_CHANNELS, SANDBOX_MAX_PATH_LEVEL, SANDBOX_MAX_PRESTIGE,
   SANDBOX_MAX_REINFORCEMENTS, SANDBOX_MAX_REINFORCE_COUNT, SANDBOX_MAX_REINFORCE_MESSAGE,
-  SANDBOX_MAX_RUNS, SANDBOX_MAX_SCHOOL_LEVEL, SANDBOX_MAX_UNITS_PER_SIDE,
-  SANDBOX_MAX_WALL_DURABILITY, SANDBOX_MAX_WALL_SIDES, SPELL_PATHS, SPELL_SCHOOLS,
+  SANDBOX_MAX_RUNS, SANDBOX_MAX_SCHOOL_LEVEL, SANDBOX_MAX_SQUADS_PER_SIDE,
+  SANDBOX_MAX_UNITS_PER_SIDE, SANDBOX_MAX_WALL_DURABILITY, SANDBOX_MAX_WALL_SIDES,
+  SPELL_PATHS, SPELL_SCHOOLS, SQUAD_ARCHETYPES, SQUAD_RANKS, SQUAD_UPGRADE_POOL,
 } = await import('../utils/campaignConfig.js')
 
 const api = supertest(app)
@@ -462,6 +464,10 @@ describe('GET /api/sandbox/reference', () => {
       maxWallDurability: SANDBOX_MAX_WALL_DURABILITY,
       maxReinforcements: SANDBOX_MAX_REINFORCEMENTS,
       maxReinforceCount: SANDBOX_MAX_REINFORCE_COUNT,
+      // R2's two: a sanity bound on prestige (the rank ladder has no ceiling
+      // of its own) and a bound on how many SHEETS one side may carry.
+      maxPrestige: SANDBOX_MAX_PRESTIGE,
+      maxSquadsPerSide: SANDBOX_MAX_SQUADS_PER_SIDE,
     })
   })
 
@@ -472,6 +478,54 @@ describe('GET /api/sandbox/reference', () => {
     // the wall painter draws its six toggles straight off this.
     expect(res.body.hexDirections).toEqual(HEX_DIRECTIONS)
     expect(res.body.hexDirections).toEqual(['NE', 'E', 'SE', 'SW', 'W', 'NW'])
+  })
+
+  // ── R2's squad vocabulary (R-7) ───────────────────────────────────────────
+  test('serves EVERY charter row, the opening three included', async () => {
+    const res = await reference()
+
+    // All of them: the lab may field the companies a campaign starts with as
+    // readily as the ones it drafts (R-7 sets the sheet directly), so the
+    // `opening` flag is not a filter here.
+    expect(res.body.charters).toHaveLength(CHARTER_CATALOG.length)
+    expect(res.body.charters.map((c) => c.id)).toContain('first_cohort')
+
+    const cohort = res.body.charters.find((c) => c.id === 'first_cohort')
+    expect(cohort).toEqual({
+      id: 'first_cohort',
+      name: '1st Cohort',
+      archetype: 'line',
+      composition: { Soldier: 40 },
+      prestige: 0,
+      blurb: expect.any(String),
+    })
+  })
+
+  test('serves the archetypes, the upgrade pool priced in slots, the banners and the ranks', async () => {
+    const res = await reference()
+
+    expect(res.body.archetypes.map((a) => a.id)).toEqual(Object.keys(SQUAD_ARCHETYPES))
+    expect(res.body.archetypes.find((a) => a.id === 'line')).toEqual({
+      id: 'line', caps: { Soldier: 40, Pikeman: 10 }, intake: 10,
+    })
+
+    // Every row, whatever archetype it names: R-7 lets the lab tick any
+    // upgrade, and `slots` is what the row would COST a campaign — said beside
+    // the box, not enforced by it.
+    expect(res.body.upgrades.map((u) => u.id)).toEqual(SQUAD_UPGRADE_POOL.map((u) => u.id))
+    expect(res.body.upgrades.find((u) => u.id === 'royal_guard').slots).toBe(2)
+    expect(res.body.upgrades.find((u) => u.id === 'honed_edge').slots).toBe(1)
+
+    // Exactly ONE banner exists today, which is a fact about the content and
+    // not about the picker — the filter is on `kind`, so a second row appears
+    // here the day one is authored.
+    const banners = ITEM_CATALOG.filter((row) => row.kind === 'banner')
+    expect(res.body.banners.map((b) => b.id)).toEqual(banners.map((b) => b.id))
+    expect(res.body.banners.every((b) => typeof b.name === 'string')).toBe(true)
+
+    // The ladder itself, so the sheet prints "Blooded" beside a 10 without
+    // holding the thresholds.
+    expect(res.body.ranks).toEqual(SQUAD_RANKS)
   })
 })
 
@@ -917,5 +971,454 @@ describe('scheduled waves (SB-9 / F3 / F4)', () => {
     expect(inputOf().reinforcements).toEqual([
       { team: 1, unit_type: 'Soldier', count: 300, tick: 3 },
     ])
+  })
+})
+
+// ── R2: the squads (docs/CAMPAIGN_PLAN.md, R-7) ─────────────────────────────
+//
+// The seam every slice before this one widened by one field, widened again —
+// and this time the fields the engine reads mostly do NOT come from the client
+// at all. R-7 lets the lab set a company's SHEET directly (any charter, any
+// prestige, any upgrades regardless of slots, any banner regardless of rank),
+// and the route composes `squad_name`/`squad_mods`/`squad_abilities` from that
+// sheet with the deploy route's own `statMods`/`squadAbilities`. So what is
+// pinned here is the two halves of that bargain: everything about a company is
+// rebuilt server-side, and the one rule the lab keeps — the archetype's caps,
+// which are what MAKE it that archetype — is checked against the bodies.
+describe('the squad sheet on a launch (R-7)', () => {
+  const inputOf = () => engine.runBattle.mock.calls[0][0]
+
+  // One line company on one hex, with whatever sheet the test is about.
+  const launchSquad = (sheet, entries = [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }]) =>
+    launch({
+      player_placement: entries,
+      enemy_placement: [],
+      squads: { blue: [{ id: 1, archetype: 'line', ...sheet }] },
+    })
+
+  const entryOf = async (sheet) => {
+    stubEngine()
+    await launchSquad(sheet)
+    return inputOf().player_placement[0]
+  }
+
+  test('is rebuilt by construction: name trimmed, prestige clamped, junk dropped', async () => {
+    const entry = await entryOf({
+      name: `  ${'A'.repeat(60)}  `,
+      prestige: SANDBOX_MAX_PRESTIGE + 5000.7,
+      upgrades: ['honed_edge', 'summon_dragon', 'honed_edge', 42],
+      banner: 'gear_iron_helm',
+    })
+
+    // Forty characters of a sixty-character name, trimmed of its whitespace
+    // first — it is stored on the battle input and printed into the replay.
+    expect(entry.squad_name).toHaveLength(40)
+    // The unknown row and the duplicate are rebuilt away and the order of what
+    // survives is kept; only the real upgrade reaches the engine, as a mod.
+    expect(entry.squad_mods).toEqual({ attack: 1 })
+    // `gear_iron_helm` is a real item and NOT a banner, so it is not a banner
+    // this company could carry — omitted rather than sent.
+    expect('squad_abilities' in entry).toBe(false)
+  })
+
+  test('clamps prestige into the sanity bound and reads junk as Untested', async () => {
+    stubEngine()
+    // Prestige reaches the engine only THROUGH the sheet (it decides nothing
+    // the engine reads), so what it is pinned by here is the rank ladder the
+    // banner rule is written against — see the banner test below.
+    const res = await launchSquad({ prestige: 'lots' })
+    expect(res.status).toBe(201)
+  })
+
+  test('drops the whole sheet when the archetype is one nobody knows', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }],
+      enemy_placement: [],
+      squads: { blue: [{ id: 1, name: 'Ghosts', archetype: 'phalanx', upgrades: ['honed_edge'] }] },
+    })
+
+    // The archetype decides which types may stand in the company and how many,
+    // so a company with none has no caps at all — dropping the sheet is what
+    // keeps R-7's one remaining fence from being turned off by a typo. The body
+    // simply fights loose.
+    expect(inputOf().player_placement).toEqual([{ unit_type: 'Soldier', q: 4, r: 4 }])
+  })
+
+  test('takes a banner whatever the prestige, and three upgrades with no slot to pay with', async () => {
+    // R-7 outright: any banner item and any upgrades REGARDLESS OF SLOTS. An
+    // Untested company has no upgrade slot and no banner rung in the campaign;
+    // here it carries three rows and the standard, because the lab is where you
+    // ask what they do.
+    const entry = await entryOf({
+      prestige: 0,
+      upgrades: ['honed_edge', 'heavier_kit', 'formation_fighters'],
+      banner: 'banner_unbroken_line',
+    })
+
+    expect(entry.squad_mods).toEqual({ attack: 1, armour: 1, formationFighter: 2 })
+    expect(entry.squad_abilities).toEqual(['fearless'])
+  })
+
+  test('says nothing at all for a company with nothing to say', async () => {
+    const entry = await entryOf({ name: '1st Cohort' })
+
+    // The absence rule, one layer up from the caster fields: an unupgraded,
+    // bannerless company sends its two tags and no empty bags beside them.
+    expect(entry).toEqual({
+      unit_type: 'Soldier', q: 4, r: 4, squad_id: 1, squad_name: '1st Cohort',
+    })
+    expect('squad_mods' in entry).toBe(false)
+    expect('squad_abilities' in entry).toBe(false)
+  })
+
+  test('names an unnamed company by its number rather than sending an empty string', async () => {
+    const entry = await entryOf({ name: '   ' })
+    expect(entry.squad_name).toBe('Company 1')
+  })
+
+  test('caps the sheets by COUNT before rebuilding any of them', async () => {
+    const many = Array.from({ length: SANDBOX_MAX_SQUADS_PER_SIDE + 1 }, (_, i) => ({
+      id: i + 1, archetype: 'line',
+    }))
+    const res = await launch({ ...oneOfEach, squads: { blue: many } })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/too many companies on the player side/i)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+})
+
+describe('the squad fields on a placement entry (R-7)', () => {
+  const inputOf = () => engine.runBattle.mock.calls[0][0]
+
+  const sheets = {
+    blue: [{ id: 1, name: '1st Cohort', archetype: 'line', upgrades: ['honed_edge'] }],
+    red: [{ id: 9, name: 'The Host', archetype: 'line' }],
+  }
+
+  test('survives only when it names a sheet on its OWN side', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 },
+        // Red's company: not blue's to field, so the tag drops and the body
+        // fights loose rather than borrowing another army's charter.
+        { unit_type: 'Soldier', q: 4, r: 4, squad_id: 9 },
+        // A number nobody sent a sheet for: a tag with nothing behind it could
+        // carry no mods anyway.
+        { unit_type: 'Soldier', q: 4, r: 4, squad_id: 4 },
+        { unit_type: 'Soldier', q: 4, r: 4, squad_id: 'first' },
+      ],
+      enemy_placement: [{ unit_type: 'Soldier', q: 4, r: 25, squad_id: 9 }],
+      squads: sheets,
+    })
+
+    const [tagged, ...loose] = inputOf().player_placement
+    expect(tagged.squad_id).toBe(1)
+    for (const entry of loose) expect(entry).toEqual({ unit_type: 'Soldier', q: 4, r: 4 })
+    // Red's own company is red's to field.
+    expect(inputOf().enemy_placement[0].squad_id).toBe(9)
+    expect(inputOf().enemy_placement[0].squad_name).toBe('The Host')
+  })
+
+  test('discards a forged squad_mods, squad_abilities and squad_name and rebuilds all three', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [{
+        unit_type: 'Soldier', q: 4, r: 4, squad_id: 1,
+        squad_name: 'The Invincibles',
+        squad_mods: { attack: 99, armour: 99 },
+        squad_abilities: ['fearless', 'nocorpse'],
+      }],
+      enemy_placement: [],
+      squads: sheets,
+    })
+
+    // The deploy route's own rule, moved here unchanged: the client sends
+    // placements, never stat modifiers. `honed_edge` is worth +1 attack and
+    // the company carries no banner, so THAT is what crosses.
+    expect(inputOf().player_placement).toEqual([{
+      unit_type: 'Soldier', q: 4, r: 4,
+      squad_id: 1, squad_name: '1st Cohort', squad_mods: { attack: 1 },
+    }])
+  })
+
+  test('strips a forged pair outright from a body in no company at all', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [{
+        unit_type: 'Soldier', q: 4, r: 4,
+        squad_mods: { attack: 99 }, squad_abilities: ['fearless'], squad_name: 'Nobody',
+      }],
+      enemy_placement: [],
+    })
+
+    expect(inputOf().player_placement).toEqual([{ unit_type: 'Soldier', q: 4, r: 4 }])
+  })
+
+  test('formation_fighters travels as a mod, and a banner as an ability', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 }],
+      enemy_placement: [],
+      squads: {
+        blue: [{
+          id: 1, name: 'Drilled', archetype: 'line',
+          upgrades: ['formation_fighters'], banner: 'banner_unbroken_line',
+        }],
+      },
+    })
+
+    // formationFighter is not a `stat` row but IS an engine stat, applied by
+    // the same AUnit::applyStatMod — it rides squad_mods rather than a private
+    // transport, exactly as it does from the deploy route.
+    const [entry] = inputOf().player_placement
+    expect(entry.squad_mods).toEqual({ formationFighter: 2 })
+    // The engine learns the ABILITY and never that a banner exists (6-7): the
+    // translation happens campaign-side, where the item catalog is.
+    expect(entry.squad_abilities).toEqual(['fearless'])
+  })
+
+  test("a caster in the company carries the company's mods and abilities", async () => {
+    stubEngine()
+    await launch({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 },
+        { unit_type: 'Mage', q: 4, r: 4, squad_id: 1, paths: { fire: 3 } },
+      ],
+      enemy_placement: [],
+      squads: {
+        blue: [{
+          id: 1, name: 'Drilled', archetype: 'line',
+          upgrades: ['honed_edge'], banner: 'banner_unbroken_line',
+        }],
+      },
+    })
+
+    // `modsFor`/`abilitiesFor` at the deploy route: an attached character rides
+    // with their squad and is covered by its banner (5-0, 13-17). His own
+    // caster fields ride alongside, untouched.
+    expect(inputOf().player_placement[1]).toEqual({
+      unit_type: 'Mage', q: 4, r: 4,
+      squad_id: 1, squad_name: 'Drilled',
+      squad_mods: { attack: 1 }, squad_abilities: ['fearless'],
+      paths: { fire: 3 },
+    })
+  })
+})
+
+describe('what a company may look like on the field (R-7)', () => {
+  const line = (n, extra = {}) =>
+    Array.from({ length: n }, () => ({ unit_type: 'Soldier', q: 4, r: 4, squad_id: 1, ...extra }))
+
+  const withSheet = (sheet, entries) => launch({
+    player_placement: entries,
+    enemy_placement: [],
+    squads: { blue: [{ id: 1, name: '1st Cohort', archetype: 'line', ...sheet }] },
+  })
+
+  test('refuses a company standing on two hexes', async () => {
+    const res = await withSheet({}, [
+      { unit_type: 'Soldier', q: 4, r: 4, squad_id: 1 },
+      { unit_type: 'Soldier', q: 5, r: 4, squad_id: 1 },
+    ])
+
+    // The engine groups a formation by hex + squad_id, so a company on two
+    // hexes arrives as two formations with no cohesion between them — the very
+    // degradation addBlock throws rather than performs.
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/1st Cohort stands on more than one hex — one company, one hex/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('refuses more of a type than the archetype caps', async () => {
+    const res = await withSheet({}, line(SQUAD_ARCHETYPES.line.caps.Soldier + 1))
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/1st Cohort may field 40 Soldier, not 41/)
+    expect(engine.runBattle).not.toHaveBeenCalled()
+  })
+
+  test('deeper_ranks lifts the very cap the lab checks against', async () => {
+    stubEngine()
+    // squadCaps resolves the archetype row THROUGH the upgrades, so this proves
+    // the check reads the rule site rather than the archetype table — a caps
+    // row raises the cap here for the same reason it raises it in a campaign.
+    const res = await withSheet(
+      { upgrades: ['deeper_ranks'] },
+      line(SQUAD_ARCHETYPES.line.caps.Soldier + 1),
+    )
+    expect(res.status).toBe(201)
+  })
+
+  test('refuses a type the archetype does not name at all', async () => {
+    const res = await withSheet({}, [{ unit_type: 'Cavalry', q: 4, r: 4, squad_id: 1 }])
+
+    // The caps are what MAKE it that archetype: a caps row widens the muster,
+    // it never admits a type the charter was not written for.
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/1st Cohort is a line company and has no place for Cavalry/)
+  })
+
+  test('a caster on the company hex sits OUTSIDE the caps', async () => {
+    stubEngine()
+    const res = await withSheet({}, [
+      ...line(SQUAD_ARCHETYPES.line.caps.Soldier),
+      { unit_type: 'Mage', q: 4, r: 4, squad_id: 1 },
+      { unit_type: 'Priest', q: 4, r: 4, squad_id: 1 },
+    ])
+
+    // Characters sit outside the CAPS (decision 3) and inside the hex, which is
+    // where an attached lab caster sits too — a full company may still take one.
+    expect(res.status).toBe(201)
+  })
+
+  test('lets an untagged body stand on the company hex without joining it', async () => {
+    stubEngine()
+    const res = await withSheet({}, [
+      ...line(SQUAD_ARCHETYPES.line.caps.Soldier),
+      { unit_type: 'Cavalry', q: 4, r: 4 },
+    ])
+
+    // Loose troops are budgeted against nothing but the hex: the caps are a
+    // fence around a COMPANY, not around a coordinate.
+    expect(res.status).toBe(201)
+  })
+})
+
+describe('POST /api/sandbox/squad-caps (the D3 pattern)', () => {
+  const caps = (body) =>
+    api.post('/api/sandbox/squad-caps').set('Authorization', `Bearer ${token}`).send(body)
+
+  test('requires a login', async () => {
+    expect((await api.post('/api/sandbox/squad-caps').send({ archetype: 'line' })).status).toBe(401)
+  })
+
+  test('answers the archetype row, and answers it THROUGH the upgrades', async () => {
+    expect((await caps({ archetype: 'line' })).body.caps)
+      .toEqual(SQUAD_ARCHETYPES.line.caps)
+    expect((await caps({ archetype: 'vanguard' })).body.caps)
+      .toEqual(SQUAD_ARCHETYPES.vanguard.caps)
+
+    // +2 to every type this company may field.
+    expect((await caps({ archetype: 'line', upgrades: ['deeper_ranks'] })).body.caps)
+      .toEqual({ Soldier: 42, Pikeman: 12 })
+
+    // A type-swap row rewrites which type a cap is FOR, and it applies BEFORE
+    // the caps bonus — the ordering squadCaps owns, which is exactly what the
+    // sheet must not hold a second copy of.
+    expect((await caps({ archetype: 'line', upgrades: ['royal_guard', 'deeper_ranks'] })).body.caps)
+      .toEqual({ RoyalGuard: 42, Pikeman: 12 })
+  })
+
+  test('sanitizes both halves exactly as a launch would', async () => {
+    // An unknown row is never looked at, so the answer is the one a launch
+    // carrying the same list would actually be measured against.
+    expect((await caps({ archetype: 'line', upgrades: ['deeper_ranks', 'summon_dragon'] })).body.caps)
+      .toEqual({ Soldier: 42, Pikeman: 12 })
+
+    // A half-made company has no types yet, which is an answer rather than a
+    // refusal — the sheet is still being typed.
+    expect((await caps({})).body.caps).toEqual({})
+    expect((await caps({ archetype: 'phalanx' })).body.caps).toEqual({})
+  })
+})
+
+describe('POST /api/sandbox/auto-place with companies (D-R2-4)', () => {
+  const autoPlace = (body) =>
+    api.post('/api/sandbox/auto-place').set('Authorization', `Bearer ${token}`).send(body)
+
+  const hexOf = (entry) => `${entry.q},${entry.r}`
+
+  test('puts each block on ONE hex, tagged, and scatters the loose army around them', async () => {
+    const res = await autoPlace({
+      side: 'blue',
+      army: { Soldier: 6 },
+      squads: [
+        { id: 1, army: { Soldier: 20, Archer: 10 } },
+        { id: 2, army: { Cavalry: 5 } },
+      ],
+    })
+
+    expect(res.status).toBe(200)
+    expect(res.body.placement).toHaveLength(41)
+
+    // ONE SQUAD, ONE HEX: the engine groups a formation by hex + squad_id, so a
+    // block scattered unit by unit would arrive as N one-member companies.
+    for (const id of [1, 2]) {
+      const block = res.body.placement.filter((p) => p.squad_id === id)
+      expect(new Set(block.map(hexOf)).size).toBe(1)
+    }
+    expect(res.body.placement.filter((p) => p.squad_id === 1)).toHaveLength(30)
+    expect(res.body.placement.filter((p) => p.squad_id === 2)).toHaveLength(5)
+
+    // Blocks first, then the loose troops — which is what makes addBlock's
+    // "prefer an untouched hex" mean anything.
+    const loose = res.body.placement.filter((p) => p.squad_id === undefined)
+    expect(loose).toHaveLength(6)
+    for (const entry of loose) {
+      expect(entry.r).toBeGreaterThanOrEqual(info.playerZone.rowMin)
+      expect(entry.r).toBeLessThanOrEqual(info.playerZone.rowMax)
+    }
+    // Two companies never share a hex while an untouched one is left.
+    const first = res.body.placement.find((p) => p.squad_id === 1)
+    const second = res.body.placement.find((p) => p.squad_id === 2)
+    expect(hexOf(first)).not.toBe(hexOf(second))
+  })
+
+  test('sends no squads exactly as every launch before this one did', async () => {
+    const res = await autoPlace({ side: 'blue', army: { Soldier: 4 } })
+
+    expect(res.status).toBe(200)
+    expect(res.body.placement).toHaveLength(4)
+    expect(res.body.placement.every((p) => p.squad_id === undefined)).toBe(true)
+  })
+
+  test('refuses an over-count list, an unknown company id and an unknown type inside one', async () => {
+    const many = Array.from({ length: SANDBOX_MAX_SQUADS_PER_SIDE + 1 }, (_, i) => ({
+      id: i + 1, army: { Soldier: 1 },
+    }))
+    const over = await autoPlace({ side: 'blue', army: {}, squads: many })
+    expect(over.status).toBe(400)
+    expect(over.body.error).toMatch(/too many companies/i)
+
+    // A block has to be identifiable — there is no loose fallback here, unlike
+    // a sheet at the launch route.
+    const unknown = await autoPlace({
+      side: 'blue', army: {}, squads: [{ id: 'first', army: { Soldier: 1 } }],
+    })
+    expect(unknown.status).toBe(400)
+    expect(unknown.body.error).toMatch(/each company needs an id/i)
+
+    const dragon = await autoPlace({
+      side: 'blue', army: {}, squads: [{ id: 1, army: { Dragon: 1 } }],
+    })
+    expect(dragon.status).toBe(400)
+    expect(dragon.body.error).toMatch(/company 1/)
+  })
+
+  test('refuses a block too fat for one hex, naming the company', async () => {
+    // Hex::CAPACITY is 640 and a Soldier is 10 size points, so 65 of them
+    // cannot stand together — addBlock throws rather than scattering them, and
+    // the throw becomes an answer the player can see.
+    const res = await autoPlace({
+      side: 'blue', army: {}, squads: [{ id: 3, army: { Soldier: 65 } }],
+    })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/company 3/)
+    expect(res.body.error).toMatch(/one squad, one hex/)
+  })
+
+  test('counts a company body against the per-side cap like any other', async () => {
+    const res = await autoPlace({
+      side: 'blue',
+      army: { Soldier: SANDBOX_MAX_UNITS_PER_SIDE - 5 },
+      squads: [{ id: 1, army: { Soldier: 6 } }],
+    })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/too many units on the blue side/i)
   })
 })

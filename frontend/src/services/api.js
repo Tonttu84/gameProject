@@ -216,9 +216,30 @@ export const getSandboxReference = () =>
 export const postSandboxCastable = ({ paths, schools }) =>
   axios.post('/api/sandbox/castable', { paths, schools }, authed()).then(r => r.data)
 
+// What ONE company may field, per type, under its archetype and its upgrades
+// (R2). The same pattern as the castable call above and for the same reason:
+// `squadCaps` resolves the archetype row THROUGH the upgrades — applying a
+// type-swap row before the caps bonus, an ordering that is load-bearing — and a
+// second reading of that in the browser would drift. Returns { caps: {type: n} }.
+export const postSandboxSquadCaps = ({ archetype, upgrades }) =>
+  axios.post('/api/sandbox/squad-caps', { archetype, upgrades }, authed()).then(r => r.data)
+
 // Spread one side's army over its deployment zone, server-side, through the
 // very function the enemy's daily plan and both sides of a raid already use —
 // so the lab cannot pack a hex differently from the real game. Returns
 // { placement: [{unit_type, q, r}] } in AXIAL coords, as the engine speaks them.
-export const autoPlaceSandbox = (side, army) =>
-  axios.post('/api/sandbox/auto-place', { side, army }, authed()).then(r => r.data)
+//
+// `squads` (R2, D-R2-4) are the BLOCKS, each {id, army}: they are laid first,
+// one company to one hex through the same `addBlock` a raid party is placed
+// with, and the loose army is scattered around them. Their entries come back
+// carrying `squad_id`.
+export const autoPlaceSandbox = (side, army, squads = []) =>
+  axios
+    .post(
+      '/api/sandbox/auto-place',
+      // Omitted when there are none, so a lab with no companies makes the very
+      // request every slice before R2 made.
+      { side, army, ...(squads.length > 0 ? { squads } : {}) },
+      authed(),
+    )
+    .then(r => r.data)
