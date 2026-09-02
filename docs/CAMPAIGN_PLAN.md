@@ -7687,6 +7687,47 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
 
+**TODO — HOW SPELLS GENERALLY WORK AND TARGET (user, 2026-09-02 — DEFERRED on the user's call,
+recorded, NOT interviewed, do not build).** The ask: *"plan first how spells should generally work
+and target, then we update the spells to work with our plan"* — a general framework the existing
+thirteen forms are then brought into line with, rather than more spells authored against the
+current ad-hoc bodies.
+
+**What is true today, audited 2026-09-02 so the interview starts from facts** (all in
+`backend/engine/src/SpellList.cpp` unless named):
+- **Targeting is seven hand-rolled patterns, not a rule.** Damage spells share
+  `findEnemyInRange` (densest-closest enemy hex within `SPELLRANGE` 10, elevation-adjusted);
+  buffs use `findAllyToAid` (first wounded ally, else anyone) with NO range check at all — a Ward
+  lands on a man across the map; Soothing Current takes the most-fatigued body team-wide; Bless
+  has its own broken/wounded filter; raise_dead uses the caster's adjacent hexes; the two
+  enchantments are battlefield-wide.
+- **Buffs and debuffs are permanent for the battle and stack without limit.** Stoneskin, Hex of
+  Frailty and Ward call `applyStatMod`/`addShield`, which mutate the stat outright. That helper
+  was written for GEAR (9-5); a spell reusing it means a mage recasting Stoneskin every tick
+  climbs armour indefinitely (each call clamps its own delta to MAX_STAT_MOD, never the total).
+  No duration, no refresh rule, no cap.
+- **There is no magic resistance.** `AUnit::resistance = 10` exists and nothing reads it. No
+  saves, no MR-negates, nothing an undead or a golem shrugs off.
+- **Damage spells are arrows.** They ride `RangedShot` through `RangedCombat::fire`: the
+  caster's accuracy, `Utility::Deviate` scatter by distance, armour penetration, elevation. So
+  Ember can miss — and because a deviated shot lands on whatever hex it lands on and
+  `pickHexTarget` has no team filter, **friendly fire already exists, silently**, whenever a
+  fireball scatters onto your own line.
+- **AoE is one shape:** `secondaryHits` splash on the landed hex. No radius, line or cone.
+
+**The decision tree the interview will walk, unanswered:** (1) whether targeting becomes DATA on
+the form — a declared target kind (`EnemyUnit`/`AllyUnit`/`Self`/`EnemyHex`/`Adjacent`/
+`Battlefield`) with one engine resolver — or stays per-body code (the assistant's leaning is
+data: one rule instead of thirteen, the catalog JSON can then SAY what a spell targets instead of
+burying it in prose, and M-22's deferred cast AI needs a declared kind to score anything);
+(2) range and line of sight, and whether buffs get either; (3) whether a spell lands like an
+arrow (can miss, is deviated, is armoured against) or like magic (always lands, resisted);
+(4) resistance and saves; (5) durations and stacking for buffs/debuffs; (6) AoE shapes and
+whether friendly fire is intended; (7) how the AI picks WHICH target, and whether that is
+per-spell. Also touches: M-22 (the real cast AI), `docs/ADDING_SPELLS.md` (rewritten when the
+shape changes), and the balance pass (every number moves if delivery changes).
+
+
 **TODO — A TEST / SANDBOX MODE FOR ARBITRARY BATTLES (user, 2026-08-29 — the ask, recorded before
 the interview).** In the user's words: *"Test mode where I can just easily recruit both my units,
 and enemy units, choose scripts, encounter lvls etc for enemy, make it use the default script
