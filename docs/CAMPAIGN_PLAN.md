@@ -85,7 +85,13 @@ compositions are campaign design data and stay in `campaign-server`. The depende
 **campaign → engine, never back** — the engine knows nothing about recruiting and must not.
 Tests spanning the two therefore live campaign-side, since only that layer can see both.
 
-### Where the work stands (2026-09-02) — START HERE
+### Where the work stands (2026-09-04) — START HERE
+
+**▶▶ THE LIVE FRONT IS THE CASTING AI — INTERVIEWED 2026-09-04, NOT ONE LINE BUILT.** Ten
+decisions (A-1..A-10) and a three-slice plan are in the "THE CASTING AI" entry at the top of the
+Deferred design backlog below; **start there, and do not re-derive them.** AI-1 (targeting as data,
+behaviour-preserving) is the engine prerequisite; AI-2 (the scorer) is the hard one; AI-3 puts it
+under the Battle Lab's N-runs. The fronts below are closed.
 
 **▶▶ THE CHARTER RECRUITMENT + SQUADS IN THE LAB FRONT IS CLOSED — INTERVIEWED 2026-09-02, BOTH
 SLICES SHIPPED THE SAME DAY AND GREEN ON `main` (schema v45).** Eight decisions (R-1..R-8) and the
@@ -7702,6 +7708,77 @@ event pools … e.g. get horses and upgrade soldiers to cavalry"). Slice 1 lande
 ---
 
 ## Deferred design backlog (user, 2026-07-05 — ideas only, NOT scheduled, no implementation)
+
+**▶ THE CASTING AI — INTERVIEWED 2026-09-04, decisions A-1..A-10, all the user's unless flagged.
+NOT YET BUILT.** M-22's deferred "real cast AI", taken up. The user asked for a fresh perspective
+first; the assistant's proposal (an analytic scorer over a side-effect-free resolver, one currency,
+script sovereign, stances as weights, the Battle Lab as judge) was then amended in the interview —
+the amendments are the decisions below.
+
+**What was true first:** cast selection is a stateless priority walk re-run every cast (script's ≤3
+spells, then roster order, strongest qualifying form, fatigue never gates, M-26 cycles down to a
+weaker form at cast time). `unitValue` defaults to 10 for EVERY type including all casters — only
+Golem (18), Royal Guard (15) and the summons/mounts (4-6) differ — and NOTHING reads it: targeting
+scores by hex density ÷ distance. The engine never sees items: gear arrives as stat deltas and
+ability words. `Utility::getRandom` consumes the test mock queue under TESTING, so any scorer noise
+drawn through it would eat the rolls a combat test seeded.
+
+- **A-1. AN ANALYTIC SCORER OVER A SIDE-EFFECT-FREE RESOLVER — NEVER A SIMULATION.** Targeting is
+  separated from effect so the engine can ask "whom would this hit" with no state change and no
+  dice. Every score is a pure function of visible state, so tests can assert it exactly.
+- **A-2. A WEIGHTED LOTTERY OVER POSITIVE SCORES** (user: *"a bit of randomness so all of the
+  casts are not completely predictable"*), with a temperature knob. The best option is likeliest,
+  never certain — that is the "sometimes" for the supercombatant. *Assistant's call, flagged:* the
+  lottery draws through its OWN RNG seam, deterministic under GAME_RNG_SEED and separately pinnable
+  in tests, so scorer noise never consumes the combat mock queue.
+- **A-3. `unitValue` IS THE CURRENCY** (user: *"we already have the value"*). Damage effect =
+  expected damage × target value; buff effect = Σ value of the units actually boosted, summed one by
+  one because they differ. The user's note, kept for later: buffs *should* really prefer FRESH
+  units — simplified for now.
+- **A-4. SCORE = EFFECT ÷ A PER-FORM DIVIDER.** The divider is auto-derived from fatigue and casting
+  time (pool cost folded in as cost), with a MANUAL OVERRIDE field on the form *"depending on
+  playtesting and modding"*. Weights balance-deferred.
+- **A-5. CHARACTER VALUE IS CAMPAIGN-SIDE: BASE + ITEMS, SENT AS `value` ON THE PLACEMENT ENTRY.**
+  The user's constraint: *"we dont want the AI to be super good at sniping mages, but it should
+  sometimes try to get some damage to a well kitted supercombatant"*. So a caster's base stays near
+  a soldier's 10 (a naked mage is no magnet); items add, defensive items add more. Server-attached
+  and whitelisted like `paths`; the engine reads a number and never learns the word "item". The
+  lab sets it directly (SB-5).
+- **A-6. THE SCRIPT IS AN OPENING SEQUENCE — each line once, in order — WITH A SANITY FLOOR** (a
+  very-low-value line is skipped). Dominions' shape, by the user's reference. AMENDS S4-1's
+  standing-preference reading (the engine re-walked the script every cast); the sheet's three slots
+  and their order are unchanged, cap stays MAX_CHOSEN_SPELLS (assistant's assumption, unchallenged).
+  Within a line THE SCORER PICKS THE FORM — max, not lottery, because the script is the player's
+  order — which delivers M-13's "spend cheap" that S4-2 parked for exactly this slice.
+- **A-7. AFTER THE SCRIPT, A LOTTERY OVER A NEW PER-CHARACTER SHORTLIST** — our own addition, not
+  Dominions'. An EMPTY shortlist and an ALL-POOR shortlist use ONE mechanic: widen to the whole
+  castable roster (minus script-only globals, E-3), and IDLE if even that clears the floor for
+  nobody (user: *"it is fine to skip if nothing makes sense at all even from the full roster"*).
+  Enemy store rows (E-7) gain a shortlist field, default empty.
+- **A-8. ONLY THE RESOLVER HALF OF THE DEFERRED TARGETING FRONT COMES IN**: declared target kinds
+  (EnemyUnit / AllyUnit / EnemyHex / Adjacent / Battlefield), one engine resolver, bodies become
+  effect-only, plus ONE buff-refresh rule so "Stoneskin every tick" is not the right answer.
+  Resistance, durations, AoE shapes, friendly fire and the delivery model stay deferred.
+- **A-9. NO STANDING ORDERS.** "Cast" is the only post-script behaviour; hang-back stays as is.
+- **A-10. STANCES STAY DEFERRED** — later they are weights and a temperature on this scorer,
+  nothing new (M-12).
+
+**Standing principle 1, reconciled here so nobody re-asks:** a cast AI is a per-unit battle
+reflex, symmetric for both sides, no more an "opponent" than an archer choosing a target. A good
+scorer will make enemy casters LOOK thoughtful; it decides nothing at the campaign level.
+
+**THE SLICE PLAN (the assistant's, by the user's leave — "I dont care how you organize the
+slices"), each green on `main` alone:**
+- **AI-1 — targeting as data.** A target kind on every form; one side-effect-free resolver;
+  the thirteen bodies become effect-only; the buff-refresh rule. Pure engine; the walk still runs
+  on top, so BEHAVIOUR IS UNCHANGED and every existing test stays green. Mechanical and wide.
+- **AI-2 — the scorer.** Divider + override, `value` on the wire (campaign-side base + items),
+  sequence + floor + form choice, shortlist + lottery + valve, the RNG seam, one Detail-tier log
+  line per decision (`Ember 14 > Ward 3`), schema bump for the shortlist, enemy store rows
+  updated. The hard slice.
+- **AI-3 — the lab as judge.** Per-caster shortlist and `value` in the Battle Lab, and an N-runs
+  A/B of walk vs. scorer as the acceptance evidence.
+
 
 **▶ CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02, decisions R-1..R-8, all the
 user's. ✅ BOTH SLICES SHIPPED 2026-09-02 (schema v45).** The ask, in the user's words: *"The battle lab needs the ability to pick
