@@ -23,6 +23,35 @@ namespace Spells
     // encounter (M-19) can both move the school line while the unit is alive.
     bool qualifies(const AUnit& caster, const SpellForm& form);
 
+    // ── The resolver (A-1/A-8, slice AI-1) ───────────────────────────────────
+    //
+    // Targeting, separated from effect. Both functions below are PURE in the
+    // only two senses that matter to AI-2's scorer: they change nothing on the
+    // field, and they draw no dice — so "whom would this form hit" can be asked
+    // as often as a scorer likes, and under TESTING it cannot eat a mock roll a
+    // combat test seeded (Utility::getRandom consumes that queue).
+
+    // Every legal target for this form's kind, in TEAM ORDER:
+    //   EnemyUnit — living enemies with a hex, within SPELLRANGE after the
+    //               elevation tiers are clamped, exactly as the old
+    //               findEnemyInRange predicate had it. Empty for an unplaced
+    //               caster, who has no position to measure a range from.
+    //   AllyUnit / AllyTeam — living allies with a hex, the caster INCLUDED and
+    //               NO range check: that is what a buff does today, and AI-1
+    //               copies today rather than improving it.
+    //   Adjacent / Battlefield / None — empty. These bodies need no unit
+    //               target; the neighbour scan and the standing instance are
+    //               the body's own business, as they have always been.
+    // A-8's refresh rule lands here: for a `buff` form, a unit already carrying
+    // this spell's id is NOT a candidate.
+    std::vector<AUnit*> candidates(const AUnit& caster, const SpellForm& form);
+
+    // The candidate the body is handed, by the form's pick policy. Each policy
+    // reproduces exactly what the body it was lifted from used to do — the
+    // offensive one still runs through Utility::findTarget so the tie-break is
+    // the same one, down to the sort key.
+    Target chooseTarget(const AUnit& caster, const SpellForm& form);
+
     // Look a spell up by its roster id ("fireball", "bless", ...). Returns
     // nullptr for an id the roster does not carry — the chosen-spells list
     // arrives over the wire (slice 4) and skips what it cannot resolve rather

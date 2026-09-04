@@ -11,6 +11,7 @@
 #include "Abilities.hpp"
 #include "Spell.hpp"   // SpellPath/SpellForm are stored by value/pointer below
 #include <array>
+#include <set>
 #include "Anatomy.hpp"
 #include "Battlefield.hpp"
 #include "Utility.hpp"
@@ -161,6 +162,18 @@ public:
     // M-10's formula, reading the PRIMARY path (M-20) and halved for a
     // Low-primary spell (M-21). Public so tests can price a form directly.
     int  spellFatigueCost(const SpellForm& form) const;
+
+    // ── The buff registry (A-8's refresh rule, slice AI-1) ───────────────────
+    // Which standing spell effects this body is already carrying, by roster
+    // spell id. Spells::candidates() drops a unit that already carries a `buff`
+    // form's spell, so a caster cannot stack Stoneskin on the same man tick
+    // after tick — applyStatMod clamps each delta on its own and never the
+    // total, so without this the right play is to recast forever.
+    //
+    // Ids are roster string literals (static storage), so a view is safe to
+    // keep; nothing else ever calls markBuff.
+    bool hasBuff(std::string_view id) const;
+    void markBuff(std::string_view id);
 
     // ── Channelling (M-23) ───────────────────────────────────────────────────
     bool isChannelling() const { return _channelForm != nullptr; }
@@ -635,6 +648,11 @@ protected:
     // "is casting" and ReplayRecorder already exports).
     const Spell*     _channelSpell = nullptr;
     const SpellForm* _channelForm  = nullptr;
+
+    // Standing spell effects this body carries, by roster spell id (A-8). Per
+    // BATTLE, not per campaign: cleared in restoreForNextBattle() beside every
+    // other battle-scoped field.
+    std::set<std::string_view> _activeBuffs;
     int _holdTurns = 0;
     int _replayId = -1;
 

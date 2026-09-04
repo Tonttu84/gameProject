@@ -38,9 +38,14 @@ a useful version of the same idea instead of a strictly worse spell of its own.
 
 ```cpp
 { "minor", "Ember", ember(),
-  {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber, nullptr },
+  {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber, nullptr,
+  EnchantAim::None, 0, nullptr,
+  TargetKind::EnemyUnit, TargetPick::Densest },
 //  ↑form    ↑label ↑description
 //                  ↑paths        ↑school ↑lvl ↑fatigue ↑castingTime ↑cast ↑price
+//   ↑the battlefield trio at its default (see below) — the table is initialised
+//    POSITIONALLY, so an ordinary row has to name what it skips over
+//                                    ↑target kind  ↑pick   (↑`true` here if it is a buff)
 ```
 
 | Field         | What it is                                                                  |
@@ -53,8 +58,44 @@ a useful version of the same idea instead of a strictly worse spell of its own.
 | `schoolLevel` | what the ARMY must have researched                                            |
 | `fatigue`     | authored base cost, before M-10's divide and Low's halving                    |
 | `castingTime` | ticks occupied, **minimum 1** — nothing casts instantly (M-23)                |
-| `cast`        | `bool(AUnit&)` — targets and applies; **false = nothing happened**             |
+| `cast`        | `bool(AUnit&, const Target&)` — **applies only**; false = nothing happened     |
 | `price`       | Low's second effect aimed at your own side (M-24); `nullptr` for every other path |
+| `target`      | `TargetKind` — the SET of legal candidates (A-1); see the next section          |
+| `pick`        | `TargetPick` — which candidate the body is handed                              |
+| `buff`        | `true` for a standing effect the target keeps; the resolver then refuses to relay it (A-8) |
+| `spell`       | back-pointer to the spell above — **wired automatically** at the end of `roster()`, never authored |
+
+### Targeting is DECLARED, not coded (A-1, slice AI-1)
+
+A body does **not** look for its own target. `Spells::chooseTarget()` resolves the form's
+declared kind and pick once per cast attempt and hands the body a `Target`; the body applies an
+effect to `target.unit` (or walks `target.units` for an `AllyTeam` form) and returns `false`
+when it needs a unit and was given none.
+
+| `TargetKind`  | Candidates                                                                   |
+| ------------- | ---------------------------------------------------------------------------- |
+| `EnemyUnit`   | living enemies within `SPELLRANGE`, elevation-adjusted                         |
+| `AllyUnit`    | living allies **including the caster**, no range check (that is today's rule)   |
+| `AllyTeam`    | the whole living ally line at once — `target.units`, in team order              |
+| `Adjacent`    | none: the body scans the caster's own neighbouring hexes (raise_dead)          |
+| `Battlefield` | none: the spell stands over the field (E-4/E-5)                                |
+| `None`        | none at all                                                                    |
+
+`TargetPick` — `Densest` (the offensive walk), `Wounded` (a hurt ally first, else the first
+ally), `Fatigued` (the most tired, nobody at zero), `Broken` (a broken ally first), `First`.
+**Every pick is a description of behaviour that already existed.** Adding a new preference is a
+change to the cast AI, not to a spell row; AI-2's scorer is where that belongs.
+
+The resolver is **side-effect-free and dice-free** on purpose: the scorer will ask "whom would
+this form hit" many times per decision, and a resolver that rolled would eat the mock queue a
+combat test seeded. If you add a helper it must keep both properties — `test_targeting.cpp`
+fails otherwise.
+
+**A `buff` form** (Stoneskin, Ward) marks its target with `markBuffOn(unit, "<spell id>")` on
+success, and a marked man stops being a candidate for that spell for the rest of the battle
+(A-8). Without the mark, recasting forever is the correct play: `applyStatMod`/`addShield` clamp
+each delta on its own and never the total. The id in the body must be the row's own spell id —
+a sweep in `test_targeting.cpp` holds the two together.
 
 ### Two gates, and they are not the same gate
 
@@ -113,7 +154,8 @@ defaulted and last in `SpellForm`, so an ordinary row is unaffected:
 { "battlefield", "Leaden Air", leadenAir(),
   {{P::Death, 2}}, S::Enchantment, 2,
   LEADEN_AIR_FATIGUE, 2, castLeadenAir, nullptr,
-  EnchantAim::Everyone, LEADEN_AIR_POOL_COST, tickLeadenAir },
+  EnchantAim::Everyone, LEADEN_AIR_POOL_COST, tickLeadenAir,
+  TargetKind::Battlefield, TargetPick::First },
 ```
 
 - **`enchantAim`** — `Friendly` (the instance helps its own side; both sides may hold their own
@@ -129,7 +171,7 @@ defaulted and last in `SpellForm`, so an ordinary row is unaffected:
 The `cast` body is one line — the machinery lives on `Battlefield`:
 
 ```cpp
-static bool castLeadenAir(AUnit& caster)
+static bool castLeadenAir(AUnit& caster, const Target& /*target*/)
 { return Utility::getBattlefield().beginEnchantment(caster, "leaden_air"); }
 ```
 
@@ -172,7 +214,9 @@ engine's own `label`/`description` through untouched.
 
 ## Tests to touch
 
-Usually **none**. `test_spells.cpp` sweeps the roster and fails a row that is malformed
+Usually **none**. `test_targeting.cpp` sweeps every form's target kind, refuses a buff whose
+body marks the wrong id, and casts every unit-targeting body at nothing to prove it declines
+rather than dereferences. `test_spells.cpp` sweeps the roster and fails a row that is malformed
 (empty id or label, zero fatigue, instant cast, unordered paths, non-ascending forms), that
 leaves a path with no level-1 spell, that carries a price without being Low, or that gets the
 Holy/Unholy school gate wrong. `engine.integration.test.js` re-checks the same properties
@@ -185,7 +229,7 @@ looks like: it went in with the battlefield kind, not with the second battlefiel
 
 ## Gotchas
 
-- **A `cast` body that finds no target must return `false`.** Fatigue *powers* the spell
+- **A `cast` body handed an empty `Target` must return `false`.** Fatigue *powers* the spell
   (M-23), so a spell that never fired costs nothing — that is what makes the fall-through to
   weaker forms free rather than a way to burn a caster out.
 - **Every one of the ten paths needs a castable level-1 spell.** Paths are rolled at hire

@@ -7769,7 +7769,37 @@ scorer will make enemy casters LOOK thoughtful; it decides nothing at the campai
 
 **THE SLICE PLAN (the assistant's, by the user's leave — "I dont care how you organize the
 slices"), each green on `main` alone:**
-- **AI-1 — targeting as data.** A target kind on every form; one side-effect-free resolver;
+- **✅ AI-1 SHIPPED 2026-09-04 — targeting as data.** What landed: `TargetKind` (EnemyUnit /
+  AllyUnit / AllyTeam / Adjacent / Battlefield / None) and `TargetPick` (Densest / Wounded /
+  Fatigued / Broken / First — every pick NAMED after behaviour that already existed) on every
+  form, defaulted and appended so no roster row moved; `Spells::candidates()` (the legal set,
+  side-effect-free and dice-free — a test seeds a mock roll and asserts it is still queued after)
+  and `Spells::chooseTarget()`; `cast` became `bool(AUnit&, const Target&)` and all fifteen bodies
+  are effect-only; a `spell` back-pointer on the form wired once at the end of `roster()`;
+  `_activeBuffs` on AUnit with the ONE new rule (a `buff` form's target is marked and drops out of
+  its candidates for the battle, cleared in `restoreForNextBattle`); `completeCast` resolves a
+  Target once per attempt and again per weaker form in the M-26 fall-through; the catalog rows
+  carry `target` and `buff`. 16 new `[targeting]` cases (467 total), sanitized suite green,
+  campaign-server 1432 green against the rebuilt binary; `docs/ADDING_SPELLS.md` gained its
+  "Targeting is DECLARED, not coded" section. Built by an Opus subagent from a spec, reviewed here.
+
+  **Two findings from the refactor, both facts about what was ALREADY true:**
+  1. **The density scorer was dead code.** `Utility::findTarget` returns on the first unit its
+     priority predicate accepts, and the offensive spells passed the in-range test AS that
+     predicate — so the `sizeUsed*10/(dist+1)` scorer beneath it was only consulted when nothing
+     was in range, where it cannot score above zero either. **Every damage spell has always hit
+     the FIRST living enemy in range, in team order.** `Densest` keeps the call byte-identical and
+     the test says so. AI-2's A/B baseline is "first in range", not "densest hex" — do not
+     credit the walk with a preference it never had.
+  2. **An unplaced caster used to be a null dereference**, not a behaviour: briar_snare,
+     hex_of_frailty and drain_life never checked the caster's hex before reading its elevation.
+     The resolver now answers "nobody", which is what makes it safe for a scorer to ask about any
+     caster. Also noted, NOT fixed (belongs to the deferred targeting front): `applyStatMod`
+     mutates the base stat and `restoreForNextBattle` does not undo it, so a Stoneskin'd survivor
+     carries the armour into a next battle IN THE SAME PROCESS — latent today, since the campaign
+     runs one battle per process.
+
+  *As planned:* A target kind on every form; one side-effect-free resolver;
   the thirteen bodies become effect-only; the buff-refresh rule. Pure engine; the walk still runs
   on top, so BEHAVIOUR IS UNCHANGED and every existing test stays green. Mechanical and wide.
 - **AI-2 — the scorer.** Divider + override, `value` on the wire (campaign-side base + items),

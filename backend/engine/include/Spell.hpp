@@ -6,6 +6,7 @@
 
 class AUnit;
 class Battlefield;
+struct Spell;   // SpellForm carries a back-pointer to the spell it belongs to
 
 // A castable spell — roster data one level up from Weapon: the unit provides
 // the body (path levels, the channel slot), the spell provides everything that
@@ -84,6 +85,56 @@ struct PathRequirement {
 //              instance, so killing one sustainer ends only that copy.
 enum class EnchantAim { None, Friendly, Everyone };
 
+// ── Targeting as data (A-1, A-8) ─────────────────────────────────────────────
+//
+// Slice AI-1 of "THE CASTING AI" in docs/CAMPAIGN_PLAN.md. Before this, every
+// body found its own target: seven hand-rolled patterns and no way to ask, from
+// the outside, whom a spell WOULD hit. A-1 makes that question answerable —
+// targeting is declared on the form, one resolver in SpellList.cpp answers it
+// with NO state change and NO dice, and the bodies became effect-only. AI-2's
+// scorer is the caller that needs the question; nothing about the priority walk
+// changes here.
+//
+// What is deliberately NOT here (A-8, and the deferred targeting front behind
+// it): resistance, durations, AoE shapes, friendly fire and the delivery model.
+// The buff-refresh rule below is the ONE rule this slice adds.
+
+// The SET of legal candidates for a form — range-checked exactly where the old
+// bodies range-checked, and nowhere else (buffs still check no range: that is
+// today's behaviour, not an oversight this slice was allowed to fix).
+enum class TargetKind {
+    EnemyUnit,    // one living enemy within SPELLRANGE, elevation-adjusted
+    AllyUnit,     // one living ally (the caster included), no range check
+    AllyTeam,     // the whole living ally line at once — greater_bless walks it
+    Adjacent,     // no unit target: the body scans the caster's own neighbours
+    Battlefield,  // no unit target: the spell stands over the field (E-4/E-5)
+    None          // no target of any kind
+};
+
+// WHICH candidate the body is handed. Every value is named after behaviour that
+// already existed — a pick is a description of today's choice, never a new
+// preference. (AI-2 replaces the choosing, not the enumerating.)
+enum class TargetPick {
+    Densest,    // the offensive spells' scoreTarget: sizeUsed*10/(dist+1)
+    Wounded,    // findAllyToAid: the first wounded ally, else the first ally
+    Fatigued,   // soothing_current: the most exhausted body, none at fatigue 0
+    Broken,     // bless: a broken ally first, else a wounded one
+    First       // the candidate list as it stands
+};
+
+// What the resolver hands a body. `unit` for the single-target kinds, `units`
+// for AllyTeam; both empty when nothing qualifies, and a body that needs a unit
+// then returns false and costs nothing (M-23).
+struct Target {
+    AUnit*              unit = nullptr;
+    std::vector<AUnit*> units;
+};
+
+// The JSON name of a target kind ("enemy_unit", "ally_unit", ...), for the
+// catalog export. One direction only: nothing reads a target kind back in — the
+// C++ roster is the single source of truth for what a spell targets.
+std::string_view targetKindName(TargetKind k);
+
 // A single castable form. M-12 gives one spell a MINOR and a MAJOR form rather
 // than a ladder of near-duplicates, so each form carries its own gates, price
 // and effect — otherwise "the best form you qualify for" (M-13) has nothing to
@@ -129,10 +180,13 @@ struct SpellForm {
     // This replaces the old post-cast cooldown outright.
     int castingTime;
 
-    // Targeting + effect. Returns true if the spell actually fired; only then
-    // is fatigue paid, which is the whole of M-23's rule that fatigue POWERS
-    // the spell, so no spell means no fatigue.
-    bool (*cast)(AUnit& caster);
+    // EFFECT ONLY, since AI-1: the target was already resolved by
+    // Spells::chooseTarget() from the three fields at the bottom of this
+    // struct, and the body applies what it does to what it was handed. Returns
+    // true if the spell actually fired; only then is fatigue paid, which is the
+    // whole of M-23's rule that fatigue POWERS the spell, so no spell means no
+    // fatigue — a body handed an empty Target returns false and costs nothing.
+    bool (*cast)(AUnit& caster, const Target& target);
 
     // M-24: Low's bargain. A Low-primary spell is authored as TWO effects that
     // both resolve — the intended one aimed outward and this one aimed at your
@@ -161,6 +215,31 @@ struct SpellForm {
     // Everyone aim it is meaningless (0 is passed) and the body reads both
     // teams itself.
     void (*tickEffect)(Battlefield& field, int team) = nullptr;
+
+    // ── The targeting fields (A-1/A-8) ───────────────────────────────────────
+    // Defaulted and appended for the same reason the three above are: every
+    // roster row is aggregate-initialised positionally, so declaring targeting
+    // costs no existing line.
+
+    // The SET of legal candidates. None means the body needs no target at all.
+    TargetKind target = TargetKind::None;
+
+    // WHICH of them the body receives. Ignored for the kinds that hand over no
+    // unit (Adjacent, Battlefield, None) and for AllyTeam, which hands over all.
+    TargetPick pick = TargetPick::First;
+
+    // A-8's refresh rule: a standing effect the target KEEPS, so the resolver
+    // excludes a unit already carrying it. Without it "Stoneskin every tick" is
+    // the right answer forever — applyStatMod was written for gear (9-5) and
+    // clamps each delta on its own, never the total. The body marks its target
+    // on success; the mark is per battle (AUnit::_activeBuffs).
+    bool buff = false;
+
+    // The spell this form belongs to, wired once at the end of roster(). A form
+    // can therefore name itself: the resolver needs the id to ask the buff
+    // registry about it, and AI-2's one-line-per-decision log needs it to say
+    // WHICH spell scored what.
+    const Spell* spell = nullptr;
 };
 
 struct Spell {

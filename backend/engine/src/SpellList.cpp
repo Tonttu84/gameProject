@@ -14,8 +14,9 @@
 using json = nlohmann::json;
 
 // The spell roster. Common gating — alive/broken checks, the channel, paying
-// fatigue on completion — lives in AUnit::castSpells(); each body below only
-// targets and applies.
+// fatigue on completion — lives in AUnit::castSpells(); TARGETING lives in the
+// resolver at the bottom of this file (A-1), and each body below only applies
+// an effect to the target it was handed.
 //
 // Every rule cited by number is in "THE MAGIC SYSTEM" in docs/CAMPAIGN_PLAN.md.
 // Two of them shape every body here:
@@ -30,36 +31,42 @@ using json = nlohmann::json;
 // ALL NUMBERS BELOW ARE BALANCE-DEFERRED per the standing pass. They are chosen
 // to be sane relative to each other, not tuned.
 
-// ── shared targeting ─────────────────────────────────────────────────────────
+// ── shared targeting (A-1: declared on the form, resolved in one place) ─────
+//
+// Slice AI-1. What used to be seven hand-rolled searches inside the bodies is
+// now the two predicates below plus Spells::candidates()/chooseTarget() at the
+// bottom of this file. The bodies are EFFECT ONLY: they are handed a Target and
+// apply what they do to it, which is what lets AI-2's scorer ask "whom would
+// this form hit" without casting anything.
+//
+// Nothing about WHOM a spell picks changed here. Every predicate below is the
+// old body's own code, moved rather than rewritten.
 
-// Find the highest-value enemy within spell range, preferring dense hexes.
-// Shared by every offensive spell — the pattern was fireball's, and nothing
-// about it was fireball-specific.
-static AUnit* findEnemyInRange(AUnit& caster)
+// The in-range test every offensive spell shared — findEnemyInRange's `inRange`
+// lambda, unchanged: alive, on the other side, standing somewhere, and within
+// SPELLRANGE once the elevation difference is clamped to the ranged cap.
+static bool spellInRange(const AUnit& caster, const AUnit& target, int myTeam)
 {
-    int myTeam = caster.getTeam();
-    auto inRange = [&caster](const AUnit& target, int t) -> bool {
-        if (!target.getAlive() || target.getTeam() == t || !target.getHex()) return false;
-        int dist   = Utility::calcDistance(target.getHex(), caster.getHex());
-        int tiers  = std::clamp(caster.getHex()->elevation - target.getHex()->elevation,
-                                -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
-        return dist - tiers <= SPELLRANGE;
-    };
-    auto scoreTarget = [&caster](const AUnit& target, int t) -> int {
-        if (!target.getAlive() || target.getTeam() == t || !target.getHex()) return -1;
-        int dist  = Utility::calcDistance(target.getHex(), caster.getHex());
-        int tiers = std::clamp(caster.getHex()->elevation - target.getHex()->elevation,
-                               -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
-        if (dist - tiers > SPELLRANGE) return -1;
-        // Prefer densely packed hexes at closer range.
-        return target.getHex()->sizeUsed * 10 / (dist + 1);
-    };
-    return Utility::findTarget(
-        Utility::getBattlefield().getTeam(3 - myTeam),
-        inRange, scoreTarget, myTeam);
+    if (!target.getAlive() || target.getTeam() == myTeam || !target.getHex()) return false;
+    int dist  = Utility::calcDistance(target.getHex(), caster.getHex());
+    int tiers = std::clamp(caster.getHex()->elevation - target.getHex()->elevation,
+                           -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+    return dist - tiers <= SPELLRANGE;
 }
 
-// Any living ally other than the caster — what a sacrifice needs (M-24).
+// findEnemyInRange's `scoreTarget`, likewise unchanged: prefer densely packed
+// hexes at closer range. Its -1 cases are exactly the predicate's false cases,
+// which is why it is written on top of it.
+static int spellDensityScore(const AUnit& caster, const AUnit& target, int myTeam)
+{
+    if (!spellInRange(caster, target, myTeam)) return -1;
+    int dist = Utility::calcDistance(target.getHex(), caster.getHex());
+    return target.getHex()->sizeUsed * 10 / (dist + 1);
+}
+
+// Any living ally other than the caster — what a sacrifice needs (M-24). NOT
+// targeting: the Low price is a second effect aimed at your own side, it takes
+// no Target and it is not a thing the AI ever chooses. Left exactly as it was.
 static AUnit* findAllyButSelf(AUnit& caster)
 {
     Battlefield& field = Utility::getBattlefield();
@@ -69,27 +76,26 @@ static AUnit* findAllyButSelf(AUnit& caster)
     return nullptr;
 }
 
-// Any living ally including the caster — the usual target of a boon.
-static AUnit* findAllyToAid(AUnit& caster)
+// A-8: a buff form's body marks the man it landed on, and Spells::candidates()
+// then keeps that form off him for the rest of the battle. The id passed here
+// must be the ROSTER id of the spell the body belongs to (form.spell->id) — the
+// roster sweep in test_targeting.cpp is what holds the two together.
+static void markBuffOn(AUnit& unit, std::string_view spellId)
 {
-    Battlefield& field = Utility::getBattlefield();
-    AUnit* fallback = nullptr;
-    for (auto& u : field.getTeam(caster.getTeam())) {
-        if (!u || !u->getAlive() || !u->getHex()) continue;
-        if (u->getHp() < u->getmaxHP()) return u.get();   // prefer someone who needs it
-        if (!fallback) fallback = u.get();
-    }
-    return fallback;
+    unit.markBuff(spellId);
 }
 
 // ── Fire — fireball (Evocation) ──────────────────────────────────────────────
 
 // The minor form: a single bolt, no blast. What keeps a Fire 1 caster useful,
 // exactly as Dominions' early-generation spells do (M-12).
-static bool castEmber(AUnit& caster)
+static bool castEmber(AUnit& caster, const Target& target)
 {
+    // The caster's own hex is not targeting — a shot is fired FROM somewhere,
+    // so an unplaced caster has nothing to fire from. Kept in the body for the
+    // same reason it was always here.
     if (!caster.getHex()) return false;
-    AUnit* aimUnit = findEnemyInRange(caster);
+    AUnit* aimUnit = target.unit;
     if (!aimUnit || !aimUnit->getHex()) return false;
 
     RangedShot shot;
@@ -101,10 +107,10 @@ static bool castEmber(AUnit& caster)
     return true;
 }
 
-static bool castFireball(AUnit& caster)
+static bool castFireball(AUnit& caster, const Target& target)
 {
     if (!caster.getHex()) return false;
-    AUnit* aimUnit = findEnemyInRange(caster);
+    AUnit* aimUnit = target.unit;
     if (!aimUnit || !aimUnit->getHex()) return false;
 
     RangedShot shot;
@@ -123,10 +129,10 @@ static bool castFireball(AUnit& caster)
 
 // ── Air — shock (Evocation) ──────────────────────────────────────────────────
 // Less damage than fire, but it goes where it is aimed.
-static bool castShock(AUnit& caster)
+static bool castShock(AUnit& caster, const Target& target)
 {
     if (!caster.getHex()) return false;
-    AUnit* aimUnit = findEnemyInRange(caster);
+    AUnit* aimUnit = target.unit;
     if (!aimUnit || !aimUnit->getHex()) return false;
 
     RangedShot shot;
@@ -139,11 +145,15 @@ static bool castShock(AUnit& caster)
 }
 
 // ── Earth — stoneskin (Enchantment) ──────────────────────────────────────────
-static bool castStoneskin(AUnit& caster)
+// A `buff` form (A-8): the resolver has already dropped every ally who is
+// carrying this spell, so a target arriving here has never been skinned in this
+// battle — and marking him keeps it that way.
+static bool castStoneskin(AUnit& caster, const Target& target)
 {
-    AUnit* target = findAllyToAid(caster);
-    if (!target) return false;
-    target->applyStatMod("armour", 1 + caster.getPathLevel(SpellPath::Earth) / 3);
+    AUnit* unit = target.unit;
+    if (!unit) return false;
+    unit->applyStatMod("armour", 1 + caster.getPathLevel(SpellPath::Earth) / 3);
+    markBuffOn(*unit, "stoneskin");
     Utility::getBattlefield().logEvent("Skin hardens to stone");
     return true;
 }
@@ -151,14 +161,14 @@ static bool castStoneskin(AUnit& caster)
 // ── Water — soothing current (Enchantment) ───────────────────────────────────
 // Water does not heal wounds; it washes off exhaustion. With M-2 making fatigue
 // lethal past the ceiling, that is a real save and not a minor one.
-static bool castSoothingCurrent(AUnit& caster)
+// TargetPick::Fatigued hands over the most exhausted body and NOBODY when the
+// tiredest man on the line is at zero — the "nothing to wash off" case the old
+// body tested for itself.
+static bool castSoothingCurrent(AUnit& caster, const Target& target)
 {
     Battlefield& field = Utility::getBattlefield();
-    AUnit* worst = nullptr;
-    for (auto& u : field.getTeam(caster.getTeam()))
-        if (u && u->getAlive() && (!worst || u->getFatigue() > worst->getFatigue()))
-            worst = u.get();
-    if (!worst || worst->getFatigue() <= 0) return false;
+    AUnit* worst = target.unit;
+    if (!worst) return false;
     worst->addFatigue(-(SOOTHING_RELIEF + caster.getPathLevel(SpellPath::Water) * 5));
     field.logEvent("Cool water washes the weariness from a body");
     return true;
@@ -166,21 +176,25 @@ static bool castSoothingCurrent(AUnit& caster)
 
 // ── High — ward (Enchantment) ────────────────────────────────────────────────
 // High acts on magic itself (M-4): a barrier rather than a wound.
-static bool castWard(AUnit& caster)
+// The other `buff` form — one ward per man per battle, for the same reason
+// (A-8): addShield stacks layers, and nothing but this rule stops a High caster
+// from spending a whole battle wrapping one soldier.
+static bool castWard(AUnit& caster, const Target& target)
 {
-    AUnit* target = findAllyToAid(caster);
-    if (!target) return false;
-    target->addShield(WARD_STRENGTH + caster.getPathLevel(SpellPath::High));
+    AUnit* unit = target.unit;
+    if (!unit) return false;
+    unit->addShield(WARD_STRENGTH + caster.getPathLevel(SpellPath::High));
+    markBuffOn(*unit, "ward");
     Utility::getBattlefield().logEvent("A ward shimmers into place");
     return true;
 }
 
 // ── Nature — briar snare (Enchantment) ───────────────────────────────────────
-static bool castBriarSnare(AUnit& caster)
+static bool castBriarSnare(AUnit& caster, const Target& target)
 {
-    AUnit* target = findEnemyInRange(caster);
-    if (!target) return false;
-    target->addFatigue(SNARE_FATIGUE + caster.getPathLevel(SpellPath::Nature) * 5);
+    AUnit* unit = target.unit;
+    if (!unit) return false;
+    unit->addFatigue(SNARE_FATIGUE + caster.getPathLevel(SpellPath::Nature) * 5);
     Utility::getBattlefield().logEvent("Briars erupt and drag at a struggling body");
     return true;
 }
@@ -200,7 +214,8 @@ static void tickSoothingWinds(Battlefield& field, int team)
         if (u && u->getAlive()) u->addFatigue(-SOOTHING_WINDS_RELIEF);
 }
 
-static bool castSoothingWinds(AUnit& caster)
+// TargetKind::Battlefield: nothing is aimed at, so nothing is handed over.
+static bool castSoothingWinds(AUnit& caster, const Target& /*target*/)
 {
     return Utility::getBattlefield().beginEnchantment(caster, "soothing_winds");
 }
@@ -226,16 +241,17 @@ static void tickLeadenAir(Battlefield& field, int /*team*/)
         }
 }
 
-static bool castLeadenAir(AUnit& caster)
+static bool castLeadenAir(AUnit& caster, const Target& /*target*/)
 {
     return Utility::getBattlefield().beginEnchantment(caster, "leaden_air");
 }
 
 // ── Unholy — drain life (granted, not researched: M-14) ──────────────────────
-static bool castDrainLife(AUnit& caster)
+static bool castDrainLife(AUnit& caster, const Target& target)
 {
-    AUnit* target = findEnemyInRange(caster);
-    if (!target || !target->getHex()) return false;
+    if (!caster.getHex()) return false;   // a shot needs somewhere to come from
+    AUnit* unit = target.unit;
+    if (!unit || !unit->getHex()) return false;
     int drain = DRAIN_DAMAGE + caster.getPathLevel(SpellPath::Unholy);
 
     RangedShot shot;
@@ -248,16 +264,16 @@ static bool castDrainLife(AUnit& caster)
         if (attacker) attacker->heal(damage / 2);
     };
 
-    RangedCombat::fire(&caster, target, shot);
+    RangedCombat::fire(&caster, unit, shot);
     return true;
 }
 
 // ── Low — hex of frailty (Enchantment), and its price (M-21/M-24) ────────────
-static bool castHexOfFrailty(AUnit& caster)
+static bool castHexOfFrailty(AUnit& caster, const Target& target)
 {
-    AUnit* target = findEnemyInRange(caster);
-    if (!target) return false;
-    target->applyStatMod("defence", -(1 + caster.getPathLevel(SpellPath::Low) / 3));
+    AUnit* unit = target.unit;
+    if (!unit) return false;
+    unit->applyStatMod("defence", -(1 + caster.getPathLevel(SpellPath::Low) / 3));
     Utility::getBattlefield().logEvent("An old bargain leaves a man slower than he was");
     return true;
 }
@@ -293,34 +309,35 @@ static bool isBroken(const AUnit& unit, int myTeam)
     return unit.getBroken();
 }
 
-static bool castBless(AUnit& caster)
+static bool castBless(AUnit& /*caster*/, const Target& target)
 {
-    AUnit* target = Utility::findTarget(
-        Utility::getBattlefield().getTeam(caster.getTeam()),
-        isBroken, isWounded, caster.getTeam());
-    if (target == nullptr)
+    AUnit* unit = target.unit;   // TargetPick::Broken — a broken man first
+    if (unit == nullptr)
         return false;
 
-    if (target->getBroken())
+    if (unit->getBroken())
     {
         Utility::getBattlefield().logEvent("The divine healing helps a soldier find his courage");
-        target->setBroken(false);
+        unit->setBroken(false);
     }
     else
         Utility::getBattlefield().logEvent("The divine healing helps a soldier");
-    target->heal(1 + Utility::throwDice());
-    target->recover();
+    unit->heal(1 + Utility::throwDice());
+    unit->recover();
     return true;
 }
 
 // The major form: the blessing reaches the whole line rather than one man.
 // M-20 again — it is the caster's HOLY level that decides how far it carries.
-static bool castGreaterBless(AUnit& caster)
+// TargetKind::AllyTeam: the resolver hands over the whole living line, in team
+// order, and the walk down it — the reach cap and the skip rule — is exactly the
+// one this body always did over field.getTeam() itself.
+static bool castGreaterBless(AUnit& caster, const Target& target)
 {
     Battlefield& field = Utility::getBattlefield();
     int reach  = GREATER_BLESS_BASE + caster.getPathLevel(SpellPath::Holy);
     int helped = 0;
-    for (auto& u : field.getTeam(caster.getTeam())) {
+    for (AUnit* u : target.units) {
         if (helped >= reach) break;
         if (!u || !u->getAlive()) continue;
         if (!u->getBroken() && u->getHp() >= u->getmaxHP()) continue;
@@ -367,7 +384,9 @@ static bool placeSkeleton(AUnit& caster, Hex* targetHex)
 
 // The minor form: one skeleton from old bones, costing no corpse. What keeps a
 // Death 1 caster useful on a field that has not yet produced any dead.
-static bool castRaiseSkeleton(AUnit& caster)
+// TargetKind::Adjacent: no unit is handed over — the body scans the caster's own
+// neighbouring hexes, which is all this spell has ever needed.
+static bool castRaiseSkeleton(AUnit& caster, const Target& /*target*/)
 {
     if (!caster.getHex()) return false;
     Battlefield& myBattle = Utility::getBattlefield();
@@ -387,7 +406,7 @@ static bool castRaiseSkeleton(AUnit& caster)
 // can make the major need more corpses but then also try minor if the major
 // fails"). That is why this body no longer carries its own skeleton fallback:
 // the minor form IS the fallback, so there is exactly one of it.
-static bool castRaiseDead(AUnit& caster)
+static bool castRaiseDead(AUnit& caster, const Target& /*target*/)
 {
     if (!caster.getHex()) return false;
     Battlefield& myBattle = Utility::getBattlefield();
@@ -419,6 +438,18 @@ namespace {
     constexpr std::string_view kSchoolNames[SPELL_SCHOOL_COUNT] = {
         "evocation", "conjuration", "enchantment", "construction"
     };
+    // Ordered to match TargetKind, and read only by the catalog export. The
+    // asserts are the guard a Count enumerator would otherwise give: a kind
+    // inserted in the middle shifts every name after it, and the campaign layer
+    // would then be told a spell targets something it does not.
+    constexpr std::string_view kTargetKindNames[] = {
+        "enemy_unit", "ally_unit", "ally_team", "adjacent", "battlefield", "none"
+    };
+    static_assert(sizeof(kTargetKindNames) / sizeof(kTargetKindNames[0])
+                  == static_cast<size_t>(TargetKind::None) + 1);
+    static_assert(kTargetKindNames[static_cast<size_t>(TargetKind::EnemyUnit)] == "enemy_unit");
+    static_assert(kTargetKindNames[static_cast<size_t>(TargetKind::AllyTeam)]  == "ally_team");
+    static_assert(kTargetKindNames[static_cast<size_t>(TargetKind::None)]      == "none");
 }
 
 std::string_view spellPathName(SpellPath p)
@@ -438,6 +469,11 @@ std::string_view spellSchoolName(SpellSchool s)
 {
     if (s == SpellSchool::Count || s == SpellSchool::None) return "";
     return kSchoolNames[static_cast<size_t>(s)];
+}
+
+std::string_view targetKindName(TargetKind k)
+{
+    return kTargetKindNames[static_cast<size_t>(k)];
 }
 
 SpellSchool spellSchoolFromName(std::string_view name)
@@ -603,38 +639,57 @@ namespace Spells
     {
         using P = SpellPath;
         using S = SpellSchool;
-        static const std::vector<Spell> table = {
+        // The trailing `EnchantAim::None, 0, nullptr` on the ordinary rows is
+        // the battlefield trio at its default: the table is aggregate-initialised
+        // POSITIONALLY, so declaring targeting (A-1) after it has to name what it
+        // skips over. What follows the trio is the targeting itself — the kind,
+        // the pick, and `true` where the form is a buff (A-8).
+        static std::vector<Spell> table = {
             // ── Fire ─────────────────────────────────────────────────────────
             { "fireball", {
                 { "minor", "Ember", ember(),
-                  {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber,    nullptr },
+                  {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber,    nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::EnemyUnit, TargetPick::Densest },
                 { "major", "Fireball", fireball(),
-                  {{P::Fire, 3}}, S::Evocation, 3, 22, 2, castFireball, nullptr },
+                  {{P::Fire, 3}}, S::Evocation, 3, 22, 2, castFireball, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::EnemyUnit, TargetPick::Densest },
             }},
             // ── Air ──────────────────────────────────────────────────────────
             { "shock", {
                 { "minor", "Shock", shock(),
-                  {{P::Air, 1}}, S::Evocation, 1, 10, 1, castShock, nullptr },
+                  {{P::Air, 1}}, S::Evocation, 1, 10, 1, castShock, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::EnemyUnit, TargetPick::Densest },
             }},
             // ── Earth ────────────────────────────────────────────────────────
             { "stoneskin", {
                 { "minor", "Stoneskin", stoneskin(),
-                  {{P::Earth, 1}}, S::Enchantment, 1, 10, 1, castStoneskin, nullptr },
+                  {{P::Earth, 1}}, S::Enchantment, 1, 10, 1, castStoneskin, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::AllyUnit, TargetPick::Wounded, true },
             }},
             // ── Water ────────────────────────────────────────────────────────
             { "soothing_current", {
                 { "minor", "Soothing Current", soothingCurrent(),
-                  {{P::Water, 1}}, S::Enchantment, 1, 8, 1, castSoothingCurrent, nullptr },
+                  {{P::Water, 1}}, S::Enchantment, 1, 8, 1, castSoothingCurrent, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::AllyUnit, TargetPick::Fatigued },
             }},
             // ── High ─────────────────────────────────────────────────────────
             { "ward", {
                 { "minor", "Ward", ward(),
-                  {{P::High, 1}}, S::Enchantment, 2, 12, 1, castWard, nullptr },
+                  {{P::High, 1}}, S::Enchantment, 2, 12, 1, castWard, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::AllyUnit, TargetPick::Wounded, true },
             }},
             // ── Nature ───────────────────────────────────────────────────────
             { "briar_snare", {
                 { "minor", "Briar Snare", briarSnare(),
-                  {{P::Nature, 1}}, S::Enchantment, 1, 10, 1, castBriarSnare, nullptr },
+                  {{P::Nature, 1}}, S::Enchantment, 1, 10, 1, castBriarSnare, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::EnemyUnit, TargetPick::Densest },
             }},
             // A battlefield-wide enchantment: ONE form, named "battlefield"
             // rather than minor/major, because there is no ladder to climb —
@@ -644,20 +699,27 @@ namespace Spells
                 { "battlefield", "Soothing Winds", soothingWinds(),
                   {{P::Nature, 2}}, S::Enchantment, 2,
                   SOOTHING_WINDS_FATIGUE, 2, castSoothingWinds, nullptr,
-                  EnchantAim::Friendly, SOOTHING_WINDS_POOL_COST, tickSoothingWinds },
+                  EnchantAim::Friendly, SOOTHING_WINDS_POOL_COST, tickSoothingWinds,
+                  TargetKind::Battlefield, TargetPick::First },
             }},
             // ── Low — half fatigue (M-21) and a price that fires with it (M-24)
             { "hex_of_frailty", {
                 { "minor", "Hex of Frailty", hexOfFrailty(),
                   {{P::Low, 1}}, S::Enchantment, 1, 14, 1,
-                  castHexOfFrailty, priceOfFrailty },
+                  castHexOfFrailty, priceOfFrailty,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::EnemyUnit, TargetPick::Densest },
             }},
             // ── Death ────────────────────────────────────────────────────────
             { "raise_dead", {
                 { "minor", "Raise Skeleton", raiseSkeleton(),
-                  {{P::Death, 1}}, S::Conjuration, 1, 12, 1, castRaiseSkeleton, nullptr },
+                  {{P::Death, 1}}, S::Conjuration, 1, 12, 1, castRaiseSkeleton, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::Adjacent, TargetPick::First },
                 { "major", "Raise Dead", raiseDead(),
-                  {{P::Death, 3}}, S::Conjuration, 3, 26, 2, castRaiseDead,     nullptr },
+                  {{P::Death, 3}}, S::Conjuration, 3, 26, 2, castRaiseDead,     nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::Adjacent, TargetPick::First },
             }},
             // The symmetric one: an Everyone aim presses on both lines at once,
             // and only once however many instances stand.
@@ -665,21 +727,40 @@ namespace Spells
                 { "battlefield", "Leaden Air", leadenAir(),
                   {{P::Death, 2}}, S::Enchantment, 2,
                   LEADEN_AIR_FATIGUE, 2, castLeadenAir, nullptr,
-                  EnchantAim::Everyone, LEADEN_AIR_POOL_COST, tickLeadenAir },
+                  EnchantAim::Everyone, LEADEN_AIR_POOL_COST, tickLeadenAir,
+                  TargetKind::Battlefield, TargetPick::First },
             }},
             // ── Holy — granted, not researched, so NO school gate (M-14) ─────
             { "bless", {
                 { "minor", "Blessing", blessing(),
-                  {{P::Holy, 1}}, S::None, 0, 10, 1, castBless,        nullptr },
+                  {{P::Holy, 1}}, S::None, 0, 10, 1, castBless,        nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::AllyUnit, TargetPick::Broken },
                 { "major", "Greater Blessing", greaterBlessing(),
-                  {{P::Holy, 3}}, S::None, 0, 24, 2, castGreaterBless, nullptr },
+                  {{P::Holy, 3}}, S::None, 0, 24, 2, castGreaterBless, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::AllyTeam, TargetPick::First },
             }},
             // ── Unholy — granted like Holy, and likewise ungated by school ───
             { "drain_life", {
                 { "minor", "Drain Life", drainLife(),
-                  {{P::Unholy, 1}}, S::None, 0, 14, 1, castDrainLife, nullptr },
+                  {{P::Unholy, 1}}, S::None, 0, 14, 1, castDrainLife, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::EnemyUnit, TargetPick::Densest },
             }},
         };
+        // A-1/A-8: every form learns which spell it belongs to, ONCE, after the
+        // table exists. A form can then name itself — the resolver needs the id
+        // to ask a unit whether it is already carrying this buff, and AI-2's
+        // per-decision log line needs it to say which spell scored what. Wired
+        // here rather than typed into fifteen rows, where it could only ever go
+        // out of sync with the spell it sits under.
+        static const bool wired = [] {
+            for (Spell& spell : table)
+                for (SpellForm& form : spell.forms) form.spell = &spell;
+            return true;
+        }();
+        (void) wired;
         return table;
     }
 
@@ -704,6 +785,121 @@ namespace Spells
         if (form.school == SpellSchool::None) return true;
         return Utility::getBattlefield().getSchoolLevel(caster.getTeam(), form.school)
                >= form.schoolLevel;
+    }
+
+    // ── The resolver (A-1, A-8) ──────────────────────────────────────────────
+    //
+    // SIDE-EFFECT-FREE and DICE-FREE, both deliberately: AI-2 will call this
+    // once per candidate form per decision, and a resolver that touched the
+    // field would make the scorer a simulation (A-1 rules that out), while one
+    // that rolled would eat the mock queue a combat test seeded under TESTING.
+    // Nothing below writes to a unit or calls Utility::getRandom.
+
+    std::vector<AUnit*> candidates(const AUnit& caster, const SpellForm& form)
+    {
+        std::vector<AUnit*> out;
+        Battlefield& field = Utility::getBattlefield();
+        const int myTeam = caster.getTeam();
+
+        switch (form.target) {
+        case TargetKind::EnemyUnit:
+            // An unplaced caster has no position to measure from — the old
+            // predicate read caster.getHex()->elevation and simply assumed one
+            // (the shot bodies checked it before ever calling in). Answering
+            // "nobody" is what makes the resolver safe to ask of ANY caster,
+            // which a scorer will do.
+            if (!caster.getHex()) break;
+            for (const auto& u : field.getTeam(3 - myTeam))
+                if (u && spellInRange(caster, *u, myTeam)) out.push_back(u.get());
+            break;
+
+        case TargetKind::AllyUnit:
+        case TargetKind::AllyTeam:
+            // NO range check, the caster INCLUDED: exactly what findAllyToAid
+            // did, and a Ward still lands on a man across the map. Whether a
+            // boon should carry a range is one of the questions the deferred
+            // targeting front owns; AI-1 does not answer it.
+            for (const auto& u : field.getTeam(myTeam)) {
+                if (!u || !u->getAlive() || !u->getHex()) continue;
+                // A-8's refresh rule, and the whole of it: a man already
+                // carrying this spell is not a candidate for it again.
+                if (form.buff && form.spell && u->hasBuff(form.spell->id)) continue;
+                out.push_back(u.get());
+            }
+            break;
+
+        case TargetKind::Adjacent:
+        case TargetKind::Battlefield:
+        case TargetKind::None:
+            // Nothing is aimed at. raise_dead scans its own neighbours and a
+            // standing enchantment covers the field; neither has a unit target
+            // to enumerate, so neither gets one.
+            break;
+        }
+        return out;
+    }
+
+    Target chooseTarget(const AUnit& caster, const SpellForm& form)
+    {
+        Target picked;
+        Battlefield& field = Utility::getBattlefield();
+        const int myTeam = caster.getTeam();
+
+        if (form.target == TargetKind::AllyTeam) {
+            // The whole line at once, in team order — greater_bless walks it
+            // exactly as it used to walk field.getTeam().
+            picked.units = candidates(caster, form);
+            return picked;
+        }
+
+        switch (form.pick) {
+        case TargetPick::Densest: {
+            // Run through Utility::findTarget over the TEAM rather than over
+            // the candidate list, with the same two predicates in the same two
+            // roles findEnemyInRange gave them: the walk, the priority return
+            // and the sortsBefore tie-break are then the same ones, and the
+            // spell aims at the man it has always aimed at.
+            if (!caster.getHex()) break;
+            picked.unit = Utility::findTarget(
+                field.getTeam(3 - myTeam),
+                [&caster](const AUnit& t, int team) { return spellInRange(caster, t, team); },
+                [&caster](const AUnit& t, int team) { return spellDensityScore(caster, t, team); },
+                myTeam);
+            break;
+        }
+        case TargetPick::Wounded: {
+            // findAllyToAid: the first ally who needs it, and otherwise the
+            // first ally at all.
+            std::vector<AUnit*> pool = candidates(caster, form);
+            if (pool.empty()) break;
+            picked.unit = pool.front();
+            for (AUnit* u : pool)
+                if (u->getHp() < u->getmaxHP()) { picked.unit = u; break; }
+            break;
+        }
+        case TargetPick::Fatigued: {
+            // soothing_current: the most exhausted body, and NOBODY when even
+            // he is fresh — there is nothing to wash off a rested line.
+            std::vector<AUnit*> pool = candidates(caster, form);
+            AUnit* worst = nullptr;
+            for (AUnit* u : pool)
+                if (!worst || u->getFatigue() > worst->getFatigue()) worst = u;
+            if (worst && worst->getFatigue() > 0) picked.unit = worst;
+            break;
+        }
+        case TargetPick::Broken:
+            // bless, unchanged down to the helpers: a broken man is taken
+            // first (the priority predicate), and a wounded one scores.
+            picked.unit = Utility::findTarget(
+                field.getTeam(myTeam), isBroken, isWounded, myTeam);
+            break;
+        case TargetPick::First: {
+            std::vector<AUnit*> pool = candidates(caster, form);
+            if (!pool.empty()) picked.unit = pool.front();
+            break;
+        }
+        }
+        return picked;
     }
 
     const Spell* findSpell(std::string_view id)
@@ -838,6 +1034,14 @@ namespace Spells
                     // key exists is a reader that will one day forget to.
                     {"battlefield", form.enchantAim != EnchantAim::None},
                     {"poolCost",    form.poolCost},
+                    // A-1: what the form TARGETS, said out loud instead of
+                    // buried in the description's prose. On every row for the
+                    // same reason poolCost is: a reader that has to ask whether
+                    // a key exists is a reader that will one day forget to.
+                    // Nothing campaign-side reads these yet — AI-2/AI-3 are the
+                    // slices that will.
+                    {"target",      std::string(targetKindName(form.target))},
+                    {"buff",        form.buff},
                 });
             }
         }

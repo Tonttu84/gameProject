@@ -673,6 +673,21 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return cost + fatigueCost;
 	}
 
+	// ── The buff registry (A-8) ──────────────────────────────────────────────
+	// A mark says "this body already carries that spell", and Spells::candidates()
+	// reads it to keep a `buff` form off a man who has it. The id is a roster
+	// literal, so storing the view rather than a string costs nothing and cannot
+	// dangle.
+	bool AUnit::hasBuff(std::string_view id) const
+	{
+		return _activeBuffs.find(id) != _activeBuffs.end();
+	}
+
+	void AUnit::markBuff(std::string_view id)
+	{
+		_activeBuffs.insert(id);
+	}
+
 	bool AUnit::testConcentration(int damage)
 	{
 		if (!isChannelling()) return true;
@@ -775,7 +790,12 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		// A body that finds no legal target reports false and costs NOTHING:
 		// M-23's rule is that fatigue POWERS the spell, so no spell, no fatigue.
 		// That is what makes cycling free rather than a way to burn a caster out.
-		const SpellForm* fired = form->cast(*this) ? form : nullptr;
+		// AI-1: the target is resolved ONCE per attempt, by the form's own
+		// declared kind and pick, and handed to a body that now only applies an
+		// effect. Resolution reads the field and rolls nothing, so asking costs
+		// exactly what the old in-body search cost.
+		Target chosenTarget = Spells::chooseTarget(*this, *form);
+		const SpellForm* fired = form->cast(*this, chosenTarget) ? form : nullptr;
 		if (!fired && spell) {
 			size_t start = spell->forms.size();
 			for (size_t i = 0; i < spell->forms.size(); ++i)
@@ -785,7 +805,10 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			for (size_t i = start; i-- > 0; ) {
 				const SpellForm& weaker = spell->forms[i];
 				if (!Spells::qualifies(*this, weaker)) continue;
-				if (weaker.cast(*this)) { fired = &weaker; break; }
+				// Its own target: a weaker form may target differently (the
+				// major blessing takes the line, the minor takes one broken man).
+				Target weakerTarget = Spells::chooseTarget(*this, weaker);
+				if (weaker.cast(*this, weakerTarget)) { fired = &weaker; break; }
 			}
 		}
 		if (!fired) return;
@@ -991,6 +1014,11 @@ void AUnit::restoreForNextBattle()
 	_engagedRank     = 0;
 	spentMove        = 0;
 	_movePoints      = 0;
+	// A-8: buff marks are BATTLE-scoped, like everything else this function
+	// clears — the refresh rule stops a caster restacking Stoneskin on one man
+	// during a fight, and says nothing about the next one. A survivor carried
+	// into another battle is a legal target again.
+	_activeBuffs.clear();
 }
 
 	void AUnit::addFatigue(int amount)
