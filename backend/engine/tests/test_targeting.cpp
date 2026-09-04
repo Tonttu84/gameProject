@@ -232,8 +232,8 @@ TEST_CASE("targeting: Wounded takes the first hurt ally, else the first ally",
     field.loadArmies(std::move(red), {});
 
     // findAllyToAid's rule: someone who needs it wins, wherever he stands in the
-    // line, and there is no range check on a boon at all (that question belongs
-    // to the deferred targeting front, not to AI-1).
+    // line. (Since T-2 a boon IS range-checked — everyone here stands a hex or
+    // two from the caster, so what this case pins is still the PICK.)
     hurt->takeDamage(3);
     CHECK(Spells::chooseTarget(*mage, formOf("stoneskin")).unit == hurt);
 
@@ -339,7 +339,7 @@ TEST_CASE("targeting: Adjacent and Battlefield resolve to nothing, and still fir
         CHECK(none.units.empty());
 
         const size_t before = field.getTeam(REDTEAM).size();
-        CHECK(raise.cast(*necro, none) == true);
+        CHECK(raise.cast(*necro, raise, none) == true);
         CHECK(field.getTeam(REDTEAM).size() == before + 1);
     }
 
@@ -352,7 +352,7 @@ TEST_CASE("targeting: Adjacent and Battlefield resolve to nothing, and still fir
         CHECK(none.unit == nullptr);
         CHECK(none.units.empty());
 
-        CHECK(winds.cast(*druid, none) == true);
+        CHECK(winds.cast(*druid, winds, none) == true);
         CHECK(field.activeEnchantments().size() == 1);
     }
 
@@ -383,7 +383,7 @@ TEST_CASE("targeting: a buff marks its target and drops him from the candidates"
 
     Target t;
     t.unit = man;
-    REQUIRE(skin.cast(*mage, t) == true);
+    REQUIRE(skin.cast(*mage, skin, t) == true);
     CHECK(man->hasBuff(skin.spell->id) == true);
     CHECK(mage->hasBuff(skin.spell->id) == false);
 
@@ -486,7 +486,7 @@ TEST_CASE("targeting: no unit-targeting body can be handed an empty Target and f
             if (form.target != TargetKind::EnemyUnit
                 && form.target != TargetKind::AllyUnit) continue;
             INFO(std::string(spell.id) + "/" + std::string(form.name));
-            CHECK(form.cast(*mage, empty) == false);
+            CHECK(form.cast(*mage, form, empty) == false);
         }
 
     field.extractResult();
@@ -510,7 +510,7 @@ TEST_CASE("targeting: every buff body marks the id its own row carries", "[targe
 
             Target t;
             t.unit = man;
-            REQUIRE(form.cast(*mage, t) == true);
+            REQUIRE(form.cast(*mage, form, t) == true);
             CHECK(man->hasBuff(spell.id) == true);
             CHECK(Spells::candidates(*mage, form).size() == 1);
 

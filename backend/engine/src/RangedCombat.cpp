@@ -104,12 +104,82 @@ void RangedCombat::fire(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot)
     // Splash always lands on the hex regardless of whether the primary shot
     // found someone — same as an inaccurate single shot falling back to
     // pickHexTarget() on the landed hex.
+    secondaryHitsOn(shooter, landedHex, shot, elevDmgBonus);
+}
+
+void RangedCombat::secondaryHitsOn(AUnit* shooter, Hex* landedHex, const RangedShot& shot,
+                                   int elevDmgBonus)
+{
+    if (!landedHex) return;
     for (int i = 0; i < shot.secondaryHits; ++i) {
         AUnit* hit = pickHexTarget(landedHex);
         if (hit && hit->getAlive())
             applyHit(shooter, hit, shot, shot.secondaryDamage, elevDmgBonus);
     }
 }
+
+// ── Spell delivery (T-1, slice TG-1) ─────────────────────────────────────────
+//
+// The two halves of T-1, sharing everything below the aiming with fire(): the
+// elevation DAMAGE bonus, applyHit's block/armour/damage pipeline, and the
+// splash loop. What they do NOT share is the archer's aiming — that is the
+// whole point of the slice.
+
+// The height difference the two hexes make, clamped to the ranged cap exactly
+// as fire() clamps it. Both halves need it, and a precise strike needs it too:
+// T-1 exempts a precise spell from the accuracy adjustment, never from the
+// DAMAGE one — what a hit does is unchanged.
+static int elevationTiers(const AUnit* shooter, const AUnit* target)
+{
+    return std::clamp(shooter->getHex()->elevation - target->getHex()->elevation,
+                      -ELEV_RANGED_CAP, ELEV_RANGED_CAP);
+}
+
+void RangedCombat::strike(AUnit* shooter, AUnit* target, const RangedShot& shot)
+{
+    // Null-safe like fire(): a shot comes FROM somewhere and lands SOMEWHERE.
+    if (!shooter || !shooter->getHex() || !target || !target->getHex()) return;
+
+    int elevDmgBonus = elevationTiers(shooter, target) * ELEV_RANGED_BONUS;
+
+    // No Deviate, no resolveHit, no accuracy read anywhere: this is what
+    // "precise" means. The man the resolver picked is the man who is hit.
+    if (target->getAlive())
+        applyHit(shooter, target, shot, shot.baseDamage, elevDmgBonus);
+
+    // Fireball's blast still needs a hex to go off on, and it goes off on the
+    // one the strike landed on. TG-2 replaces this with a real area.
+    secondaryHitsOn(shooter, target->getHex(), shot, elevDmgBonus);
+}
+
+void RangedCombat::scatter(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot,
+                           int accuracy)
+{
+    if (!shooter || !shooter->getHex() || !aimUnit || !aimUnit->getHex()) return;
+
+    int elevTiers    = elevationTiers(shooter, aimUnit);
+    int elevDmgBonus = elevTiers * ELEV_RANGED_BONUS;
+    // The height a caster shoots from helps a spell arrive, exactly as it helps
+    // an arrow (T-1: "the elevation adjustment an arrow gets applied after").
+    int shotAccuracy = std::clamp(accuracy + elevTiers * ELEV_RANGED_BONUS * 10, 0, 100);
+
+    Hex* landedHex = Utility::Deviate(*shooter->getHex(),
+                                      aimUnit->getHex()->coord.q,
+                                      aimUnit->getHex()->coord.r,
+                                      shotAccuracy);
+    if (!landedHex) return;
+
+    // Assistant's call 1: scatter is the whole of the miss. Stay on his hex and
+    // the aimed man takes it; drift off it and the shot takes whoever stands
+    // where it fell — friend included (T-7) — or nobody at all.
+    AUnit* struck = (landedHex == aimUnit->getHex()) ? aimUnit
+                                                     : pickHexTarget(landedHex);
+    if (struck && struck->getAlive())
+        applyHit(shooter, struck, shot, shot.baseDamage, elevDmgBonus);
+
+    secondaryHitsOn(shooter, landedHex, shot, elevDmgBonus);
+}
+
 
 AUnit* RangedCombat::resolveHit(AUnit* intendedTarget, Hex* landedHex,
                                 int distance, int accuracy)

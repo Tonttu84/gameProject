@@ -35,12 +35,16 @@ const researchFixture = {
           description: 'A single bolt of fire at range.',
           requires: [{ path: 'fire', label: 'Fire', level: 1 }],
           schoolLevel: 1, unlocked: true, fatigue: 8, castingTime: 1,
+          // TG-1's delivery fields (T-1/T-2), as the server ships them: the
+          // thrown Fire forms scatter, everything else on the roster is precise.
+          accuracy: 0, precise: false, range: 10,
         },
         {
           spell: 'fireball', form: 'major', label: 'Fireball',
           description: 'A detonation at range.',
           requires: [{ path: 'fire', label: 'Fire', level: 3 }],
           schoolLevel: 3, unlocked: false, fatigue: 22, castingTime: 2,
+          accuracy: 0, precise: false, range: 10,
         },
       ],
     },
@@ -61,6 +65,7 @@ const researchFixture = {
           description: 'A kind wind runs the line.',
           requires: [{ path: 'nature', label: 'Nature', level: 2 }],
           schoolLevel: 2, unlocked: true, fatigue: 20, castingTime: 3,
+          accuracy: 100, precise: true, range: 10,
           battlefield: true, poolCost: 2,
           poolLine: "Draws 2 from the army's pool — once per battle, and only when scripted.",
         },
@@ -139,6 +144,12 @@ describe('The Study', () => {
     // The mechanical numbers ride with it — both are the server's, unphrased.
     expect(detail).toHaveTextContent('Fatigue 8')
     expect(detail).toHaveTextContent('1 tick')
+    // TG-1: how the spell ARRIVES rides the same line (T-1/T-2). Ember is
+    // thrown, so it says nothing about precision — and carries no modifier to
+    // name either.
+    expect(detail).toHaveTextContent('Range 10')
+    expect(detail).not.toHaveTextContent('Precise')
+    expect(detail).not.toHaveTextContent('Accuracy')
 
     await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
     expect(screen.queryByTestId('study-spell-detail-fireball-minor')).not.toBeInTheDocument()
@@ -158,6 +169,14 @@ describe('The Study', () => {
     // ...and an ordinary row says nothing about a pool it never touches.
     await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
     expect(screen.queryByTestId('study-spell-pool-fireball-minor')).not.toBeInTheDocument()
+  })
+
+  it('T-1: a precise row says so, and every row states its range', async () => {
+    studyWith()
+    await userEvent.click(screen.getByTestId('study-spell-toggle-soothing_winds-battlefield'))
+    const detail = screen.getByTestId('study-spell-detail-soothing_winds-battlefield')
+    expect(detail).toHaveTextContent('Range 10')
+    expect(detail).toHaveTextContent('Precise')
   })
 
   it('S3-5: Construction renders like any school, saying it holds nothing', () => {

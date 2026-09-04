@@ -41,9 +41,11 @@ using json = nlohmann::json;
 // Mage BS 12 → accuracy 60 → aimed range 6 hexes. Zombie target: undead (no
 // morale dice), armour 0 — takes exactly FIREBALL_CENTRE damage from a hit.
 //
-// Dice for one aimed fireball on flat open ground at distance 3:
-//   deviation:  dist/accuracy = 3/60 = 0 → no rolls
-//   aimed roll: getRandom(1,100) ≤ 60 → push 1
+// Dice for one fireball on flat open ground at distance 3, SINCE TG-1:
+//   deviation:  dist/accuracy = 3/60 = 0 → no rolls, so it lands on his hex
+//   aimed roll: NONE. T-1 took the archer's "roll ≤ accuracy" off spells
+//               entirely — an imprecise spell's whole miss is the scatter, and
+//               a shot that did not scatter takes the man it was aimed at.
 //   morale:     undead target → no rolls
 //   splash:     FIREBALL_SECONDARY × pickHexTarget getRandom(1,640);
 //               push 640 each — lands on empty ground slots, hits nobody.
@@ -70,7 +72,6 @@ TEST_CASE("Mage fireball hits an in-range enemy for FIREBALL_CENTRE plus its Fir
 
     RangedCombat::resetCache(); // tick() normally does this before the phase
     Utility::clearDiceRolls();
-    Utility::pushDiceRoll(1);   // aimed-hit roll succeeds
     for (int i = 0; i < FIREBALL_SECONDARY; ++i)
         Utility::pushDiceRoll(640); // splash finds only empty ground
 
@@ -105,7 +106,9 @@ TEST_CASE("a Fire 1 Mage throws the minor ember, not the blast") {
 
     RangedCombat::resetCache();
     Utility::clearDiceRolls();
-    Utility::pushDiceRoll(1);   // aimed-hit roll succeeds; ember has no splash
+    // No dice at all since TG-1: deviation is 3/60 = 0, so the ember stays on
+    // the hex it was aimed at and strikes the man there — and there is no aimed
+    // roll left to make (T-1).
 
     field.triggerSpecialPhase();   // minor form is one tick, so it fires at once
     Utility::clearDiceRolls();

@@ -54,11 +54,17 @@ TEST_CASE("log tiers: a cast is Basic and its wind-up is Detail") {
     field.reset();
     Army red, blue;
     red.push_back(std::make_unique<ImmobileDummy>(REDTEAM));
-    blue.push_back(std::make_unique<Priest>(BLUETEAM));
     // A Priest blesses a BROKEN or WOUNDED ally, so without one he has nothing
-    // to cast at and the test would be asserting on an empty log. Distance is
-    // irrelevant — bless works from anywhere, unlike the arcane spells.
-    blue.push_back(std::make_unique<Soldier>(BLUETEAM));
+    // to cast at and the test would be asserting on an empty log. And since
+    // T-2 the pair have to STAND somewhere within a blessing's reach: a boon is
+    // range-checked like everything else now, and an unplaced ally is nobody's
+    // candidate. Adjacent hexes, so the distance is never what is on trial.
+    auto priest  = std::make_unique<Priest>(BLUETEAM);
+    auto soldier = std::make_unique<Soldier>(BLUETEAM);
+    priest->setHex(field.hexGrid.getHex({5, 8}));
+    soldier->setHex(field.hexGrid.getHex({4, 8}));
+    blue.push_back(std::move(priest));
+    blue.push_back(std::move(soldier));
     field.loadArmies(std::move(red), std::move(blue));
 
     // Wound him AFTER he is on the field, and wound him HARD ENOUGH. Two traps

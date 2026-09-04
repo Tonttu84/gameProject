@@ -40,12 +40,13 @@ a useful version of the same idea instead of a strictly worse spell of its own.
 { "minor", "Ember", ember(),
   {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber, nullptr,
   EnchantAim::None, 0, nullptr,
-  TargetKind::EnemyUnit, TargetPick::Densest },
+  TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE },
 //  ↑form    ↑label ↑description
 //                  ↑paths        ↑school ↑lvl ↑fatigue ↑castingTime ↑cast ↑price
 //   ↑the battlefield trio at its default (see below) — the table is initialised
 //    POSITIONALLY, so an ordinary row has to name what it skips over
-//                                    ↑target kind  ↑pick   (↑`true` here if it is a buff)
+//                                    ↑target kind  ↑pick   ↑buff (A-8)
+//                                                          ↑accuracy ↑range (T-1/T-2)
 ```
 
 | Field         | What it is                                                                  |
@@ -58,13 +59,15 @@ a useful version of the same idea instead of a strictly worse spell of its own.
 | `schoolLevel` | what the ARMY must have researched                                            |
 | `fatigue`     | authored base cost, before M-10's divide and Low's halving                    |
 | `castingTime` | ticks occupied, **minimum 1** — nothing casts instantly (M-23)                |
-| `cast`        | `bool(AUnit&, const Target&)` — **applies only**; false = nothing happened     |
+| `cast`        | `bool(AUnit&, const SpellForm&, const Target&)` — **applies only**; false = nothing happened. The form is passed so a shot body can read its own accuracy (T-1) |
 | `price`       | Low's second effect aimed at your own side (M-24); `nullptr` for every other path |
 | `target`      | `TargetKind` — the SET of legal candidates (A-1); see the next section          |
 | `pick`        | `TargetPick` — which candidate the body is handed                              |
 | `buff`        | `true` for a standing effect the target keeps; the resolver then refuses to relay it (A-8) |
+| `accuracy`    | T-1: a SIGNED modifier on the caster's own accuracy stat, clamped to 0-100. `SPELL_PRECISE` (100) means the form just lands — no roll, no scatter, no elevation or forest adjustment |
+| `range`       | T-2: how far the form reaches in hexes, elevation-adjusted — **boons included**. Defaults to `SPELLRANGE` |
 | `spell`       | back-pointer to the spell above — **wired automatically** at the end of `roster()`, never authored |
-| `worth`       | `int(const AUnit&, const Target&)` — what casting this form at that target is worth, in `unitValue` (A-3); **wired by id** in `worthFor()`, see "Scoring" below |
+| `worth`       | `int(const AUnit&, const SpellForm&, const Target&)` — what casting this form at that target is worth, in `unitValue` (A-3); **wired by id** in `worthFor()`, see "Scoring" below |
 | `aiDivider`   | `0` = derive from fatigue, casting time and pool cost (A-4); any positive number overrides it for playtesting/modding |
 
 ### Targeting is DECLARED, not coded (A-1, slice AI-1)
@@ -76,9 +79,9 @@ when it needs a unit and was given none.
 
 | `TargetKind`  | Candidates                                                                   |
 | ------------- | ---------------------------------------------------------------------------- |
-| `EnemyUnit`   | living enemies within `SPELLRANGE`, elevation-adjusted                         |
-| `AllyUnit`    | living allies **including the caster**, no range check (that is today's rule)   |
-| `AllyTeam`    | the whole living ally line at once — `target.units`, in team order              |
+| `EnemyUnit`   | living enemies within the FORM's `range`, elevation-adjusted (T-2)              |
+| `AllyUnit`    | the caster **always** (a boon on yourself crosses no distance, so he needs no hex), then living **placed** allies within the form's `range` of a **placed** caster — T-2 put boons under the same range rule as bolts |
+| `AllyTeam`    | the same set, all at once — `target.units`, the caster first then team order    |
 | `Adjacent`    | none: the body scans the caster's own neighbouring hexes (raise_dead)          |
 | `Battlefield` | none: the spell stands over the field (E-4/E-5)                                |
 | `None`        | none at all                                                                    |
@@ -92,6 +95,25 @@ The resolver is **side-effect-free and dice-free** on purpose: the scorer will a
 this form hit" many times per decision, and a resolver that rolled would eat the mock queue a
 combat test seeded. If you add a helper it must keep both properties — `test_targeting.cpp`
 fails otherwise.
+
+### Delivery: precise or scattered (T-1, assistant's call 1 — slice TG-1)
+
+A damage body no longer sets `shot.accuracy` and no longer calls `RangedCombat::fire()` — that
+is the ARCHER's pipeline. It fills a `RangedShot` and hands it to `deliver()`, which reads the
+row:
+
+- **`accuracy == SPELL_PRECISE`** → `RangedCombat::strike()`. The man the resolver picked is
+  the man who is hit. Armour, cover and shield block rolls and the elevation *damage* bonus all
+  still apply — precise is about arriving, not about mattering more.
+- **anything else** → `RangedCombat::scatter()` at `spellAccuracy(caster, form)`, elevation
+  folded in there as it is for an arrow. **The scatter IS the miss**: land on the aimed man's hex
+  and he is struck, drift off it and one body in the landed hex is (by size weight, friend
+  included — T-7), and nobody at all if it is empty. The archer's second "roll ≤ accuracy to hit
+  the aimed man" is deliberately not applied to spells.
+
+A form whose body applies its effect directly — every boon, every debuff, both battlefield
+enchantments — is written `SPELL_PRECISE`, because that is what it always was: it never rolled
+to hit anything. Only fireball's two forms are thrown.
 
 **A `buff` form** (Stoneskin, Ward) marks its target with `markBuffOn(unit, "<spell id>")` on
 success, and a marked man stops being a candidate for that spell for the rest of the battle
@@ -126,7 +148,9 @@ The caster does not walk a priority list any more. `Spells::optionsFor(caster, s
 asks each qualifying form, for every candidate the resolver returns, what the cast is
 **worth** — in `unitValue`, the one currency (A-3):
 
-- a damage form is *expected damage × target value* (hit chance folded in, `AI_DAMAGE_SCALE`);
+- a damage form is *expected damage × target value* (hit chance folded in, `AI_DAMAGE_SCALE`) —
+  and since TG-1 the hit chance is the FORM's effective accuracy (`spellAccuracy`), so a precise
+  row is priced at a certainty however poor a shot the caster is;
 - a buff is *the value of what it lifts × `AI_BUFF_WORTH_PCT`* (a debuff its own percentage);
 - a conjuration is *bodies × their value*, and **0 when the body would fail** (too few corpses);
 - a battlefield enchantment is the flat `AI_GLOBAL_WORTH` — script-only (E-3), so its worth
@@ -260,7 +284,9 @@ stripped from the request, like `paths` and `script`.
 Usually **none**. `test_scoring.cpp` sweeps every form for a `worth` and a positive divider
 and pins the purity of scoring. `test_targeting.cpp` sweeps every form's target kind, refuses
 a buff whose body marks the wrong id, and casts every unit-targeting body at nothing to prove
-it declines rather than dereferences. `test_spells.cpp` sweeps the roster and fails a row that is malformed
+it declines rather than dereferences. `test_delivery.cpp` sweeps every form's `range` and
+`accuracy`, pins which rows are precise, and drives both delivery paths through the dice.
+`test_spells.cpp` sweeps the roster and fails a row that is malformed
 (empty id or label, zero fatigue, instant cast, unordered paths, non-ascending forms), that
 leaves a path with no level-1 spell, that carries a price without being Low, or that gets the
 Holy/Unholy school gate wrong. `engine.integration.test.js` re-checks the same properties

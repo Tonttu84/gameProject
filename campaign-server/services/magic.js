@@ -454,6 +454,13 @@ export const spellsForSchool = (spells, school, level) =>
       unlocked: level >= row.schoolLevel,
       fatigue: row.fatigue,
       castingTime: row.castingTime,
+      // T-1/T-2 (TG-1): how the spell ARRIVES, passed through like every other
+      // engine number on this row. `precise` is the boolean the screen reads
+      // and `accuracy` the signed modifier behind it; `range` is how far the
+      // form reaches, boons included since T-2.
+      accuracy: row.accuracy ?? 0,
+      precise: row.precise === true,
+      range: row.range ?? 0,
       // A battlefield row's price is not its fatigue (E-2), so the Study says
       // so on the row itself — phrased here, printed verbatim there.
       ...poolFieldsOf(row),
@@ -554,6 +561,11 @@ export const castableSpellsForLevels = (paths, schoolLevels, spells = []) => {
       spell: row.spell,
       label: row.label,
       description: row.description,
+      // The delivery numbers ride along here too (T-1/T-2), off the winning
+      // form for the same reason the label does.
+      accuracy: row.accuracy ?? 0,
+      precise: row.precise === true,
+      range: row.range ?? 0,
       // Off the WINNING form, like the label and the description above: a
       // battlefield spell is single-form today (E-3), but the fields are read
       // here rather than off the spell so the strongest-form rule keeps

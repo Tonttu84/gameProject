@@ -32,13 +32,16 @@ namespace Spells
     // combat test seeded (Utility::getRandom consumes that queue).
 
     // Every legal target for this form's kind, in TEAM ORDER:
-    //   EnemyUnit — living enemies with a hex, within SPELLRANGE after the
-    //               elevation tiers are clamped, exactly as the old
+    //   EnemyUnit — living enemies with a hex, within the FORM's range (T-2)
+    //               after the elevation tiers are clamped, exactly as the old
     //               findEnemyInRange predicate had it. Empty for an unplaced
     //               caster, who has no position to measure a range from.
-    //   AllyUnit / AllyTeam — living allies with a hex, the caster INCLUDED and
-    //               NO range check: that is what a buff does today, and AI-1
-    //               copies today rather than improving it.
+    //   AllyUnit / AllyTeam — the caster ALWAYS, first and hexless (a boon on
+    //               yourself crosses no distance), then every other living
+    //               PLACED ally within the form's range of a PLACED caster.
+    //               T-2 put a boon under the same range rule as a bolt; before
+    //               TG-1 this kind checked no range at all and a Ward reached a
+    //               man across the map.
     //   Adjacent / Battlefield / None — empty. These bodies need no unit
     //               target; the neighbour scan and the standing instance are
     //               the body's own business, as they have always been.

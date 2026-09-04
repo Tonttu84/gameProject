@@ -435,6 +435,13 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
       if (row.school !== null) expect(SPELL_SCHOOLS).toContain(row.school)
       expect(row.fatigue).toBeGreaterThan(0)
       expect(row.castingTime).toBeGreaterThanOrEqual(1)
+      // TG-1 (T-1/T-2): how the spell arrives, on every row. `precise` is the
+      // same fact as `accuracy === 100` and the two must never disagree — the
+      // screen reads the boolean and the engine reads the number.
+      expect(Number.isInteger(row.accuracy)).toBe(true)
+      expect(typeof row.precise).toBe('boolean')
+      expect(row.precise).toBe(row.accuracy === 100)
+      expect(row.range).toBeGreaterThanOrEqual(1)
     }
   })
 

@@ -227,14 +227,14 @@ TEST_CASE("elevation: caster height extends fireball range by one hex per tier")
 
         RangedCombat::resetCache();
         Utility::clearDiceRolls();
-        // In-range cast: deviation 11/70 = 0 → no rolls; the aimed path is
-        // skipped WITHOUT dice (distance 11 > aimed range 6, short-circuit),
-        // so the primary resolves via pickHexTarget: getRandom(1,640) = 1
-        // lands in the zombie's size-10 slot range. Out of range: no dice.
+        // In-range cast: the height helps the spell ARRIVE as well as reach
+        // (T-1 applies the elevation adjustment to an imprecise spell exactly
+        // as fire() applies it to an arrow), so accuracy 60 + 10 = 70 and the
+        // deviation is 11/70 = 0 — no rolls, no scatter, and the ember takes
+        // the man it was aimed at. Out of range: no dice either.
         //
         // A stock Mage is Fire 1, so this is fireball's MINOR form (M-18) —
         // one bolt and no splash, hence no secondary rolls to push.
-        Utility::pushDiceRoll(1);
         field.triggerSpecialPhase();
         Utility::clearDiceRolls();
 

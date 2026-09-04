@@ -1,4 +1,5 @@
 #pragma once
+#include "Defines.hpp"
 #include <string>
 #include <string_view>
 #include <vector>
@@ -99,13 +100,14 @@ enum class EnchantAim { None, Friendly, Everyone };
 // it): resistance, durations, AoE shapes, friendly fire and the delivery model.
 // The buff-refresh rule below is the ONE rule this slice adds.
 
-// The SET of legal candidates for a form — range-checked exactly where the old
-// bodies range-checked, and nowhere else (buffs still check no range: that is
-// today's behaviour, not an oversight this slice was allowed to fix).
+// The SET of legal candidates for a form — range-checked by ONE rule since T-2:
+// the form's own `range`, elevation-adjusted, on the boon kinds as much as on
+// the offensive one. (Until TG-1 a boon checked no range at all, which is how a
+// Ward reached a man across the map.)
 enum class TargetKind {
-    EnemyUnit,    // one living enemy within SPELLRANGE, elevation-adjusted
-    AllyUnit,     // one living ally (the caster included), no range check
-    AllyTeam,     // the whole living ally line at once — greater_bless walks it
+    EnemyUnit,    // one living enemy within the form's range, elevation-adjusted
+    AllyUnit,     // one living ally in range — the caster always included (T-2)
+    AllyTeam,     // the whole living ally line IN RANGE — greater_bless walks it
     Adjacent,     // no unit target: the body scans the caster's own neighbours
     Battlefield,  // no unit target: the spell stands over the field (E-4/E-5)
     None          // no target of any kind
@@ -186,7 +188,11 @@ struct SpellForm {
     // true if the spell actually fired; only then is fatigue paid, which is the
     // whole of M-23's rule that fatigue POWERS the spell, so no spell means no
     // fatigue — a body handed an empty Target returns false and costs nothing.
-    bool (*cast)(AUnit& caster, const Target& target);
+    // TG-1 added the form itself to the signature: a shot body has to read its
+    // own row's accuracy to know whether it is precise (T-1), and TG-2/TG-3 will
+    // want the area and the resist tag off the same row. A body that needs
+    // neither takes it as `const SpellForm& /*form*/` and says so.
+    bool (*cast)(AUnit& caster, const SpellForm& form, const Target& target);
 
     // M-24: Low's bargain. A Low-primary spell is authored as TWO effects that
     // both resolve — the intended one aimed outward and this one aimed at your
@@ -235,6 +241,23 @@ struct SpellForm {
     // on success; the mark is per battle (AUnit::_activeBuffs).
     bool buff = false;
 
+    // ── Delivery (T-1, T-2 — slice TG-1) ─────────────────────────────────────
+    // Immediately after the targeting trio on purpose: a row names WHOM it may
+    // hit, then how well and how far it reaches.
+
+    // T-1: a SIGNED modifier on the caster's own accuracy stat, clamped to
+    // 0..100 (spellAccuracy() below). The user's call was additive — the man
+    // casting is in the number, and the form only says how forgiving the spell
+    // is. Written as SPELL_PRECISE the form is PRECISE instead: no roll, no
+    // scatter, no elevation or forest adjustment, it lands on the resolved
+    // target. Balance-deferred like every other number on a row.
+    int accuracy = 0;
+
+    // T-2: how far this form reaches, in hexes, elevation-adjusted exactly as
+    // the enemy rule always was — and BOONS ARE CHECKED TOO now, which is the
+    // hole T-2 closed (a Ward used to reach a man across the map).
+    int range = SPELLRANGE;
+
     // The spell this form belongs to, wired once at the end of roster(). A form
     // can therefore name itself: the resolver needs the id to ask the buff
     // registry about it, and AI-2's one-line-per-decision log needs it to say
@@ -250,12 +273,24 @@ struct SpellForm {
     // worth doing" (no target, no corpses). nullptr means the AI never chooses
     // this form — and the roster sweep fails a form left without one, so a new
     // spell cannot silently become one the AI ignores.
-    int (*worth)(const AUnit& caster, const Target& target) = nullptr;
+    int (*worth)(const AUnit& caster, const SpellForm& form, const Target& target) = nullptr;
 
     // A-4: a manual override of the auto divider (see spellDivider()); 0 = auto.
     // The user's knob for playtesting and modding — authored, never computed.
     int aiDivider = 0;
 };
+
+// ── T-1's two questions, asked of a row ──────────────────────────────────────
+// Pure, and implemented beside the roster in SpellList.cpp.
+
+// Does this form just hit? A row written at SPELL_PRECISE says it does.
+bool spellPrecise(const SpellForm& form);
+
+// The form's EFFECTIVE accuracy for this caster: 100 when precise, otherwise
+// the caster's own stat plus the row's signed modifier, clamped to 0..100. The
+// elevation adjustment an arrow gets is NOT here — that is per shot and belongs
+// to delivery, which knows the two hexes.
+int spellAccuracy(const AUnit& caster, const SpellForm& form);
 
 // A-4: score = worth * AI_SCORE_SCALE / spellDivider(form). The auto divider
 // grows with the authored fatigue, the pool cost and the casting time, so a

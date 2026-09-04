@@ -13,18 +13,23 @@ export const spellsFixture = [
     description: 'A single bolt of fire at range.',
     school: 'evocation', schoolLevel: 1,
     paths: [{ path: 'fire', level: 1 }], fatigue: 8, castingTime: 1,
+    // TG-1's delivery fields, on EVERY row as the real export carries them
+    // (T-1/T-2): the two thrown Fire forms scatter, everything else is precise.
+    accuracy: 0, precise: false, range: 10,
   },
   {
     spell: 'fireball', form: 'major', label: 'Fireball',
     description: 'A detonation at range.',
     school: 'evocation', schoolLevel: 3,
     paths: [{ path: 'fire', level: 3 }], fatigue: 22, castingTime: 2,
+    accuracy: 0, precise: false, range: 10,
   },
   {
     spell: 'raise_dead', form: 'minor', label: 'Raise Skeleton',
     description: 'One skeleton claws up from old bones.',
     school: 'conjuration', schoolLevel: 1,
     paths: [{ path: 'death', level: 1 }], fatigue: 12, castingTime: 1,
+    accuracy: 100, precise: true, range: 10,
   },
   // Granted, not researched (M-14) — school null. The Study must not show it.
   {
@@ -32,6 +37,7 @@ export const spellsFixture = [
     description: 'One wounded or broken man is healed and steadied.',
     school: null, schoolLevel: 0,
     paths: [{ path: 'holy', level: 1 }], fatigue: 10, castingTime: 1,
+    accuracy: 100, precise: true, range: 10,
   },
   // The battlefield-wide enchantments (E-1/E-6). SINGLE-FORM by construction
   // (form 'battlefield'), and the two fields the ordinary rows above leave off:
@@ -43,6 +49,7 @@ export const spellsFixture = [
     description: 'A kind wind runs the line, and every friendly body breathes easier.',
     school: 'enchantment', schoolLevel: 2,
     paths: [{ path: 'nature', level: 2 }], fatigue: 20, castingTime: 3,
+    accuracy: 100, precise: true, range: 10,
     battlefield: true, poolCost: 2,
   },
   {
@@ -50,6 +57,7 @@ export const spellsFixture = [
     description: 'The air thickens, and every living body on the field tires faster.',
     school: 'enchantment', schoolLevel: 2,
     paths: [{ path: 'death', level: 2 }], fatigue: 24, castingTime: 3,
+    accuracy: 100, precise: true, range: 10,
     battlefield: true, poolCost: 3,
   },
 ]

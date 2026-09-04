@@ -66,9 +66,19 @@ const SpellRow = ({ spell, schoolLabel }) => {
       {open && (
         <div className="study-spell-detail" data-testid={`study-spell-detail-${spell.spell}-${spell.form}`}>
           <p className="study-spell-desc">{spell.description}</p>
+          {/* TG-1 (T-1/T-2) added two facts about DELIVERY to this line, both
+              the server's and neither re-derived here: how far the form reaches,
+              and whether it just lands. A precise row says so; an imprecise one
+              names its modifier only when it HAS one, because "Accuracy +0" is
+              a number that tells the player nothing. */}
           <p className="study-spell-numbers">
             Fatigue {spell.fatigue} · {spell.castingTime} tick
-            {spell.castingTime === 1 ? '' : 's'} to cast
+            {spell.castingTime === 1 ? '' : 's'} to cast · Range {spell.range}
+            {spell.precise
+              ? ' · Precise'
+              : spell.accuracy
+                ? ` · Accuracy ${spell.accuracy > 0 ? '+' : '−'}${Math.abs(spell.accuracy)}`
+                : ''}
           </p>
           {/* A BATTLEFIELD ENCHANTMENT (slice A, E-2/E-3) is priced in the
               ARMY's pool as well as in the caster's fatigue, and never fires

@@ -116,14 +116,23 @@ constexpr int BOWAMMO     = 30;
 constexpr int FIREBALL_CENTRE    = 10; // damage to the primary hit
 constexpr int FIREBALL_BLAST     = 5;  // damage per secondary hit
 constexpr int FIREBALL_SECONDARY = 5;  // number of secondary blast hits
-constexpr int SPELLRANGE         = 10; // max hex distance for spells
+// T-2: the DEFAULT per-form range. Every SpellForm carries its own `range` and
+// this is what a row gets when it does not say otherwise — boons included, now
+// that a Ward across the map is no longer a thing (see SPELL TARGETING AND
+// DELIVERY in docs/CAMPAIGN_PLAN.md). Balance-deferred.
+constexpr int SPELLRANGE         = 10; // the DEFAULT per-form range (T-2)
+// T-1: a form whose `accuracy` is written as this is PRECISE — it strikes the
+// target the resolver picked, with no roll, no scatter and no elevation or
+// forest adjustment. Not a balance number: it is the top of the 0..100 accuracy
+// scale, and "as accurate as a thing can be" is what the rule means by it.
+constexpr int SPELL_PRECISE      = 100;
 
 // Spell numbers (M-18). ALL BALANCE-DEFERRED — chosen to be sane relative to
 // one another, not tuned. Each is the BASE; M-20 adds the caster's primary
 // path level on top, so a spell grows with the man casting it.
 constexpr int EMBER_DAMAGE       = 4;  // fireball's minor form — one bolt, no blast
-constexpr int SHOCK_DAMAGE       = 3;  // Air: less than fire, but it lands
-constexpr int SHOCK_ACCURACY     = 80; // ...because lightning goes where it is aimed
+constexpr int SHOCK_DAMAGE       = 3;  // Air: less than fire, but it lands — the row is
+                                       // PRECISE (T-1), which is where "it lands" now lives
 constexpr int SOOTHING_RELIEF    = 20; // Water: fatigue washed off, not wounds healed
 constexpr int WARD_STRENGTH      = 2;  // High: a barrier, per M-4's "wards, dispelling"
 constexpr int SNARE_FATIGUE      = 15; // Nature: exhaustion inflicted, which M-2 makes lethal

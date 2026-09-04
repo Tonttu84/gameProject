@@ -88,7 +88,7 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-09-04) — START HERE
 
 **▶▶ THE ACTIVE FRONT IS SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions
-T-1..T-7, THREE SLICES PLANNED, NOTHING SHIPPED YET AT THE TIME OF WRITING.** The 2026-09-02 ask
+T-1..T-7, THREE SLICES PLANNED, TG-1 SHIPPED 2026-09-04.** The 2026-09-02 ask
 (*"plan first how spells should generally work and target, then we update the spells to work with
 our plan"*), taken up the day the casting AI closed. The record is the "SPELL TARGETING AND
 DELIVERY" entry at the top of the Deferred design backlog below: the seven decisions, the three
@@ -8148,6 +8148,32 @@ one resolver, effect-only bodies); the interview walked the other six.
 - **TG-1, delivery.** `accuracy` and `range` on the form and on the wire; the precise path; the
   scatter path that no longer uses the archer's hit roll; boons range-checked; the worth
   estimators reading the form's effective accuracy instead of the caster's raw stat. Rows updated.
+  - **✅ TG-1 SHIPPED 2026-09-04.** Spec'd here, built by an Opus subagent, reviewed and run
+    here. What landed: `SpellForm.accuracy` (signed modifier) and `.range` right after the
+    targeting trio, `SPELL_PRECISE` (100) in Defines.hpp, `SHOCK_ACCURACY` deleted (Shock's row
+    is precise — the constant's sentence became a rule); `spellPrecise()` / `spellAccuracy()`
+    pure beside `spellDivider()`; `cast` and `worth` now take `const SpellForm&` (a body reads
+    its own row; TG-2/TG-3 need the same); `RangedCombat::strike()` (precise) and `::scatter()`
+    (imprecise, NO `resolveHit` aimed-roll) beside an untouched `fire()`, splash loop shared;
+    `deliver()` in SpellList.cpp is the one place a shot body hands over; ONE `withinRange()`
+    predicate for every kind, boons range-checked, the caster ALWAYS first among his own
+    candidates (hexless or not — a boon on yourself crosses no distance), everyone else needs
+    two placed bodies; the `Broken` pick walks the candidates instead of the whole team; the
+    estimators price `spellAccuracy(c, form)`; the catalog exports `accuracy`/`precise`/`range`
+    and The Study prints "Range N · Precise / Accuracy ±n". `docs/ADDING_SPELLS.md` gained
+    "Delivery: precise or scattered".
+  - **Facts corrected on contact:** a Mage's accuracy is 60 (ballistic skill 12), not 10 — so a
+    Mage at distance < 10 never scattered and still does not at modifier 0; precision is what
+    the ROW says (`accuracy >= SPELL_PRECISE`), never arithmetic that topped out (pinned).
+  - **Behaviour that changed, on purpose:** drain_life is precise (was a stray shot in the hex,
+    (bd)); Shock strikes the aimed man rather than a size-weighted body in his hex; no spell
+    makes the archer's aimed-hit roll any more; ally candidates list the caster FIRST rather
+    than in team order, so a boon with nobody wounded lands on the caster before the first man
+    in line. Tests that used unplaced allies now place them (test_combat, test_battle_log).
+  - Engine 491 cases green fast and sanitized, campaign-server 1480, frontend 547 + lint.
+    `make clang` cannot LINK in the web container (no asan runtime for clang-18) and CI has
+    no clang job — the changed TUs were checked with `clang++ -fsyntax-only -Wall -Wextra
+    -Werror -Wshadow -Wnull-dereference`; run `make clang` on a dev box when next there.
 - **TG-2, area.** The arc, explosion and random, friendly fire, the scorer netting own losses,
   `secondaryHits` retired for spells. The visible change.
 - **TG-3, resistance and duration.** The contest, the two new stats through the type rows and the

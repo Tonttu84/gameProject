@@ -17,7 +17,10 @@ class AUnit;
 // belongs in onHit or onDamage.
 struct RangedShot {
     int      baseDamage  = 0;
-    int      accuracy    = 0;               // 0–100 base; fire() adjusts for elevation
+    // 0–100 base; fire() adjusts for elevation. READ BY fire() ONLY: the spell
+    // entry points below are told their accuracy outright (T-1), because a
+    // form's number is a modifier on the caster's and the fold happens caller-side.
+    int      accuracy    = 0;
     ArmorPen pen         = ArmorPen::Normal;
 
     // AoE splash: after the primary shot resolves (hit or miss), fire() picks
@@ -78,6 +81,34 @@ public:
     // adjustments (e.g. forest aim penalty) are the caller's responsibility.
     static void fire(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot);
 
+    // ── Spell delivery (T-1, slice TG-1) ─────────────────────────────────────
+    //
+    // A spell is NOT an arrow any more. fire() above is the archer's pipeline
+    // and stays exactly as it was; the two entry points below are the two
+    // halves of T-1, and they share applyHit() and the secondary-hits loop with
+    // it so what a hit DOES is the same wherever it came from.
+    //
+    // Neither reads `shot.accuracy`: the caller has already folded the form's
+    // modifier into the caster's stat (spellAccuracy), so the argument — or, for
+    // a precise strike, the absence of one — is the truth.
+
+    // PRECISE (accuracy SPELL_PRECISE): it strikes the man it was aimed at. No
+    // deviation, no aimed-hit roll, no accuracy read at all. What the hit DOES
+    // is untouched — armour, the cover and shield block rolls and the elevation
+    // DAMAGE bonus all still apply; "precise" is about arriving, not about
+    // mattering more.
+    static void strike(AUnit* shooter, AUnit* target, const RangedShot& shot);
+
+    // IMPRECISE (assistant's call 1): scatter IS the miss. The shot deviates by
+    // Utility::Deviate at `accuracy` — elevation adjusted in here, as fire()
+    // does it — and whoever the landed hex holds takes it: the aimed man if the
+    // shot stayed on his hex, otherwise one body there by size weight, which
+    // may be the caster's own side (T-7 says that is intended). Nobody, if the
+    // hex is empty. The archer's separate "roll <= accuracy to hit the aimed
+    // man" is deliberately NOT applied to a spell.
+    static void scatter(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot,
+                        int accuracy);
+
 private:
     struct SlotCache {
         std::vector<AUnit*> units; // units present when the phase began
@@ -91,6 +122,13 @@ private:
     // secondary splash hit so they go through identical rules.
     static void applyHit(AUnit* shooter, AUnit* target, const RangedShot& shot,
                           int baseDamage, int elevDmgBonus);
+
+    // The splash loop, shared by fire(), strike() and scatter(): shot.secondaryHits
+    // weighted-random bodies out of the hex the shot landed on, each through
+    // applyHit like the primary. One copy, so a blast is the same blast whoever
+    // threw it.
+    static void secondaryHitsOn(AUnit* shooter, Hex* landedHex, const RangedShot& shot,
+                                 int elevDmgBonus);
 
     RangedCombat() = delete;
 };

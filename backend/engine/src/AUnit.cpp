@@ -940,7 +940,9 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				if (u == wanted) { chosenTarget.unit = u; break; }
 		}
 		if (!chosenTarget.unit) chosenTarget = Spells::chooseTarget(*this, *form);
-		const SpellForm* fired = form->cast(*this, chosenTarget) ? form : nullptr;
+		// TG-1: the body is handed its own row as well as its target — a shot
+		// reads the form's accuracy to know whether it is precise (T-1).
+		const SpellForm* fired = form->cast(*this, *form, chosenTarget) ? form : nullptr;
 		if (!fired && spell) {
 			size_t start = spell->forms.size();
 			for (size_t i = 0; i < spell->forms.size(); ++i)
@@ -953,7 +955,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				// Its own target: a weaker form may target differently (the
 				// major blessing takes the line, the minor takes one broken man).
 				Target weakerTarget = Spells::chooseTarget(*this, weaker);
-				if (weaker.cast(*this, weakerTarget)) { fired = &weaker; break; }
+				if (weaker.cast(*this, weaker, weakerTarget)) { fired = &weaker; break; }
 			}
 		}
 		if (!fired) return;

@@ -147,6 +147,10 @@ describe('what the sheet is sent (S4-7)', () => {
     expect(view.chosen).toEqual([
       {
         spell: 'fireball', label: 'Ember', description: 'A single bolt of fire at range.',
+        // How it ARRIVES rides every row too (TG-1, T-1/T-2), for the same
+        // reason: a reader that has to test for a missing key will one day
+        // forget to. Ember is thrown, so it is not precise.
+        accuracy: 0, precise: false, range: 10,
         // Every row says where it stands on the pool, so the sheet never has
         // to test for a missing field (slice A, E-2).
         battlefield: false, poolCost: 0,

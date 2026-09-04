@@ -509,6 +509,11 @@ TEST_CASE("Priest::castBless does not heal a cavalry whose mount is hurt but rid
     auto cavPtr    = std::make_unique<Cavalry>(REDTEAM);
     Cavalry* cav   = cavPtr.get();
 
+    // Placed like the two cases below it (T-2), so what declines the cast here
+    // is the RIDER being whole and not the pair standing nowhere.
+    priestPtr->setHex(field.hexGrid.getHex({5, 8}));
+    cavPtr->setHex(field.hexGrid.getHex({4, 8}));
+
     Army red;
     red.push_back(std::move(priestPtr));
     red.push_back(std::move(cavPtr));
@@ -540,6 +545,12 @@ TEST_CASE("Priest::castBless detects and heals a cavalry whose rider is hurt") {
     auto priestPtr = std::make_unique<Priest>(REDTEAM);
     auto cavPtr    = std::make_unique<Cavalry>(REDTEAM);
     Cavalry* cav   = cavPtr.get();
+
+    // T-2: a boon is range-checked now, so both bodies have to STAND somewhere
+    // — an unplaced ally is nobody's candidate. Adjacent hexes, well inside a
+    // blessing's reach; the rule under test is the healing, not the distance.
+    priestPtr->setHex(field.hexGrid.getHex({5, 8}));
+    cavPtr->setHex(field.hexGrid.getHex({4, 8}));
 
     Army red;
     red.push_back(std::move(priestPtr));
@@ -574,6 +585,10 @@ TEST_CASE("Priest::castBless detects and rallies a cavalry whose rider is broken
     auto cavPtr    = std::make_unique<Cavalry>(REDTEAM);
     Cavalry* cav   = cavPtr.get();
     cav->setBroken(true); // sets the rider's own broken flag via effectTarget()
+
+    // Placed, for T-2's reason: a boon reaches a man who is standing somewhere.
+    priestPtr->setHex(field.hexGrid.getHex({5, 8}));
+    cavPtr->setHex(field.hexGrid.getHex({4, 8}));
 
     Army red;
     red.push_back(std::move(priestPtr));
