@@ -44,7 +44,7 @@ const {
   SANDBOX_MAX_CHANNELS, SANDBOX_MAX_PATH_LEVEL, SANDBOX_MAX_PRESTIGE,
   SANDBOX_MAX_REINFORCEMENTS, SANDBOX_MAX_REINFORCE_COUNT, SANDBOX_MAX_REINFORCE_MESSAGE,
   SANDBOX_MAX_RUNS, SANDBOX_MAX_SCHOOL_LEVEL, SANDBOX_MAX_SQUADS_PER_SIDE,
-  SANDBOX_MAX_UNITS_PER_SIDE, SANDBOX_MAX_WALL_DURABILITY, SANDBOX_MAX_WALL_SIDES,
+  SANDBOX_MAX_UNITS_PER_SIDE, SANDBOX_MAX_VALUE, SANDBOX_MAX_WALL_DURABILITY, SANDBOX_MAX_WALL_SIDES,
   SPELL_PATHS, SPELL_SCHOOLS, SQUAD_ARCHETYPES, SQUAD_RANKS, SQUAD_UPGRADE_POOL,
 } = await import('../utils/campaignConfig.js')
 
@@ -353,6 +353,138 @@ describe('the caster fields on a placement entry (SB-6 / SB-7 / D2)', () => {
   })
 })
 
+// ── AI-3: the two casting-AI fields (L-1 / L-2 / L-4) ───────────────────────
+//
+// The whitelist widens by two more fields, on the same terms S2 established
+// and reviewed one at a time: everything is REBUILT, an empty field is
+// OMITTED, and the absence is what asks for the engine's own default — the
+// whole castable roster for a shortlist (A-7) and the catalog's own worth for
+// a value. What is new is the SPLIT between them: a shortlist is a caster's
+// (it fences his lottery), while a value says what a body is worth TO THE
+// OTHER SIDE'S caster and therefore belongs on every body there is.
+describe("a caster's shortlist and a body's value (A-5 / A-7)", () => {
+  const inputOf = () => engine.runBattle.mock.calls[0][0]
+
+  const launchCaster = (entry) => launch({
+    player_placement: [{ unit_type: 'Mage', q: 4, r: 4, ...entry }],
+    enemy_placement: [],
+  })
+
+  test('a shortlist survives the whitelist for a caster', async () => {
+    stubEngine()
+    await launchCaster({ shortlist: ['fireball', 'bless'] })
+
+    expect(inputOf().player_placement).toEqual([{
+      unit_type: 'Mage', q: 4, r: 4, shortlist: ['fireball', 'bless'],
+    }])
+  })
+
+  test('and is stripped from a body that is no caster at all', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, shortlist: ['fireball'] }],
+      enemy_placement: [],
+    })
+
+    expect(inputOf().player_placement).toEqual([{ unit_type: 'Soldier', q: 4, r: 4 }])
+  })
+
+  test('an unknown id and a duplicate are rebuilt away', async () => {
+    stubEngine()
+    await launchCaster({ shortlist: ['bless', 'summon_dragon', 'bless', 42, 'fireball'] })
+
+    // Unordered (A-7 — the engine draws by lottery, not by position), so the
+    // only thing the dedupe owes is that each id appears once.
+    expect(inputOf().player_placement[0].shortlist).toEqual(['bless', 'fireball'])
+  })
+
+  test('a BATTLEFIELD spell is dropped — a global is cast only when scripted (E-3)', async () => {
+    stubEngine()
+    await launchCaster({ shortlist: ['soothing_winds', 'fireball', 'leaden_air'] })
+
+    // The same rule `shortlistableFor` applies campaign-side: a lottery must
+    // not be able to reach a spell the engine only fires on an order, or the
+    // fence would offer a line that could only ever be skipped.
+    expect(inputOf().player_placement[0].shortlist).toEqual(['fireball'])
+  })
+
+  test('a shortlist of nothing but globals and junk is OMITTED, not sent as []', async () => {
+    stubEngine()
+    await launchCaster({ shortlist: ['leaden_air', 'summon_dragon'] })
+
+    const [entry] = inputOf().player_placement
+    expect(entry).toEqual({ unit_type: 'Mage', q: 4, r: 4 })
+    expect('shortlist' in entry).toBe(false)
+  })
+
+  test('an empty shortlist is omitted — absence is the whole roster (A-7)', async () => {
+    stubEngine()
+    await launchCaster({ shortlist: [] })
+
+    expect('shortlist' in inputOf().player_placement[0]).toBe(false)
+  })
+
+  test('a value rides on ANY body, caster or not (L-2)', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, value: 200 },
+        { unit_type: 'Mage', q: 4, r: 5, value: 30, shortlist: ['fireball'] },
+      ],
+      enemy_placement: [],
+    })
+
+    expect(inputOf().player_placement).toEqual([
+      { unit_type: 'Soldier', q: 4, r: 4, value: 200 },
+      { unit_type: 'Mage', q: 4, r: 5, value: 30, shortlist: ['fireball'] },
+    ])
+  })
+
+  test('a value is truncated and clamped to the engine\'s own cap', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, value: 12.9 },
+        { unit_type: 'Soldier', q: 4, r: 5, value: SANDBOX_MAX_VALUE + 5000 },
+        { unit_type: 'Soldier', q: 4, r: 6, value: -8 },
+      ],
+      enemy_placement: [],
+    })
+
+    expect(inputOf().player_placement.map((e) => e.value))
+      // Floored at 1 where the ENGINE floors it (AI_VALUE_CAP's other end): a
+      // body worth nothing is a body no scorer would ever look at.
+      .toEqual([12, SANDBOX_MAX_VALUE, 1])
+  })
+
+  test('a blank, a null and a word are omitted — none of them is a number', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [
+        { unit_type: 'Soldier', q: 4, r: 4, value: '' },
+        { unit_type: 'Soldier', q: 4, r: 5, value: null },
+        { unit_type: 'Soldier', q: 4, r: 6, value: 'lots' },
+        { unit_type: 'Soldier', q: 4, r: 7, value: [] },
+      ],
+      enemy_placement: [],
+    })
+
+    // `Number(null)`, `Number('')` and `Number([])` are all 0, and a blank box
+    // is nobody asking for a worthless body — so none of these may travel.
+    for (const entry of inputOf().player_placement) expect('value' in entry).toBe(false)
+  })
+
+  test('a value typed as text still crosses, since a text box is where it is typed', async () => {
+    stubEngine()
+    await launch({
+      player_placement: [{ unit_type: 'Soldier', q: 4, r: 4, value: ' 45 ' }],
+      enemy_placement: [],
+    })
+
+    expect(inputOf().player_placement[0].value).toBe(45)
+  })
+})
+
 describe('the per-side magic block (D1)', () => {
   const inputOf = () => engine.runBattle.mock.calls[0][0]
 
@@ -468,6 +600,9 @@ describe('GET /api/sandbox/reference', () => {
       // of its own) and a bound on how many SHEETS one side may carry.
       maxPrestige: SANDBOX_MAX_PRESTIGE,
       maxSquadsPerSide: SANDBOX_MAX_SQUADS_PER_SIDE,
+      // AI-3's one (L-3): the engine's own AI_VALUE_CAP mirrored, so the box
+      // stops where the engine would have clamped without saying so.
+      maxValue: SANDBOX_MAX_VALUE,
     })
   })
 

@@ -28,6 +28,7 @@ import {
   SANDBOX_MAX_SCHOOL_LEVEL,
   SANDBOX_MAX_SQUADS_PER_SIDE,
   SANDBOX_MAX_UNITS_PER_SIDE,
+  SANDBOX_MAX_VALUE,
   SANDBOX_MAX_WALL_DURABILITY,
   SANDBOX_MAX_WALL_SIDES,
   SPELL_PATHS,
@@ -107,6 +108,66 @@ const sanitizeScript = (script) => {
     out.push(id)
   }
   return out
+}
+
+// ── AI-3: the two casting-AI fields (docs/CAMPAIGN_PLAN.md, L-1 / L-2) ──────
+
+// A caster's SHORTLIST: what his post-script lottery may draw from (A-7).
+// `sanitizeScript`'s twin, and the differences are exactly the two things that
+// make a shortlist a different thing from a script:
+//
+//   • IT IS UNORDERED, so the dedupe is all that "order kept" bought the script
+//     — nothing here reads position, since the engine draws by weighted lottery
+//     over the scorer's own numbers rather than walking the list.
+//   • IT MAY NOT HOLD A BATTLEFIELD FORM. A global is script-only (E-3): it
+//     takes hold once per side and is cast because it was ordered, never
+//     because a lottery named it. The campaign's own `shortlistableFor` filters
+//     them out of the OPTIONS as well as out of the plan, and the lab keeps the
+//     same rule — a spell the engine would refuse to lottery is a line that
+//     could only ever be skipped.
+//
+// NO CAP (SB-5, L-1): the campaign fences a sheet at MAX_SHORTLIST_SPELLS, and
+// the lab is where you ask what a caster does with a wider fence than any
+// campaign could grant him.
+//
+// A spell is battlefield if ANY of its forms is, which is `carriesBattlefield`'s
+// own reading one layer up: the catalog is per FORM, a battlefield spell is
+// single-form today (E-3), and reading it this way is what keeps the filter
+// honest the day one grows a second form.
+const sanitizeShortlist = (shortlist) => {
+  if (!Array.isArray(shortlist)) return []
+  const catalog = getSpellCatalog()
+  const global = new Set(catalog.filter((row) => row.battlefield).map((row) => row.spell))
+  const known = new Set(catalog.map((row) => row.spell))
+  const out = []
+  for (const id of shortlist) {
+    if (typeof id !== 'string' || !known.has(id) || global.has(id) || out.includes(id)) continue
+    out.push(id)
+  }
+  return out
+}
+
+// What a BODY is worth to the enemy's casting AI (A-5), which the lab sets
+// directly rather than deriving from items the way the campaign does
+// (`characterValue`) — SB-5 again: the lab is where the number itself is the
+// question, and A-5's test ("does the enemy mage go for the well-kitted man")
+// needs it typed on any body, not just on a caster.
+//
+// The seedFrom discipline, and for the same reason: only a number or the string
+// a text field produces is even looked at, since `Number(null)` is 0 and
+// `Number('')` is 0 — and a blank box is nobody asking for a body worth
+// nothing. Absence is the engine's own catalog default (10 for almost every
+// type), which is what an untouched stack must keep meaning.
+const valueFrom = (raw) => {
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null
+  const named = typeof raw === 'string' ? raw.trim() : raw
+  if (named === '') return null
+  const worth = Math.trunc(Number(named))
+  if (!Number.isFinite(worth)) return null
+  // Clamped rather than refused, at the ENGINE'S own figure (SANDBOX_MAX_VALUE
+  // mirrors AI_VALUE_CAP), and floored at 1 because that is where the engine
+  // floors it too — a body worth zero would be a body no scorer ever looks at.
+  return Math.min(SANDBOX_MAX_VALUE, Math.max(1, worth))
 }
 
 // ── R2: the squad sheet (docs/CAMPAIGN_PLAN.md, R-7) ────────────────────────
@@ -228,17 +289,23 @@ const squadFieldsFor = (sheet) => {
 //
 // S2 adds the caster fields (paths and scripts) to this whitelist deliberately,
 // one at a time, which is exactly the review this shape is meant to force. Two
-// rules govern the pair, and both are about what ABSENCE means:
+// rules govern them, and both are about what ABSENCE means:
 //
-//   • only a CASTER carries them. `paths` and `script` mean nothing to the
-//     engine on a Soldier, and a bag of zeros on a body that can cast nothing
-//     is a field claiming a decision nobody made.
-//   • an EMPTY field is omitted, never sent as `{}` or `[]`. Absence is the
-//     engine's own default (SB-7): no `script` is the default walk (E-3), and
-//     no `paths` leaves the engine's constructor seeding alone — a Mage keeps
-//     his Fire 1. An empty bag would OVERWRITE that seed with nothing and hand
-//     back a mute mage, so "I did not configure this one" has to travel as
-//     silence for the lab's default to be the game's own choice.
+//   • only a CASTER carries a caster field. `paths`, `script` and AI-3's
+//     `shortlist` mean nothing to the engine on a Soldier, and a bag of zeros
+//     on a body that can cast nothing is a field claiming a decision nobody
+//     made. `value` is the exception that proves which rule it is: it says what
+//     a body is WORTH TO THE ENEMY'S caster (A-5), so it belongs on every body
+//     — the well-kitted man the enemy mage should sometimes go for is as
+//     readily a Golem or a Royal Guard as a caster (L-2).
+//   • an EMPTY field is omitted, never sent as `{}` or `[]` or a blank number.
+//     Absence is the engine's own default (SB-7): no `script` is the default
+//     walk (E-3), no `shortlist` is the whole castable roster (A-7), no `value`
+//     is the catalog's own worth for the type, and no `paths` leaves the
+//     engine's constructor seeding alone — a Mage keeps his Fire 1. An empty
+//     bag would OVERWRITE that seed with nothing and hand back a mute mage, so
+//     "I did not configure this one" has to travel as silence for the lab's
+//     default to be the game's own choice.
 // R2 adds the squad fields on the same terms — and the terms bite harder here,
 // because the engine reads three of them and only ONE arrives from the client:
 //
@@ -259,20 +326,27 @@ const sanitizeEntry = (entry, sheets) => {
   const unitType = String(entry?.unit_type ?? '')
   const squadId = Math.trunc(Number(entry?.squad_id))
   const sheet = Number.isFinite(squadId) ? sheets?.get(squadId) : undefined
+  const worth = valueFrom(entry?.value)
   const base = {
     unit_type: unitType,
     q: Math.trunc(Number(entry?.q)),
     r: Math.trunc(Number(entry?.r)),
     ...(sheet ? squadFieldsFor(sheet) : {}),
+    // EVERY body, caster or not (L-2): `value` is what this man is worth to the
+    // OTHER side's scorer, and the target A-5 wants sometimes noticed is as
+    // readily a Golem as a Mage.
+    ...(worth === null ? {} : { value: worth }),
   }
   if (!isCasterType(unitType)) return base
 
   const paths = levelBagFrom(entry?.paths, SPELL_PATHS, SANDBOX_MAX_PATH_LEVEL)
   const script = sanitizeScript(entry?.script)
+  const shortlist = sanitizeShortlist(entry?.shortlist)
   return {
     ...base,
     ...(Object.keys(paths).length > 0 ? { paths } : {}),
     ...(script.length > 0 ? { script } : {}),
+    ...(shortlist.length > 0 ? { shortlist } : {}),
   }
 }
 
@@ -806,6 +880,11 @@ router.get('/reference', userExtractor, (req, res) => {
       // `maxSquadsPerSide` bounds the number of SHEETS a launch may carry.
       maxPrestige: SANDBOX_MAX_PRESTIGE,
       maxSquadsPerSide: SANDBOX_MAX_SQUADS_PER_SIDE,
+      // AI-3's one bound (L-3): what a body may be declared worth to the
+      // enemy's casting AI. The ENGINE'S own AI_VALUE_CAP mirrored, like
+      // maxReinforceCount above, so the box stops where the engine would have
+      // clamped silently.
+      maxValue: SANDBOX_MAX_VALUE,
     },
   })
 })

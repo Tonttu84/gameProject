@@ -1,0 +1,118 @@
+{
+  "_watch": "blue",
+  "_note": "One Necromancer behind six, against ten. Death 3 at Conjuration 3 opens both raise-dead forms, and the major one starves without corpses \u2014 which is precisely the doomed major AI-2 taught the scorer not to start.",
+  "map": "sample_battle",
+  "max_turns": 400,
+  "player_placement": [
+    {
+      "unit_type": "Soldier",
+      "q": 3,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 4,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 5,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 6,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 7,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 8,
+      "r": 7
+    },
+    {
+      "unit_type": "Necromancer",
+      "q": 5,
+      "r": 6,
+      "paths": {
+        "death": 3
+      }
+    }
+  ],
+  "enemy_placement": [
+    {
+      "unit_type": "Soldier",
+      "q": -6,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -5,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -4,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -3,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -2,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -1,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 0,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 1,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 2,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 3,
+      "r": 22
+    }
+  ],
+  "magic": {
+    "blue": {
+      "schools": {
+        "evocation": 0,
+        "conjuration": 3,
+        "enchantment": 0,
+        "construction": 0
+      },
+      "channels": 0
+    },
+    "red": {
+      "schools": {
+        "evocation": 0,
+        "conjuration": 0,
+        "enchantment": 0,
+        "construction": 0
+      },
+      "channels": 0
+    }
+  }
+}

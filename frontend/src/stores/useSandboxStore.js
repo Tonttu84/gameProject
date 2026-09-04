@@ -89,13 +89,20 @@ export const squadBodies = (sheet) => {
   return [...bodies.entries()].map(([type, count]) => ({ type, count }))
 }
 
-// One caster BODY's configuration (SB-6, D2). Both halves default EMPTY, and
+// One caster BODY's configuration (SB-6, D2). Every half defaults EMPTY, and
 // empty means ABSENT ON THE WIRE — which is the engine's own default: no
 // `script` is the default walk (SB-7/E-3), and no `paths` leaves the engine's
 // constructor seeding alone, so a Mage the player never opened still walks in
 // with his Fire 1. That is what lets "default to what the game would choose by
 // itself, override from there" need no new concept.
-const emptyCaster = () => ({ paths: {}, script: [] })
+//
+// AI-3 adds the SHORTLIST (L-1), beside the script because it is the script's
+// sibling — what he reaches for once the opening sequence has run out (A-7) —
+// and it keeps the same absence rule for a stronger reason than the others: an
+// empty shortlist is not a mute caster but the WHOLE castable roster, so a `[]`
+// on the wire would say the one thing the player cannot mean by leaving the
+// checklist alone.
+const emptyCaster = () => ({ paths: {}, script: [], shortlist: [] })
 
 // A stack's caster list, trimmed to the bodies that actually exist. Called
 // wherever a count can shrink: a config left behind for a body that is no
@@ -306,11 +313,47 @@ const useSandboxStore = create((set, get) => ({
           ...s[side],
           placements: [
             ...rest,
-            { type, col, row, count, ...(casters.length > 0 ? { casters } : {}) },
+            {
+              type, col, row, count,
+              ...(casters.length > 0 ? { casters } : {}),
+              // AI-3's `value` (L-2) is a fact about the STACK rather than
+              // about any one body, so it survives a count being raised or
+              // lowered exactly as the caster configs do — re-typing the
+              // spinner is not a statement about what these men are worth.
+              ...(here?.value == null ? {} : { value: here.value }),
+            },
           ],
         },
       }
     }),
+
+  // What every body of this stack is worth to the OTHER side's casting AI
+  // (A-5/L-2), which is why it sits on the stack rather than on a body: it is
+  // the same statement about each of them, and typing it once per stack is what
+  // makes "give the enemy mage something worth shooting at" one number rather
+  // than N. Set on EVERY unit type, not just casters — the well-kitted man A-5
+  // wants sometimes noticed is as readily a Golem as a Mage.
+  //
+  // Null (an emptied box) is the engine's own catalog default, asked for by
+  // saying nothing — the absence rule this store keeps for the wall durability
+  // and every caster field, and the reason the field is cleared rather than
+  // zeroed: a body worth 0 is not a thing the engine has a meaning for.
+  setStackValue: (side, { col, row, type, squadId = null }, value) =>
+    set((s) => ({
+      [side]: {
+        ...s[side],
+        placements: s[side].placements.map((p) => {
+          if (!(p.col === col && p.row === row && p.type === type)) return p
+          if ((p.squadId ?? null) !== squadId) return p
+          // Cleared by REMOVING the key, never by setting it to null: the
+          // launch reads absence off the stack, and a `value: null` would ride
+          // out as a number the engine cannot use.
+          const cleared = { ...p }
+          delete cleared.value
+          return value === null || value === undefined ? cleared : { ...cleared, value }
+        }),
+      },
+    })),
 
   // Configure the `index`-th BODY of one caster stack (SB-6: individually, not
   // per type — the mechanics this was asked for, the second caster fizzling and
@@ -456,12 +499,22 @@ const useSandboxStore = create((set, get) => ({
       const sheet = s[side].squads.find((q) => q.id === id)
       if (!sheet) return {}
       const held = new Map(
-        s[side].placements.filter((p) => p.squadId === id).map((p) => [p.type, p.casters]),
+        s[side].placements
+          .filter((p) => p.squadId === id)
+          .map((p) => [p.type, { casters: p.casters, value: p.value }]),
       )
       const rest = s[side].placements.filter((p) => p.squadId !== id)
       const block = squadBodies(sheet).map(({ type, count }) => {
-        const casters = trimCasters(held.get(type), count)
-        return { type, col, row, count, squadId: id, ...(casters.length > 0 ? { casters } : {}) }
+        const casters = trimCasters(held.get(type)?.casters, count)
+        const worth = held.get(type)?.value
+        return {
+          type, col, row, count, squadId: id,
+          ...(casters.length > 0 ? { casters } : {}),
+          // Carried across for the same reason the configs are (AI-3, L-2):
+          // moving a company or re-syncing its composition is not a statement
+          // about what its men are worth to the enemy's caster.
+          ...(worth == null ? {} : { value: worth }),
+        }
       })
       return { [side]: { ...s[side], placements: [...rest, ...block] } }
     }),

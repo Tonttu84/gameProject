@@ -301,14 +301,21 @@ export const launchLabBattle = guarded(async () => {
   // `paths` leaves the constructor's own seeding alone, so an untouched Mage
   // still walks in with his Fire 1. Sending empties would overwrite that seed
   // with nothing and field a mute mage.
+  //
+  // AI-3 adds the SHORTLIST on the same terms (L-1): an empty one is left off
+  // because absence is how A-7's "he may reach for anything he can cast" is
+  // asked for, and a `[]` would be the one statement the player cannot make by
+  // leaving the checklist alone.
   const configOf = (stack, index) => {
     const caster = stack.casters?.[index]
     if (!caster) return {}
     const paths = caster.paths ?? {}
     const script = caster.script ?? []
+    const shortlist = caster.shortlist ?? []
     return {
       ...(Object.keys(paths).length > 0 ? { paths } : {}),
       ...(script.length > 0 ? { script } : {}),
+      ...(shortlist.length > 0 ? { shortlist } : {}),
     }
   }
 
@@ -318,6 +325,12 @@ export const launchLabBattle = guarded(async () => {
       return Array.from({ length: p.count }, (_, i) => ({
         unit_type: p.type, q, r,
         ...(p.squadId == null ? {} : { squad_id: p.squadId }),
+        // The stack's `value` (L-2) rides on EVERY body it expands to: it says
+        // what one of these men is worth to the other side's caster, which is
+        // the same sentence about each of them. Omitted when the box is blank,
+        // like everything else on this wire — absence is the engine's own
+        // catalog worth for the type.
+        ...(p.value == null ? {} : { value: p.value }),
         ...configOf(p, i),
       }))
     })
@@ -416,8 +429,17 @@ export const launchLabBattle = guarded(async () => {
 // for the same reason a v1 file still loaded into S4 — a build that could
 // enrol no company has nothing to say about them, and "no companies" is a
 // complete answer rather than a shape this build would read wrongly.
-export const LAB_SCENARIO_VERSION = 3
-const LAB_SCENARIO_READABLE = [1, 2, 3]
+// BUMPED TO 4 BY AI-3, which added the two casting-AI fields: a caster's
+// `shortlist` and a stack's `value`. This build would read a v3 file perfectly
+// well — both fields are optional, and a file without them is a scenario that
+// says nothing about them — so the bump is NOT about what this build can read.
+// It is about what an OLDER one would do with a file this build writes: a v3
+// reader would drop the shortlist and the value silently, and a fixture that
+// loads without the numbers it was saved to demonstrate is worse than a refusal.
+// The version is what a file is refused BY, so a format change moves it.
+// v1, v2 and v3 files still load, exactly as before and for the same reason.
+export const LAB_SCENARIO_VERSION = 4
+const LAB_SCENARIO_READABLE = [1, 2, 3, 4]
 
 const scenarioSide = (side) => ({
   army: { ...side.army },
@@ -429,8 +451,20 @@ const scenarioSide = (side) => ({
     // Which company this stack belongs to, or nothing at all for a loose one —
     // the absence rule this file keeps everywhere else.
     ...(p.squadId == null ? {} : { squadId: p.squadId }),
+    // What these men are worth to the other side's caster (AI-3, L-2), on the
+    // STACK because that is where it is set. Absent when never typed, so a
+    // scenario that says nothing about value is a scenario the engine values
+    // by its own catalog.
+    ...(p.value == null ? {} : { value: p.value }),
     ...(p.casters?.length > 0
-      ? { casters: p.casters.map((c) => ({ paths: { ...c?.paths }, script: [...(c?.script ?? [])] })) }
+      ? {
+        casters: p.casters.map((c) => ({
+          paths: { ...c?.paths },
+          script: [...(c?.script ?? [])],
+          // The lottery's fence (A-7), beside the script it follows.
+          shortlist: [...(c?.shortlist ?? [])],
+        })),
+      }
       : {}),
   })),
   magic: { schools: { ...side.magic.schools }, channels: side.magic.channels },
@@ -525,9 +559,18 @@ const validSide = (side) => {
     isBag(p) && typeof p.type === 'string' && Number.isFinite(p.col) && Number.isFinite(p.row)
     && isCount(p.count) && p.count > 0
     && (p.squadId === undefined || p.squadId === null || ids.has(p.squadId))
+    // AI-3's `value` (L-2): absent in every file written before v4, and a
+    // number above zero when it is there — the store clears the box rather
+    // than zeroing it, so 0 is a shape the store could not have produced.
+    && (p.value === undefined || p.value === null || (Number.isFinite(p.value) && p.value > 0))
     && (p.casters === undefined || (Array.isArray(p.casters) && p.casters.every((c) =>
       isBag(c) && isBag(c.paths) && Object.values(c.paths).every(isCount)
-      && Array.isArray(c.script) && c.script.every((id) => typeof id === 'string')))),
+      && Array.isArray(c.script) && c.script.every((id) => typeof id === 'string')
+      // The shortlist is optional on the same terms the two lists below are:
+      // a v1-v3 file has none, and "no fence" is a complete answer rather than
+      // a shape this build would read wrongly.
+      && (c.shortlist === undefined
+        || (Array.isArray(c.shortlist) && c.shortlist.every((id) => typeof id === 'string')))))),
   )
 }
 
@@ -573,14 +616,19 @@ const applySide = (side, data) => {
     }
     // The bodies are placed FIRST, because setCasterConfig refuses an index
     // past the stack — which is exactly the guard that keeps an imported file
-    // from configuring a man who is not there.
+    // from configuring a man who is not there. The stack's own `value` goes on
+    // through its own setter for the same reason: nothing enters this store
+    // except in a shape the store itself could have produced.
+    const at = { col: p.col, row: p.row, type: p.type, squadId: p.squadId ?? null }
+    if (p.value != null) store.setStackValue(side, at, p.value)
     ;(p.casters ?? []).forEach((caster, index) =>
-      store.setCasterConfig(
-        side,
-        { col: p.col, row: p.row, type: p.type, squadId: p.squadId ?? null },
-        index,
-        { paths: { ...caster.paths }, script: [...caster.script] },
-      ))
+      store.setCasterConfig(side, at, index, {
+        paths: { ...caster.paths },
+        script: [...caster.script],
+        // Absent in a v1-v3 file, which is the empty fence a caster is born
+        // with — and the empty fence is A-7's "anything he can cast".
+        shortlist: [...(caster.shortlist ?? [])],
+      }))
   }
 
   for (const [school, level] of Object.entries(data.magic.schools))

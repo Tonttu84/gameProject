@@ -139,7 +139,9 @@ exports `divider` per row so The Study can show it. What the caster does with th
 
 - **Script lines are an opening SEQUENCE** (A-6): each line once, in order; within a line the
   best-scoring form wins outright; a line scoring under `AI_SCRIPT_FLOOR` is skipped the same
-  tick, never revisited.
+  tick, never revisited. One exception (AI-3): an **enemy-targeted line with nobody in range is
+  HELD**, not skipped — the armies start out of range, so the caster improvises from the pool
+  until the enemy arrives and then fires the line first (`Spells::awaitsRange`).
 - **After the script, a weighted LOTTERY** (A-2/A-7) over the caster's shortlist — or the whole
   castable roster minus globals when the shortlist is empty or all-poor — with tickets
   proportional to score, drawn through `Utility::lotteryRoll` (its own seam; never the combat

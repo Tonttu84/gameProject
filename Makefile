@@ -180,7 +180,7 @@ $(CLANG_NAME): $(CLANG_OBJS)
 clang: $(CLANG_NAME)
 
 .PHONY: all clean fclean re test test-serial test-fast clang serve server-node frontend frontend-test \
-        balance-sheet db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
+        balance-sheet ab-casting db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(NAME)
@@ -280,6 +280,14 @@ frontend-test: frontend/node_modules
 # anywhere; balanceSheet.test.js fails if a new event or effect type escapes it.
 balance-sheet: campaign-server/node_modules
 	npm --prefix campaign-server run balance-sheet
+
+# The casting AI's acceptance evidence (docs/CAMPAIGN_PLAN.md, AI-3 / L-8): an
+# N-runs A/B of the walk-era engine (built from AI-1's commit in a throwaway git
+# worktree, removed again afterwards) against this one, over the fixtures in
+# scripts/ab/. Needs ./game built; plain node, no dependencies. Pass flags
+# through as `make ab-casting ARGS="--runs 5"`.
+ab-casting: $(NAME)
+	node scripts/abCasting.mjs $(ARGS)
 
 # Launch campaign server (Node BFF) + Vite dev server side-by-side.
 #

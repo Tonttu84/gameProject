@@ -87,14 +87,17 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-04) — START HERE
 
-**▶▶ THE LIVE FRONT IS THE CASTING AI — INTERVIEWED 2026-09-04; AI-1 AND AI-2 SHIPPED THE SAME
-DAY (schema v46), AI-3 IS NEXT.** Ten decisions (A-1..A-10) and the three-slice plan are in the
-"THE CASTING AI" entry at the top of the Deferred design backlog below, each shipped slice with
-its "what landed" note; **start there, and do not re-derive them.** The scorer is live in every
-battle now — casters walk their script as an opening sequence and then improvise by lottery
-over a shortlist (their sheet's new checklist) — so the next thing is AI-3: `value` and the
-shortlist as Battle Lab controls, and an N-runs A/B of the old walk against the scorer as the
-acceptance evidence. The fronts below are closed.
+**▶▶ THE CASTING AI FRONT IS CLOSED — INTERVIEWED 2026-09-04, ALL THREE SLICES SHIPPED THE SAME
+DAY AND GREEN ON `main` (schema v46, lab scenario v4).** Ten decisions (A-1..A-10), the
+three-slice plan and each slice's "what landed" note are in the "THE CASTING AI" entry at the top
+of the Deferred design backlog below; **start there, and do not re-derive them.** The scorer is
+live in every battle: casters walk their script as an opening sequence (holding an enemy-targeted
+line until the enemy is in range), then improvise by lottery over a shortlist (the sheet's
+checklist; the lab's per-caster checklist and per-stack `value`). `make ab-casting` is the
+acceptance evidence and the A/B table is recorded under AI-3. What the front left open, by
+design: buffs preferring FRESH units (A-3's note), stances as scorer weights (A-10), and the
+balance pass over the fifteen `AI_*` numbers in Defines.hpp — every one of them (bd). The fronts
+below are closed.
 
 **▶▶ THE CHARTER RECRUITMENT + SQUADS IN THE LAB FRONT IS CLOSED — INTERVIEWED 2026-09-02, BOTH
 SLICES SHIPPED THE SAME DAY AND GREEN ON `main` (schema v45).** Eight decisions (R-1..R-8) and the
@@ -7863,8 +7866,69 @@ slices"), each green on `main` alone:**
   *As planned:* Divider + override, `value` on the wire (campaign-side base + items),
   sequence + floor + form choice, shortlist + lottery + valve, the RNG seam, one Detail-tier log
   line per decision, schema bump for the shortlist, enemy store rows updated. The hard slice.
-- **AI-3 — the lab as judge.** Per-caster shortlist and `value` in the Battle Lab, and an N-runs
-  A/B of walk vs. scorer as the acceptance evidence.
+- **✅ AI-3 SHIPPED 2026-09-04 — the lab as judge (lab scenario v4).** Spec'd here, built by an
+  Opus subagent, reviewed and run here. Seven decisions, the assistant's, and the finding:
+  - **L-1. Shortlist per CASTER BODY** in the lab's caster editor, beside paths and script; a
+    checklist of `/castable`'s options minus battlefield rows (E-3); NO cap (SB-5), dedupe only;
+    empty = absent on the wire = the whole roster (A-7).
+  - **L-2. `value` per STACK, for every unit type** — the A-5 test the lab exists to run is
+    "does the enemy mage go for the well-kitted target", and that target is as readily a Golem
+    as a caster. Blank = absent = the catalog default. (Company bodies are edited through their
+    sheet and got no box; the store setter and the wire are type-agnostic.)
+  - **L-3. `SANDBOX_MAX_VALUE` = 1000 mirrors `AI_VALUE_CAP`** so the lab refuses at the figure
+    the engine would clamp at; exposed as `limits.maxValue` on `/reference`.
+  - **L-4. Route sanitising** by construction in `sanitizeEntry`: `value` on any body
+    (truncated, clamped 1..max, omitted when unreadable), `shortlist` on casters only (known ids,
+    deduped, battlefield dropped, omitted when empty).
+  - **L-5. Scenario format bumped to v4** — not because this build cannot read a v3 file (it
+    can, and v1–v3 still import) but because a v3 READER would silently drop a shortlist and a
+    value out of a file this build writes, which is the rule S4 and R2 applied.
+  - **L-8. THE A/B BASELINE IS A BINARY, NOT A LEGACY MODE.** The walk no longer exists and is
+    not coming back as dead code to be measured; `scripts/abCasting.mjs` (`make ab-casting`)
+    builds AI-1's commit 3be205d — the last walk-era engine, behaviour-identical to the walk —
+    in a throwaway git worktree and runs every fixture in `scripts/ab/` N times through both
+    binaries, unseeded, printing one table. `engine.integration.test.js` runs each fixture once
+    so they cannot rot.
+  - **L-9. Three fixtures**: `mages_vs_line` (two Fire/Air mages behind a line), `necromancer_swarm`
+    (one Death 3 necromancer behind a line), `kitted_target` (one enemy soldier valued 200 in
+    his own hex; the script reports his share of his side's lost hit points, since no log line
+    names a target).
+  - **THE FINDING, AND THE A-6 AMENDMENT IT FORCED (engine fix, written here):** the first A/B
+    run showed the script's first cast being the LOTTERY's — the sequence loop was skipping a
+    damage line for "nobody in range" on tick one, and since the armies start out of spell
+    range and close over several ticks, a whole script of damage spells was spent on the
+    approach march before a shot was possible; the integration test "the script is the opening
+    line he casts first" was passing at exactly Shock's ticket share (~53%). **Rule now: an
+    enemy-targeted line with no candidate is HELD** (`Spells::awaitsRange` — he qualifies, every
+    qualifying form targets an EnemyUnit, none has a candidate): the cursor stays, the caster
+    improvises from the pool meanwhile (never mute, never a cage), and the line fires first the
+    tick the enemy arrives. Everything else empty — nobody to skin, no corpses, a form he cannot
+    cast — is still a dead line skipped the same tick, as A-6 says. The probe mirrors it. Two
+    `[scoring]` cases pin the hold, the improvisation and the idle.
+  - **The A/B (N=20, unseeded, after the fix):**
+
+    ```
+    fixture            binary          watch    wins   win%   blue    red   casts
+    -------------------------------------------------------------------------------
+    kitted_target      walk (3be205d)  blue     0/20     0%    3.9    7.4   142.3
+    kitted_target      scorer (HEAD)   blue     1/20     5%    4.0    7.2   147.9
+    mages_vs_line      walk (3be205d)  blue     1/20     5%    5.9    9.4   284.8
+    mages_vs_line      scorer (HEAD)   blue     8/20    40%    4.8    5.4   177.9
+    necromancer_swarm  walk (3be205d)  blue    20/20   100%    6.3    0.0    20.6
+    necromancer_swarm  scorer (HEAD)   blue    20/20   100%    6.5    0.0    28.6
+
+    kitted_target · walk:   the kitted man (value 200, one of 8) took  9% of the hit points his side lost, died in 1/20
+    kitted_target · scorer: the kitted man (value 200, one of 8) took 23% of the hit points his side lost, died in 4/20
+    ```
+    (blue/red = average surviving bodies; casts = average " casts " lines per battle.) Read:
+    the two mages win 8/20 where the walk's won 1/20, on far fewer casts — the scorer stops
+    throwing Ember at nothing; the necromancer sweeps either way and leaves a few more men
+    standing; the kitted man's share of his side's losses roughly doubles against a one-in-eight
+    baseline while the win column barely moves — which is exactly A-5's "sometimes", not a
+    sniper. A second N=20 run before the range-hold fix gave the same shapes (12/20 vs 1/20;
+    24% vs 13%), so the pattern is not one draw.
+
+  - Suites: engine 478 green (fast and sanitized), campaign-server 1480, frontend 546 + lint.
 
 
 **▶ CHARTER RECRUITMENT + SQUADS IN THE LAB — INTERVIEWED 2026-09-02, decisions R-1..R-8, all the

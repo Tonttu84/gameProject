@@ -142,6 +142,22 @@ export const SANDBOX_MAX_PRESTIGE = 999
 // companies than the deployment zone has room to stand apart on.
 export const SANDBOX_MAX_SQUADS_PER_SIDE = 12
 
+// ── AI-3's one bound: what a body is WORTH to the enemy scorer (L-3) ────────
+//
+// THE ENGINE'S OWN NUMBER, mirrored rather than invented — the same discipline
+// SANDBOX_MAX_REINFORCE_COUNT keeps one field over: `AI_VALUE_CAP` in
+// backend/engine/include/Defines.hpp clamps a placement entry's `value` to
+// [1, 1000] itself, so mirroring it means the lab refuses at the very figure
+// the engine would have clamped at, and the two cannot disagree in effect.
+//
+// It is otherwise a SANITY BOUND ON AN UNTRUSTED NUMBER, like
+// SANDBOX_MAX_PRESTIGE and for the same reason: `value` is the currency the
+// casting AI scores damage in (A-3), so a number a scripted client could post
+// unbounded would make the scorer's arithmetic silly rather than interesting.
+// The campaign's own characters are worth tens (CHARACTER_VALUE_BASE 10 plus
+// what their kit adds), so this is far past any body the game can produce.
+export const SANDBOX_MAX_VALUE = 1000
+
 // Retires the frontend STARTING_ROSTER hardcode (docs/ADDING_UNITS.md §6).
 // Mage and Priest USED to sit here at 3 apiece; slice 5 moved them out of the
 // roster entirely and into STARTING_CHARACTERS below (docs/CAMPAIGN_PLAN.md

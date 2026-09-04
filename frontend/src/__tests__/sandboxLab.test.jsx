@@ -583,6 +583,251 @@ describe('what the launch carries (D1 / D2)', () => {
 })
 
 
+// ── AI-3: the two casting-AI controls (L-1 / L-2 / L-7) ─────────────────────
+//
+// The lab is the judge of the casting AI (AI-3), which it cannot be until it
+// can set the two things the AI reads off a placement entry: the SHORTLIST his
+// improvisation is fenced to (A-7) and the VALUE a body is worth to the other
+// side's scorer (A-5). What is pinned here is the same grain the caster fields
+// keep — the shortlist is one body's, the value is one stack's — and the same
+// absence rule: an empty fence is the whole roster, and a blank box is the
+// engine's own catalog worth.
+
+// The options a caster's server answer carries, INCLUDING a battlefield row —
+// the row the checklist must never offer, because a global is cast only when it
+// is scripted (E-3) and a lottery can never reach one.
+const castOptions = [
+  { spell: 'fireball', label: 'Ember', description: 'A bolt.', battlefield: false },
+  { spell: 'leaden_air', label: 'Leaden Air', description: 'The air thickens.', battlefield: true },
+]
+
+const tickShortlist = (id) => fireEvent.click(screen.getByTestId(`lab-shortlist-${id}`))
+const setStackValue = (type, text) =>
+  fireEvent.change(screen.getByTestId(`lab-value-${type}`), { target: { value: text } })
+
+describe("a caster's shortlist (A-7 / L-1)", () => {
+  it('ticks onto the body being edited and off again', async () => {
+    postSandboxCastable.mockResolvedValue({ options: castOptions })
+    await openLab()
+    placeCasters(1)
+    openBody(0)
+
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).toBeInTheDocument())
+    expect(screen.getByTestId('lab-shortlist-fireball')).not.toBeChecked()
+
+    tickShortlist('fireball')
+    expect(screen.getByTestId('lab-shortlist-fireball')).toBeChecked()
+    expect(screen.getByTestId('lab-caster-Mage-4-4-0')).toHaveTextContent('1 shortlisted')
+
+    tickShortlist('fireball')
+    expect(screen.getByTestId('lab-shortlist-fireball')).not.toBeChecked()
+  })
+
+  it('never offers a battlefield row — a global is cast only when scripted (E-3)', async () => {
+    postSandboxCastable.mockResolvedValue({ options: castOptions })
+    await openLab()
+    placeCasters(1)
+    openBody(0)
+
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).toBeInTheDocument())
+    // Offered by the SCRIPT picker (that is where a global belongs) and
+    // withheld from the fence, which is `shortlistableFor`'s own split.
+    expect(screen.getByTestId('lab-script-add')).toHaveTextContent('Leaden Air')
+    expect(screen.queryByTestId('lab-shortlist-leaden_air')).not.toBeInTheDocument()
+  })
+
+  it("is one BODY's, exactly as his paths and his script are (SB-6)", async () => {
+    postSandboxCastable.mockResolvedValue({ options: castOptions })
+    await openLab()
+    placeCasters(2)
+
+    openBody(1)
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).toBeInTheDocument())
+    tickShortlist('fireball')
+
+    openBody(0)
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).not.toBeChecked())
+  })
+
+  it("is cleared by the button that sends him back to the engine's own choice", async () => {
+    postSandboxCastable.mockResolvedValue({ options: castOptions })
+    await openLab()
+    placeCasters(1)
+    openBody(0)
+
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).toBeInTheDocument())
+    tickShortlist('fireball')
+    setPath('fire', 2)
+
+    fireEvent.click(screen.getByTestId('lab-caster-reset'))
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).not.toBeChecked())
+    // The whole config goes back to silence, which for a shortlist means the
+    // WHOLE castable roster (A-7) rather than nothing at all.
+    expect(screen.getByTestId('lab-caster-Mage-4-4-0')).not.toHaveTextContent('shortlisted')
+  })
+})
+
+describe("a stack's value (A-5 / L-2)", () => {
+  it('is offered on every type, not only on casters', async () => {
+    await openLab()
+    compose('Soldier', 4)
+    fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+    placeHere('Soldier', 4)
+
+    // The well-kitted man the enemy mage should sometimes go for is as readily
+    // a Soldier as a Mage, so the box is on the stack row of any type.
+    setStackValue('Soldier', '200')
+    expect(screen.getByTestId('lab-value-Soldier')).toHaveValue(200)
+  })
+
+  it('starts blank, and an emptied box goes back to the engine\'s own worth', async () => {
+    await openLab()
+    placeCasters(1)
+
+    // Blank rather than 0 or 10: absence is a statement the box has to be able
+    // to make, since it is how the engine's catalog default is asked for.
+    expect(screen.getByTestId('lab-value-Mage')).toHaveValue(null)
+    setStackValue('Mage', '45')
+    expect(screen.getByTestId('lab-value-Mage')).toHaveValue(45)
+
+    setStackValue('Mage', '')
+    expect(screen.getByTestId('lab-value-Mage')).toHaveValue(null)
+  })
+
+  it('survives the count spinner beneath it — re-placing is not a re-valuing', async () => {
+    await openLab()
+    placeCasters(2)
+    setStackValue('Mage', '80')
+
+    placeHere('Mage', 3)
+    expect(screen.getByTestId('lab-value-Mage')).toHaveValue(80)
+  })
+})
+
+describe('what the launch carries about the casting AI (L-1 / L-2)', () => {
+  it('puts the shortlist on the BODY and the value on every body of the stack', async () => {
+    postSandboxCastable.mockResolvedValue({ options: castOptions })
+    await openLab()
+    placeCasters(2)
+    setStackValue('Mage', '150')
+
+    // Only the SECOND body is fenced; the first improvises over his whole
+    // roster, which is what an empty shortlist means (A-7).
+    openBody(1)
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).toBeInTheDocument())
+    tickShortlist('fireball')
+
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        player_placement: [
+          // The value is the same sentence about each of them; the fence is
+          // one man's.
+          { unit_type: 'Mage', q: 2, r: 4, value: 150 },
+          { unit_type: 'Mage', q: 2, r: 4, value: 150, shortlist: ['fireball'] },
+        ],
+      }),
+    ))
+  })
+
+  it('omits both when neither was touched', async () => {
+    await openLab()
+    placeCasters(1)
+    fireEvent.click(screen.getByTestId('lab-launch'))
+
+    await waitFor(() => expect(postSandboxBattle).toHaveBeenCalled())
+    const [entry] = postSandboxBattle.mock.calls[0][0].player_placement
+    // Byte-for-byte the entry the lab sent before AI-3 — absence is how the
+    // engine's own defaults are asked for, here as everywhere else.
+    expect(entry).toEqual({ unit_type: 'Mage', q: 2, r: 4 })
+  })
+})
+
+describe('the scenario file carries the casting-AI fields (v4)', () => {
+  const captureDownload = () => {
+    const saved = {}
+    global.URL.createObjectURL = vi.fn((blob) => { saved.blob = blob; return 'blob:lab-scenario' })
+    global.URL.revokeObjectURL = vi.fn()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    return saved
+  }
+  const blobText = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+  const importFile = (text) =>
+    fireEvent.change(screen.getByTestId('lab-import'), {
+      target: { files: [new File([text], 'lab-scenario.json', { type: 'application/json' })] },
+    })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('round-trips a fenced caster and a valued stack', async () => {
+    const saved = captureDownload()
+    postSandboxCastable.mockResolvedValue({ options: castOptions })
+    await openLab()
+    placeCasters(1)
+    setStackValue('Mage', '150')
+    openBody(0)
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).toBeInTheDocument())
+    tickShortlist('fireball')
+
+    fireEvent.click(screen.getByTestId('lab-export'))
+    const text = await blobText(saved.blob)
+    const scenario = JSON.parse(text)
+
+    expect(scenario.version).toBe(4)
+    expect(scenario.blue.placements).toEqual([{
+      type: 'Mage', col: 4, row: 4, count: 1, value: 150,
+      casters: [{ paths: {}, script: [], shortlist: ['fireball'] }],
+    }])
+
+    // Torn down completely, so nothing that comes back could have survived.
+    fireEvent.click(screen.getByTestId('lab-clear'))
+    compose('Mage', 0)
+    importFile(text)
+
+    expect(await screen.findByTestId('lab-glyph-blue-4-4-Mage')).toHaveTextContent('M1')
+    fireEvent.click(screen.getByTestId('lab-hex-4-4'))
+    expect(screen.getByTestId('lab-value-Mage')).toHaveValue(150)
+    openBody(0)
+    await waitFor(() => expect(screen.getByTestId('lab-shortlist-fireball')).toBeChecked())
+  })
+
+  it('still reads a v3 file, taking its silence about both fields as none', async () => {
+    await openLab()
+    placeSoldiers(3)
+
+    // A file saved before AI-3 existed. A build that could fence no caster and
+    // value no body has nothing to say about either, and "nothing said" is a
+    // complete answer rather than a shape this build would read wrongly.
+    importFile(JSON.stringify({
+      version: 3,
+      blue: {
+        army: { Mage: 1 },
+        placements: [{
+          type: 'Mage', col: 5, row: 5, count: 1,
+          casters: [{ paths: { fire: 2 }, script: [] }],
+        }],
+        magic: { schools: { evocation: 4 }, channels: 0 },
+        squads: [],
+      },
+      red: { army: {}, placements: [], magic: { schools: {}, channels: 0 }, squads: [] },
+      runs: 1, seed: null, walls: [], reinforcements: [],
+    }))
+
+    expect(await screen.findByTestId('lab-glyph-blue-5-5-Mage')).toHaveTextContent('M1')
+    fireEvent.click(screen.getByTestId('lab-hex-5-5'))
+    expect(screen.getByTestId('lab-value-Mage')).toHaveValue(null)
+    fireEvent.click(screen.getByTestId('lab-caster-Mage-5-5-0'))
+    expect(screen.getByTestId('lab-path-fire')).toHaveValue(2)
+    expect(screen.getByTestId('lab-caster-Mage-5-5-0')).not.toHaveTextContent('shortlisted')
+  })
+})
+
 // ── S3: the batch, the seed and the scenario file ───────────────────────────
 //
 // SB-10 and SB-11. One battle is one sample from a noisy distribution, so a
@@ -793,8 +1038,9 @@ describe('the scenario file (SB-11)', () => {
     // A plain JSON file with a format version — checkable into the repo as a
     // fixture, and refusable by a build that does not know the shape.
     // BUMPED BY S4: the format grew the walls and the waves, and the version
-    // is what a file is refused by, so a format change has to move it.
-    expect(scenario.version).toBe(3)
+    // is what a file is refused by, so a format change has to move it. AI-3
+    // moved it again for the two casting-AI fields, so this is 4.
+    expect(scenario.version).toBe(4)
     expect(scenario.runs).toBe(6)
     expect(scenario.seed).toBe(20260829)
     expect(scenario.walls).toEqual([{ q: 2, r: 4, dir: 'SE', durability: 250 }])
@@ -903,7 +1149,7 @@ describe('the scenario file (SB-11)', () => {
 
     importFile(JSON.stringify({ ...good, version: 99 }))
     await waitFor(() =>
-      expect(screen.getByTestId('auth-notice')).toHaveTextContent(/versions 1, 2 and 3 are read here/))
+      expect(screen.getByTestId('auth-notice')).toHaveTextContent(/versions 1, 2, 3 and 4 are read here/))
     expect(screen.getByTestId('lab-glyph-blue-4-4-Soldier')).toHaveTextContent('S3')
 
     // A side whose placements are not a list of stacks: refused whole, rather
@@ -1497,8 +1743,9 @@ describe('the scenario file carries the companies (v3)', () => {
     const scenario = JSON.parse(text)
 
     // The version is what a file is refused BY, so a format change has to move
-    // it — R2 added the companies, so this is 3.
-    expect(scenario.version).toBe(3)
+    // it — R2 added the companies and AI-3 the two casting-AI fields, so this
+    // is 4.
+    expect(scenario.version).toBe(4)
     // The SHEET travels whole, composition and attached included: a scenario is
     // a setup rather than a battle, so it must be able to rebuild a company
     // that was never placed.

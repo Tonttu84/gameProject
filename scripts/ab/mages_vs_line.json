@@ -1,0 +1,148 @@
+{
+  "_watch": "blue",
+  "_note": "Two Mages behind a line of eight, against twelve soldiers. Fire 2 + Air 1 at Evocation 2 opens Ember/Fireball and Shock, so which form he spends is the scorer's own call (A-4/M-13).",
+  "map": "sample_battle",
+  "max_turns": 400,
+  "player_placement": [
+    {
+      "unit_type": "Soldier",
+      "q": 2,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 3,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 4,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 5,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 6,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 7,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 8,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 9,
+      "r": 7
+    },
+    {
+      "unit_type": "Mage",
+      "q": 4,
+      "r": 6,
+      "paths": {
+        "fire": 2,
+        "air": 1
+      }
+    },
+    {
+      "unit_type": "Mage",
+      "q": 6,
+      "r": 6,
+      "paths": {
+        "fire": 2,
+        "air": 1
+      }
+    }
+  ],
+  "enemy_placement": [
+    {
+      "unit_type": "Soldier",
+      "q": -7,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -6,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -5,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -4,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -3,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -2,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -1,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 0,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 1,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 2,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 3,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 4,
+      "r": 22
+    }
+  ],
+  "magic": {
+    "blue": {
+      "schools": {
+        "evocation": 2,
+        "conjuration": 0,
+        "enchantment": 0,
+        "construction": 0
+      },
+      "channels": 0
+    },
+    "red": {
+      "schools": {
+        "evocation": 0,
+        "conjuration": 0,
+        "enchantment": 0,
+        "construction": 0
+      },
+      "channels": 0
+    }
+  }
+}

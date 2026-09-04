@@ -51,6 +51,23 @@ T* place(Army& army, std::unique_ptr<T> unit, int q)
     return raw;
 }
 
+// The same, at an explicit coordinate — for a body that must stand OUT of
+// spell range, which ROW's sixteen columns cannot provide. Even-r offset: row
+// 26 holds q in -13..2, so {2, 26} is eighteen hexes from {2, ROW}.
+template <typename T>
+T* placeAt(Army& army, std::unique_ptr<T> unit, HexCoord at)
+{
+    Battlefield& field = Utility::getBattlefield();
+    Hex* hex = field.hexGrid.getHex(at);
+    REQUIRE(hex != nullptr);
+    unit->setHex(hex);
+    T* raw = unit.get();
+    army.push_back(std::move(unit));
+    return raw;
+}
+constexpr HexCoord FAR_AWAY  = { 2, 26 };   // 18 hexes from {2, ROW}: out of SPELLRANGE
+constexpr HexCoord IN_RANGE  = { 2, 16 };   //  8 hexes: inside it
+
 std::unique_ptr<Mage> caster(int team, SpellPath path, int level)
 {
     auto mage = std::make_unique<Mage>(team);
@@ -253,6 +270,77 @@ TEST_CASE("scoring: the script is an opening sequence — each line once, then t
     field.triggerSpecialPhase();
     REQUIRE(mage->scriptCursor() == 2);
     Utility::clearDiceRolls();
+    field.extractResult();
+}
+
+TEST_CASE("scoring: an enemy-targeted line waits for range instead of being spent", "[scoring]") {
+    // AI-3's finding: armies start out of spell range, so a damage line that is
+    // skipped for "nobody in range" on tick one is the player's whole order
+    // thrown away on the approach march. Such a line HOLDS; meanwhile the
+    // caster improvises from the pool, and the line still fires first once the
+    // enemy arrives.
+    Battlefield& field = Utility::getBattlefield();
+    Army red, blue;
+    Mage*    mage = place(red,  caster(REDTEAM, SpellPath::Fire, 1), 2);
+    Soldier* man  = place(red,  std::make_unique<Soldier>(REDTEAM), 3);
+    Zombie*  foe  = placeAt(blue, std::make_unique<Zombie>(BLUETEAM), FAR_AWAY);
+    field.loadArmies(std::move(red), std::move(blue));
+    mage->setPathLevel(SpellPath::Earth, 1);
+    mage->setChosenSpells({"fireball"});
+    REQUIRE(Spells::awaitsRange(*mage, *Spells::findSpell("fireball")));
+
+    RangedCombat::resetCache();
+    Utility::clearDiceRolls();
+    Utility::clearLotteryRolls();
+    const int armourBefore = man->getArmour();
+    const int mageArmourBefore = mage->getArmour();
+
+    // Tick 1: the foe is out of range. The line is HELD (cursor still 0) and
+    // the pool improvises — Stoneskin is the one thing with a target, so it
+    // lands on someone this very tick rather than the caster standing mute.
+    field.triggerSpecialPhase();
+    REQUIRE(mage->scriptCursor() == 0);
+    REQUIRE((man->getArmour() > armourBefore || mage->getArmour() > mageArmourBefore));
+
+    // The probe agrees: with the line held, what fires next is the pool's.
+    const Spell* probed = nullptr;
+    const SpellForm* next = mage->chooseSpellToCast(&probed);
+    REQUIRE(next != nullptr);
+    REQUIRE(probed->id == "stoneskin");
+
+    // The foe walks into range: the held line fires FIRST, and only now does
+    // the cursor move past it.
+    foe->setHex(field.hexGrid.getHex(IN_RANGE));
+    REQUIRE_FALSE(Spells::awaitsRange(*mage, *Spells::findSpell("fireball")));
+    Utility::pushDiceRoll(1);
+    const int foeHp = foe->getHp();
+    field.triggerSpecialPhase();
+    REQUIRE(mage->scriptCursor() == 1);
+    REQUIRE(foe->getHp() < foeHp);
+    Utility::clearDiceRolls();
+    field.extractResult();
+}
+
+TEST_CASE("scoring: a held line is not a cage — nothing to improvise means idle, not skip", "[scoring]") {
+    // The same hold with no pool to fall back on: the caster idles and the
+    // line stays pending, because a later line must never overtake the order
+    // the player wrote merely because the enemy is slow.
+    Battlefield& field = Utility::getBattlefield();
+    Army red, blue;
+    Mage*   mage = place(red,  caster(REDTEAM, SpellPath::Fire, 1), 2);
+    Zombie* foe  = placeAt(blue, std::make_unique<Zombie>(BLUETEAM), FAR_AWAY);
+    field.loadArmies(std::move(red), std::move(blue));
+    mage->setPathLevel(SpellPath::Air, 1);
+    mage->setChosenSpells({"fireball", "shock"});
+
+    RangedCombat::resetCache();
+    Utility::clearLotteryRolls();
+    const int foeHp = foe->getHp();
+    field.triggerSpecialPhase();
+    REQUIRE(mage->scriptCursor() == 0);
+    REQUIRE_FALSE(mage->isChannelling());
+    REQUIRE(foe->getHp() == foeHp);
+    REQUIRE(mage->chooseSpellToCast(nullptr) == nullptr);
     field.extractResult();
 }
 

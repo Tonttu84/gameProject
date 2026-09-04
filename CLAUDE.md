@@ -130,6 +130,10 @@ make balance-sheet     # regenerate docs/BALANCE_SHEET.md — every fate and rai
                         # side by side, for the balancing pass. Pure (no DB, no engine binary),
                         # so it runs anywhere; campaign-server/tests/balanceSheet.test.js fails
                         # if a new event or a new effect type escapes the sheet.
+make ab-casting        # the casting AI's acceptance evidence (AI-3 / L-8): N runs of every
+                        # fixture in scripts/ab/ through BOTH the walk-era engine (built from
+                        # AI-1's commit in a throwaway git worktree) and this one, printed as
+                        # one table. `ARGS="--runs 5"` to pass flags through.
 
 make docker-up         # docker compose up --build: the WHOLE stack (engine + campaign
                         # server + built frontend + MongoDB) in containers on

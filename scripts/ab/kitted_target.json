@@ -1,0 +1,113 @@
+{
+  "_watch": "blue",
+  "_kitted": {
+    "q": -2,
+    "r": 22
+  },
+  "_note": "One Mage and six soldiers against eight, one of whom is worth twenty ordinary men (A-5) and stands on his own hex in the middle of their line. The question is whether the scorer ever reaches for him.",
+  "map": "sample_battle",
+  "max_turns": 400,
+  "player_placement": [
+    {
+      "unit_type": "Soldier",
+      "q": 3,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 4,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 5,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 6,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 7,
+      "r": 7
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 8,
+      "r": 7
+    },
+    {
+      "unit_type": "Mage",
+      "q": 5,
+      "r": 6,
+      "paths": {
+        "fire": 2
+      }
+    }
+  ],
+  "enemy_placement": [
+    {
+      "unit_type": "Soldier",
+      "q": -5,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -4,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -3,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -1,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 0,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 1,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": 2,
+      "r": 22
+    },
+    {
+      "unit_type": "Soldier",
+      "q": -2,
+      "r": 22,
+      "value": 200
+    }
+  ],
+  "magic": {
+    "blue": {
+      "schools": {
+        "evocation": 2,
+        "conjuration": 0,
+        "enchantment": 0,
+        "construction": 0
+      },
+      "channels": 0
+    },
+    "red": {
+      "schools": {
+        "evocation": 0,
+        "conjuration": 0,
+        "enchantment": 0,
+        "construction": 0
+      },
+      "channels": 0
+    }
+  }
+}

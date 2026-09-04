@@ -1122,3 +1122,14 @@ body {
 }
 .lab-squad-upgrade input { width: auto; }
 .lab-squad-upgrade .lab-hint { flex: 2; }
+
+/* AI-3: the caster's shortlist (L-1) and a stack's value (L-2). The checklist
+   borrows the upgrade row's shape — a tick and a name is a tick and a name —
+   and the value box is narrower than a count spinner because it sits beside
+   one and must not be mistaken for it. */
+.lab-shortlist {
+  display: flex; align-items: baseline; gap: 0.35rem;
+  margin-bottom: 0.25rem; font-size: 12px;
+}
+.lab-shortlist input { width: auto; }
+.lab-hex-row input.lab-value { width: 5.5rem; font-size: 11px; }

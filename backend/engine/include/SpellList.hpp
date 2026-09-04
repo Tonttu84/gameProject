@@ -65,6 +65,16 @@ namespace Spells
     // dropped. Pure.
     std::vector<CastOption> optionsFor(const AUnit& caster, const Spell& spell, int floor);
 
+    // A-6 amended (AI-3's finding): a scripted line the caster is HOLDING for
+    // the enemy to arrive. True when he qualifies for at least one form, every
+    // qualifying form targets an EnemyUnit, and none has a single candidate —
+    // nobody in range yet. Such a line is not worthless, it is early: the loop
+    // keeps the cursor on it and improvises meanwhile, instead of spending the
+    // whole script on the approach march before a shot was ever possible.
+    // Anything else empty (nobody to skin, no corpses, a form he cannot cast)
+    // stays what it was: a dead line, skipped in the same tick.
+    bool awaitsRange(const AUnit& caster, const Spell& spell);
+
     // Look a spell up by its roster id ("fireball", "bless", ...). Returns
     // nullptr for an id the roster does not carry — the chosen-spells list
     // arrives over the wire (slice 4) and skips what it cannot resolve rather

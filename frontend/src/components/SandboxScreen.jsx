@@ -67,9 +67,13 @@ const clamp = (value, max) => {
 const describeConfig = (config) => {
   const paths = Object.keys(config?.paths ?? {}).length
   const script = (config?.script ?? []).length
+  const shortlist = (config?.shortlist ?? []).length
   const parts = []
   if (paths > 0) parts.push(`${paths} path${paths === 1 ? '' : 's'}`)
   if (script > 0) parts.push(`${script} scripted`)
+  // AI-3 (L-1): a fence on his improvisation is as much an override as a
+  // script is, so the row says which men are still the game's own default.
+  if (shortlist > 0) parts.push(`${shortlist} shortlisted`)
   return parts.length > 0 ? `— ${parts.join(', ')}` : ''
 }
 
@@ -91,6 +95,9 @@ const SandboxScreen = ({ info, map }) => {
   const setChannels = useSandboxStore((s) => s.setChannels)
   const loadEnemyPreset = useSandboxStore((s) => s.loadEnemyPreset)
   const setCasterConfig = useSandboxStore((s) => s.setCasterConfig)
+  // AI-3 (L-2): a stack's worth to the enemy's casting AI, set per STACK
+  // because it is the same statement about each body standing in it.
+  const setStackValue = useSandboxStore((s) => s.setStackValue)
   const runs = useSandboxStore((s) => s.runs)
   const setRuns = useSandboxStore((s) => s.setRuns)
   const seed = useSandboxStore((s) => s.seed)
@@ -398,8 +405,21 @@ const SandboxScreen = ({ info, map }) => {
           </div>
         ))}
         {composed.length === 0 && <p>Compose an army first — nothing to place yet.</p>}
+        {/* AI-3 (L-2): what these men are worth to the OTHER side's caster.
+            One box per stack, on every type rather than only on casters — the
+            question A-5 exists to ask is whether the enemy mage goes for the
+            well-kitted man, and he is as readily a Golem as a Mage. Blank is
+            the engine's own catalog worth, which is why the placeholder says
+            so rather than the box showing a number nobody typed. */}
+        {composed.length > 0 && (
+          <p className="lab-hint">
+            A stack&apos;s value is what one of its men is worth to the enemy&apos;s casting
+            AI — leave it blank for the engine&apos;s own.
+          </p>
+        )}
         {composed.map((type) => {
           const max = maxFor(type)
+          const stack = standing.find((p) => p.type === type && p.squadId == null)
           return (
             <label key={type} className="lab-hex-row">
               <span>{type}</span>
@@ -414,6 +434,32 @@ const SandboxScreen = ({ info, map }) => {
                   const n = Math.max(0, Math.min(max, Math.floor(Number(e.target.value) || 0)))
                   place(side, col, row, type, n)
                 }}
+              />
+              <input
+                type="number"
+                className="lab-value"
+                min="1"
+                max={limits.maxValue}
+                placeholder="engine default"
+                // The empty string is the ABSENCE, and it has to be
+                // representable: a stack nobody has valued shows a blank box
+                // rather than a 0 or a 10 the player did not type.
+                value={stack?.value ?? ''}
+                data-testid={`lab-value-${type}`}
+                // Nowhere to hang a value until the stack exists — the field is
+                // a fact about bodies on this hex, and there are none yet.
+                disabled={!stack}
+                onChange={(e) => setStackValue(
+                  side,
+                  { col, row, type },
+                  // Floored at 1 where the ENGINE floors it (AI_VALUE_CAP's
+                  // other end, mirrored by the route): a body worth nothing is
+                  // a body no scorer would ever look at, so a typed 0 reads as
+                  // the least a man can be worth rather than as a clear.
+                  e.target.value.trim() === ''
+                    ? null
+                    : Math.max(1, clamp(e.target.value, limits.maxValue)),
+                )}
               />
               <span className="lab-hint">
                 {forbiddenFor(type).includes(terrain) ? 'cannot enter this terrain' : `max ${max}`}
@@ -515,11 +561,17 @@ const SandboxScreen = ({ info, map }) => {
     if (!editing) return null
     const paths = editing.config?.paths ?? {}
     const script = editing.config?.script ?? []
+    const shortlist = editing.config?.shortlist ?? []
     const at = {
       type: editing.type, col: editing.col, row: editing.row, squadId: editing.squadId ?? null,
     }
     const options = castable.key === bodyKey(side, editing) ? castable.options : []
     const labelOf = (id) => options.find((o) => o.spell === id)?.label ?? id
+    // What the LOTTERY may legally be fenced to (A-7/E-3): everything he can
+    // cast minus the script-only globals — `shortlistableFor`'s rule, computed
+    // off the same server answer the script picker is drawn from, so the lab
+    // still holds no copy of the qualification rule and no copy of this one.
+    const shortlistable = options.filter((o) => !o.battlefield)
 
     return (
       <section className="lab-caster-editor" data-testid="lab-caster-editor">
@@ -584,12 +636,48 @@ const SandboxScreen = ({ info, map }) => {
           ))}
         </select>
 
+        {/* AI-3 (L-1): the fence his IMPROVISATION runs inside, once the
+            script's opening sequence has run out (A-7). Beside the script
+            because it is the script's sibling — the campaign's own sheet puts
+            it there for the same reason — and UNORDERED, so it is a checklist
+            rather than a list: the engine draws by weighted lottery over the
+            scorer's numbers, and there is nothing for a position to mean.
+
+            NO CAP here (SB-5), unlike the campaign's MAX_SHORTLIST_SPELLS, and
+            no battlefield row: a global is cast only when it is scripted (E-3),
+            so offering one would be a click the server refuses. */}
+        <h4>Shortlist</h4>
+        <p className="lab-hint">
+          Leave it empty and he may reach for anything he can cast; tick a few and his
+          improvisation stays inside them.
+        </p>
+        {shortlistable.length === 0 && (
+          <p className="lab-hint">Nothing he can cast yet — give him a path first.</p>
+        )}
+        {shortlistable.map((o) => (
+          <label key={o.spell} className="lab-shortlist">
+            <input
+              type="checkbox"
+              checked={shortlist.includes(o.spell)}
+              data-testid={`lab-shortlist-${o.spell}`}
+              onChange={() => setCasterConfig(side, at, editing.index, {
+                shortlist: shortlist.includes(o.spell)
+                  ? shortlist.filter((id) => id !== o.spell)
+                  : [...shortlist, o.spell],
+              })}
+            />
+            <span className="lab-unit-name">{o.label}</span>
+          </label>
+        ))}
+
         {/* Back to silence — the one edit that cannot be made with a spinner,
             since a path typed back to 0 is an explicit "no Fire" and not the
             same statement as never having said anything. */}
         <button
           data-testid="lab-caster-reset"
-          onClick={() => setCasterConfig(side, at, editing.index, { paths: {}, script: [] })}
+          onClick={() => setCasterConfig(side, at, editing.index, {
+            paths: {}, script: [], shortlist: [],
+          })}
         >
           Back to the engine&apos;s own choice
         </button>

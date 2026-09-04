@@ -742,7 +742,9 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				if (!best || o.score > best->score) best = &o;
 			return best;
 		};
-		// A-6: the first pending line that clears the floor is what fires next.
+		// A-6: the first pending line that clears the floor is what fires next —
+		// unless a line is held for range, which the walk stops at exactly as
+		// castSpells() does, and the pool answers for this tick.
 		for (size_t i = _scriptCursor; i < _spells.size(); ++i) {
 			if (!callable(_spells[i])) continue;
 			std::vector<CastOption> options = Spells::optionsFor(*this, *_spells[i], AI_SCRIPT_FLOOR);
@@ -750,6 +752,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				if (outSpell) *outSpell = best->spell;
 				return best->form;
 			}
+			if (Spells::awaitsRange(*this, *_spells[i])) break;
 		}
 		// A-7: then the pool — the shortlist, widening to the roster.
 		auto probePool = [&](const std::vector<const Spell*>& pool) -> const CastOption* {
@@ -800,16 +803,28 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		// ── A-6: the opening sequence ─────────────────────────────────────────
 		// Each scripted line gets exactly one turn, in order: it fires if the
 		// best it can do clears the sanity floor, and is skipped in the same
-		// tick if not — a dead line (nobody wounded, nobody in range) costs no
+		// tick if not — a dead line (nobody wounded, no corpses) costs no
 		// tick, which is M-26's no-target fall-through generalised. Within the
 		// line the scorer picks the form and the target by MAX, never by
 		// lottery: the script is the player's order (A-6), so the randomness
 		// belongs to what comes after it.
+		//
+		// ONE exception, found by AI-3's A/B: "nobody in range" is not a dead
+		// line, it is an EARLY one. The armies start out of spell range and
+		// close over several ticks, so a script of damage spells was being
+		// spent whole on tick one — every line skipped for lack of a target —
+		// and the caster fought the entire battle on the lottery, with the
+		// player's order never fired. An enemy-targeted line with no candidate
+		// therefore HOLDS the cursor and the caster improvises below until the
+		// enemy arrives; the line is still cast first when it can be.
 		while (_scriptCursor < _spells.size()) {
 			const Spell* line = _spells[_scriptCursor++];
 			if (!callable(line)) continue;
 			std::vector<CastOption> options = Spells::optionsFor(*this, *line, AI_SCRIPT_FLOOR);
-			if (options.empty()) continue;
+			if (options.empty()) {
+				if (Spells::awaitsRange(*this, *line)) { --_scriptCursor; break; }
+				continue;
+			}
 			const CastOption* best = &options.front();
 			for (const CastOption& o : options)
 				if (o.score > best->score) best = &o;

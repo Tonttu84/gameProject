@@ -634,6 +634,33 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
     expect(casts.some((l) => l.includes('Leaden Air')), casts.join(' | ')).toBe(true)
   }, 30000)
 
+  // ── AI-3's A/B fixtures, against the real binary (L-10) ──────────────────
+  //
+  // `scripts/ab/*.json` are complete BattleInputs, hand-authored for the
+  // walk-vs-scorer A/B (L-8/L-9) and read by `make ab-casting` — which is a dev
+  // script and therefore has nothing to keep it honest. This is what does: a
+  // renamed unit type, a retired spell or a moved deployment zone would leave
+  // the script running happily over battles where nobody casts anything, and a
+  // silent zero is exactly the reading the evidence must never produce.
+  //
+  // ONE RUN EACH, unseeded, asserting only what a valid fixture cannot fail to
+  // do: reach an outcome and put a spell in the air. Not a balance assertion —
+  // which side wins is the A/B's question, not this test's.
+  test('every A/B fixture still runs, and its caster still casts', async () => {
+    const dir = new URL('../../scripts/ab/', import.meta.url)
+    const names = fs.readdirSync(dir).filter((name) => name.endsWith('.json')).sort()
+    expect(names.length).toBeGreaterThan(0)
+
+    for (const name of names) {
+      const fixture = JSON.parse(fs.readFileSync(new URL(name, dir), 'utf8'))
+      const result = await runBattle(fixture)
+      expect(['blue', 'red', 'draw'], `${name} produced no result`).toContain(result.winner)
+      // The whole point of the fixture: a caster who has something to cast and
+      // the paths to cast it. A fixture where nobody casts measures nothing.
+      expect(castsIn(result.replay).length, `${name}: nobody cast anything`).toBeGreaterThan(0)
+    }
+  }, 180000)
+
   test('spellsForSchool keeps the engine order, so minor precedes major', async () => {
     const { spells } = await dumpSpells()
     for (const school of SPELL_SCHOOLS) {

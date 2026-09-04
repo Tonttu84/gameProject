@@ -1113,6 +1113,18 @@ namespace Spells
         return best;
     }
 
+    bool awaitsRange(const AUnit& caster, const Spell& spell)
+    {
+        bool qualified = false;
+        for (const SpellForm& form : spell.forms) {
+            if (!qualifies(caster, form)) continue;
+            qualified = true;
+            if (form.target != TargetKind::EnemyUnit) return false;
+            if (!candidates(caster, form).empty()) return false;
+        }
+        return qualified;
+    }
+
     const std::vector<const Spell*>& defaultScript()
     {
         // M-22: the AI's ordered list IS a script, which is why slice 4 costs
