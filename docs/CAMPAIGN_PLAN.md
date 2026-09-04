@@ -87,6 +87,17 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-04) — START HERE
 
+**▶▶ THE ACTIVE FRONT IS SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions
+T-1..T-7, THREE SLICES PLANNED, NOTHING SHIPPED YET AT THE TIME OF WRITING.** The 2026-09-02 ask
+(*"plan first how spells should generally work and target, then we update the spells to work with
+our plan"*), taken up the day the casting AI closed. The record is the "SPELL TARGETING AND
+DELIVERY" entry at the top of the Deferred design backlog below: the seven decisions, the three
+assistant's calls, and the slice plan (TG-1 delivery, TG-2 area, TG-3 resistance and duration).
+**Start there, and do not re-derive them.** Each slice carries a "what landed" note once it is
+on `main`; a slice without one is not built. What it deliberately leaves alone: line of sight
+(T-3, none), the balance pass (still deferred, now with a settled delivery model under it), and
+walls catching a spell early (parked, undesigned).
+
 **▶▶ THE CASTING AI FRONT IS CLOSED — INTERVIEWED 2026-09-04, ALL THREE SLICES SHIPPED THE SAME
 DAY AND GREEN ON `main` (schema v46, lab scenario v4).** Ten decisions (A-1..A-10), the
 three-slice plan and each slice's "what landed" note are in the "THE CASTING AI" entry at the top
@@ -8061,11 +8072,87 @@ checked at answer time); and the deploy route composes a charter into engine fie
       auto-place (real size is the conservative measure; the server is the fence).
 
 
-**TODO — HOW SPELLS GENERALLY WORK AND TARGET (user, 2026-09-02 — DEFERRED on the user's call,
-recorded, NOT interviewed, do not build).** The ask: *"plan first how spells should generally work
+**▶ SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions T-1..T-7, all the user's
+unless flagged. IN PROGRESS.** The 2026-09-02 ask: *"plan first how spells should generally work
 and target, then we update the spells to work with our plan"* — a general framework the existing
-thirteen forms are then brought into line with, rather than more spells authored against the
-current ad-hoc bodies.
+forms are then brought into line with, rather than more spells authored against ad-hoc bodies.
+Question (1) of the tree below was already answered by A-8/AI-1 (targeting is data: `TargetKind`,
+one resolver, effect-only bodies); the interview walked the other six.
+
+- **T-1. ACCURACY IS THE CASTER'S STAT MODIFIED BY THE FORM, AND 100 MEANS PRECISE.** Every form
+  carries a signed `accuracy` modifier, ADDED to the caster's own accuracy stat (user: *"Additive"*)
+  and clamped to 0..100; the elevation and forest adjustments an arrow gets are applied after, as
+  they are for an arrow. A form written as 100 is PRECISE: no roll, no scatter, no elevation or
+  forest penalty — it lands exactly on the resolved target (user: *"Accuracy 100 spells are
+  precise, others can scatter"*; *"100 ignores the caster accuracy and just hits"*). Rejected: the
+  form's number alone, and form + path level (Dominions' precision) — the user wants the caster's
+  stat in it.
+- **T-2. RANGE IS PER FORM, BOONS INCLUDED, DEFAULT 10.** One integer per row; a boon out of range
+  is not a candidate. A Ward across the map was a hole, and a priest now has a place to stand and
+  a way to be reached (A-5's supercombatant question made real).
+- **T-3. NO LINE OF SIGHT** (user: *"We dont care about line of sight"*), for spells or arrows.
+  PARKED, not designed: *"if we want walls to protect they might early catch the spell and
+  provide armor but not yet"*. A line-of-sight system is a ranged-layer front of its own if it
+  ever comes, never smuggled in through spells.
+- **T-4. RESISTANCE, DOMINIONS' SHAPE** (user: *"Check dominions we will do it similarly, some
+  effects can be resisted, tag in spell, then there is the base power to beat resistance +1 per
+  extra path, + spell penetration (we dont have spell penetration items yet)"*). A form carries a
+  `resist` tag; untagged forms cannot be resisted. Caster's side: a base power (bd) + 1 per level
+  the caster holds in the form's PRIMARY path above the form's requirement + a `penetration` stat
+  that is 0 everywhere today and gets a reserved mod-bag name for future items. Target's side: its
+  `resistance`, set per type row and item-modifiable under a reserved mod-bag name. Both sides add
+  the engine's exploding die; the spell lands only if the caster's total is the HIGHER. A signed
+  `resistMod` on the form covers Dominions' "easily"/"hard" variants as data rather than as
+  extra tags. The scorer multiplies expected effect by the land chance (A-1, pure).
+- **T-5. PER-FORM `duration`, 0 = THE WHOLE BATTLE, DEFAULT 0.** A-8's refresh rule becomes "not
+  while active"; the same spell never stacks on one body, different spells do; the stat change is
+  UNDONE at battle end (AI-1's latent finding: `applyStatMod` was never restored). Rejected:
+  every buff on a timer (turns a priest into a refresh loop the scorer would happily feed).
+- **T-6. AREA IS HEX SIZE POINTS, COVERED AS ONE CONTIGUOUS ARC PER HEX.** Two modes as data,
+  `explosion` and `random`, plus a size (user: *"640 means everyone on 1 square. Then 800 means 1
+  square and 160 in neighbours but allow hitting empty spots too"*). Bodies occupy a hex's 640
+  slots as contiguous ranges laid from slot 1 in occupancy order (assistant's fill-in), the empty
+  ground after them. A hex given N points rolls a start slot 1..640 and covers N consecutive
+  slots WRAPPING AROUND (user: *"we take a continuous slot within hex so we randomize the starting
+  point then put everything ordered after it wrapping around … we get 50 to square we throw 630
+  then it hits 630 to 640 and 1 to 40"*); every body whose range overlaps the arc is struck, ONCE
+  (user: *"once per body"*). 640 or more covers everyone. EXPLOSION gives the landed hex the
+  first 640, then ring 1's hexes 640 each in random order, then ring 2, the last hex reached
+  getting the remainder as an arc. RANDOM splits the area into 10-point chunks assigned to random
+  hexes within the smallest ring that could hold the total, each hex then covering its
+  accumulated points as one arc (assistant's fill-in). The arc's start roll draws through the
+  scorer's own RNG seam (A-2's pattern), never the combat mock queue. Rejected: a per-spot
+  lottery (user: *"this makes it too easy to hit all humans"* — a lottery over 640 slots hits
+  every man eventually; an arc hits the men who stand where it falls). Lines and cones: parked
+  with the walls, undesigned — they need a facing the engine does not have.
+- **T-7. FRIENDLY FIRE IS REAL.** An area strikes everyone in it, both sides, caster included;
+  a scattered spell lands where it lands. The scorer NETS it: effect = enemy value struck − own
+  value struck, in A-3's one currency, no new number. Rejected: skipping the caster's side (makes
+  Fireball strictly better than every single-target spell at any density); a per-form flag is
+  one boolean away if a spell ever needs to be friendly-safe.
+
+**Three assistant's calls, flagged and unchallenged:**
+1. **Imprecise single-target spells.** A form with no area and accuracy below 100 scatters to a
+   landed hex. If that is the aimed hex, the aimed unit is struck; otherwise one body in the
+   landed hex by size weight (today's stray-shot rule); nobody if it is empty. The archer's
+   separate "roll ≤ accuracy to hit the aimed man" is NOT applied to spells — scatter is the
+   whole of a spell's miss.
+2. **The scorer's area estimate.** For an area form the candidate is the enemy unit's hex as an
+   aim point, and the score is the expected net value of a FULL-coverage strike, ignoring the arc
+   roll. Simple, side-effect-free (A-1).
+3. **The rows.** Every form gets the new fields with defaults that keep today's numbers where one
+   exists; every new number is (bd). Where a body already applied its effect directly (Briar
+   Snare, Hex of Frailty, the boons) the form is precise, because that is what it was.
+
+**THE SLICE PLAN — each shipped green to `main` on its own:**
+- **TG-1, delivery.** `accuracy` and `range` on the form and on the wire; the precise path; the
+  scatter path that no longer uses the archer's hit roll; boons range-checked; the worth
+  estimators reading the form's effective accuracy instead of the caster's raw stat. Rows updated.
+- **TG-2, area.** The arc, explosion and random, friendly fire, the scorer netting own losses,
+  `secondaryHits` retired for spells. The visible change.
+- **TG-3, resistance and duration.** The contest, the two new stats through the type rows and the
+  mod bag, durations and expiry, the battle-end undo, the scorer's land chance, and
+  `docs/ADDING_SPELLS.md` rewritten against the new shape.
 
 **What is true today, audited 2026-09-02 so the interview starts from facts** (all in
 `backend/engine/src/SpellList.cpp` unless named):
@@ -8089,7 +8176,7 @@ current ad-hoc bodies.
   fireball scatters onto your own line.
 - **AoE is one shape:** `secondaryHits` splash on the landed hex. No radius, line or cone.
 
-**The decision tree the interview will walk, unanswered:** (1) whether targeting becomes DATA on
+**The decision tree the interview walked (kept as written; T-1..T-7 above are the answers):** (1) whether targeting becomes DATA on
 the form — a declared target kind (`EnemyUnit`/`AllyUnit`/`Self`/`EnemyHex`/`Adjacent`/
 `Battlefield`) with one engine resolver — or stays per-body code (the assistant's leaning is
 data: one rule instead of thirteen, the catalog JSON can then SAY what a spell targets instead of
