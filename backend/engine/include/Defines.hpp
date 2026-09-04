@@ -145,6 +145,34 @@ constexpr int LEADEN_AIR_FATIGUE       = 24; // Death 2: what calling the weight
 constexpr int LEADEN_AIR_POOL_COST     = 3;  // channels drawn IN FULL on completion
 constexpr int LEADEN_AIR_WEIGHT        = 2;  // fatigue pressed onto every LIVING body, per tick
 
+// The casting AI (docs/CAMPAIGN_PLAN.md "THE CASTING AI", A-1..A-7). ALL
+// BALANCE-DEFERRED — and, per A-4, the FIRST knobs the balance pass should reach
+// for, since every one of them moves what a caster reaches for.
+//
+// score = worth * AI_SCORE_SCALE / spellDivider(form)     (A-4)
+// divider = castingTime * (AI_DIVIDER_BASE + (fatigue + poolCost * AI_POOL_COST_WEIGHT)
+//                                            / AI_FATIGUE_PER_DIVIDER)
+constexpr int AI_SCORE_SCALE         = 100;
+constexpr int AI_DIVIDER_BASE        = 10;   // a free instant spell would divide by this
+constexpr int AI_FATIGUE_PER_DIVIDER = 4;    // one divider point per this much authored fatigue
+constexpr int AI_POOL_COST_WEIGHT    = 8;    // a channel counts as this much fatigue in the divider
+constexpr int AI_SCRIPT_FLOOR        = 10;   // A-6: a scripted line scoring below this is skipped
+constexpr int AI_LOTTERY_FLOOR       = 10;   // A-7: an option below this gets no ticket
+// Worth is measured in UNIT-VALUE units (A-3): damage converts at AI_DAMAGE_SCALE
+// points per value point, inflicted/relieved fatigue at AI_FATIGUE_PER_DAMAGE
+// per damage point; a standing effect is a share of its bearer.
+constexpr int AI_DAMAGE_SCALE        = 4;
+constexpr int AI_FATIGUE_PER_DAMAGE  = 5;
+constexpr int AI_BUFF_WORTH_PCT      = 50;   // stoneskin / ward on a fresh body
+constexpr int AI_DEBUFF_WORTH_PCT    = 40;   // hex of frailty
+constexpr int AI_RALLY_WORTH_PCT     = 80;   // un-breaking a man is worth most of him
+constexpr int AI_HEAL_AVG            = 4;    // bless heals 1 + d6 (exploding): call it four
+constexpr int AI_GLOBAL_WORTH        = 40;   // a battlefield enchantment's flat worth (script-only, E-3)
+constexpr int AI_SKELETON_WORTH      = 4;    // mirrors Skeleton::unitValue
+constexpr int AI_ZOMBIE_WORTH        = 5;    // mirrors Zombie::unitValue
+constexpr int AI_LOG_TOP             = 3;    // options named in the Detail-tier "weighs" line
+constexpr int AI_VALUE_CAP           = 1000; // the wire's `value` is clamped to [1, this]
+
 // Battlefield dimensions
 constexpr int BATTLEFIELD_WIDTH  = 30;  // visual width  — hex rows (r), depth between armies
 constexpr int BATTLEFIELD_HEIGHT = 16;  // visual height — hex columns (q), battle-line width

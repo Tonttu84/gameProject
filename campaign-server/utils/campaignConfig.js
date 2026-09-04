@@ -1772,6 +1772,64 @@ export const RESEARCH_DEFAULT_FOCUS = 'evocation'
 // castable spells to fill it with, which is the intended shape.
 export const MAX_CHOSEN_SPELLS = 3
 
+// A-7 (bd): how many spells a caster's SHORTLIST may name — the pool the
+// scorer's post-script lottery draws from once the script's opening sequence
+// (A-6) has been walked.
+//
+// Wider than MAX_CHOSEN_SPELLS above because the two lists are different kinds
+// of thing: the script is an ORDER, three lines the player is spending
+// attention on, while the shortlist is a FENCE around what he may improvise
+// with. Five is a fence a developed caster can feel and still not a repertoire
+// to curate — and an EMPTY one is not a mute caster but the whole castable
+// roster (A-7), so nobody has to fill it.
+export const MAX_SHORTLIST_SPELLS = 5
+
+// ── A-5: WHAT A UNIT IS WORTH TO THE CASTING AI (bd) ────────────────────────
+//
+// `unitValue` is the scorer's one currency (A-3): a damage effect is worth
+// expected damage × the target's value, a buff the sum of the values it lifts.
+// The engine defaults every type to 10 and knows nothing about items, so a
+// character's worth is CAMPAIGN-SIDE arithmetic sent as `value` on his
+// placement entry — the engine reads a number and never learns the word "item".
+//
+// THE BASE IS THE ENGINE'S OWN DEFAULT, deliberately: the user's constraint is
+// that the AI "dont [get] super good at sniping mages, but it should sometimes
+// try to get some damage to a well kitted supercombatant". So a naked caster is
+// worth exactly a soldier and draws no fire for being a caster; what makes a
+// man a target is what he is CARRYING.
+export const CHARACTER_VALUE_BASE = 10
+
+// What one point of a stat is worth, per ITEM_STAT_TEXT's vocabulary — the
+// same stat names an item's `mods` bag uses, so a row that moves a number
+// prices itself here and nowhere else.
+//
+// DEFENSIVE STATS WEIGH MORE (A-5's "defensive items add more"), and the
+// asymmetry is the whole point rather than a tuning artefact: armour and
+// defence are what make a champion hard to kill, so they are what make him
+// worth spending a spell on. Attack counts a little — a killer is a threat —
+// and everything else counts nothing, because the scorer has no notion yet of
+// what speed or marksmanship do to an exchange. A stat absent from this map is
+// worth 0 by omission, which is the honest answer for a number nothing scores.
+//
+// BALANCE-DEFERRED like every number this front authors: these are plausible
+// weights, not tuned ones, and A-4's divider is the other half of the dial.
+export const VALUE_PER_STAT = {
+  armour: 3,
+  defence: 3,
+  maxHP: 2,
+  attack: 1,
+  speed: 0,
+  ballisticSkill: 0,
+  preferredRange: 0,
+  formationFighter: 0,
+}
+
+// What one granted ability is worth (bd). Ability words are not comparable to
+// each other — `fearless` and a future `flying` do quite different work — so
+// they are priced as one flat "he has something you do not", rather than a
+// second table that would claim a precision nothing supports yet.
+export const VALUE_PER_ABILITY = 2
+
 // S2-8 (bd): the channel a banner tier is worth, army-wide (M-11) — the basic
 // banner's long-deferred benefit (decision 16) finally made concrete. Keyed by
 // services/items.js bannerTier(), so a retuned rank ladder moves these with it.
@@ -1817,14 +1875,37 @@ export const ENEMY_CHANNELS = 3
 // because M-19's dial is exactly "a later act authors higher numbers": raising
 // that one constant is the whole of what turns the smart plays on, with no
 // second edit here.
+//
+// A row MAY also carry a `shortlist` (A-7): the spells the scorer's post-script
+// lottery draws from once the row's opening sequence is spent. Optional, and
+// ABSENCE IS THE SIGNAL exactly as it is for `script` — a row without one leaves
+// its caster the whole castable roster, which is what A-7 says an empty
+// shortlist means. It is filtered against the encounter's sealed numbers on the
+// way out (services/magic.js withEnemyScripts), so authoring a line the host
+// cannot pay for costs nothing: it simply is not in that caster's lottery.
+//
+// Only the two battlefield-bearing rows carry one, and for the reason a
+// shortlist exists at all: those casters have spent their script on ONE
+// enchantment that lands once, so what they do for the rest of the battle is
+// the whole of their contribution and is worth aiming. The single-minor rows
+// below are already doing the one thing they can do.
 export const ENEMY_SCRIPT_STORE = [
   // Thicken the air, then keep raising into it — the undead the litany makes do
   // not tire, so the enchantment costs the raiser's own side nothing (E-6's
   // structural "living"). The sharpest thing a Death caster can do with a pool.
-  { id: 'leaden_litany', spells: ['leaden_air', 'raise_dead'] },
+  // Afterwards he keeps raising, or drains what is nearest.
+  {
+    id: 'leaden_litany',
+    spells: ['leaden_air', 'raise_dead'],
+    shortlist: ['raise_dead', 'drain_life'],
+  },
   // The mirror for a Nature caster: relief for his own line, and briars for
-  // whoever walks at it.
-  { id: 'gale_ward', spells: ['soothing_winds', 'briar_snare'] },
+  // whoever walks at it. Afterwards, more of both.
+  {
+    id: 'gale_ward',
+    spells: ['soothing_winds', 'briar_snare'],
+    shortlist: ['briar_snare', 'soothing_current'],
+  },
   // What the host's eleven Necromancers actually get today (Death 2 declared by
   // the craft, S2-14, against a sealed Conjuration 2): raise from turn one.
   { id: 'graveharvest', spells: ['raise_dead'] },

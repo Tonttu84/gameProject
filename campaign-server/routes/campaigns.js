@@ -48,6 +48,7 @@ import {
   enemyMagic,
   magicBlock,
   planChosenSpells,
+  planShortlist,
   planResearchFocus,
   withCasterPaths,
   withEnemyScripts,
@@ -663,9 +664,17 @@ router.post('/:id/battles', async (req, res) => {
     // `script` (S4-1) joins them for the identical reason: the chosen spells
     // are the character's own record, set from his sheet and nowhere else, so
     // a list in a placement request is forged by definition.
+    // `shortlist` (A-7) is the script's twin and is stripped with it. `value`
+    // (A-5) joins them from the other direction and matters MORE than any of
+    // them: it is what the enemy's scorer weighs a target by, so a client that
+    // could set it could make its own casters worthless to shoot at and the
+    // enemy's own bodies worth everything. It is stamped from the record by
+    // characterEntryFor below, and a rank-and-file body keeps the engine's
+    // catalog default by carrying no field at all.
     const {
       denied_abilities: _forgedDenials, carried_abilities: _forgedCarried,
-      paths: _forgedPaths, script: _forgedScript, ...base
+      paths: _forgedPaths, script: _forgedScript, shortlist: _forgedShortlist,
+      value: _forgedValue, ...base
     } = withAbilities
     // A character's own fields are stamped from the RECORD, never taken from
     // the request — the same rule squad_mods follows. Otherwise a client could
@@ -1498,6 +1507,41 @@ router.post('/:id/characters/:characterId/script', async (req, res) => {
   if (plan.error) return res.status(400).json({ error: plan.error })
 
   character.script = plan.script
+  await campaign.save()
+  res.json(await campaignView(campaign))
+})
+
+// ── The shortlist (docs/CAMPAIGN_PLAN.md “THE CASTING AI”, A-7) ─────────────
+//
+// Body `{ spells: ['fireball', 'bless'] }` — the whole list, replacing whatever
+// was there, exactly as the script route above takes its own. The same shape
+// for the same reason: the checklist on the sheet is a rendering of one list,
+// not a set of addressable slots.
+//
+// The script says what he opens with; this says what he is allowed to improvise
+// with afterwards, and an EMPTY list is the widest setting rather than the
+// narrowest (A-7) — which is why clearing it needs no separate route either.
+//
+// FREE AND UNGATED like the script (S4-4), and the fiction is the same one: a
+// standing preference about what a caster reaches for is not an order shouted
+// across a field, so any phase, and allowed while he is away.
+router.post('/:id/characters/:characterId/shortlist', async (req, res) => {
+  const campaign = await findOwn(req)
+  if (!campaign) return res.status(404).json({ error: 'campaign not found' })
+  if (campaign.status !== 'active') return res.status(400).json({ error: 'campaign is over' })
+  if (rejectIfChoicePending(campaign, res)) return
+
+  const character = livingCharacters(campaign).find((c) => c.id === Number(req.params.characterId))
+  if (!character)
+    return res.status(400).json({ error: `not one of your living characters: ${req.params.characterId}` })
+
+  // Validated against what he can cast TODAY minus the script-only globals
+  // (E-3) — the same test the sheet's checklist was drawn from, so a legal
+  // click always succeeds and a forged id never lands.
+  const plan = planShortlist(character, campaign, getSpellCatalog(), req.body?.spells)
+  if (plan.error) return res.status(400).json({ error: plan.error })
+
+  character.shortlist = plan.shortlist
   await campaign.save()
   res.json(await campaignView(campaign))
 })

@@ -409,9 +409,9 @@ TEST_CASE("targeting: a caster whose line is fully buffed casts nothing and pays
     field.loadArmies(std::move(red), {});
 
     // Earth 1 and nothing else, so Stoneskin is the only line in his walk.
-    const Spell* chosen = nullptr;
-    REQUIRE(mage->chooseSpellToCast(&chosen) != nullptr);
-    REQUIRE(chosen->id == "stoneskin");
+    const Spell* stoneskin = Spells::findSpell("stoneskin");
+    REQUIRE(stoneskin != nullptr);
+    REQUIRE_FALSE(Spells::optionsFor(*mage, *stoneskin, 0).empty());
 
     mage->markBuff("stoneskin");
     man->markBuff("stoneskin");

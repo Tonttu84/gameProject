@@ -52,6 +52,19 @@ namespace Spells
     // the same one, down to the sort key.
     Target chooseTarget(const AUnit& caster, const SpellForm& form);
 
+    // ── The scorer (A-1..A-7, slice AI-2) ────────────────────────────────────
+    // worth * AI_SCORE_SCALE / divider, or 0 when the form is worth nothing here.
+    // Pure, like everything the resolver does.
+    int scoreOf(const AUnit& caster, const SpellForm& form, const Target& target);
+
+    // Every option ONE spell offers this caster right now, with the BEST form
+    // per target — form choice is by max, never by lottery (A-6). One option per
+    // candidate for the single-unit kinds, so a lottery can pick WHICH enemy
+    // (A-5's supercombatant is exactly a target that scores higher); one option
+    // for the kinds that hand over no unit. Anything scoring below `floor` is
+    // dropped. Pure.
+    std::vector<CastOption> optionsFor(const AUnit& caster, const Spell& spell, int floor);
+
     // Look a spell up by its roster id ("fireball", "bless", ...). Returns
     // nullptr for an id the roster does not carry — the chosen-spells list
     // arrives over the wire (slice 4) and skips what it cannot resolve rather

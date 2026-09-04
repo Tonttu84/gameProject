@@ -187,8 +187,13 @@ TEST_CASE("Necromancer with enough corpses raises a zombie battle-summon per cor
     // corpses are not a gate, so chooseSpellToCast cannot see the shortage —
     // and nothing lands until that two-tick channel completes, at which point
     // the major fails and the fallback raises a skeleton instead.
+    // AI-2 (A-6): with the corpses spent the major is worth nothing, so the
+    // scorer takes the one-tick minor and a skeleton rises AT ONCE — before the
+    // scorer, the walk started a doomed two-tick major channel here and the
+    // count stayed at 5 for a phase by accident.
     field.triggerSpecialPhase();
-    REQUIRE(field.getTeam(REDTEAM).size() == 5);
+    REQUIRE(field.getTeam(REDTEAM).size() == 6);
+    REQUIRE(field.getTeam(REDTEAM)[5]->getPrintSymbol() == 'S');
 
     field.setCorpses(0);
     field.extractResult();
@@ -204,9 +209,16 @@ TEST_CASE("Necromancer falls back to the minor form when the major runs short of
     Army red;
     red.push_back(std::move(necroPtr));
     field.loadArmies(std::move(red), {});
-    field.setCorpses(1);
-
+    // AI-2: the scorer will not START a doomed major — worthRaiseDead reads the
+    // corpse count and scores 0 short of it — so the fallback is reached the way
+    // it is reached in a real battle: the bodies were there when the channel
+    // began and gone by the time it completed (a rival necromancer spent them).
+    field.setCorpses(4);
     field.triggerSpecialPhase();
+    // The skeleton is a one-tick cast that fires at once, so a live channel
+    // here can only be the two-tick major.
+    REQUIRE(field.getTeam(REDTEAM)[0]->isChannelling());
+    field.setCorpses(1);
     field.triggerSpecialPhase();
 
     // The major wanted 4 corpses and there is 1, so it fails — and the caster
@@ -386,33 +398,58 @@ TEST_CASE("qualifies: the school gate blocks arcane spells but never Holy") {
 
 // ── castSpells() gating on AUnit ──────────────────────────────────────────────
 
-TEST_CASE("chooseSpellToCast: takes the most powerful form the caster qualifies for") {
-    Mage mage(REDTEAM);
+TEST_CASE("chooseSpellToCast: the probe reports the scorer's max, form included") {
+    // AI-2 (A-6): the form is the scorer's pick, not the strongest the caster
+    // qualifies for — that was M-13's second half, and S4-2 parked its
+    // replacement for exactly this slice.
+    Battlefield& field = Utility::getBattlefield();
+    auto magePtr   = std::make_unique<Mage>(REDTEAM);
+    auto zombiePtr = std::make_unique<Zombie>(BLUETEAM);
+    magePtr->setHex(field.hexGrid.getHex({5, 8}));
+    zombiePtr->setHex(field.hexGrid.getHex({2, 8}));
+    magePtr->setPathLevel(SpellPath::Fire, 3);
+    AUnit* mage = magePtr.get();
+    Army red, blue;
+    red.push_back(std::move(magePtr));
+    blue.push_back(std::move(zombiePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
     const Spell* picked = nullptr;
-
-    // Fire 1 → the minor form (M-13).
-    const SpellForm* form = mage.chooseSpellToCast(&picked);
+    const SpellForm* form = mage->chooseSpellToCast(&picked);
     REQUIRE(form != nullptr);
     REQUIRE(picked->id == "fireball");
-    REQUIRE(form->name == "minor");
+    // Whichever form it is, it is the one the scorer rates highest.
+    std::vector<CastOption> options = Spells::optionsFor(*mage, *picked, 0);
+    REQUIRE_FALSE(options.empty());
+    const CastOption* best = &options.front();
+    for (const CastOption& o : options) if (o.score > best->score) best = &o;
+    REQUIRE(form == best->form);
 
-    // Fire 3 → the same spell, but now the major form.
-    mage.setPathLevel(SpellPath::Fire, 3);
-    form = mage.chooseSpellToCast(&picked);
-    REQUIRE(form != nullptr);
-    REQUIRE(picked->id == "fireball");
-    REQUIRE(form->name == "major");
+    field.extractResult();
 }
 
 TEST_CASE("chooseSpellToCast: fatigue never blocks selection") {
     // M-22, and it is deliberate: under M-2 nothing is unaffordable, so a caster
-    // may cast himself into the overflow and bleed for it. The old
-    // `mana >= manaCost` clause has no successor.
-    Mage mage(REDTEAM);
+    // may cast himself into the overflow and bleed for it. The scorer's floor is
+    // about worth, never about what the caster can pay (AI-2).
+    Battlefield& field = Utility::getBattlefield();
+    auto magePtr   = std::make_unique<Mage>(REDTEAM);
+    auto zombiePtr = std::make_unique<Zombie>(BLUETEAM);
+    magePtr->setHex(field.hexGrid.getHex({5, 8}));
+    zombiePtr->setHex(field.hexGrid.getHex({2, 8}));
+    AUnit* mage = magePtr.get();
+    Army red, blue;
+    red.push_back(std::move(magePtr));
+    blue.push_back(std::move(zombiePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
     const Spell* picked = nullptr;
-    mage.addFatigue(FATIGUE_HARD_MAX);
-    REQUIRE(mage.getFatigue() == FATIGUE_HARD_MAX);
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
+    REQUIRE(mage->chooseSpellToCast(&picked) != nullptr);
+    mage->addFatigue(FATIGUE_HARD_MAX);
+    REQUIRE(mage->getFatigue() == FATIGUE_HARD_MAX);
+    REQUIRE(mage->chooseSpellToCast(&picked) != nullptr);
+
+    field.extractResult();
 }
 
 TEST_CASE("castSpells: a unit with no paths does nothing") {
@@ -617,7 +654,9 @@ TEST_CASE("testConcentration: a wound can break a channel, and costs nothing whe
     Army red;
     red.push_back(std::move(necroPtr));
     field.loadArmies(std::move(red), {});
-    field.setCorpses(3);
+    // Four bodies: enough for the major (AI-2's scorer picks it over the
+    // one-tick skeleton), so a two-tick channel is genuinely live to break.
+    field.setCorpses(4);
 
     field.triggerSpecialPhase();
     REQUIRE(necro->isChannelling() == true);
@@ -710,9 +749,9 @@ TEST_CASE("completeCast: the fallback pays for the form that actually fired") {
     Army red;
     red.push_back(std::move(necroPtr));
     field.loadArmies(std::move(red), {});
-    field.setCorpses(0);          // the major cannot fire at all
-
+    field.setCorpses(4);          // the major is chosen (AI-2 scores a doomed one at 0)...
     field.triggerSpecialPhase();
+    field.setCorpses(0);          // ...and cannot fire by the time the channel completes
     field.triggerSpecialPhase();
 
     // It fell back to the minor and raised a skeleton...
@@ -825,78 +864,50 @@ TEST_CASE("spellCatalogJson: the granted paths are the ones without a school") {
 // order behind it. These pin that, plus the never-throw discipline the wire
 // boundary relies on.
 
-TEST_CASE("setChosenSpells: the chosen spell leads, and the rest still follow") {
+TEST_CASE("setChosenSpells: the chosen spells are the opening sequence, in order") {
+    // A-6: the list is a SEQUENCE the caster walks once, not a preference the
+    // roster follows — nothing is appended behind it any more.
     Mage mage(REDTEAM);
-    mage.setPathLevel(SpellPath::Air, 1);   // Fire 1 from the ctor, plus Air 1
-    const Spell* picked = nullptr;
+    mage.setPathLevel(SpellPath::Air, 1);
+    REQUIRE(mage.getScript().empty());
 
-    // Roster order puts fireball first, so that is what he reaches for.
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
-    REQUIRE(picked->id == "fireball");
-
-    // Choosing shock moves it to the front.
-    mage.setChosenSpells({"shock"});
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
-    REQUIRE(picked->id == "shock");
-
-    // …and fireball is still there underneath: drop Air and he falls through to
-    // it rather than standing mute, which is the whole of S4-1.
-    mage.setPathLevel(SpellPath::Air, 0);
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
-    REQUIRE(picked->id == "fireball");
+    mage.setChosenSpells({"shock", "fireball"});
+    REQUIRE(mage.getScript().size() == 2);
+    REQUIRE(mage.getScript()[0]->id == "shock");
+    REQUIRE(mage.getScript()[1]->id == "fireball");
+    REQUIRE(mage.scriptCursor() == 0);
 }
 
-TEST_CASE("setChosenSpells: an empty list is exactly the default walk") {
-    // What makes the whole feature additive — a caster nobody has scripted
-    // behaves precisely as he did before slice 4.
+TEST_CASE("setChosenSpells: an empty list is no sequence at all") {
     Mage chosen(REDTEAM), untouched(REDTEAM);
     chosen.setChosenSpells({});
-
-    const Spell* a = nullptr;
-    const Spell* b = nullptr;
-    REQUIRE(chosen.chooseSpellToCast(&a) != nullptr);
-    REQUIRE(untouched.chooseSpellToCast(&b) != nullptr);
-    REQUIRE(a->id == b->id);
+    REQUIRE(chosen.getScript().empty());
+    REQUIRE(untouched.getScript().empty());
 }
 
 TEST_CASE("setChosenSpells: unknown ids are skipped, not fatal") {
-    // Never-throw, like every other field crossing the JSON boundary.
     Mage mage(REDTEAM);
-    mage.setPathLevel(SpellPath::Air, 1);
     mage.setChosenSpells({"no_such_spell", "shock", ""});
-
-    const Spell* picked = nullptr;
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
-    REQUIRE(picked->id == "shock");
+    REQUIRE(mage.getScript().size() == 1);
+    REQUIRE(mage.getScript()[0]->id == "shock");
 }
 
-TEST_CASE("setChosenSpells: repeats cannot grow the walk, and setting twice does not compound") {
+TEST_CASE("setChosenSpells: repeats cannot grow the sequence, and setting twice does not compound") {
     Mage mage(REDTEAM);
-    mage.setPathLevel(SpellPath::Air, 1);
-
-    // A forged list repeating one id must not lengthen the caster's roster.
     mage.setChosenSpells({"shock", "shock", "shock"});
-    const Spell* picked = nullptr;
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
-    REQUIRE(picked->id == "shock");
-
-    // Rebuilt from the default list every call, so a second set REPLACES the
-    // first rather than layering on it.
+    REQUIRE(mage.getScript().size() == 1);
     mage.setChosenSpells({"fireball"});
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
-    REQUIRE(picked->id == "fireball");
+    REQUIRE(mage.getScript().size() == 1);
+    REQUIRE(mage.getScript()[0]->id == "fireball");
 }
 
-TEST_CASE("setChosenSpells: a chosen spell the caster cannot cast is skipped") {
-    // S4-3 keeps these off the sheet in the first place, but the engine must
-    // not stall on one that arrives anyway — a stale list would otherwise
-    // freeze a caster for a whole battle.
+TEST_CASE("setChosenSpells: a chosen spell the caster cannot cast stays a line, and offers nothing") {
+    // The sequence keeps the line — it is the player's order — and the scorer
+    // finds no option in it at cast time, so it is skipped without a tick.
     Mage mage(REDTEAM);   // Fire 1, no Death
     mage.setChosenSpells({"raise_dead"});
-
-    const Spell* picked = nullptr;
-    REQUIRE(mage.chooseSpellToCast(&picked) != nullptr);
-    REQUIRE(picked->id == "fireball");
+    REQUIRE(mage.getScript().size() == 1);
+    REQUIRE(Spells::optionsFor(mage, *mage.getScript()[0], 0).empty());
 }
 
 TEST_CASE("findSpell: resolves roster ids and returns nullptr for the rest") {

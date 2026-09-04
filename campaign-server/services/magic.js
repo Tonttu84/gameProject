@@ -26,6 +26,7 @@ import {
   HIRE_PRIMARY_LEVEL,
   HIRE_SECOND_PATH_PERCENT,
   MAX_CHOSEN_SPELLS,
+  MAX_SHORTLIST_SPELLS,
   RESEARCH_DEFAULT_FOCUS,
   RESEARCH_LEVEL_COST,
   RESEARCH_MAX_LEVEL,
@@ -211,7 +212,24 @@ export const withEnemyScripts = (placement, magic, spells = [], store = ENEMY_SC
       if (row.spells.length === 0) continue
       if (!row.spells.every((id) => enemyCanCast(held, id, spells, schoolLevelOf, channels))) continue
       if (isBattlefield) battlefieldTaken = true
-      return { ...entry, script: [...row.spells] }
+      // The row's SHORTLIST (A-7), held to the same test its script is: an id
+      // this caster cannot cast under the encounter's sealed numbers is not a
+      // line he could ever draw, so it is dropped here rather than handed over
+      // to be skipped later. Unlike the script, a partial match is fine — a
+      // shortlist is a fence and a narrower one is still a fence, where a
+      // script is an order that must be castable in full.
+      //
+      // Filtered to nothing means the field is OMITTED, not sent empty: absence
+      // is the signal on both lists, and for the shortlist absence means the
+      // whole castable roster rather than silence (A-7).
+      const shortlist = (row.shortlist ?? []).filter(
+        (id) => enemyCanCast(held, id, spells, schoolLevelOf, channels),
+      )
+      return {
+        ...entry,
+        script: [...row.spells],
+        ...(shortlist.length > 0 ? { shortlist } : {}),
+      }
     }
     // ABSENCE IS THE SIGNAL, the chosenSpells convention: a caster who matches
     // nothing is sent no `script` key at all, which the engine reads as the
@@ -630,6 +648,79 @@ export const planChosenSpells = (character, campaign, spells, ids) => {
     if (!castable.has(id)) return { error: `${character.name} cannot cast ${id}` }
 
   return { script: [...ids] }
+}
+
+// ── The shortlist (the casting AI, A-7) ─────────────────────────────────────
+//
+// The script's sibling: what the caster improvises from once his opening
+// sequence is walked. Everything below MIRRORS the two functions above, because
+// it is the same subject read a second way — one castable list, one cap, one
+// plan/apply shape — and the two differences are the whole of what a shortlist
+// IS:
+//
+//   • it is UNORDERED. Position is priority in a script (S4-1/A-6); here the
+//     engine draws by weighted lottery over the scorer's own numbers (A-2), so
+//     there is nothing for an order to mean.
+//   • it OFFERS NO BATTLEFIELD SPELL. A global is script-only (E-3) — it takes
+//     hold once per side and is cast because it was ordered, never because a
+//     lottery happened to name it — so the fence must not be able to contain
+//     one. Filtered out of the OPTIONS as well as refused by the plan, because
+//     a picker that offers a click the server refuses is a worse bug than the
+//     refusal it hides.
+//
+// The absence rule is the third thing they share and the one A-7 turns on: an
+// empty shortlist is not a mute caster but the whole castable roster.
+
+// What the lottery may legally be fenced to: everything he can cast that is not
+// a script-only global. One function because the view and the plan must not be
+// able to disagree about it — that disagreement is exactly the bug above.
+const shortlistableFor = (character, campaign, spells) =>
+  castableSpellsFor(character, campaign, spells).filter((row) => !row.battlefield)
+
+// What the character sheet renders for "Shortlist", beside the three slots.
+//
+// The same row shape chosenSpellsView ships, so the sheet renders one kind of
+// spell row and holds no second vocabulary — minus the clash warning, which
+// belongs to battlefield spells and there are none here by construction.
+//
+// `line` is the server's sentence and the client composes nothing (17-5). It
+// says what an EMPTY list does, because that is the one thing about this
+// control a player cannot guess from looking at it.
+export const shortlistView = (character, campaign, spells = []) => {
+  const options = shortlistableFor(character, campaign, spells)
+  const byId = new Map(options.map((row) => [row.spell, row]))
+  return {
+    max: MAX_SHORTLIST_SPELLS,
+    // Resolved through the same map the options come from, so an id that can no
+    // longer be offered is dropped rather than drawn as a label-less row — the
+    // chosen-spells convention, and it cannot happen for the same reason.
+    chosen: (character?.shortlist ?? []).map((id) => byId.get(id)).filter(Boolean),
+    options,
+    line: `Left empty, ${character?.name ?? 'he'} may reach for anything he can cast.`,
+  }
+}
+
+// Validate a proposed shortlist. `{ error }` or `{ shortlist }`, the plan/apply
+// shape every mutation in this layer uses, and the list REPLACES what was there.
+export const planShortlist = (character, campaign, spells, ids) => {
+  if (!Array.isArray(ids)) return { error: 'shortlist must be an array of spell ids' }
+  if (ids.length > MAX_SHORTLIST_SPELLS)
+    return { error: `a caster may be shortlisted at most ${MAX_SHORTLIST_SPELLS} spells` }
+  if (new Set(ids).size !== ids.length)
+    return { error: 'the same spell cannot be shortlisted twice' }
+
+  const allowed = new Set(shortlistableFor(character, campaign, spells).map((r) => r.spell))
+  for (const id of ids) {
+    if (allowed.has(id)) continue
+    // Two refusals, one phrase each, because they are different mistakes: a
+    // spell he cannot cast at all, and one he can cast but only on your order.
+    const castable = castableSpellsFor(character, campaign, spells).some((r) => r.spell === id)
+    return castable
+      ? { error: `${id} is cast only when it is scripted` }
+      : { error: `${character.name} cannot cast ${id}` }
+  }
+
+  return { shortlist: [...ids] }
 }
 
 // ── What the engine is told ─────────────────────────────────────────────────

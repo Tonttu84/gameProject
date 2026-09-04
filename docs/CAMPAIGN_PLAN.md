@@ -87,11 +87,14 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-04) — START HERE
 
-**▶▶ THE LIVE FRONT IS THE CASTING AI — INTERVIEWED 2026-09-04, NOT ONE LINE BUILT.** Ten
-decisions (A-1..A-10) and a three-slice plan are in the "THE CASTING AI" entry at the top of the
-Deferred design backlog below; **start there, and do not re-derive them.** AI-1 (targeting as data,
-behaviour-preserving) is the engine prerequisite; AI-2 (the scorer) is the hard one; AI-3 puts it
-under the Battle Lab's N-runs. The fronts below are closed.
+**▶▶ THE LIVE FRONT IS THE CASTING AI — INTERVIEWED 2026-09-04; AI-1 AND AI-2 SHIPPED THE SAME
+DAY (schema v46), AI-3 IS NEXT.** Ten decisions (A-1..A-10) and the three-slice plan are in the
+"THE CASTING AI" entry at the top of the Deferred design backlog below, each shipped slice with
+its "what landed" note; **start there, and do not re-derive them.** The scorer is live in every
+battle now — casters walk their script as an opening sequence and then improvise by lottery
+over a shortlist (their sheet's new checklist) — so the next thing is AI-3: `value` and the
+shortlist as Battle Lab controls, and an N-runs A/B of the old walk against the scorer as the
+acceptance evidence. The fronts below are closed.
 
 **▶▶ THE CHARTER RECRUITMENT + SQUADS IN THE LAB FRONT IS CLOSED — INTERVIEWED 2026-09-02, BOTH
 SLICES SHIPPED THE SAME DAY AND GREEN ON `main` (schema v45).** Eight decisions (R-1..R-8) and the
@@ -7802,10 +7805,64 @@ slices"), each green on `main` alone:**
   *As planned:* A target kind on every form; one side-effect-free resolver;
   the thirteen bodies become effect-only; the buff-refresh rule. Pure engine; the walk still runs
   on top, so BEHAVIOUR IS UNCHANGED and every existing test stays green. Mechanical and wide.
-- **AI-2 — the scorer.** Divider + override, `value` on the wire (campaign-side base + items),
+- **✅ AI-2 SHIPPED 2026-09-04 — the scorer (schema v46).** Engine half written here (the hard
+  half, by the user's leave), campaign half by an Opus subagent from a spec. What landed:
+  - **Engine.** `worth` on every form (`int(const AUnit&, const Target&)`, wired by id in
+    `worthFor()` beside the `spell` back-pointer, so no roster row moved) and `aiDivider`
+    (0 = derive). `spellDivider(form)` = `castingTime × (AI_DIVIDER_BASE + (fatigue + poolCost ×
+    AI_POOL_COST_WEIGHT) / AI_FATIGUE_PER_DIVIDER)`; `Spells::scoreOf` = worth × AI_SCORE_SCALE
+    ÷ divider; `Spells::optionsFor(caster, spell, floor)` returns one `CastOption` per candidate
+    (best form per target) above the floor. Estimators: expected damage × `getValue()` with hit
+    chance folded in for the damage forms, `AI_BUFF_WORTH_PCT`/`AI_DEBUFF_WORTH_PCT`/
+    `AI_RALLY_WORTH_PCT` of the lifted value for buffs, bodies × `AI_SKELETON_WORTH`/
+    `AI_ZOMBIE_WORTH` for the conjurations (**0 when the body would fail** — too few corpses —
+    so the scorer no longer starts a doomed major), `AI_GLOBAL_WORTH` flat for the enchantments.
+    All fifteen numbers in Defines.hpp, (bd). `AUnit::castSpells` is A-6 then A-7: the script is
+    an opening SEQUENCE (`_scriptCursor`; a line under `AI_SCRIPT_FLOOR` is skipped the same
+    tick; a global already cast is skipped by `callable`), then a weighted lottery over
+    `_shortlist` (or the whole roster minus battlefield spells when it is empty or all-poor;
+    idle when nothing clears `AI_LOTTERY_FLOOR`) with tickets ∝ score. The lottery draws through
+    `Utility::lotteryRoll(total)` — its OWN seam, seeded by GAME_RNG_SEED, pinnable in tests via
+    `pushLotteryRoll`, and a test asserts scoring leaves the combat mock queue untouched.
+    `beginChannel` logs one Detail line per decision (*"X weighs Ember 14, Ward 3 — Chosen
+    Ember"*) and records `_channelTarget`; `completeCast` fires at THAT target if it is still
+    among the form's candidates (membership by address, never a blind dereference), else
+    re-resolves; M-26's fall-through is unchanged. `chooseSpellToCast` survives as a
+    deterministic PROBE (the pending script line, else the best option; no lottery, no cursor
+    move) that only tests call now. `UnitRegistry` reads `value` (→ `setValue`, clamped
+    1..AI_VALUE_CAP) and `shortlist` (→ `setShortlist`, globals dropped, deduped) on a placement
+    entry. The catalog row gains `divider`. Ally candidates no longer require a hex (AI-1's
+    resolver had made the priest tests' hexless allies invisible). 476 cases green (fast and
+    sanitized), `test_scoring.cpp` new under `[scoring]`.
+  - **Campaign.** `characterValue` in `services/characters.js` (`CHARACTER_VALUE_BASE` 10 = the
+    engine's own default, so a naked mage is worth a soldier; + `VALUE_PER_STAT` over worn
+    items with armour/defence 3, maxHP 2, attack 1, the rest 0; + `VALUE_PER_ABILITY` 2 per
+    GRANTED ability, denials uncredited; floored at 1) sent as `value` on every character entry
+    and on enemy bearers (`bearerEntry`), so the champion in three pieces of kit is the
+    supercombatant A-5 wants noticed. `characters[].shortlist` (v46, `MAX_SHORTLIST_SPELLS` 5),
+    `shortlistView`/`planShortlist` in magic.js (one `shortlistableFor` = castable minus
+    battlefield, so view and plan cannot disagree; two refusal phrasings), route
+    `POST /:id/characters/:characterId/shortlist { spells }` mirroring the script route; the
+    deploy route strips request-supplied `shortlist` AND `value` (a client that could set
+    `value` could make its own casters worthless to shoot at). Enemy store rows may carry a
+    `shortlist`, filtered through `enemyCanCast` on the way out; the two battlefield rows got
+    one. Sheet: a Shortlist checklist beneath the three slots (unticked boxes grey at the cap,
+    the server's "left empty, he may reach for anything" line printed verbatim). The three
+    walk-era casts in `engine.integration.test.js` were rewritten to A-6/A-7 (first cast is the
+    script line; the rest stays inside his own roster) and a fourth proves `shortlist` + `value`
+    cross the wire. campaign-server 1469 green, frontend 535 green + lint. `docs/ADDING_SPELLS.md` gained "Scoring: every form
+    carries a `worth`" and the estimator gotcha.
+  - **Three test rewrites worth knowing about**, all consequences of the scorer being honest:
+    the necromancer conjures a skeleton at once rather than channelling a doomed major (a
+    starved major is now reached by SPENDING the corpses mid-channel, which is the real path);
+    six tests that read `chooseSpellToCast` as a list now read `getScript()`/`optionsFor`; the
+    unscripted caster has no sequence (`_spells` empty), his whole roster is his lottery.
+  - **Not done, by design:** buffs valuing FRESH units (A-3's note), stances (A-10), any change
+    to what a spell does. And the A/B evidence is AI-3's, not claimed here.
+
+  *As planned:* Divider + override, `value` on the wire (campaign-side base + items),
   sequence + floor + form choice, shortlist + lottery + valve, the RNG seam, one Detail-tier log
-  line per decision (`Ember 14 > Ward 3`), schema bump for the shortlist, enemy store rows
-  updated. The hard slice.
+  line per decision, schema bump for the shortlist, enemy store rows updated. The hard slice.
 - **AI-3 — the lab as judge.** Per-caster shortlist and `value` in the Battle Lab, and an N-runs
   A/B of walk vs. scorer as the acceptance evidence.
 

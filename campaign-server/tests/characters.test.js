@@ -30,6 +30,7 @@ import { catalogFixture } from './fixtures/catalog.js'
 import {
   CHARACTER_TYPES,
   CHARACTER_NAMES,
+  CHARACTER_VALUE_BASE,
   MAX_CHARACTERS_PER_SQUAD,
   STARTING_CHARACTERS,
 } from '../utils/campaignConfig.js'
@@ -638,11 +639,15 @@ describe('the placement entry', () => {
     // constructor seeds Fire 1 and a hire who did not roll Fire must arrive
     // saying so. Pulled out of the exact-shape check below and asserted
     // separately so this case stays about identity and the toggle.
-    const { paths, ...identity } = entry
+    // AI-2 adds `value` to every character's entry (A-5) — what the enemy's
+    // scorer weighs him at. Pulled out for the same reason `paths` is, and
+    // asserted where the weights themselves are (tests/value.test.js).
+    const { paths, value, ...identity } = entry
     expect(identity).toEqual({
       unit_type: 'Mage', q: 3, r: 5, character_id: 4, avoids_melee: true,
     })
     expect(paths).toEqual(enginePaths(character().paths))
+    expect(value).toBe(CHARACTER_VALUE_BASE)
   })
 
   test('an ordinary trooper is no caster, so no paths ride their entry', () => {

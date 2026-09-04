@@ -253,6 +253,24 @@ Army buildArmyFromPlacement(const std::string& placementJson, int team, HexGrid&
         // non-string entry or an id the roster does not carry is skipped rather
         // than rejected. setChosenSpells also drops repeats, so a forged list
         // cannot grow the walk.
+        // A-5: `value` — what this body is worth to the casting AI, computed
+        // campaign-side where items live and read here as a number. Never
+        // throws; a non-integer is ignored and the catalog default stands.
+        auto valueIt = entry.find("value");
+        if (valueIt != entry.end() && valueIt->is_number_integer())
+            u->setValue(valueIt->get<int>());
+
+        // A-7: `shortlist` — what the post-script lottery may draw from. The
+        // same never-throw discipline as `script` below; absent or empty means
+        // the whole castable roster, which is the engine's own default.
+        auto shortlistIt = entry.find("shortlist");
+        if (shortlistIt != entry.end() && shortlistIt->is_array()) {
+            std::vector<std::string> ids;
+            for (const auto& id : *shortlistIt)
+                if (id.is_string()) ids.push_back(id.get<std::string>());
+            u->setShortlist(ids);
+        }
+
         auto scriptIt = entry.find("script");
         if (scriptIt != entry.end() && scriptIt->is_array()) {
             std::vector<std::string> chosen;

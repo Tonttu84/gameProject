@@ -141,6 +141,15 @@ export const unequipCharacterItem = (id, characterId, { slot, index }) =>
 // is a mage's own standing preference, not an order shouted across a field.
 export const setChosenSpells = (id, characterId, script) =>
   axios.post(`/api/campaigns/${id}/characters/${characterId}/script`, { script }, authed()).then(r => r.data)
+// The SHORTLIST (the casting AI, A-7): what a caster may improvise with once
+// the three chosen spells above are spent. The whole list every time, like the
+// script — and an EMPTY one is the widest setting rather than the narrowest,
+// because empty means everything he can cast.
+//
+// Free and ungated in exactly the same directions the script is, and for the
+// same reason: this is a standing preference, not an order.
+export const setShortlist = (id, characterId, spells) =>
+  axios.post(`/api/campaigns/${id}/characters/${characterId}/shortlist`, { spells }, authed()).then(r => r.data)
 // Returns { report, campaign }.
 export const endCampaignDay = (id) =>
   axios.post(`/api/campaigns/${id}/end-day`, {}, authed()).then(r => r.data)

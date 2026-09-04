@@ -35,7 +35,17 @@ public:
 #ifdef TESTING
         static void pushDiceRoll(int value);
         static void clearDiceRolls();
+        // The lottery's own mock queue — see lotteryRoll().
+        static void pushLotteryRoll(int value);
+        static void clearLotteryRolls();
 #endif
+
+        // A-2: the cast lottery's draw, 1..total. Deliberately NOT getRandom():
+        // that one serves the combat mock queue, and a scorer that drew from it
+        // would eat the rolls a combat test seeded. Same generator, so a
+        // GAME_RNG_SEED run still repeats; its own queue under TESTING, so a
+        // scoring test can pin the draw without touching the dice.
+        static int lotteryRoll(int total);
 
     private:
         // Declared BEFORE gen: statics in one translation unit initialise in
@@ -44,6 +54,7 @@ public:
         static std::mt19937 gen;
 #ifdef TESTING
         static std::queue<int> mockValues;
+        static std::queue<int> lotteryValues;
 #endif
         Utility() = delete;
         ~Utility() = delete;

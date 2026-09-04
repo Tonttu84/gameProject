@@ -21,6 +21,7 @@ import {
   bindSquadBanner,
   setCharacterHangBack,
   setChosenSpells,
+  setShortlist,
   forgeItem,
   buildConstruction,
   craftUnit,
@@ -122,6 +123,13 @@ const useCampaignStore = create((set, get) => ({
   // once, so choosing, reordering and clearing are all this one call.
   setChosenSpells: async (characterId, script) => {
     set({ campaign: await setChosenSpells(get().campaign.id, characterId, script) })
+  },
+
+  // The caster's shortlist (the casting AI, A-7) — the script's sibling, and
+  // the same one-call shape: the whole list goes over at once, so checking,
+  // unchecking and clearing are all this.
+  setShortlist: async (characterId, spells) => {
+    set({ campaign: await setShortlist(get().campaign.id, characterId, spells) })
   },
 
   // One forging (Construction slice C1). Prepare-only server-side, like the

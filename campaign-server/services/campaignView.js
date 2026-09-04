@@ -39,7 +39,7 @@ import { meterBand, meterFillAtShare, remainingBracket } from './meter.js'
 import { missionBlocker } from './missions.js'
 import { findCharter } from './charters.js'
 import { garrisonLevel } from './garrison.js'
-import { chosenSpellsView, isCasterType, pathEntries, researchView } from './magic.js'
+import { chosenSpellsView, isCasterType, pathEntries, researchView, shortlistView } from './magic.js'
 import { displayBracket } from './recon.js'
 import {
   forageCapacityKg, forageYieldMultiplier, applyForageModifiers, foldForageModifiers,
@@ -566,6 +566,15 @@ export async function campaignView(campaign) {
         // one for a swordsman who will never have a spell to put in it.
         ...(isCasterType(c.type)
           ? { chosenSpells: chosenSpellsView(c, campaign, getSpellCatalog()) }
+          : {}),
+        // …and the fence he improvises inside once those are spent (the
+        // casting AI, A-7). Beside chosenSpells and under the same rule: sent
+        // for casters only, so its ABSENCE is what tells the sheet not to draw
+        // the checklist at all. Rows arrive resolved and phrased like every
+        // other row on this screen, and the sentence about what an empty list
+        // means is the server's (17-5).
+        ...(isCasterType(c.type)
+          ? { shortlist: shortlistView(c, campaign, getSpellCatalog()) }
           : {}),
         // Why they cannot be re-kitted right now, or null (9-8/9-9). A phrase
         // rather than a boolean, because the client renders sentences it never

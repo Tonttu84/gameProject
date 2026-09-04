@@ -240,6 +240,37 @@ struct SpellForm {
     // registry about it, and AI-2's one-line-per-decision log needs it to say
     // WHICH spell scored what.
     const Spell* spell = nullptr;
+
+    // ── The casting AI's fields (A-3/A-4, slice AI-2) ────────────────────────
+
+    // What this form is WORTH, in unit-value units, for the target it would be
+    // handed — Dominions' per-spell AI evaluation, authored per form because a
+    // body's magnitude lives inside the body. PURE: no dice, no state change
+    // (test_scoring.cpp's sweep holds every one to it). Returns 0 for "nothing
+    // worth doing" (no target, no corpses). nullptr means the AI never chooses
+    // this form — and the roster sweep fails a form left without one, so a new
+    // spell cannot silently become one the AI ignores.
+    int (*worth)(const AUnit& caster, const Target& target) = nullptr;
+
+    // A-4: a manual override of the auto divider (see spellDivider()); 0 = auto.
+    // The user's knob for playtesting and modding — authored, never computed.
+    int aiDivider = 0;
+};
+
+// A-4: score = worth * AI_SCORE_SCALE / spellDivider(form). The auto divider
+// grows with the authored fatigue, the pool cost and the casting time, so a
+// cheap fast spell competes on ratio with a big slow one, and M-13's "spend
+// cheap" falls out of the arithmetic rather than needing a per-form control.
+int spellDivider(const SpellForm& form);
+
+// One thing a caster could do this tick: a form, the target the resolver would
+// hand it, and what the scorer makes of that. The lottery (A-2) draws over
+// these; the script (A-6) takes the max.
+struct CastOption {
+    const Spell*     spell = nullptr;
+    const SpellForm* form  = nullptr;
+    Target           target;
+    int              score = 0;
 };
 
 struct Spell {

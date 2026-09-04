@@ -124,17 +124,19 @@ public:
     // effect bodies in SpellList.cpp only target and apply.
     void castSpells();
 
-    // M-22's priority walk, replacing R0's deliberately dumb "first castable in
-    // roster order". Walks this unit's ordered default list, skips what its
-    // paths or the army's school level disallow, and returns the most POWERFUL
-    // FORM it qualifies for (M-13). Kept separate from castSpells() so slice 4
-    // can swap the list for a player-authored script without touching gating —
-    // the walk already IS a script, which is the point of M-22.
+    // What this caster WOULD cast right now, deterministically — the scorer's
+    // max with no lottery and no cursor advance (AI-2). It was M-22's priority
+    // walk until the scorer replaced the walk; what remains is the PROBE: the
+    // pending script line that clears the floor, else the best of the
+    // shortlist/roster pool. Tests and the lab read it; castSpells() does not.
     //
     // NOTE there is deliberately no affordability test: under M-2 nothing is
-    // unaffordable, so fatigue never blocks selection. A caster may cast
-    // himself into the overflow and bleed for it.
+    // unaffordable, so fatigue never blocks selection (the floor is about
+    // WORTH, never about what the caster can pay). A caster may cast himself
+    // into the overflow and bleed for it.
     const SpellForm* chooseSpellToCast(const Spell** outSpell) const;
+    // The opening sequence as set (A-6) — the ids in order, for tests and views.
+    const std::vector<const Spell*>& getScript() const { return _spells; }
 
     // ── Spell paths (M-3, M-5) ───────────────────────────────────────────────
     // Rolled at hire and then fixed; they ride the placement entry for BOTH
@@ -157,6 +159,20 @@ public:
     // id the roster does not know is skipped, and a repeat of one already
     // chosen is ignored rather than duplicating the entry.
     void setChosenSpells(const std::vector<std::string>& spellIds);
+
+    // ── The casting AI (A-2..A-7, slice AI-2) ─────────────────────────────────
+    // The SHORTLIST: what the post-script lottery may draw from (A-7). Empty
+    // means the whole castable roster; so does "every entry is worth nothing"
+    // — one mechanic for both, and idle if even the roster clears nothing.
+    void setShortlist(const std::vector<std::string>& spellIds);
+    const std::vector<const Spell*>& getShortlist() const { return _shortlist; }
+    // A-5: the wire's `value`, clamped — a character's worth to the scorer,
+    // computed where items live and read here as a number.
+    void setValue(int value);
+    // How far the opening sequence has run (A-6): the next line to try.
+    size_t scriptCursor() const { return _scriptCursor; }
+    // The target chosen when the current channel began, for tests and the lab.
+    const AUnit* channelTarget() const { return _channelTarget; }
     bool hasAnyPath() const;
 
     // M-10's formula, reading the PRIMARY path (M-20) and halved for a
@@ -185,6 +201,8 @@ public:
     // completion, M-11's draw from the army-wide banner pool, M-24's second
     // effect for Low. One place, so the two completion paths cannot drift.
     void completeCast();
+    // Start channelling a chosen option, logging what was weighed (A-2's one line).
+    void beginChannel(const CastOption& chosen, const std::vector<CastOption>& weighed);
 
     int getCast() const;
     void setCast(int setCast);
@@ -639,6 +657,14 @@ protected:
     // cast time against its paths and the army's school level, not here, because
     // research (M-6) and the encounter (M-19) can both move that line mid-campaign.
     std::vector<const Spell*> _spells;
+    // A-7: the post-script pool, or empty for "the whole roster".
+    std::vector<const Spell*> _shortlist;
+    // A-6: the opening sequence's cursor — each scripted line gets ONE turn,
+    // whether it fires, is skipped as worthless, or is dropped mid-channel.
+    size_t _scriptCursor = 0;
+    // The target the scorer chose when this channel began (A-1): re-validated
+    // at completion and re-resolved if it is gone, never dereferenced blind.
+    AUnit* _channelTarget = nullptr;
 
     // Path levels, indexed by SpellPath. Zero everywhere = not a caster.
     std::array<int, SPELL_PATH_COUNT> _pathLevels{};

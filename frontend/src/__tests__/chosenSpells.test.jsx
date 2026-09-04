@@ -11,6 +11,10 @@
  *   • the section stays live while its owner is AWAY (S4-4), unlike every other
  *     control on this page, because a mage's own judgement is not an order sent
  *     to the field.
+ *
+ * The SHORTLIST (the casting AI, A-7) is here too, beneath them, because it is
+ * the same subject one step later — what he improvises with once the slots are
+ * spent — and it shares this file's fixtures rather than copying them.
  */
 
 import React from 'react'
@@ -41,11 +45,12 @@ vi.mock('../services/api', () => ({
   attachCharacter: vi.fn(),
   setCharacterHangBack: vi.fn(),
   setChosenSpells: vi.fn(),
+  setShortlist: vi.fn(),
   equipCharacterItem: vi.fn(),
   unequipCharacterItem: vi.fn(),
 }))
 
-import { getInfo, getMap, getCampaigns, setChosenSpells } from '../services/api'
+import { getInfo, getMap, getCampaigns, setChosenSpells, setShortlist } from '../services/api'
 import App from '../App'
 import { campaignFixture } from './fixtures/campaign'
 import { openCharacterSheet } from './helpers/nav'
@@ -82,6 +87,8 @@ const WINDS = {
   battlefield: true, poolCost: 2, poolLine: POOL_LINE,
 }
 
+const SHORTLIST_LINE = 'Left empty, Isolde may reach for anything he can cast.'
+
 const character = (over = {}) => ({
   id: 1,
   name: 'Isolde',
@@ -97,6 +104,10 @@ const character = (over = {}) => ({
   paths: [{ path: 'fire', label: 'Fire', level: 2 }],
   awayBlocker: null,
   chosenSpells: { max: 3, chosen: [], options: [EMBER, MIST, SNARE] },
+  // The shortlist block's own view (A-7), sent for the same casters and under
+  // the same absence rule. `line` is the server's sentence about what an empty
+  // list does; the page prints it and composes nothing (17-5).
+  shortlist: { max: 2, chosen: [], options: [EMBER, MIST, SNARE], line: SHORTLIST_LINE },
   ...over,
 })
 
@@ -117,6 +128,9 @@ beforeEach(() => {
   getInfo.mockResolvedValue(info)
   getMap.mockResolvedValue({ hexes: [] })
   setChosenSpells.mockImplementation(async () => ({
+    ...campaignFixture, characters: [character()], items: [],
+  }))
+  setShortlist.mockImplementation(async () => ({
     ...campaignFixture, characters: [character()], items: [],
   }))
 })
@@ -159,10 +173,13 @@ describe('the slots', () => {
   })
 
   it('is absent entirely for someone who will never cast', async () => {
-    const { chosenSpells: _none, ...noCaster } = character()
-    await open({ ...noCaster, chosenSpells: undefined })
+    const { chosenSpells: _none, shortlist: _neither, ...noCaster } = character()
+    await open({ ...noCaster, chosenSpells: undefined, shortlist: undefined })
     expect(screen.queryByTestId('sheet-spell-1-0')).not.toBeInTheDocument()
     expect(screen.queryByTestId('sheet-nospells-1')).not.toBeInTheDocument()
+    // The checklist goes with them: absence is what tells the sheet not to draw
+    // a section at all, for both lists.
+    expect(screen.queryByTestId('sheet-shortlist-1')).not.toBeInTheDocument()
   })
 })
 
@@ -252,5 +269,70 @@ describe('who may change it (S4-4)', () => {
   it('is read-only for the dead — a record takes no orders', async () => {
     await open({ alive: false, diedDay: 4 })
     expect(screen.getByTestId('sheet-spell-1-0')).toBeDisabled()
+  })
+})
+
+// THE SHORTLIST (docs/CAMPAIGN_PLAN.md "THE CASTING AI", A-7) — the checklist
+// beneath the slots. A different control for a different mechanic: the engine
+// draws from this by lottery (A-2), so a box is membership and nothing more,
+// and the list it posts is unordered.
+describe('the shortlist (A-7)', () => {
+  const tick = (spell) => fireEvent.click(screen.getByTestId(`sheet-shortlist-1-${spell}`))
+  const fenced = () => setShortlist.mock.calls.at(-1)[2]
+
+  it('offers a box per spell he can improvise with, ticked where he is fenced', async () => {
+    await open({ shortlist: { max: 2, chosen: [MIST], options: [EMBER, MIST], line: SHORTLIST_LINE } })
+    expect(screen.getByTestId('sheet-shortlist-1-mist')).toBeChecked()
+    expect(screen.getByTestId('sheet-shortlist-1-fireball')).not.toBeChecked()
+  })
+
+  it('prints the server\'s sentence about an empty list, and composes none of its own', async () => {
+    // The one thing about this control a player cannot guess by looking: empty
+    // is the WIDEST setting, not the narrowest.
+    await open()
+    expect(screen.getByTestId('sheet-shortlistnote-1')).toHaveTextContent(SHORTLIST_LINE)
+  })
+
+  it('ticking sends the whole list, with the new id on it', async () => {
+    await open({ shortlist: { max: 2, chosen: [EMBER], options: [EMBER, MIST], line: SHORTLIST_LINE } })
+    tick('mist')
+    await waitFor(() => expect(setShortlist).toHaveBeenCalled())
+    expect(fenced()).toEqual(['fireball', 'mist'])
+  })
+
+  it('unticking sends the list without it — clearing is just a shorter list', async () => {
+    await open({ shortlist: { max: 2, chosen: [EMBER, MIST], options: [EMBER, MIST], line: SHORTLIST_LINE } })
+    tick('fireball')
+    await waitFor(() => expect(setShortlist).toHaveBeenCalled())
+    expect(fenced()).toEqual(['mist'])
+  })
+
+  it('at the cap the unticked boxes disable, and the ticked ones still untick', async () => {
+    // Greyed rather than gone: what he could still have been fenced to is worth
+    // seeing, and a list that reflows as it fills is worse to use than one that
+    // greys. Unticking must stay possible or the cap is a trap.
+    await open({
+      shortlist: { max: 2, chosen: [EMBER, MIST], options: [EMBER, MIST, SNARE], line: SHORTLIST_LINE },
+    })
+    expect(screen.getByTestId('sheet-shortlist-1-briar_snare')).toBeDisabled()
+    expect(screen.getByTestId('sheet-shortlist-1-fireball')).not.toBeDisabled()
+  })
+
+  it('draws nothing at all when there is nothing he could improvise with', async () => {
+    // A caster whose only castable spell is a battlefield global has an EMPTY
+    // options list server-side (E-3), and an empty checklist is a control that
+    // can do nothing — so it is not drawn.
+    await open({ shortlist: { max: 2, chosen: [], options: [], line: SHORTLIST_LINE } })
+    expect(screen.queryByTestId('sheet-shortlist-1')).not.toBeInTheDocument()
+  })
+
+  it('stays live while the caster is away, like the slots above it (S4-4)', async () => {
+    await open({ awayBlocker: 'Away on a mission', squadId: 1 })
+    expect(screen.getByTestId('sheet-shortlist-1-fireball')).not.toBeDisabled()
+  })
+
+  it('is read-only for the dead — a record takes no orders', async () => {
+    await open({ alive: false, diedDay: 4 })
+    expect(screen.getByTestId('sheet-shortlist-1-fireball')).toBeDisabled()
   })
 })

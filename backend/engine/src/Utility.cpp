@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "Utility.hpp"
 #include "Battlefield.hpp"
 
@@ -48,7 +49,22 @@ int Utility::throwDice()
     unsigned int Utility::rngSeed() { return seed; }
 #ifdef TESTING
     std::queue<int> Utility::mockValues;
+    std::queue<int> Utility::lotteryValues;
 #endif
+
+    int Utility::lotteryRoll(int total)
+    {
+        if (total < 1) total = 1;
+#ifdef TESTING
+        if (!lotteryValues.empty()) {
+            int val = lotteryValues.front();
+            lotteryValues.pop();
+            return std::clamp(val, 1, total);
+        }
+#endif
+        std::uniform_int_distribution<int> dist(1, total);
+        return dist(gen);
+    }
 
     int Utility::getRandom(int lowerBound, int upperBound)
     {
@@ -68,6 +84,16 @@ int Utility::throwDice()
     void Utility::pushDiceRoll(int value)
     {
         mockValues.push(value);
+    }
+
+    void Utility::pushLotteryRoll(int value)
+    {
+        lotteryValues.push(value);
+    }
+
+    void Utility::clearLotteryRolls()
+    {
+        while (!lotteryValues.empty()) lotteryValues.pop();
     }
 
     void Utility::clearDiceRolls()

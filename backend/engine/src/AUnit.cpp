@@ -598,20 +598,23 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	void AUnit::assignSpells(std::string_view unitTypeName)
 	{
 		(void) unitTypeName;
-		// The default list is the whole roster in priority order — the implicit
-		// script of M-22. What this unit may actually cast is decided per cast
-		// against its paths and the army's school level, NOT filtered here:
-		// research (M-6) and the encounter (M-19) both move that line while the
-		// unit is alive, and paths arrive from the placement entry after
-		// construction anyway.
-		_spells = Spells::defaultScript();
+		// A-6/A-7: an unscripted caster has NO opening sequence. The roster is
+		// the lottery's pool (Spells::defaultScript(), read at cast time), not a
+		// script to walk once — which is what seeding it here used to make it.
+		// What this unit may actually cast is still decided per cast against
+		// its paths and the army's school level (M-6, M-19).
+		_spells.clear();
+		_shortlist.clear();
+		_scriptCursor = 0;
 	}
 
 	void AUnit::setChosenSpells(const std::vector<std::string>& spellIds)
 	{
-		// S4-1: the chosen ones lead, the rest of the roster follows in its own
-		// order. Rebuilt from the default list every call rather than shuffled
-		// in place, so setting a list twice cannot compound.
+		// A-6 (amending S4-1's reading): the chosen ones are an OPENING SEQUENCE,
+		// each line tried once in order, and nothing follows them here — past
+		// the last line the caster is in the lottery's hands (A-7), where the
+		// roster is the pool. Rebuilt from scratch every call, so setting a
+		// list twice cannot compound; repeats are dropped.
 		std::vector<const Spell*> ordered;
 		for (const std::string& id : spellIds) {
 			const Spell* s = Spells::findSpell(id);
@@ -621,13 +624,32 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 				if (seen == s) { already = true; break; }
 			if (!already) ordered.push_back(s);
 		}
-		for (const Spell* s : Spells::defaultScript()) {
-			bool chosen = false;
-			for (const Spell* seen : ordered)
-				if (seen == s) { chosen = true; break; }
-			if (!chosen) ordered.push_back(s);
-		}
 		_spells = std::move(ordered);
+		_scriptCursor = 0;
+	}
+
+	void AUnit::setShortlist(const std::vector<std::string>& spellIds)
+	{
+		// Same discipline as the script: unknown ids skipped, repeats dropped.
+		// A battlefield spell is script-only (E-3) and is dropped here too — the
+		// lottery must never be able to spend the army's pool on its own.
+		std::vector<const Spell*> ordered;
+		for (const std::string& id : spellIds) {
+			const Spell* s = Spells::findSpell(id);
+			if (!s || Spells::isBattlefieldSpell(*s)) continue;
+			bool already = false;
+			for (const Spell* seen : ordered)
+				if (seen == s) { already = true; break; }
+			if (!already) ordered.push_back(s);
+		}
+		_shortlist = std::move(ordered);
+	}
+
+	void AUnit::setValue(int value)
+	{
+		if (value < 1) value = 1;
+		if (value > AI_VALUE_CAP) value = AI_VALUE_CAP;
+		unitValue = value;
 	}
 
 	int AUnit::getPathLevel(SpellPath p) const
@@ -707,40 +729,57 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 
 	const SpellForm* AUnit::chooseSpellToCast(const Spell** outSpell) const
 	{
-		// M-22: walk the ordered list, take the most POWERFUL form qualified for
-		// (M-13), skip what the gates disallow. No affordability test exists —
-		// see the note on the declaration.
-		for (const Spell* s : _spells) {
-			if (!s) continue;
-			// E-4: once per side PER BATTLE for a battlefield-wide enchantment. A
-			// side that has already called one may not call it again, even
-			// after the instance ended with its sustainer. The skip is of the
-			// whole SPELL, not of a form, and it falls through to this
-			// caster's next line — M-22's walk doing what it already does with
-			// a line it cannot use, rather than a new kind of failure.
-			if (Spells::isBattlefieldSpell(*s)
-			    && Utility::getBattlefield().enchantmentCastAlready(getTeam(), *s))
-				continue;
-			const SpellForm* best = nullptr;
-			for (const SpellForm& f : s->forms)
-				if (Spells::qualifies(*this, f)) best = &f;  // later forms are stronger
-			if (best) {
-				if (outSpell) *outSpell = s;
-				return best;
+		// The probe (see the declaration): the same decision castSpells() makes,
+		// taken at the MAX and without moving the cursor or rolling the lottery.
+		Battlefield& field = Utility::getBattlefield();
+		auto callable = [&](const Spell* s) {
+			return s && !(Spells::isBattlefieldSpell(*s)
+			              && field.enchantmentCastAlready(getTeam(), *s));
+		};
+		auto bestOf = [&](const std::vector<CastOption>& options) -> const CastOption* {
+			const CastOption* best = nullptr;
+			for (const CastOption& o : options)
+				if (!best || o.score > best->score) best = &o;
+			return best;
+		};
+		// A-6: the first pending line that clears the floor is what fires next.
+		for (size_t i = _scriptCursor; i < _spells.size(); ++i) {
+			if (!callable(_spells[i])) continue;
+			std::vector<CastOption> options = Spells::optionsFor(*this, *_spells[i], AI_SCRIPT_FLOOR);
+			if (const CastOption* best = bestOf(options)) {
+				if (outSpell) *outSpell = best->spell;
+				return best->form;
 			}
 		}
-		return nullptr;
+		// A-7: then the pool — the shortlist, widening to the roster.
+		auto probePool = [&](const std::vector<const Spell*>& pool) -> const CastOption* {
+			static std::vector<CastOption> all;   // the probe is const; keep the storage here
+			all.clear();
+			for (const Spell* sp : pool) {
+				if (!callable(sp)) continue;
+				std::vector<CastOption> options = Spells::optionsFor(*this, *sp, AI_LOTTERY_FLOOR);
+				all.insert(all.end(), options.begin(), options.end());
+			}
+			return bestOf(all);
+		};
+		const CastOption* best = _shortlist.empty() ? probePool(Spells::defaultScript())
+		                                            : probePool(_shortlist);
+		if (!best && !_shortlist.empty()) best = probePool(Spells::defaultScript());
+		if (!best) return nullptr;
+		if (outSpell) *outSpell = best->spell;
+		return best->form;
 	}
 
 	void AUnit::castSpells()
 	{
 		if (!alive || broken) {
 			// A dropped channel is simply lost; nothing was paid for it (M-23).
-			_channelSpell = nullptr;
-			_channelForm  = nullptr;
+			_channelSpell  = nullptr;
+			_channelForm   = nullptr;
+			_channelTarget = nullptr;
 			return;
 		}
-		if (_spells.empty() || !hasAnyPath()) return;
+		if (!hasAnyPath()) return;
 
 		// Already channelling: burn a tick, and fire when the last one is spent.
 		if (isChannelling()) {
@@ -750,23 +789,101 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			return;
 		}
 
-		// No hex gate here: spells that need the caster placed on the grid
-		// (fireball's range check, raise_dead's neighbor scan) check it in
-		// their own bodies — bless works from anywhere, as it always has.
-		const Spell* chosen = nullptr;
-		const SpellForm* form = chooseSpellToCast(&chosen);
-		if (!form) return;
-		_channelSpell = chosen;
-		_channelForm  = form;
+		Battlefield& field = Utility::getBattlefield();
+		auto callable = [&](const Spell* s) {
+			// E-4: a battlefield enchantment this side has already called is not
+			// an option, even after its instance ended with its sustainer.
+			return s && !(Spells::isBattlefieldSpell(*s)
+			              && field.enchantmentCastAlready(getTeam(), *s));
+		};
+
+		// ── A-6: the opening sequence ─────────────────────────────────────────
+		// Each scripted line gets exactly one turn, in order: it fires if the
+		// best it can do clears the sanity floor, and is skipped in the same
+		// tick if not — a dead line (nobody wounded, nobody in range) costs no
+		// tick, which is M-26's no-target fall-through generalised. Within the
+		// line the scorer picks the form and the target by MAX, never by
+		// lottery: the script is the player's order (A-6), so the randomness
+		// belongs to what comes after it.
+		while (_scriptCursor < _spells.size()) {
+			const Spell* line = _spells[_scriptCursor++];
+			if (!callable(line)) continue;
+			std::vector<CastOption> options = Spells::optionsFor(*this, *line, AI_SCRIPT_FLOOR);
+			if (options.empty()) continue;
+			const CastOption* best = &options.front();
+			for (const CastOption& o : options)
+				if (o.score > best->score) best = &o;
+			beginChannel(*best, options);
+			return;
+		}
+
+		// ── A-7: the lottery over the shortlist, the roster, or nothing ───────
+		// The shortlist narrows the pool and is never a cage: empty, or every
+		// entry worth nothing, and the pool widens to the whole castable roster
+		// (which excludes the script-only globals, E-3). If even that clears
+		// the floor for nobody, the caster idles — a wasted cast is worse than
+		// no cast (user: "it is fine to skip if nothing makes sense at all").
+		auto gather = [&](const std::vector<const Spell*>& pool) {
+			std::vector<CastOption> all;
+			for (const Spell* s : pool) {
+				if (!callable(s)) continue;
+				std::vector<CastOption> options = Spells::optionsFor(*this, *s, AI_LOTTERY_FLOOR);
+				all.insert(all.end(), options.begin(), options.end());
+			}
+			return all;
+		};
+		std::vector<CastOption> options = _shortlist.empty()
+			? gather(Spells::defaultScript())
+			: gather(_shortlist);
+		if (options.empty() && !_shortlist.empty())
+			options = gather(Spells::defaultScript());
+		if (options.empty()) return;
+
+		// A-2: every option holds tickets in proportion to its score, so the
+		// best is likeliest and never certain — the "sometimes" that lets a
+		// kitted supercombatant draw a cast it would not win on the max.
+		int total = 0;
+		for (const CastOption& o : options) total += o.score;
+		int roll = Utility::lotteryRoll(total);
+		const CastOption* drawn = &options.back();
+		for (const CastOption& o : options) {
+			roll -= o.score;
+			if (roll <= 0) { drawn = &o; break; }
+		}
+		beginChannel(*drawn, options);
+	}
+
+	void AUnit::beginChannel(const CastOption& chosen, const std::vector<CastOption>& weighed)
+	{
+		_channelSpell  = chosen.spell;
+		_channelForm   = chosen.form;
+		_channelTarget = chosen.target.unit;
+
+		// One Detail-tier line per decision (A-2): the top few options by score
+		// and what was taken, so a bad choice is debuggable from the replay
+		// rather than from a re-read of the scorer. Detail, like the wind-up
+		// line below it (L-2) — the cast itself stays Basic.
+		std::vector<const CastOption*> top;
+		for (const CastOption& o : weighed) top.push_back(&o);
+		std::sort(top.begin(), top.end(),
+			[](const CastOption* a, const CastOption* b) { return a->score > b->score; });
+		std::string line = logName() + " weighs ";
+		for (size_t i = 0; i < top.size() && i < static_cast<size_t>(AI_LOG_TOP); ++i) {
+			if (i) line += ", ";
+			line += std::string(top[i]->form->label) + " " + std::to_string(top[i]->score);
+		}
+		line += " — " + std::string(chosen.form->label);
+		Utility::getBattlefield().logEvent(LogTier::Detail, line);
+
 		// A caster BEGINNING to channel is Detail (L-2) — the user asked to see
 		// "mages preparing to cast" a tier below the cast itself. The cast line
 		// on completeCast() stays Basic, so a spell that fires is always visible
 		// and only the wind-up needs the deeper setting.
 		Utility::getBattlefield().logEvent(LogTier::Detail,
-			logName() + " begins to channel " + std::string(form->label));
+			logName() + " begins to channel " + std::string(chosen.form->label));
 		// Minimum one turn (M-23) — nothing casts instantly, so even the
 		// cheapest spell occupies its caster for a tick.
-		setCast(form->castingTime > 1 ? form->castingTime : 1);
+		setCast(chosen.form->castingTime > 1 ? chosen.form->castingTime : 1);
 		// The tick that starts a channel is spent starting it; the spell fires
 		// on a later tick, when the count runs out.
 		if (cast > 0) setCast(cast - 1);
@@ -775,10 +892,12 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 
 	void AUnit::completeCast()
 	{
-		const Spell*     spell = _channelSpell;
-		const SpellForm* form  = _channelForm;
-		_channelSpell = nullptr;
-		_channelForm  = nullptr;
+		const Spell*     spell  = _channelSpell;
+		const SpellForm* form   = _channelForm;
+		AUnit*           wanted = _channelTarget;
+		_channelSpell  = nullptr;
+		_channelForm   = nullptr;
+		_channelTarget = nullptr;
 		if (!form) return;
 
 		// Try the chosen form, then CYCLE DOWN through this spell's weaker forms
@@ -794,7 +913,18 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		// declared kind and pick, and handed to a body that now only applies an
 		// effect. Resolution reads the field and rolls nothing, so asking costs
 		// exactly what the old in-body search cost.
-		Target chosenTarget = Spells::chooseTarget(*this, *form);
+		// A-1/A-2: the scorer chose a target when the channel began, and the
+		// body gets THAT one if it still stands — the option that was weighed is
+		// the option that fires. It is never dereferenced blind: membership in
+		// the form's live candidates is the only check, by address, so a body
+		// that died and was pruned since simply fails it. Gone, and the form
+		// re-resolves by its own pick, as it would have before AI-2.
+		Target chosenTarget;
+		if (wanted) {
+			for (AUnit* u : Spells::candidates(*this, *form))
+				if (u == wanted) { chosenTarget.unit = u; break; }
+		}
+		if (!chosenTarget.unit) chosenTarget = Spells::chooseTarget(*this, *form);
 		const SpellForm* fired = form->cast(*this, chosenTarget) ? form : nullptr;
 		if (!fired && spell) {
 			size_t start = spell->forms.size();
@@ -1019,6 +1149,9 @@ void AUnit::restoreForNextBattle()
 	// during a fight, and says nothing about the next one. A survivor carried
 	// into another battle is a legal target again.
 	_activeBuffs.clear();
+	// A-6: the opening sequence is per battle; the channel target never survives one.
+	_scriptCursor  = 0;
+	_channelTarget = nullptr;
 }
 
 	void AUnit::addFatigue(int amount)

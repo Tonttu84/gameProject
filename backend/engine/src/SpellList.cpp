@@ -471,6 +471,14 @@ std::string_view spellSchoolName(SpellSchool s)
     return kSchoolNames[static_cast<size_t>(s)];
 }
 
+int spellDivider(const SpellForm& form)
+{
+    if (form.aiDivider > 0) return form.aiDivider;   // A-4: the authored override wins
+    int cost  = form.fatigue + form.poolCost * AI_POOL_COST_WEIGHT;
+    int ticks = form.castingTime > 1 ? form.castingTime : 1;
+    return std::max(1, ticks * (AI_DIVIDER_BASE + cost / AI_FATIGUE_PER_DIVIDER));
+}
+
 std::string_view targetKindName(TargetKind k)
 {
     return kTargetKindNames[static_cast<size_t>(k)];
@@ -622,6 +630,147 @@ std::string drainLife()
 
 }  // namespace
 
+// ── what each form is worth (A-3, slice AI-2) ────────────────────────────────
+//
+// Expected effect in UNIT-VALUE units for the target the resolver would hand
+// the body, written per form because the magnitude lives inside the body.
+// Damage: expected damage × the target's value (A-3), hit chance included.
+// A standing effect: a share of its bearer. Relief: what would actually be
+// washed off. Every one is PURE — it reads the field and rolls nothing.
+
+static int worthDamage(int damage, int hitPct, const Target& t)
+{
+    if (!t.unit || damage <= 0) return 0;
+    return damage * hitPct * t.unit->getValue() / (100 * AI_DAMAGE_SCALE);
+}
+
+static int worthEmber(const AUnit& c, const Target& t)
+{
+    return worthDamage(EMBER_DAMAGE + c.getPathLevel(SpellPath::Fire), c.getAccuracy(), t);
+}
+
+static int worthFireball(const AUnit& c, const Target& t)
+{
+    // The blast lands on the same hex: half the splash is a fair expectation
+    // of what else stands there.
+    int dmg = FIREBALL_CENTRE + c.getPathLevel(SpellPath::Fire)
+            + FIREBALL_SECONDARY * FIREBALL_BLAST / 2;
+    return worthDamage(dmg, c.getAccuracy(), t);
+}
+
+static int worthShock(const AUnit& c, const Target& t)
+{
+    return worthDamage(SHOCK_DAMAGE + c.getPathLevel(SpellPath::Air), SHOCK_ACCURACY, t);
+}
+
+static int worthDrainLife(const AUnit& c, const Target& t)
+{
+    int drain = DRAIN_DAMAGE + c.getPathLevel(SpellPath::Unholy);
+    int worth = worthDamage(drain, c.getAccuracy(), t);
+    // Half of what lands comes back — worth something only to a wounded caster.
+    if (worth > 0 && c.getHp() < c.getmaxHP())
+        worth += (drain / 2) * c.getValue() / AI_DAMAGE_SCALE;
+    return worth;
+}
+
+static int worthBriarSnare(const AUnit& c, const Target& t)
+{
+    int fatigue = SNARE_FATIGUE + c.getPathLevel(SpellPath::Nature) * 5;
+    return worthDamage(fatigue / AI_FATIGUE_PER_DAMAGE, 100, t);
+}
+
+// A buff's candidates already exclude a body carrying it (A-8), so a fresh
+// target is worth a share of itself and the marked ones never reach here.
+static int worthBuff(const AUnit&, const Target& t)
+{
+    return t.unit ? t.unit->getValue() * AI_BUFF_WORTH_PCT / 100 : 0;
+}
+
+static int worthSoothingCurrent(const AUnit& c, const Target& t)
+{
+    if (!t.unit || t.unit->getFatigue() <= 0) return 0;
+    int relief = std::min(t.unit->getFatigue(),
+                          SOOTHING_RELIEF + c.getPathLevel(SpellPath::Water) * 5);
+    return (relief / AI_FATIGUE_PER_DAMAGE) * t.unit->getValue() / AI_DAMAGE_SCALE;
+}
+
+static int worthHexOfFrailty(const AUnit& c, const Target& t)
+{
+    if (!t.unit) return 0;
+    // M-24: the bargain takes LOW_BLOOD_PRICE from your own side, and the
+    // caster's own value stands in for whoever ends up paying it.
+    int worth = t.unit->getValue() * AI_DEBUFF_WORTH_PCT / 100;
+    return worth - LOW_BLOOD_PRICE * c.getValue() / AI_DAMAGE_SCALE;
+}
+
+// One man's worth of blessing: un-breaking him is worth most of him, a wound
+// closed is worth what the heal would restore, a whole man is worth nothing.
+static int blessWorthOf(const AUnit& u)
+{
+    if (u.getBroken()) return u.getValue() * AI_RALLY_WORTH_PCT / 100;
+    int missing = u.getmaxHP() - u.getHp();
+    if (missing <= 0) return 0;
+    return std::min(missing, AI_HEAL_AVG) * u.getValue() / AI_DAMAGE_SCALE;
+}
+
+static int worthBless(const AUnit&, const Target& t)
+{
+    return t.unit ? blessWorthOf(*t.unit) : 0;
+}
+
+static int worthGreaterBless(const AUnit& c, const Target& t)
+{
+    int reach = GREATER_BLESS_BASE + c.getPathLevel(SpellPath::Holy);
+    int worth = 0, helped = 0;
+    for (const AUnit* u : t.units) {
+        if (helped >= reach) break;
+        int w = blessWorthOf(*u);
+        if (w <= 0) continue;
+        worth += w;
+        ++helped;
+    }
+    return worth;
+}
+
+static int worthRaiseSkeleton(const AUnit& c, const Target&)
+{
+    return c.getHex() ? AI_SKELETON_WORTH : 0;
+}
+
+static int worthRaiseDead(const AUnit& c, const Target&)
+{
+    if (!c.getHex()) return 0;
+    size_t want = static_cast<size_t>(RAISE_DEAD_BODIES + c.getPathLevel(SpellPath::Death) / 3);
+    if (Utility::getBattlefield().getCorpses() < want) return 0;   // the body would fail (M-26)
+    return static_cast<int>(want) * AI_ZOMBIE_WORTH;
+}
+
+// A battlefield enchantment is script-only (E-3), so its worth only ever meets
+// the script floor: a flat number that says "worth calling", nothing finer.
+static int worthGlobal(const AUnit&, const Target&)
+{
+    return AI_GLOBAL_WORTH;
+}
+
+// The worth each row carries, looked up by spell id and form name so the table
+// below stays positional and untouched — the same reasoning as the back-pointer.
+static int (*worthFor(std::string_view spellId, std::string_view formName))(const AUnit&, const Target&)
+{
+    if (spellId == "fireball")         return formName == "major" ? worthFireball : worthEmber;
+    if (spellId == "shock")            return worthShock;
+    if (spellId == "stoneskin")        return worthBuff;
+    if (spellId == "soothing_current") return worthSoothingCurrent;
+    if (spellId == "ward")             return worthBuff;
+    if (spellId == "briar_snare")      return worthBriarSnare;
+    if (spellId == "soothing_winds")   return worthGlobal;
+    if (spellId == "hex_of_frailty")   return worthHexOfFrailty;
+    if (spellId == "raise_dead")       return formName == "major" ? worthRaiseDead : worthRaiseSkeleton;
+    if (spellId == "leaden_air")       return worthGlobal;
+    if (spellId == "bless")            return formName == "major" ? worthGreaterBless : worthBless;
+    if (spellId == "drain_life")       return worthDrainLife;
+    return nullptr;   // the roster sweep in test_scoring.cpp fails on this
+}
+
 // ── the roster ────────────────────────────────────────────────────────────────
 
 namespace Spells
@@ -632,9 +781,10 @@ namespace Spells
     // raise_dead are not unique, they are the first three entries of a real
     // roster.
     //
-    // Within a spell, forms run WEAKEST FIRST: chooseSpellToCast() takes the
-    // last one the caster qualifies for, which is how M-13's "the AI takes the
-    // most powerful form" is enforced by the table's own order.
+    // Within a spell, forms run WEAKEST FIRST: M-26's fall-through at cast time
+    // cycles DOWN the table when the chosen form fails, so the order is what
+    // makes a fallback exist. Since AI-2 the form itself is CHOSEN BY SCORE
+    // (optionsFor keeps the best-scoring form per target), not by position.
     const std::vector<Spell>& roster()
     {
         using P = SpellPath;
@@ -757,7 +907,11 @@ namespace Spells
         // out of sync with the spell it sits under.
         static const bool wired = [] {
             for (Spell& spell : table)
-                for (SpellForm& form : spell.forms) form.spell = &spell;
+                for (SpellForm& form : spell.forms) {
+                    form.spell = &spell;
+                    // A-3: and what it is worth, by the same lookup discipline.
+                    form.worth = worthFor(spell.id, form.name);
+                }
             return true;
         }();
         (void) wired;
@@ -815,12 +969,14 @@ namespace Spells
 
         case TargetKind::AllyUnit:
         case TargetKind::AllyTeam:
-            // NO range check, the caster INCLUDED: exactly what findAllyToAid
-            // did, and a Ward still lands on a man across the map. Whether a
-            // boon should carry a range is one of the questions the deferred
-            // targeting front owns; AI-1 does not answer it.
+            // NO range check, NO hex check, the caster INCLUDED: bless and
+            // soothing_current never asked for a hex (only findAllyToAid did),
+            // and a boon needs no position to land — a Ward still reaches a
+            // man across the map. Whether a boon should carry a range is one of
+            // the questions the deferred targeting front owns; AI-1 does not
+            // answer it, and AI-2 restored the hexless case AI-1 had narrowed.
             for (const auto& u : field.getTeam(myTeam)) {
-                if (!u || !u->getAlive() || !u->getHex()) continue;
+                if (!u || !u->getAlive()) continue;
                 // A-8's refresh rule, and the whole of it: a man already
                 // carrying this spell is not a candidate for it again.
                 if (form.buff && form.spell && u->hasBuff(form.spell->id)) continue;
@@ -914,6 +1070,47 @@ namespace Spells
         for (const SpellForm& f : s.forms)
             if (f.enchantAim != EnchantAim::None) return true;
         return false;
+    }
+
+    // ── the scorer (A-1..A-7) ────────────────────────────────────────────────
+
+    int scoreOf(const AUnit& caster, const SpellForm& form, const Target& target)
+    {
+        if (!form.worth) return 0;
+        int worth = form.worth(caster, target);
+        if (worth <= 0) return 0;
+        return worth * AI_SCORE_SCALE / spellDivider(form);
+    }
+
+    std::vector<CastOption> optionsFor(const AUnit& caster, const Spell& spell, int floor)
+    {
+        // Best form per target: the key is the target unit (nullptr for the
+        // kinds that hand over none), and a later form only replaces an earlier
+        // one when it scores higher — never merely because it is stronger.
+        std::vector<CastOption> best;
+        auto offer = [&](const SpellForm& form, Target target) {
+            int score = scoreOf(caster, form, target);
+            if (score < floor || score <= 0) return;
+            for (CastOption& o : best)
+                if (o.target.unit == target.unit) {
+                    if (score > o.score) { o.form = &form; o.target = std::move(target); o.score = score; }
+                    return;
+                }
+            best.push_back({ &spell, &form, std::move(target), score });
+        };
+        for (const SpellForm& form : spell.forms) {
+            if (!qualifies(caster, form)) continue;
+            if (form.target == TargetKind::EnemyUnit || form.target == TargetKind::AllyUnit) {
+                for (AUnit* u : candidates(caster, form)) {
+                    Target t;
+                    t.unit = u;
+                    offer(form, std::move(t));
+                }
+            } else {
+                offer(form, chooseTarget(caster, form));
+            }
+        }
+        return best;
     }
 
     const std::vector<const Spell*>& defaultScript()
@@ -1027,6 +1224,9 @@ namespace Spells
                     {"paths",       paths},
                     {"fatigue",     form.fatigue},
                     {"castingTime", form.castingTime},
+                    // A-4: the divider the scorer actually uses (auto or override),
+                    // so a screen can show the price the AI weighs a spell at.
+                    {"divider",     spellDivider(form)},
                     // On EVERY row, false/0 for an ordinary spell rather than
                     // present only where it is interesting: the campaign server
                     // renders the pool price from these (E-2 adds no new wire

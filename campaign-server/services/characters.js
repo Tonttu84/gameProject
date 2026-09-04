@@ -10,8 +10,8 @@
 // troop-wide numbers should not have to learn what a character is.
 
 import {
-  CHARACTER_NAMES, CHARACTER_TYPES, MAX_CHARACTERS_PER_SQUAD,
-  MINDLESS_CHARACTER_TYPES, NON_EATING_TYPES,
+  CHARACTER_NAMES, CHARACTER_TYPES, CHARACTER_VALUE_BASE, MAX_CHARACTERS_PER_SQUAD,
+  MINDLESS_CHARACTER_TYPES, NON_EATING_TYPES, VALUE_PER_ABILITY, VALUE_PER_STAT,
 } from '../utils/campaignConfig.js'
 import { getRandom } from '../utils/dice.js'
 import { findItem, ITEM_STAT_TEXT, SLOT_TEXT } from './items.js'
@@ -127,6 +127,44 @@ export const characterMods = (character, anatomy = null) => {
   void character?.experience
   void character?.wounds
   return mods
+}
+
+// ── What he is WORTH to the enemy's casters (A-5) ───────────────────────────
+//
+// The casting AI scores every option in one currency, `unitValue` (A-3): a
+// damage effect is worth expected damage × the value of who it lands on, a buff
+// the sum of the values it lifts. The engine defaults every type to 10 — every
+// caster included — and knows nothing whatsoever about items, so a character's
+// real worth is arithmetic only this layer can do, and it crosses the wire as a
+// plain number on his placement entry (`value`). The engine reads it and never
+// learns the word "item", exactly as it never learns the word "banner" (6-7).
+//
+// THE SHAPE IS THE USER'S CONSTRAINT: "we dont want the AI to be super good at
+// sniping mages, but it should sometimes try to get some damage to a well
+// kitted supercombatant". So the base is the engine's OWN default — a naked
+// mage is worth a soldier and pulls nothing — and everything above it comes
+// from what the man is carrying, with defensive gear weighing heaviest
+// (VALUE_PER_STAT). What makes you a target is your kit, not your class.
+//
+// Off the SAME sources characterMods and characterAbilities read, and through
+// the same `wornItems` filter, so a piece stranded in a slot the body no longer
+// has prices no more than it modifies. Weights are balance-deferred (bd) and
+// live in campaignConfig; nothing here is authored per row.
+//
+// FLOORED AT 1, because a value of 0 is not "unimportant" to a scorer — it is a
+// unit that can never be worth casting at, which the relic that costs a point
+// of defence should not be able to make of its bearer.
+export const characterValue = (character, anatomy = null) => {
+  let value = CHARACTER_VALUE_BASE
+  for (const { row } of wornItems(character, anatomy)) {
+    for (const [stat, delta] of Object.entries(row.mods ?? {}))
+      value += (VALUE_PER_STAT[stat] ?? 0) * delta
+    // GRANTED only. A denial (9-4) takes an ability away from its own bearer,
+    // which is a cost he pays and not a thing the enemy is buying by killing
+    // him — pricing it would make a self-crippling item read as a fatter target.
+    value += (row.abilities?.length ?? 0) * VALUE_PER_ABILITY
+  }
+  return Math.max(1, value)
 }
 
 // ── The character sheet (9-16) ──────────────────────────────────────────────
@@ -493,6 +531,20 @@ export const characterEntryFor = (
     ...(isCasterType(character.type) && (character.script?.length ?? 0) > 0
       ? { script: [...character.script] }
       : {}),
+    // What the lottery may draw from once the script is spent (A-7), from the
+    // RECORD like the script above and under the SAME absence rule: an absent
+    // shortlist and an empty one both mean "the whole castable roster", so the
+    // wire says only what the engine must not assume. Casters only, for the
+    // same reason `script` is — a list on a body that cannot cast is noise.
+    ...(isCasterType(character.type) && (character.shortlist?.length ?? 0) > 0
+      ? { shortlist: [...character.shortlist] }
+      : {}),
+    // What he is WORTH to the enemy's casters (A-5). Sent for every character,
+    // caster or not: the scorer's currency is unitValue and a kitted swordsman
+    // is exactly the "well kitted supercombatant" the user wants it to notice.
+    // Ordinary troops send nothing and keep the engine's catalog default —
+    // there is no gear on a body the campaign does not track individually.
+    value: characterValue(character, anatomy),
     // The engine's name for the toggle. Defaulted false rather than left
     // undefined so the entry always states the intent explicitly.
     avoids_melee: character.hangBack ?? false,

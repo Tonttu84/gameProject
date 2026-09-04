@@ -64,6 +64,8 @@ a useful version of the same idea instead of a strictly worse spell of its own.
 | `pick`        | `TargetPick` — which candidate the body is handed                              |
 | `buff`        | `true` for a standing effect the target keeps; the resolver then refuses to relay it (A-8) |
 | `spell`       | back-pointer to the spell above — **wired automatically** at the end of `roster()`, never authored |
+| `worth`       | `int(const AUnit&, const Target&)` — what casting this form at that target is worth, in `unitValue` (A-3); **wired by id** in `worthFor()`, see "Scoring" below |
+| `aiDivider`   | `0` = derive from fatigue, casting time and pool cost (A-4); any positive number overrides it for playtesting/modding |
 
 ### Targeting is DECLARED, not coded (A-1, slice AI-1)
 
@@ -111,9 +113,44 @@ which filters on exactly that — so the test fails instead.
 ### Forms must strictly ascend
 
 The sweep requires each form's primary level to be **greater than the one before it**, because
-`chooseSpellToCast()` takes *the last form that qualifies* — that is how "the AI takes the most
-powerful form" (M-13) is enforced by the table's own order rather than by a comparison. Two
-forms at the same path level would make the stronger unreachable.
+M-26's fall-through at cast time cycles DOWN the table: a form that fails for a reason
+selection could not see (the major wanted corpses that were spent meanwhile) hands its channel
+to the next weaker one. Two forms at the same level would make that order meaningless. Note
+what this section no longer says: since AI-2 the form is **chosen by score**, not by table
+position — a Death 3 necromancer conjures the one-tick skeleton when the field holds too few
+bodies for the major, because a doomed major scores 0.
+
+### Scoring: every form carries a `worth` (A-1..A-4, slice AI-2)
+
+The caster does not walk a priority list any more. `Spells::optionsFor(caster, spell, floor)`
+asks each qualifying form, for every candidate the resolver returns, what the cast is
+**worth** — in `unitValue`, the one currency (A-3):
+
+- a damage form is *expected damage × target value* (hit chance folded in, `AI_DAMAGE_SCALE`);
+- a buff is *the value of what it lifts × `AI_BUFF_WORTH_PCT`* (a debuff its own percentage);
+- a conjuration is *bodies × their value*, and **0 when the body would fail** (too few corpses);
+- a battlefield enchantment is the flat `AI_GLOBAL_WORTH` — script-only (E-3), so its worth
+  only has to clear the script floor.
+
+Then `score = worth × AI_SCORE_SCALE ÷ spellDivider(form)`, where the divider is derived from
+the row's own numbers (`castingTime × (AI_DIVIDER_BASE + (fatigue + poolCost ×
+AI_POOL_COST_WEIGHT) ÷ AI_FATIGUE_PER_DIVIDER)`) unless `aiDivider` overrides it. The catalog
+exports `divider` per row so The Study can show it. What the caster does with the scores:
+
+- **Script lines are an opening SEQUENCE** (A-6): each line once, in order; within a line the
+  best-scoring form wins outright; a line scoring under `AI_SCRIPT_FLOOR` is skipped the same
+  tick, never revisited.
+- **After the script, a weighted LOTTERY** (A-2/A-7) over the caster's shortlist — or the whole
+  castable roster minus globals when the shortlist is empty or all-poor — with tickets
+  proportional to score, drawn through `Utility::lotteryRoll` (its own seam; never the combat
+  mock queue). Nothing clears `AI_LOTTERY_FLOOR` → the caster idles this tick.
+
+**Authoring a new spell means writing its estimator too**: add a `static int worthX(const
+AUnit&, const Target&)` beside the others in `SpellList.cpp` and map the id in `worthFor()`.
+Keep it a *pure* read of the target — no dice, no state — and mirror the body's own gate (if
+the body will decline, return 0), or the scorer will keep choosing a cast that never fires. The
+`[scoring]` sweep fails any form left with a null `worth`, and a second case pins that scoring
+consumes neither RNG queue.
 
 ## Descriptions are BUILT, never typed
 
@@ -210,13 +247,18 @@ SpellList.cpp roster()
 
 `spellCatalogJson()` is the one place a new field has to be repeated. The campaign layer
 phrases what it owns (the pool sentence, the duplicate-script warning) and passes the
-engine's own `label`/`description` through untouched.
+engine's own `label`/`description` through untouched. Since AI-2 each row also carries its
+`divider`, and the campaign side sends two AI inputs the other way on a placement entry:
+`value` (a character's worth, base + items, `services/characters.js characterValue`) and
+`shortlist` (the post-script lottery's fence, v46). Both are stamped from the record and
+stripped from the request, like `paths` and `script`.
 
 ## Tests to touch
 
-Usually **none**. `test_targeting.cpp` sweeps every form's target kind, refuses a buff whose
-body marks the wrong id, and casts every unit-targeting body at nothing to prove it declines
-rather than dereferences. `test_spells.cpp` sweeps the roster and fails a row that is malformed
+Usually **none**. `test_scoring.cpp` sweeps every form for a `worth` and a positive divider
+and pins the purity of scoring. `test_targeting.cpp` sweeps every form's target kind, refuses
+a buff whose body marks the wrong id, and casts every unit-targeting body at nothing to prove
+it declines rather than dereferences. `test_spells.cpp` sweeps the roster and fails a row that is malformed
 (empty id or label, zero fatigue, instant cast, unordered paths, non-ascending forms), that
 leaves a path with no level-1 spell, that carries a price without being Low, or that gets the
 Holy/Unholy school gate wrong. `engine.integration.test.js` re-checks the same properties
@@ -229,6 +271,9 @@ looks like: it went in with the battlefield kind, not with the second battlefiel
 
 ## Gotchas
 
+- **A `worth` that says yes when the body says no is a stall.** The scorer picks by worth and
+  the body fires later; if the estimator ignores a gate the body checks, the caster channels a
+  cast that declines, every tick, forever. Read the same field the body reads.
 - **A `cast` body handed an empty `Target` must return `false`.** Fatigue *powers* the spell
   (M-23), so a spell that never fired costs nothing — that is what makes the fall-through to
   weaker forms free rather than a way to burn a caster out.

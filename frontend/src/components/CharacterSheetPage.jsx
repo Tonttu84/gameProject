@@ -41,7 +41,9 @@ import { EMPTY_ARRAY } from '../stores/selectors'
 //              one — check which you want before reaching for it.
 //   IN CAMP  — everything is free, in any phase, at no cost (5-7).
 
-const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenSpells, onUnequip }) => {
+const CharacterSheetPage = ({
+  characterId, onAttach, onSetHangBack, onSetChosenSpells, onSetShortlist, onUnequip,
+}) => {
   const characters = useCampaignStore((s) => s.campaign?.characters ?? EMPTY_ARRAY)
   const squads = useCampaignStore((s) => s.campaign?.squads ?? EMPTY_ARRAY)
   const openItemStore = useUiStore((s) => s.openItemStore)
@@ -81,6 +83,16 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenS
     if (from === -1 && at < ids.length) ids.splice(at, 1, spellId)   // replace
     else ids.splice(at, 0, spellId)                                  // move / append
     return ids
+  }
+
+  // The list to send after ONE box was ticked. UNORDERED, unlike chosenWith
+  // above (A-7): the engine draws from this by lottery, so there is nothing for
+  // a position to mean and a toggle is a set membership and nothing more. The
+  // cap is enforced by not offering the box — see below — rather than by
+  // trimming here, which would silently drop what the player just clicked.
+  const shortlistWith = (spellId) => {
+    const ids = (character.shortlist?.chosen ?? []).map((row) => row.spell)
+    return ids.includes(spellId) ? ids.filter((id) => id !== spellId) : [...ids, spellId]
   }
 
   const run = async (fn) => {
@@ -254,6 +266,55 @@ const CharacterSheetPage = ({ characterId, onAttach, onSetHangBack, onSetChosenS
               </p>
             </>
           )}
+        </>
+      )}
+
+      {/* THE SHORTLIST (docs/CAMPAIGN_PLAN.md “THE CASTING AI”, A-7) — beneath
+          the three slots, because it is the same subject one step later: the
+          slots say what he OPENS with, this says what he is allowed to reach
+          for once they are spent.
+
+          A CHECKLIST rather than ordered slots, and the difference is the
+          mechanic: the engine draws from this by weighted lottery over its own
+          scoring (A-2), so nothing here is first and a box is membership alone.
+
+          EMPTY IS THE WIDEST SETTING, not the narrowest — an unticked list
+          leaves him the whole castable roster. That is the one thing about this
+          control a player cannot guess by looking, so the server sends the
+          sentence and this prints it verbatim (17-5).
+
+          At the cap, the unticked boxes disable rather than vanish: what he
+          could still have chosen is worth seeing, and a list that reflows as it
+          fills is worse to use than one that greys.
+
+          Live while its owner is away, dead only for the dead — the chosen
+          spells' rule (S4-4), for the chosen spells' reason. */}
+      {character.shortlist && character.shortlist.options.length > 0 && (
+        <>
+          <h4>Shortlist</h4>
+          <div className="raid-card" data-testid={`sheet-shortlist-${character.id}`}>
+            {character.shortlist.options.map((row) => {
+              const ticked = character.shortlist.chosen.some((c) => c.spell === row.spell)
+              const full = character.shortlist.chosen.length >= character.shortlist.max
+              return (
+                <label
+                  key={row.spell}
+                  htmlFor={`sheet-shortlist-${character.id}-${row.spell}`}
+                >
+                  <input
+                    type="checkbox"
+                    id={`sheet-shortlist-${character.id}-${row.spell}`}
+                    data-testid={`sheet-shortlist-${character.id}-${row.spell}`}
+                    checked={ticked}
+                    disabled={!alive || busy || (full && !ticked)}
+                    onChange={() => run(() => onSetShortlist(character.id, shortlistWith(row.spell)))}
+                  />
+                  {row.label}
+                </label>
+              )
+            })}
+          </div>
+          <p data-testid={`sheet-shortlistnote-${character.id}`}>{character.shortlist.line}</p>
         </>
       )}
 

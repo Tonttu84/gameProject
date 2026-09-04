@@ -25,6 +25,7 @@
 import { ITEM_CATALOG, RAID_STRENGTH_BANDS, ENEMY_ARMY } from '../utils/campaignConfig.js'
 import { getRandom } from '../utils/dice.js'
 import { holdsItem } from './items.js'
+import { characterValue } from './characters.js'
 
 // Bands are ordered strongest-first in config; the INDEX from the weak end is
 // what scales, so "a handful" is rung 0 and "a strong detachment" is the top.
@@ -142,6 +143,17 @@ export function bearerEntry(bearer, { q, r }, squadId, findItem) {
     r,
     squad_id: squadId,
     squad_name: 'Champion',
+    // What he is WORTH to the PLAYER's casters (A-5), off the same function a
+    // player character's value comes from — a champion in three pieces of kit
+    // is exactly the "well kitted supercombatant" the scorer should sometimes
+    // go for, and he would not be one if only our own side were priced.
+    //
+    // His items are bare ids where a character's are {slot, index, itemId}, so
+    // they are shaped into worn entries here rather than a second weighting
+    // being written: 9-13 says a bearer has no record, which is precisely why
+    // he has no slots to be stranded in — the anatomy filter has nothing to do
+    // and characterValue is passed none.
+    value: characterValue({ items: (bearer?.items ?? []).map((itemId) => ({ itemId })) }),
     ...(Object.keys(mods).length > 0 ? { squad_mods: mods } : {}),
     ...(granted.size > 0 ? { carried_abilities: [...granted] } : {}),
     ...(denied.size > 0 ? { denied_abilities: [...denied] } : {}),

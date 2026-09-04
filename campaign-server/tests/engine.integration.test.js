@@ -507,10 +507,16 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
 
   // One Mage who commands two paths, against a host far enough away to give him
   // several turns of casting. Evocation 1 opens the minor form of both spells,
-  // so which one he reaches for is decided by his list and by nothing else.
-  const castingMage = async (script) => {
-    const entry = { unit_type: 'Mage', q: 4, r: 7, paths: { fire: 1, air: 1 } }
-    if (script) entry.script = script
+  // so which one he reaches for is decided by his lists and by nothing else.
+  //
+  // Since the casting AI (AI-2, A-6/A-7) his script is an OPENING SEQUENCE —
+  // each line once, in order — and everything after it is a weighted lottery
+  // over his shortlist, or over his whole castable roster when he has none. So
+  // these tests pin what the wire can still decide: the first cast, the fence,
+  // and that nothing on the wire can leave him mute. They deliberately do not
+  // pin which spell a lottery draws.
+  const castingMage = async (fields = {}) => {
+    const entry = { unit_type: 'Mage', q: 4, r: 7, paths: { fire: 1, air: 1 }, ...fields }
     const { replay } = await runBattle({
       map: 'sample_battle',
       player_placement: [entry],
@@ -523,26 +529,42 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
     })
     return castsIn(replay)
   }
+  const isOwn = (l) => l.includes('Ember') || l.includes('Shock')
 
-  test('an unscripted caster reaches for the roster\'s own order', async () => {
-    const casts = await castingMage(null)
+  test('an unscripted caster improvises from his own roster and is never mute', async () => {
+    const casts = await castingMage()
     expect(casts.length).toBeGreaterThan(0)
-    expect(casts.every((l) => l.includes('Ember'))).toBe(true)
+    // Fire 1 + Air 1 at Evocation 1 is Ember and Shock and nothing else, and
+    // the lottery (A-7) never reaches outside what he can cast.
+    expect(casts.every(isOwn)).toBe(true)
   }, 30000)
 
-  test('a chosen spell leads — the same mage now casts what he was given', async () => {
-    const casts = await castingMage(['shock'])
+  test('a chosen spell leads — the script is the opening line he casts first', async () => {
+    const casts = await castingMage({ script: ['shock'] })
     expect(casts.length).toBeGreaterThan(0)
-    expect(casts.every((l) => l.includes('Shock'))).toBe(true)
+    // A-6: the script is walked once, in order, so its one line is the FIRST
+    // thing out of his hands; what follows is his own improvisation.
+    expect(casts[0]).toContain('Shock')
+    expect(casts.every(isOwn)).toBe(true)
+  }, 30000)
+
+  test('a shortlist is the fence he improvises inside', async () => {
+    // A-7 through the whole chain: a `shortlist` on the placement entry,
+    // parsed at the wire, narrowing the post-script lottery to one spell. The
+    // same run carries a `value` (A-5) to prove that field is read, not
+    // refused — a number the wire never took before this slice.
+    const casts = await castingMage({ shortlist: ['fireball'], value: 40 })
+    expect(casts.length).toBeGreaterThan(0)
+    expect(casts.every((l) => l.includes('Ember'))).toBe(true)
   }, 30000)
 
   test('an unknown id is skipped, and the caster is never left mute', async () => {
     // The never-throw discipline at the wire, proved rather than assumed: a
-    // list the roster cannot resolve must degrade to the default walk, not to
+    // list the roster cannot resolve must degrade to the whole roster, not to
     // silence. S4-1's promise is that nothing here can stop a caster casting.
-    const casts = await castingMage(['no_such_spell'])
+    const casts = await castingMage({ script: ['no_such_spell'], shortlist: ['no_such_spell'] })
     expect(casts.length).toBeGreaterThan(0)
-    expect(casts.every((l) => l.includes('Ember'))).toBe(true)
+    expect(casts.every(isOwn)).toBe(true)
   }, 30000)
 
   // ── The enemy script store against the real roster (slice B, E-7 / E-8) ───
