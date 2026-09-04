@@ -1047,7 +1047,11 @@ describe('the scenario file (SB-11)', () => {
     expect(scenario.reinforcements).toEqual([
       { side: 'blue', unit_type: 'Soldier', count: 40, tick: 4, message: 'The gates open!' },
     ])
-    expect(saved.revoked).toBe('blob:lab-scenario')
+    // The URL is revoked on a zero-delay timer AFTER the click (flows.js), and
+    // reading the blob above is not guaranteed to take longer than that timer
+    // — on a slow CI runner it did not — so the revoke is waited for, never
+    // assumed to have happened already.
+    await waitFor(() => expect(saved.revoked).toBe('blob:lab-scenario'))
 
     // Now tear the setup down completely — both sides, the magic and the
     // launch numbers — so nothing that comes back could have merely survived.
