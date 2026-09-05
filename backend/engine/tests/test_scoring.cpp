@@ -366,8 +366,11 @@ TEST_CASE("scoring: a worthless scripted line is skipped in the same tick", "[sc
     Zombie*  foe  = place(blue, std::make_unique<Zombie>(BLUETEAM), 4);
     field.loadArmies(std::move(red), std::move(blue));
     mage->setPathLevel(SpellPath::Fire, 1);
-    mage->markBuff("stoneskin");
-    man->markBuff("stoneskin");
+    // T-5 replaced AI-1's bare mark with the standing-effect registry, so a
+    // test that wants a man ALREADY SKINNED lays the real effect on him — the
+    // same call the body makes, with the row's own duration of 0.
+    mage->applyEffect("stoneskin", "armour", 1, 0);
+    man->applyEffect("stoneskin", "armour", 1, 0);
     mage->setChosenSpells({"stoneskin", "fireball"});
 
     RangedCombat::resetCache();
@@ -408,8 +411,8 @@ TEST_CASE("scoring: the shortlist narrows the pool, widens when worthless, and i
         place(blue, std::make_unique<Zombie>(BLUETEAM), 4);
         field.loadArmies(std::move(red), std::move(blue));
         mage->setPathLevel(SpellPath::Fire, 1);
-        mage->markBuff("stoneskin");
-        man->markBuff("stoneskin");
+        mage->applyEffect("stoneskin", "armour", 1, 0);
+        man->applyEffect("stoneskin", "armour", 1, 0);
         mage->setShortlist({"stoneskin"});
 
         const Spell* picked = nullptr;

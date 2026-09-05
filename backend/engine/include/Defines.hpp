@@ -139,6 +139,45 @@ constexpr int SPELLRANGE         = 10; // the DEFAULT per-form range (T-2)
 // scale, and "as accurate as a thing can be" is what the rule means by it.
 constexpr int SPELL_PRECISE      = 100;
 
+// ── Magic resistance (T-4, slice TG-3) ───────────────────────────────────────
+// Dominions' shape: a TAGGED form is contested per target body, both sides
+// adding the engine's exploding die, and the spell lands only if the caster's
+// total is strictly the higher. ALL BALANCE-DEFERRED.
+//
+// The caster's side of the contest is RESIST_BASE + (levels held in the form's
+// PRIMARY path above what the form requires) + his own `penetration`; the
+// target's is its `resistance` + the form's signed `resistMod`.
+constexpr int RESIST_BASE = 10;  // (bd) what a spell brings to the contest before
+                                  // path mastery and penetration are counted
+
+// The per-TYPE resistance table (bd), as a table rather than as ten numbers
+// scattered through the constructors. RESIST_HUMAN is also AUnit's own default,
+// so a unit type that says nothing about resistance is a man — which is the
+// right answer for every human unit and the honest one for a new type whose
+// author has not thought about magic yet.
+constexpr int RESIST_HUMAN  = 10;  // Soldier, Archer, Militia, Pikeman, RoyalGuard,
+                                    // and the mounted composites their riders ride in
+constexpr int RESIST_CASTER = 12;  // Mage, Priest, Necromancer — a trained will
+constexpr int RESIST_UNDEAD = 14;  // Skeleton, Zombie — little left to work on
+constexpr int RESIST_GOLEM  = 18;  // animated stone, the hardest thing to enchant
+constexpr int RESIST_BEAST  = 8;   // Horse, Warhorse, Scorpion — no will to speak of
+
+// The SCORER's slope (bd), not the contest's: landChancePct approximates
+// P(caster wins) as 50% at parity, moving this many points per point of
+// advantage. The dice cancel in expectation, so they are not in the estimate.
+constexpr int RESIST_PCT_PER_POINT = 8;
+// ...and the ends it is clamped to. Never 0 and never 100, because two exploding
+// dice can always surprise you and an estimate that reported a certainty would
+// let the scorer treat a gamble as one. (bd)
+constexpr int RESIST_CHANCE_MIN_PCT = 5;
+constexpr int RESIST_CHANCE_MAX_PCT = 95;
+
+// ── Durations (T-5, slice TG-3) ──────────────────────────────────────────────
+// A form's `duration` is how many ticks its standing effect stands; 0 is the
+// whole battle. Only the hex carries one today — deliberately, so the expiry
+// machinery is exercised by a real row rather than by a test alone. (bd)
+constexpr int HEX_FRAILTY_DURATION = 8;
+
 // Spell numbers (M-18). ALL BALANCE-DEFERRED — chosen to be sane relative to
 // one another, not tuned. Each is the BASE; M-20 adds the caster's primary
 // path level on top, so a spell grows with the man casting it.

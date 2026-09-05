@@ -1,6 +1,7 @@
 #pragma once
 #include "AreaMode.hpp"
 #include "Defines.hpp"
+#include "ResistKind.hpp"
 #include <string>
 #include <string_view>
 #include <vector>
@@ -97,9 +98,11 @@ enum class EnchantAim { None, Friendly, Everyone };
 // scorer is the caller that needs the question; nothing about the priority walk
 // changes here.
 //
-// What is deliberately NOT here (A-8, and the deferred targeting front behind
-// it): resistance, durations, AoE shapes, friendly fire and the delivery model.
-// The buff-refresh rule below is the ONE rule this slice adds.
+// What AI-1 deliberately left out — resistance, durations, AoE shapes, friendly
+// fire and the delivery model — is what the SPELL TARGETING AND DELIVERY front
+// then built, slice by slice, onto the same rows: TG-1 the delivery pair
+// (`accuracy`, `range`), TG-2 the area pair, TG-3 the resist pair and
+// `duration`. They all sit below, in the order a cast happens.
 
 // The SET of legal candidates for a form — range-checked by ONE rule since T-2:
 // the form's own `range`, elevation-adjusted, on the boon kinds as much as on
@@ -141,6 +144,11 @@ std::string_view targetKindName(TargetKind k);
 // The JSON name of an area mode ("none" | "explosion" | "random"), for the
 // catalog export, and one direction only for the same reason targetKindName is.
 std::string_view areaModeName(AreaMode m);
+
+// The JSON name of a resist kind ("none" | "negates"), for the catalog export,
+// and one direction only for the same reason the two above are: the C++ roster
+// is the single source of truth for what a spell may be shrugged off.
+std::string_view resistKindName(ResistKind k);
 
 // A single castable form. M-12 gives one spell a MINOR and a MAJOR form rather
 // than a ladder of near-duplicates, so each form carries its own gates, price
@@ -239,11 +247,17 @@ struct SpellForm {
     // unit (Adjacent, Battlefield, None) and for AllyTeam, which hands over all.
     TargetPick pick = TargetPick::First;
 
-    // A-8's refresh rule: a standing effect the target KEEPS, so the resolver
-    // excludes a unit already carrying it. Without it "Stoneskin every tick" is
-    // the right answer forever — applyStatMod was written for gear (9-5) and
-    // clamps each delta on its own, never the total. The body marks its target
-    // on success; the mark is per battle (AUnit::_activeBuffs).
+    // A-8's refresh rule, generalised by T-5: a STANDING EFFECT, boon or bane,
+    // that the target KEEPS — so the resolver excludes a body already carrying
+    // it, on the enemy side as much as on its own. Without it "Stoneskin every
+    // tick" is the right answer forever, and a debuff recast every tick is the
+    // same bug wearing the other hat: applyStatMod was written for gear (9-5)
+    // and clamps each delta on its own, never the total.
+    //
+    // The body records what it did on the target (AUnit::applyEffect), so
+    // "already carrying it" is a fact about the REGISTRY rather than a mark
+    // set beside the change — which is what lets `duration` expire it and the
+    // end of the battle undo it.
     bool buff = false;
 
     // ── Delivery (T-1, T-2 — slice TG-1) ─────────────────────────────────────
@@ -275,6 +289,39 @@ struct SpellForm {
     // Balance-deferred like every number on a row.
     AreaMode areaMode = AreaMode::None;
     int      area     = 0;
+
+    // ── Resistance and duration (T-4, T-5 — slice TG-3) ──────────────────────
+    // After the area and before the wired back-pointer, so a row reads in the
+    // order a cast happens: whom it may hit, how well it arrives, how much
+    // ground it covers, whether the body may shrug it off, and how long what
+    // is left of it stands.
+
+    // T-4: can this form be resisted at all? `None` — the default and most of
+    // the roster — means no, and the contest is never rolled, so an untagged
+    // form draws no dice. `Negates` means the contest is rolled PER TARGET
+    // BODY at delivery time and the winner takes nothing from the cast.
+    //
+    // The CAST still happened either way: the body reports true and the caster
+    // pays for it (M-23 is about a spell that never fired; a resisted one
+    // fired and was shrugged off), and Low's price is still taken (M-24 — the
+    // bargain was struck whatever came of it).
+    ResistKind resist = ResistKind::None;
+
+    // T-4: Dominions' "resisted easily"/"resisted with difficulty" as DATA
+    // rather than as two more tags. Signed, added to the TARGET's side of the
+    // contest, so a positive number makes the form easier to shrug off. 0
+    // everywhere on the roster today — the field is the point, and the day a
+    // form should be hard to resist it says so in its row instead of in a new
+    // enumerator. Read only when `resist` is not None. Balance-deferred.
+    int resistMod = 0;
+
+    // T-5: how many ticks the form's standing effect stands, 0 = the whole
+    // battle. Read by the BODY, which passes it to AUnit::applyEffect — the
+    // registry there is what counts it down and undoes the change when it runs
+    // out. Meaningless on a form that leaves nothing standing (a bolt, a
+    // conjuration), and 0 there for the same reason `area` is 0 on a bolt.
+    // Balance-deferred.
+    int duration = 0;
 
     // The spell this form belongs to, wired once at the end of roster(). A form
     // can therefore name itself: the resolver needs the id to ask the buff

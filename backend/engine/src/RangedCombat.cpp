@@ -43,6 +43,13 @@ AUnit* RangedCombat::pickHexTarget(const Hex* hex)
 void RangedCombat::applyHit(AUnit* shooter, AUnit* target, const RangedShot& shot,
                             int baseDamage, int elevDmgBonus)
 {
+    // T-4 FIRST, before every other check: a body that shrugs the spell off is
+    // not a body that was hit and then saved. Nothing is rolled for the block,
+    // nothing runs on the hooks, and nothing is logged beyond the one Detail
+    // line Spells::resisted writes — an area covering five men asks each of
+    // them separately, and the ones who fail still take it.
+    if (shot.resisted && shot.resisted(target)) return;
+
     bool extraBlocked   = target->tryBlockExtraShield();
     bool terrainBlocked = !extraBlocked && target->rollTerrainRangedBlock(shot.pen);
     bool blocked        = extraBlocked || terrainBlocked;

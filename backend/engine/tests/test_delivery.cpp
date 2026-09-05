@@ -205,7 +205,15 @@ TEST_CASE("delivery: drain life is precise now, and takes the man it was aimed a
     REQUIRE(spellPrecise(drain));
 
     RangedCombat::resetCache();
-    seedSentinel();
+    // TG-3 put FOUR draws in front of this shot: drain_life is tagged
+    // ResistKind::Negates, so delivery contests the target's resistance before
+    // the hit lands (T-4). Pushed high for the caster and low for the target —
+    // the contest is not what this case is about, and the sentinel behind them
+    // still says the delivery itself rolled nothing.
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);   // the caster's die
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);   // the target's die
+    Utility::pushDiceRoll(SENTINEL);
 
     Target t;
     t.unit = aimed;
@@ -423,6 +431,12 @@ TEST_CASE("delivery: the Broken pick respects the range like every other pick",
     field.loadArmies(std::move(red), {});
 
     hurt->takeDamage(9, ArmorPen::Normal);
+    // takeDamage rolls morale, and a wounded man who ALSO breaks would be
+    // picked ahead of the man this case is about — he stands earlier in team
+    // order. This case wants him wounded and steady, so it says so rather than
+    // depending on the throw. (Found by TG-3: shifting the dice stream turned a
+    // latent seed-dependent flake into a failing one.)
+    hurt->setBroken(false);
     broken->setBroken(true);
 
     // A broken man is the priority pick — but not from out there.

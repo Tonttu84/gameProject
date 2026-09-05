@@ -15,8 +15,10 @@ class AUnit;
 // fire() handles the structural pipeline (elevation, accuracy, deviation,
 // hit resolution, universal block checks, damage, callbacks). Everything
 // specific to a particular attack type — dice variance pre-rolled into
-// baseDamage, physical shield rolls, magic resistance, AoE, life drain —
-// belongs in onHit or onDamage.
+// baseDamage, physical shield rolls, life drain — belongs in onHit or onDamage.
+// Two exceptions have since become fields of their own, because both are asked
+// of bodies the callbacks never see: the AREA (T-6) and MAGIC RESISTANCE (T-4),
+// which is contested once per body an area covers rather than once per shot.
 struct RangedShot {
     int      baseDamage  = 0;
     // 0–100 base; fire() adjusts for elevation. READ BY fire() ONLY: the spell
@@ -39,6 +41,20 @@ struct RangedShot {
     AreaMode areaMode   = AreaMode::None;
     int      areaPoints = 0;
     int      areaDamage = 0;
+
+    // ── Magic resistance (T-4, slice TG-3) ───────────────────────────────
+    //
+    // Asked of EVERY body this shot would strike, before anything else happens
+    // to it, and a body that answers true takes nothing: no damage, no onHit,
+    // no onDamage. Empty on every archer's shot and on every untagged spell,
+    // which is what makes it free — the check is the absence of a predicate.
+    //
+    // A PREDICATE rather than a flag on the shot, because the contest is per
+    // TARGET BODY: an area that covered five men is five separate contests, one
+    // per body, each rolling its own dice. The spell body fills this in with a
+    // lambda closing over its caster and its own row (Spells::resisted), so the
+    // ranged layer carries the question without knowing anything about spells.
+    std::function<bool(AUnit* target)> resisted;
 
     // Called after the universal block checks (extraShield, terrain) for the
     // primary hit only. `blocked` is by reference so the callback can apply

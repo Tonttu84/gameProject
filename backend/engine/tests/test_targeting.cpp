@@ -413,8 +413,11 @@ TEST_CASE("targeting: a caster whose line is fully buffed casts nothing and pays
     REQUIRE(stoneskin != nullptr);
     REQUIRE_FALSE(Spells::optionsFor(*mage, *stoneskin, 0).empty());
 
-    mage->markBuff("stoneskin");
-    man->markBuff("stoneskin");
+    // T-5 replaced AI-1's bare mark with the standing-effect registry: a man
+    // "already skinned" is a man carrying the real effect, laid on by the same
+    // call the body makes.
+    mage->applyEffect("stoneskin", "armour", 1, 0);
+    man->applyEffect("stoneskin", "armour", 1, 0);
     const int armourBefore = man->getArmour();
 
     Utility::clearDiceRolls();
@@ -438,13 +441,19 @@ TEST_CASE("targeting: a caster whose line is fully buffed casts nothing and pays
     field.extractResult();
 }
 
-TEST_CASE("targeting: buff marks are per battle, not per campaign", "[targeting]") {
+TEST_CASE("targeting: standing effects are per battle, not per campaign", "[targeting]") {
     Soldier man(REDTEAM);
-    man.markBuff("stoneskin");
+    const int armour = man.getArmour();
+    man.applyEffect("stoneskin", "armour", 1, 0);
     REQUIRE(man.hasBuff("stoneskin") == true);
+    REQUIRE(man.getArmour() == armour + 1);
 
     man.restoreForNextBattle();
     CHECK(man.hasBuff("stoneskin") == false);
+    // T-5: the armour comes back OFF with the mark. Before TG-3 the mark was
+    // dropped and the stat was not, so a skinned survivor kept the point for
+    // the life of the process.
+    CHECK(man.getArmour() == armour);
 }
 
 // ── (g) Roster sweeps — structural, so a spell authored next month is covered ─
@@ -463,8 +472,11 @@ TEST_CASE("targeting: every form declares a kind, and every buff names its spell
                 CHECK(form.target == TargetKind::Battlefield);
             else
                 CHECK(form.target != TargetKind::Battlefield);
-            // A buff is laid on an ally and on nobody else.
-            if (form.buff) CHECK(form.target == TargetKind::AllyUnit);
+            // A standing effect is laid on a UNIT — a boon on an ally, and
+            // since T-5 a bane on an enemy (hex_of_frailty). What it may never
+            // be is a form that hands over no body to carry it.
+            if (form.buff) CHECK((form.target == TargetKind::AllyUnit
+                                  || form.target == TargetKind::EnemyUnit));
         }
 }
 
@@ -492,27 +504,46 @@ TEST_CASE("targeting: no unit-targeting body can be handed an empty Target and f
     field.extractResult();
 }
 
-TEST_CASE("targeting: every buff body marks the id its own row carries", "[targeting]") {
-    // The mark is written with a literal inside the body while the resolver
-    // reads form.spell->id — this is the sweep that keeps the two the same
-    // string, for every buff form there will ever be.
+TEST_CASE("targeting: every standing-effect body records the id its own row carries",
+          "[targeting]") {
+    // The id is written with a literal inside the body while the resolver reads
+    // form.spell->id — this is the sweep that keeps the two the same string,
+    // for every standing-effect form there will ever be. Since T-5 that
+    // includes the BANES, so the body under test is put on whichever side the
+    // form aims at.
     Battlefield& field = Utility::getBattlefield();
 
     for (const Spell& spell : Spells::roster())
         for (const SpellForm& form : spell.forms) {
             if (!form.buff) continue;
             INFO(std::string(spell.id) + "/" + std::string(form.name));
+            const bool onEnemy = form.target == TargetKind::EnemyUnit;
 
-            Army red;
-            Mage*    mage = place(red, std::make_unique<Mage>(REDTEAM), 8);
-            Soldier* man  = place(red, std::make_unique<Soldier>(REDTEAM), 7);
-            field.loadArmies(std::move(red), {});
+            Army red, blue;
+            Mage* mage = place(red, std::make_unique<Mage>(REDTEAM), 8);
+            Soldier* man = onEnemy
+                ? place(blue, std::make_unique<Soldier>(BLUETEAM), 7)
+                : place(red,  std::make_unique<Soldier>(REDTEAM),  7);
+            field.loadArmies(std::move(red), std::move(blue));
+
+            // A tagged form contests the target's resistance (T-4) and would
+            // otherwise be shrugged off on some runs. This sweep is about the
+            // ID, so the contest is made a formality: four pushed dice, the
+            // caster's high and the target's low, is a landed spell whatever
+            // the row is tagged.
+            Utility::clearDiceRolls();
+            Utility::pushDiceRoll(6); Utility::pushDiceRoll(1);   // caster's die
+            Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);   // target's die
 
             Target t;
             t.unit = man;
             REQUIRE(form.cast(*mage, form, t) == true);
+            Utility::clearDiceRolls();
             CHECK(man->hasBuff(spell.id) == true);
-            CHECK(Spells::candidates(*mage, form).size() == 1);
+            // The man who carries it is off the list. On the ally side the
+            // caster himself is still on it; on the enemy side he was the only
+            // body there, so nobody is.
+            CHECK(Spells::candidates(*mage, form).size() == (onEnemy ? 0u : 1u));
 
             field.extractResult();
         }

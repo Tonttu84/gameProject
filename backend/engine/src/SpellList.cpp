@@ -87,13 +87,18 @@ static AUnit* findAllyButSelf(AUnit& caster)
     return nullptr;
 }
 
-// A-8: a buff form's body marks the man it landed on, and Spells::candidates()
-// then keeps that form off him for the rest of the battle. The id passed here
-// must be the ROSTER id of the spell the body belongs to (form.spell->id) — the
-// roster sweep in test_targeting.cpp is what holds the two together.
-static void markBuffOn(AUnit& unit, std::string_view spellId)
+// A-8, as T-5 rebuilt it: a `buff` form's body RECORDS what it did on the man
+// it landed on (AUnit::applyEffect), and Spells::candidates() then keeps that
+// form off him for as long as the effect stands. The id a body passes must be
+// the ROSTER id of the spell it belongs to (form.spell->id) — the sweep in
+// test_targeting.cpp is what holds the literal and the row together.
+//
+// Boon or bane: T-5 widened the rule to both sides, so the exclusion below is
+// asked of an enemy candidate as much as of an ally one. A debuff that stacked
+// every tick was the same bug A-8 closed for buffs, wearing the other hat.
+static bool alreadyCarries(const SpellForm& form, const AUnit& unit)
 {
-    unit.markBuff(spellId);
+    return form.buff && form.spell && unit.hasBuff(form.spell->id);
 }
 
 // ── how a shot spell arrives (T-1, slice TG-1) ───────────────────────────────
@@ -176,14 +181,20 @@ static bool castShock(AUnit& caster, const SpellForm& form, const Target& target
 
 // ── Earth — stoneskin (Enchantment) ──────────────────────────────────────────
 // A `buff` form (A-8): the resolver has already dropped every ally who is
-// carrying this spell, so a target arriving here has never been skinned in this
-// battle — and marking him keeps it that way.
-static bool castStoneskin(AUnit& caster, const SpellForm& /*form*/, const Target& target)
+// carrying this spell, so a target arriving here is not already skinned — and
+// recording the effect keeps it that way for as long as the effect stands.
+//
+// T-5: ONE call does both jobs. applyEffect moves the stat through applyStatMod
+// exactly as before AND records what actually landed, so the armour comes back
+// off when the effect expires or the battle ends. The duration is the ROW's —
+// 0 on this row, which is "the whole battle", and the field is what would make
+// a timed stoneskin a one-line change.
+static bool castStoneskin(AUnit& caster, const SpellForm& form, const Target& target)
 {
     AUnit* unit = target.unit;
     if (!unit) return false;
-    unit->applyStatMod("armour", 1 + caster.getPathLevel(SpellPath::Earth) / 3);
-    markBuffOn(*unit, "stoneskin");
+    unit->applyEffect("stoneskin", "armour",
+                      1 + caster.getPathLevel(SpellPath::Earth) / 3, form.duration);
     Utility::getBattlefield().logEvent("Skin hardens to stone");
     return true;
 }
@@ -209,21 +220,32 @@ static bool castSoothingCurrent(AUnit& caster, const SpellForm& /*form*/, const 
 // The other `buff` form — one ward per man per battle, for the same reason
 // (A-8): addShield stacks layers, and nothing but this rule stops a High caster
 // from spending a whole battle wrapping one soldier.
-static bool castWard(AUnit& caster, const SpellForm& /*form*/, const Target& target)
+// T-5: the barrier itself is a CONSUMABLE shield layer, so the registry entry
+// this body records changes no number (an empty stat, applied 0). It is there
+// for the refresh rule — one ward per man while it stands — and the layer is
+// not reverted at battle end but CLEARED with the rest of the shield stack in
+// restoreForNextBattle(), because a layer that was rolled against is spent and
+// there is nothing to put back.
+static bool castWard(AUnit& caster, const SpellForm& form, const Target& target)
 {
     AUnit* unit = target.unit;
     if (!unit) return false;
     unit->addShield(WARD_STRENGTH + caster.getPathLevel(SpellPath::High));
-    markBuffOn(*unit, "ward");
+    unit->applyEffect("ward", "", 0, form.duration);
     Utility::getBattlefield().logEvent("A ward shimmers into place");
     return true;
 }
 
 // ── Nature — briar snare (Enchantment) ───────────────────────────────────────
-static bool castBriarSnare(AUnit& caster, const SpellForm& /*form*/, const Target& target)
+// One of the three rows tagged Negates (T-4). A direct-effect body contests the
+// resistance AT THE TOP, for its one target, and a body that shrugs it off takes
+// nothing — while the CAST still reports true, because it happened: M-23's rule
+// is about a spell that never fired, and this one fired and was thrown off.
+static bool castBriarSnare(AUnit& caster, const SpellForm& form, const Target& target)
 {
     AUnit* unit = target.unit;
     if (!unit) return false;
+    if (Spells::resisted(caster, form, *unit)) return true;
     unit->addFatigue(SNARE_FATIGUE + caster.getPathLevel(SpellPath::Nature) * 5);
     Utility::getBattlefield().logEvent("Briars erupt and drag at a struggling body");
     return true;
@@ -287,6 +309,17 @@ static bool castDrainLife(AUnit& caster, const SpellForm& form, const Target& ta
     RangedShot shot;
     shot.baseDamage = drain;
     shot.pen        = ArmorPen::Piercing;
+    // T-4: a SHOT body hands the contest to the shot rather than asking it
+    // here, because delivery is what knows which bodies were struck — an area
+    // would contest each of them separately. Checked before anything else
+    // happens to a body, so a man who shrugs it off takes no damage AND gives
+    // the caster nothing: onDamage never runs for him.
+    //
+    // The captures outlive the call: `shot` is a local handed straight to
+    // deliver(), which resolves it before this frame returns.
+    shot.resisted   = [&caster, &form](AUnit* victim) {
+        return victim && Spells::resisted(caster, form, *victim);
+    };
     // What is taken from them is given to the caster — the whole point of the
     // spell, so it hangs off the damage hook rather than being paid blind.
     shot.onDamage   = [](AUnit* attacker, AUnit* /*victim*/, int damage) {
@@ -298,11 +331,25 @@ static bool castDrainLife(AUnit& caster, const SpellForm& form, const Target& ta
 }
 
 // ── Low — hex of frailty (Enchantment), and its price (M-21/M-24) ────────────
-static bool castHexOfFrailty(AUnit& caster, const SpellForm& /*form*/, const Target& target)
+//
+// The row that exercises BOTH of TG-3's rules at once, deliberately: it is
+// tagged Negates (T-4) and it is the one row on the roster with a real
+// `duration` (T-5), so the expiry machinery is walked by a spell rather than by
+// a test alone.
+//
+// The two rules meet in an order that matters. The contest runs FIRST — a hex
+// that was shrugged off leaves nothing standing, so there is nothing to expire
+// — and the body still reports true either way, which means M-24's price fires
+// on a resisted cast exactly as it does on a landed one. That is not an
+// oversight: the bargain was struck when the caster reached for it, and what
+// the enemy made of the spell is not the creditor's problem.
+static bool castHexOfFrailty(AUnit& caster, const SpellForm& form, const Target& target)
 {
     AUnit* unit = target.unit;
     if (!unit) return false;
-    unit->applyStatMod("defence", -(1 + caster.getPathLevel(SpellPath::Low) / 3));
+    if (Spells::resisted(caster, form, *unit)) return true;
+    unit->applyEffect("hex_of_frailty", "defence",
+                      -(1 + caster.getPathLevel(SpellPath::Low) / 3), form.duration);
     Utility::getBattlefield().logEvent("An old bargain leaves a man slower than he was");
     return true;
 }
@@ -488,6 +535,15 @@ namespace {
     static_assert(kAreaModeNames[static_cast<size_t>(AreaMode::None)]      == "none");
     static_assert(kAreaModeNames[static_cast<size_t>(AreaMode::Explosion)] == "explosion");
     static_assert(kAreaModeNames[static_cast<size_t>(AreaMode::Random)]    == "random");
+    // Ordered to match ResistKind, guarded exactly as the two above are, and for
+    // the same reason: a kind inserted in the middle would rename every kind
+    // after it on the wire and the campaign layer would be told a spell can be
+    // shrugged off in a way it cannot.
+    constexpr std::string_view kResistKindNames[] = { "none", "negates" };
+    static_assert(sizeof(kResistKindNames) / sizeof(kResistKindNames[0])
+                  == static_cast<size_t>(ResistKind::Negates) + 1);
+    static_assert(kResistKindNames[static_cast<size_t>(ResistKind::None)]    == "none");
+    static_assert(kResistKindNames[static_cast<size_t>(ResistKind::Negates)] == "negates");
 }
 
 std::string_view spellPathName(SpellPath p)
@@ -547,6 +603,11 @@ std::string_view targetKindName(TargetKind k)
 std::string_view areaModeName(AreaMode m)
 {
     return kAreaModeNames[static_cast<size_t>(m)];
+}
+
+std::string_view resistKindName(ResistKind k)
+{
+    return kResistKindNames[static_cast<size_t>(k)];
 }
 
 SpellSchool spellSchoolFromName(std::string_view name)
@@ -625,12 +686,25 @@ std::string ward()
          + " damage and one more for every level of High.";
 }
 
+// T-4/T-5: the two sentences a resistible or a timed row owes the player,
+// built like every other clause here — from the constants and from the ROW,
+// never typed out. A form's tag and its duration are facts about what the
+// player is buying, and The Study's numbers line says them too; the
+// description is where they are said in words.
+const std::string kResistible =
+    " A strong enough will can throw it off entirely.";
+
+std::string standsFor(int ticks)
+{
+    return " It lasts " + std::to_string(ticks) + " ticks.";
+}
+
 std::string briarSnare()
 {
     return "Briars erupt and drag at one enemy" + kRange + ": "
          + std::to_string(SNARE_FATIGUE)
          + " fatigue inflicted, and 5 more for every level of Nature. "
-           "Exhaustion is lethal past the ceiling.";
+           "Exhaustion is lethal past the ceiling." + kResistible;
 }
 
 // The sustained spells say three things no ordinary description has to: that
@@ -657,7 +731,9 @@ std::string leadenAir()
 std::string hexOfFrailty()
 {
     return "One enemy loses a point of defence, and another for every three levels "
-           "of Low. Then the bargain takes its due: " + std::to_string(LOW_BLOOD_PRICE)
+           "of Low." + standsFor(HEX_FRAILTY_DURATION) + kResistible
+         + " Then the bargain takes its due, whether the hex held or not: "
+         + std::to_string(LOW_BLOOD_PRICE)
          + " damage to the man standing nearest the caster — or to the caster himself, "
            "if he stands alone.";
 }
@@ -692,7 +768,8 @@ std::string drainLife()
 {
     return "Life is pulled out of one enemy" + kRange + ": "
          + scalingDamage(DRAIN_DAMAGE, "Unholy")
-         + ", piercing armour — and half of what lands returns to the caster as healing.";
+         + ", piercing armour — and half of what lands returns to the caster as healing."
+         + kResistible;
 }
 
 }  // namespace
@@ -957,6 +1034,17 @@ namespace Spells
         // its own row to fill the shot — and `AreaMode::None, 0` on every row
         // but fireball's major form, which is the only thing on the roster that
         // covers ground rather than a man.
+        //
+        // TG-3 adds THREE MORE after the area: the RESIST KIND, its signed
+        // MODIFIER and the DURATION (T-4, T-5). Three rows are tagged
+        // ResistKind::Negates — hex_of_frailty, briar_snare and drain_life,
+        // the spells that work on a man rather than on the air around him —
+        // and every other row is None and cannot be resisted at all. The
+        // modifier is 0 everywhere: Dominions' "resisted easily" is a number
+        // this table can now write, and today nothing needs to. The duration
+        // is 0 (the whole battle) everywhere but the hex, which is deliberate
+        // — one real timed row means the expiry is walked by a spell and not
+        // only by a test.
         static std::vector<Spell> table = {
             // ── Fire ─────────────────────────────────────────────────────────
             { "fireball", {
@@ -964,7 +1052,8 @@ namespace Spells
                   {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber,    nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
                 { "major", "Fireball", fireball(),
                   {{P::Fire, 3}}, S::Evocation, 3, 22, 2, castFireball, nullptr,
                   EnchantAim::None, 0, nullptr,
@@ -972,7 +1061,8 @@ namespace Spells
                   // The one area on the roster (T-6): an EXPLOSION of
                   // FIREBALL_AREA points, filling the hex it lands on and
                   // opening the ring outward when it has more than that to give.
-                  AreaMode::Explosion, FIREBALL_AREA },
+                  AreaMode::Explosion, FIREBALL_AREA,
+                  ResistKind::None, 0, 0 },
             }},
             // ── Air ──────────────────────────────────────────────────────────
             { "shock", {
@@ -982,7 +1072,8 @@ namespace Spells
                   // PRECISE: what SHOCK_ACCURACY used to say, said as a rule.
                   TargetKind::EnemyUnit, TargetPick::Densest, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // ── Earth ────────────────────────────────────────────────────────
             { "stoneskin", {
@@ -991,7 +1082,8 @@ namespace Spells
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Wounded, true,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // ── Water ────────────────────────────────────────────────────────
             { "soothing_current", {
@@ -1000,7 +1092,8 @@ namespace Spells
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Fatigued, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // ── High ─────────────────────────────────────────────────────────
             { "ward", {
@@ -1009,7 +1102,8 @@ namespace Spells
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Wounded, true,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // ── Nature ───────────────────────────────────────────────────────
             { "briar_snare", {
@@ -1018,7 +1112,8 @@ namespace Spells
                   EnchantAim::None, 0, nullptr,
                   TargetKind::EnemyUnit, TargetPick::Densest, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::Negates, 0, 0 },
             }},
             // A battlefield-wide enchantment: ONE form, named "battlefield"
             // rather than minor/major, because there is no ladder to climb —
@@ -1033,7 +1128,8 @@ namespace Spells
                   // range is never read.
                   TargetKind::Battlefield, TargetPick::First, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // ── Low — half fatigue (M-21) and a price that fires with it (M-24)
             { "hex_of_frailty", {
@@ -1041,9 +1137,16 @@ namespace Spells
                   {{P::Low, 1}}, S::Enchantment, 1, 14, 1,
                   castHexOfFrailty, priceOfFrailty,
                   EnchantAim::None, 0, nullptr,
-                  TargetKind::EnemyUnit, TargetPick::Densest, false,
+                  // `buff` TRUE since T-5, and it is a bane: a standing effect
+                  // the target keeps is one the resolver must not relay, on the
+                  // enemy side exactly as on its own. Without it the right play
+                  // was to re-hex the same man every tick forever.
+                  TargetKind::EnemyUnit, TargetPick::Densest, true,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  // The row that carries BOTH of TG-3's rules: resistible
+                  // (T-4) and the only real duration on the roster (T-5).
+                  ResistKind::Negates, 0, HEX_FRAILTY_DURATION },
             }},
             // ── Death ────────────────────────────────────────────────────────
             { "raise_dead", {
@@ -1052,13 +1155,15 @@ namespace Spells
                   EnchantAim::None, 0, nullptr,
                   TargetKind::Adjacent, TargetPick::First, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
                 { "major", "Raise Dead", raiseDead(),
                   {{P::Death, 3}}, S::Conjuration, 3, 26, 2, castRaiseDead,     nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::Adjacent, TargetPick::First, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // The symmetric one: an Everyone aim presses on both lines at once,
             // and only once however many instances stand.
@@ -1069,7 +1174,8 @@ namespace Spells
                   EnchantAim::Everyone, LEADEN_AIR_POOL_COST, tickLeadenAir,
                   TargetKind::Battlefield, TargetPick::First, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // ── Holy — granted, not researched, so NO school gate (M-14) ─────
             { "bless", {
@@ -1078,13 +1184,15 @@ namespace Spells
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Broken, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
                 { "major", "Greater Blessing", greaterBlessing(),
                   {{P::Holy, 3}}, S::None, 0, 24, 2, castGreaterBless, nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyTeam, TargetPick::First, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::None, 0, 0 },
             }},
             // ── Unholy — granted like Holy, and likewise ungated by school ───
             { "drain_life", {
@@ -1097,7 +1205,8 @@ namespace Spells
                   // of the man it was pulled out of.
                   TargetKind::EnemyUnit, TargetPick::Densest, false,
                   SPELL_PRECISE, SPELLRANGE,
-                  AreaMode::None, 0 },
+                  AreaMode::None, 0,
+                  ResistKind::Negates, 0, 0 },
             }},
         };
         // A-1/A-8: every form learns which spell it belongs to, ONCE, after the
@@ -1164,8 +1273,15 @@ namespace Spells
             // "nobody" is what makes the resolver safe to ask of ANY caster,
             // which a scorer will do.
             if (!caster.getHex()) break;
-            for (const auto& u : field.getTeam(3 - myTeam))
-                if (u && spellInRange(caster, *u, myTeam, form.range)) out.push_back(u.get());
+            for (const auto& u : field.getTeam(3 - myTeam)) {
+                if (!u || !spellInRange(caster, *u, myTeam, form.range)) continue;
+                // T-5 widened A-8's refresh rule to BANES: a man already
+                // carrying this spell is not a candidate for it again, whichever
+                // side he stands on. Before TG-3 this branch had no such check,
+                // because no enemy-targeted form was a standing effect.
+                if (alreadyCarries(form, *u)) continue;
+                out.push_back(u.get());
+            }
             break;
 
         case TargetKind::AllyUnit:
@@ -1184,7 +1300,7 @@ namespace Spells
                 if (!u || !u->getAlive()) return;
                 // A-8's refresh rule, and the whole of it: a man already
                 // carrying this spell is not a candidate for it again.
-                if (form.buff && form.spell && u->hasBuff(form.spell->id)) return;
+                if (alreadyCarries(form, *u)) return;
                 out.push_back(u);
             };
             // const_cast, and it is the honest one: the resolver takes its
@@ -1233,10 +1349,20 @@ namespace Spells
             // spell aims at the man it has always aimed at.
             if (!caster.getHex()) break;
             const int range = form.range;   // T-2: the row's reach, not a constant
+            // This pick walks the TEAM rather than candidates(), to keep
+            // findTarget's tie-break — so the refresh rule has to be repeated
+            // here or a standing bane would be re-aimed at the same man every
+            // tick while candidates() quietly said he was not a candidate. The
+            // two are the same predicate; only the walk differs.
             picked.unit = Utility::findTarget(
                 field.getTeam(3 - myTeam),
-                [&caster, range](const AUnit& t, int team) { return spellInRange(caster, t, team, range); },
-                [&caster, range](const AUnit& t, int team) { return spellDensityScore(caster, t, team, range); },
+                [&caster, &form, range](const AUnit& t, int team) {
+                    return spellInRange(caster, t, team, range) && !alreadyCarries(form, t);
+                },
+                [&caster, &form, range](const AUnit& t, int team) {
+                    return alreadyCarries(form, t) ? -1
+                                                   : spellDensityScore(caster, t, team, range);
+                },
                 myTeam);
             break;
         }
@@ -1300,12 +1426,89 @@ namespace Spells
         return false;
     }
 
+    // ── Resistance: the contest, and the estimate of it (T-4) ────────────────
+    //
+    // Two functions saying the same thing to two different audiences. The first
+    // ROLLS, once, for one body, at delivery time. The second is what the
+    // scorer may ask as often as it likes and must never roll — A-1's rule, and
+    // the reason the estimate is an approximation rather than the exact
+    // distribution of two exploding dice.
+
+    // How far past the form's own requirement the caster has taken its PRIMARY
+    // path (M-20 again: the primary is what a spell is cast WITH). The user's
+    // "+1 per extra path" — mastery beyond what the spell needs is what pushes
+    // it through a will. Never negative: a caster who does not meet the
+    // requirement cannot cast the form at all, so there is no case to model.
+    static int pathMastery(const AUnit& caster, const SpellForm& form)
+    {
+        if (form.paths.empty()) return 0;
+        const PathRequirement& primary = form.paths.front();
+        return std::max(0, caster.getPathLevel(primary.path) - primary.level);
+    }
+
+    bool resisted(const AUnit& caster, const SpellForm& form, AUnit& target)
+    {
+        // An untagged form draws NOTHING. Not "rolls and always wins" — a draw
+        // here would eat a mock roll a combat test seeded for the shot itself,
+        // and most of the roster is untagged, so this is the common path.
+        if (form.resist == ResistKind::None) return false;
+
+        // Caster first, then target, both through the exploding die — so a test
+        // pins the contest with four pushes: caster face, caster explode-check,
+        // target face, target explode-check.
+        const int casterTotal = RESIST_BASE + pathMastery(caster, form)
+                              + caster.getPenetration() + Utility::throwDice();
+        const int targetTotal = target.getResistance() + form.resistMod
+                              + Utility::throwDice();
+        // STRICTLY higher: a tie goes to the body. The spell has to beat the
+        // will, not merely match it.
+        if (casterTotal > targetTotal) return false;
+
+        Utility::getBattlefield().logEvent(LogTier::Detail,
+            target.logName() + " shrugs off " + std::string(form.label));
+        return true;
+    }
+
+    int landChancePct(const AUnit& caster, const SpellForm& form, const AUnit& target)
+    {
+        // A flat certainty rather than "don't ask", so a caller can multiply
+        // unconditionally. SPELL_PRECISE is the top of the same 0..100 scale a
+        // percentage lives on — the constant's own comment says so — and an
+        // untagged form is exactly as certain as a precise one is to arrive.
+        if (form.resist == ResistKind::None) return SPELL_PRECISE;
+
+        // The dice are dropped because they CANCEL in expectation — both sides
+        // throw the same die — so what is left is the difference between the two
+        // fixed totals. An even chance at parity (the 2 below is not a tunable:
+        // two equal totals are two equal totals), RESIST_PCT_PER_POINT per point
+        // from there, and clamped short of both ends.
+        const int expectedCaster = RESIST_BASE + pathMastery(caster, form)
+                                 + caster.getPenetration();
+        const int expectedTarget = target.getResistance() + form.resistMod;
+        return std::clamp(SPELL_PRECISE / 2
+                              + (expectedCaster - expectedTarget) * RESIST_PCT_PER_POINT,
+                          RESIST_CHANCE_MIN_PCT, RESIST_CHANCE_MAX_PCT);
+    }
+
     // ── the scorer (A-1..A-7) ────────────────────────────────────────────────
 
     int scoreOf(const AUnit& caster, const SpellForm& form, const Target& target)
     {
         if (!form.worth) return 0;
         int worth = form.worth(caster, form, target);
+        if (worth <= 0) return 0;
+        // T-4: expected effect × the chance it lands. Applied HERE rather than
+        // inside each estimator, so a new resistible spell gets it for free and
+        // cannot forget it — and applied to the WORTH, before the divider, so
+        // the ratio A-4 compares forms on is a ratio of expected value.
+        //
+        // For a form with a unit target only. An AREA body would resist per
+        // body covered (that is what RangedShot::resisted does), and the
+        // estimator does not model that — no area form is tagged today, and the
+        // day one is, worthArea() is where the per-body chance belongs rather
+        // than this single multiplier.
+        if (target.unit)
+            worth = worth * landChancePct(caster, form, *target.unit) / 100;
         if (worth <= 0) return 0;
         return worth * AI_SCORE_SCALE / spellDivider(form);
     }
@@ -1498,6 +1701,15 @@ namespace Spells
                     // biconditional, pinned on both sides of the wire.
                     {"areaMode",    std::string(areaModeName(form.areaMode))},
                     {"area",        form.area},
+                    // T-4/T-5 (TG-3), and on every row for the same reason as
+                    // everything above: `resist` is "none" or "negates",
+                    // `resistMod` the signed number on the target's side of the
+                    // contest, and `duration` how many ticks what the form
+                    // leaves behind stands — 0 being the whole battle. The
+                    // Study prints the last two as words (S3-4).
+                    {"resist",      std::string(resistKindName(form.resist))},
+                    {"resistMod",   form.resistMod},
+                    {"duration",    form.duration},
                 });
             }
         }

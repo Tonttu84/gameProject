@@ -198,6 +198,15 @@ void Battlefield::onTurnStart()
     for (auto& u : _red.units)  if (u && u->getAlive()) u->recover();
     for (auto& u : _blue.units) if (u && u->getAlive()) u->recover();
 
+    // T-5: standing spell effects count down HERE — after the passive recovery
+    // (which is about fatigue and has nothing to say to them) and BEFORE the
+    // standing enchantments press. An expiring Stoneskin should be gone by the
+    // time this turn's spells act, not still counted for one more tick because
+    // the expiry happened to be swept later in the tick than the thing that
+    // read it.
+    for (auto& u : _red.units)  if (u && u->getAlive()) u->tickEffects();
+    for (auto& u : _blue.units) if (u && u->getAlive()) u->tickEffects();
+
     // AFTER the passive recovery, never before it: a sustained spell's whole
     // effect is what it adds to or takes off a body that has already rested,
     // and running it first would let recover() wash the turn's relief away.

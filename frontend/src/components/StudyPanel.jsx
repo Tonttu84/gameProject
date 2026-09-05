@@ -72,7 +72,11 @@ const SpellRow = ({ spell, schoolLabel }) => {
               names its modifier only when it HAS one, because "Accuracy +0" is
               a number that tells the player nothing. TG-2 (T-6) adds the AREA on
               the same terms — named only where there is one, since "Area 0" says
-              nothing either. */}
+              nothing either. TG-3 (T-4/T-5) adds the last two on the same terms
+              again: a row that can be shrugged off says so, and a row that
+              leaves something standing says how long. A spell that cannot be
+              resisted and leaves nothing behind says neither — which is most of
+              the roster, and a line of zeroes would bury the rows that matter. */}
           <p className="study-spell-numbers">
             Fatigue {spell.fatigue} · {spell.castingTime} tick
             {spell.castingTime === 1 ? '' : 's'} to cast · Range {spell.range}
@@ -82,6 +86,8 @@ const SpellRow = ({ spell, schoolLabel }) => {
                 ? ` · Accuracy ${spell.accuracy > 0 ? '+' : '−'}${Math.abs(spell.accuracy)}`
                 : ''}
             {spell.area > 0 ? ` · Area ${spell.area} (${spell.areaMode})` : ''}
+            {spell.duration > 0 ? ` · Lasts ${spell.duration} ticks` : ''}
+            {spell.resist === 'negates' ? ' · Can be resisted' : ''}
           </p>
           {/* A BATTLEFIELD ENCHANTMENT (slice A, E-2/E-3) is priced in the
               ARMY's pool as well as in the caster's fatigue, and never fires

@@ -91,6 +91,16 @@ export const ITEM_STAT_TEXT = {
   ballisticSkill: 'marksmanship',
   preferredRange: 'preferred distance',
   formationFighter: 'how tightly they pack into a line',
+  // T-4's two contest stats (engine slice TG-3). The engine exports both on
+  // every unit row and knows both as mod-bag names, so a sheet can show a
+  // modifier to either and an item may one day carry one. NO item row carries
+  // one today — these are the words that would be needed the day one does, and
+  // without them describeItem would silently drop the mod from the card.
+  //
+  // Phrased as the player would say it rather than as the engine names it:
+  // `resistance` is resistance to MAGIC specifically, not to arrows.
+  resistance: 'resistance to magic',
+  penetration: 'spell penetration',
 }
 
 // "+1 attack and −1 speed" — signed, in words, in a stable order so two items

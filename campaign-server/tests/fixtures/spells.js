@@ -19,6 +19,12 @@ export const spellsFixture = [
     // TG-2's area (T-6), likewise on every row: 'none'/0 unless the form covers
     // ground rather than a man. Ember is one bolt.
     areaMode: 'none', area: 0,
+    // TG-3's resistance and duration (T-4/T-5), on every row too. Every form in
+    // this fixture is an untimed, unresistible one — which is what 'none'/0/0
+    // says, and what most of the real roster is. A view test that needs a
+    // tagged or timed row overrides these on a copy, rather than making one of
+    // the six rows below unrepresentative of the shape it is here to stand for.
+    resist: 'none', resistMod: 0, duration: 0,
   },
   {
     spell: 'fireball', form: 'major', label: 'Fireball',
@@ -28,6 +34,7 @@ export const spellsFixture = [
     accuracy: 0, precise: false, range: 10,
     // The one area on the roster: an explosion of a hundred hex points.
     areaMode: 'explosion', area: 100,
+    resist: 'none', resistMod: 0, duration: 0,
   },
   {
     spell: 'raise_dead', form: 'minor', label: 'Raise Skeleton',
@@ -36,6 +43,7 @@ export const spellsFixture = [
     paths: [{ path: 'death', level: 1 }], fatigue: 12, castingTime: 1,
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
+    resist: 'none', resistMod: 0, duration: 0,
   },
   // Granted, not researched (M-14) — school null. The Study must not show it.
   {
@@ -45,6 +53,7 @@ export const spellsFixture = [
     paths: [{ path: 'holy', level: 1 }], fatigue: 10, castingTime: 1,
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
+    resist: 'none', resistMod: 0, duration: 0,
   },
   // The battlefield-wide enchantments (E-1/E-6). SINGLE-FORM by construction
   // (form 'battlefield'), and the two fields the ordinary rows above leave off:
@@ -58,6 +67,7 @@ export const spellsFixture = [
     paths: [{ path: 'nature', level: 2 }], fatigue: 20, castingTime: 3,
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
+    resist: 'none', resistMod: 0, duration: 0,
     battlefield: true, poolCost: 2,
   },
   {
@@ -67,6 +77,7 @@ export const spellsFixture = [
     paths: [{ path: 'death', level: 2 }], fatigue: 24, castingTime: 3,
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
+    resist: 'none', resistMod: 0, duration: 0,
     battlefield: true, poolCost: 3,
   },
 ]

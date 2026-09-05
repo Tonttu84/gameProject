@@ -45,8 +45,9 @@ namespace Spells
     //   Adjacent / Battlefield / None — empty. These bodies need no unit
     //               target; the neighbour scan and the standing instance are
     //               the body's own business, as they have always been.
-    // A-8's refresh rule lands here: for a `buff` form, a unit already carrying
-    // this spell's id is NOT a candidate.
+    // A-8's refresh rule lands here, and T-5 widened it to both sides: for a
+    // `buff` form — a STANDING EFFECT, boon or bane — a body already carrying
+    // this spell's id is NOT a candidate for it, ally or enemy.
     std::vector<AUnit*> candidates(const AUnit& caster, const SpellForm& form);
 
     // The candidate the body is handed, by the form's pick policy. Each policy
@@ -55,9 +56,42 @@ namespace Spells
     // the same one, down to the sort key.
     Target chooseTarget(const AUnit& caster, const SpellForm& form);
 
+    // ── Resistance (T-4, slice TG-3) ─────────────────────────────────────────
+
+    // The contest, once, for ONE target body. False — drawing NO dice at all —
+    // for a form left untagged, which is most of the roster: an untagged spell
+    // cannot be resisted and must not eat a mock roll a combat test seeded.
+    //
+    // For a tagged form it ROLLS, at delivery time, through the combat dice
+    // (Utility::throwDice, so tests pin it with pushDiceRoll):
+    //     caster = RESIST_BASE + (levels in the form's PRIMARY path above what
+    //              the form requires) + caster.getPenetration() + throwDice()
+    //     target = target.getResistance() + form.resistMod + throwDice()
+    // and the spell LANDS iff the caster's total is STRICTLY the higher — a tie
+    // goes to the body, which is what makes the base number a real threshold
+    // rather than a coin flip with extra steps.
+    //
+    // True means this body takes nothing from the cast, and one Detail-tier
+    // line says so. The CAST still happened: the body reports true and the
+    // caster pays (M-23 is about a spell that never fired), and Low's price is
+    // still taken (M-24 — the bargain was struck).
+    bool resisted(const AUnit& caster, const SpellForm& form, AUnit& target);
+
+    // The scorer's half of the same question, and PURE — no dice, no state, so
+    // AI-2 can ask it per candidate per tick like everything else the resolver
+    // answers. An approximation of P(the caster's total wins) rather than the
+    // exact distribution of two exploding dice: 50% at parity, moving
+    // RESIST_PCT_PER_POINT per point of advantage and clamped to 5..95, because
+    // the dice cancel in expectation and nothing here is worth an integral.
+    // 100 for an untagged form, so a caller can multiply unconditionally.
+    int landChancePct(const AUnit& caster, const SpellForm& form, const AUnit& target);
+
     // ── The scorer (A-1..A-7, slice AI-2) ────────────────────────────────────
     // worth * AI_SCORE_SCALE / divider, or 0 when the form is worth nothing here.
-    // Pure, like everything the resolver does.
+    // Since T-4 the worth is first scaled by landChancePct() for a form with a
+    // unit target, so a spell that will probably be shrugged off is worth less
+    // than one that will not — which is the whole of "the scorer multiplies
+    // expected effect by the land chance". Pure, like everything the resolver does.
     int scoreOf(const AUnit& caster, const SpellForm& form, const Target& target);
 
     // Every option ONE spell offers this caster right now, with the BEST form

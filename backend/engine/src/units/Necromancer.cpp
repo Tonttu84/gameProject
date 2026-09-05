@@ -11,6 +11,7 @@ Necromancer::Necromancer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapo
     preferredRange = 3;
     setBallisticSkill(4);
     size = SIZE;
+    resistance = RESIST_CASTER;   // T-4: a trained will
     setPathLevel(SpellPath::Death, 1);
     assignSpells("Necromancer");
 }
@@ -18,6 +19,7 @@ Necromancer::Necromancer(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapo
 Necromancer::Necromancer() noexcept {
     setSpellcaster(true);
     printSymbol = 'N';
+    resistance = RESIST_CASTER;
     setPathLevel(SpellPath::Death, 1);
     assignSpells("Necromancer");
 }

@@ -11,12 +11,14 @@ Priest::Priest(int setTeam) noexcept: Human::Human(setTeam, MeleeWeapons::MaceAn
     preferredRange = 3;
     setBallisticSkill(4);
     size = SIZE;
+    resistance = RESIST_CASTER;   // T-4: a trained will
     setPathLevel(SpellPath::Holy, 1);
     assignSpells("Priest");
 }
 
 Priest::Priest() noexcept {
     setSpellcaster(true);
+    resistance = RESIST_CASTER;
     setPathLevel(SpellPath::Holy, 1);
     assignSpells("Priest");
 }

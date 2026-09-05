@@ -153,6 +153,10 @@ describe('what the sheet is sent (S4-7)', () => {
         accuracy: 0, precise: false, range: 10,
         // And how much GROUND it covers (TG-2, T-6): a single bolt covers none.
         areaMode: 'none', area: 0,
+        // And whether a will can throw it off, and how long what it leaves
+        // behind stands (TG-3, T-4/T-5). Ember is neither resistible nor
+        // standing, which is what 'none'/0/0 says.
+        resist: 'none', resistMod: 0, duration: 0,
         // Every row says where it stands on the pool, so the sheet never has
         // to test for a missing field (slice A, E-2).
         battlefield: false, poolCost: 0,
@@ -172,6 +176,27 @@ describe('what the sheet is sent (S4-7)', () => {
       // list is exactly the walk every battle before it fought.
       expect(c.chosenSpells.chosen).toEqual([])
     }
+  })
+
+  test('T-4/T-5: a tagged, timed row carries both facts through BOTH projections', () => {
+    // The fixture's rows are all untagged and untimed, which is what most of the
+    // real roster is — so the row that exercises the other values is made here,
+    // on a copy, rather than by making one of the six shared rows say something
+    // no screen assertion about it wants.
+    const hex = [{
+      ...spellsFixture[0],
+      spell: 'hex_of_frailty', form: 'minor', label: 'Hex of Frailty',
+      school: 'enchantment', schoolLevel: 1,
+      paths: [{ path: 'low', level: 1 }],
+      resist: 'negates', resistMod: -1, duration: 8,
+    }]
+
+    // The Study's projection...
+    expect(spellsForSchool(hex, 'enchantment', 1)[0])
+      .toMatchObject({ resist: 'negates', resistMod: -1, duration: 8 })
+    // ...and the character sheet's picker, off the strongest qualifying form.
+    expect(castableSpellsFor(mage({ low: 1 }), campaignAt({ enchantment: 1 }), hex))
+      .toEqual([expect.objectContaining({ resist: 'negates', resistMod: -1, duration: 8 })])
   })
 
   test('the section is omitted entirely for a body that will never cast', () => {

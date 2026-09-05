@@ -40,6 +40,9 @@ const researchFixture = {
           accuracy: 0, precise: false, range: 10,
           // TG-2's area (T-6). Ember is a single bolt, so it covers no ground.
           areaMode: 'none', area: 0,
+          // TG-3's resistance and duration (T-4/T-5). Ember cannot be shrugged
+          // off and leaves nothing standing, which is what 'none'/0 says.
+          resist: 'none', resistMod: 0, duration: 0,
         },
         {
           spell: 'fireball', form: 'major', label: 'Fireball',
@@ -48,6 +51,7 @@ const researchFixture = {
           schoolLevel: 3, unlocked: false, fatigue: 22, castingTime: 2,
           accuracy: 0, precise: false, range: 10,
           areaMode: 'explosion', area: 100,
+          resist: 'none', resistMod: 0, duration: 0,
         },
       ],
     },
@@ -70,8 +74,21 @@ const researchFixture = {
           schoolLevel: 2, unlocked: true, fatigue: 20, castingTime: 3,
           accuracy: 100, precise: true, range: 10,
           areaMode: 'none', area: 0,
+          resist: 'none', resistMod: 0, duration: 0,
           battlefield: true, poolCost: 2,
           poolLine: "Draws 2 from the army's pool — once per battle, and only when scripted.",
+        },
+        // The row that carries TG-3's two facts (T-4/T-5): a will can throw it
+        // off, and what it leaves behind stands for a count of ticks. Both are
+        // the server's numbers, and this screen only decides whether to say them.
+        {
+          spell: 'hex_of_frailty', form: 'minor', label: 'Hex of Frailty',
+          description: 'One enemy loses a point of defence.',
+          requires: [{ path: 'low', label: 'Low', level: 1 }],
+          schoolLevel: 1, unlocked: true, fatigue: 14, castingTime: 1,
+          accuracy: 100, precise: true, range: 10,
+          areaMode: 'none', area: 0,
+          resist: 'negates', resistMod: 0, duration: 8,
         },
       ],
     },
@@ -182,6 +199,22 @@ describe('The Study', () => {
     expect(detail).toHaveTextContent('Range 10')
     expect(detail).toHaveTextContent('Precise')
   })
+
+  it('T-4/T-5: a resistible row says so, a timed one says how long, and the rest are silent',
+    async () => {
+      studyWith()
+      await userEvent.click(screen.getByTestId('study-spell-toggle-hex_of_frailty-minor'))
+      const hex = screen.getByTestId('study-spell-detail-hex_of_frailty-minor')
+      expect(hex).toHaveTextContent('Lasts 8 ticks')
+      expect(hex).toHaveTextContent('Can be resisted')
+
+      // Most of the roster is neither, and a line of zeroes would bury the rows
+      // that are — so an ordinary row says nothing about either.
+      await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
+      const ember = screen.getByTestId('study-spell-detail-fireball-minor')
+      expect(ember).not.toHaveTextContent('Lasts')
+      expect(ember).not.toHaveTextContent('resisted')
+    })
 
   it('T-6: a form that covers ground says how much, and one that does not is silent',
     async () => {

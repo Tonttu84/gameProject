@@ -695,19 +695,84 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return cost + fatigueCost;
 	}
 
-	// ── The buff registry (A-8) ──────────────────────────────────────────────
-	// A mark says "this body already carries that spell", and Spells::candidates()
-	// reads it to keep a `buff` form off a man who has it. The id is a roster
-	// literal, so storing the view rather than a string costs nothing and cannot
-	// dangle.
-	bool AUnit::hasBuff(std::string_view id) const
+	// ── The standing-effect registry (A-8, T-5) ──────────────────────────────
+	//
+	// AI-1 kept a set of spell ids here, which answered the refresh rule's one
+	// question and nothing else. T-5 needs the registry to be a RECORD OF WHAT
+	// WAS DONE, because two more things now depend on it: an effect expires
+	// (`duration`), and every effect is undone at battle end. A set of ids
+	// cannot undo anything.
+	//
+	// The number recorded is the change that ACTUALLY LANDED. applyStatMod
+	// clamps each delta to ±MAX_STAT_MOD and floors the stat afterwards, so a
+	// −3 defence asked of a man standing at 1 moves him by −1 and no more; a
+	// revert that trusted the asked-for number would hand him +3 and leave him
+	// better off than the hex found him.
+	//
+	// Read through the MEMBER rather than through the virtual getter, and that
+	// is not laziness: MountedUnit::getDefence() reports its RIDER's number
+	// while applyStatMod writes the composite's own, so a getter read would
+	// record 0 for a cavalryman and never put back what it moved. The revert
+	// goes through applyStatMod, so the before/after pair has to be read from
+	// exactly what applyStatMod writes.
+	int AUnit::statValue(const std::string& stat) const
 	{
-		return _activeBuffs.find(id) != _activeBuffs.end();
+		if (stat == "attack")           return attackPWR;
+		if (stat == "maxHP")            return maxHP;
+		if (stat == "defence")          return defence;
+		if (stat == "preferredRange")   return preferredRange;
+		if (stat == "armour")           return armour;
+		if (stat == "speed")            return movementSpeed;
+		if (stat == "ballisticSkill")   return ballisticSkill;
+		if (stat == "formationFighter") return formationFighter;
+		if (stat == "resistance")       return resistance;
+		if (stat == "penetration")      return penetration;
+		return 0;   // unreachable for a name applyStatMod accepts
 	}
 
-	void AUnit::markBuff(std::string_view id)
+	bool AUnit::applyEffect(std::string_view spellId, const std::string& stat,
+	                        int delta, int duration)
 	{
-		_activeBuffs.insert(id);
+		int applied = 0;
+		if (!stat.empty()) {
+			const int before = statValue(stat);
+			// A stat nothing can move is not an effect that stands: recording
+			// it would leave hasBuff() saying yes about a cast that did nothing.
+			if (!applyStatMod(stat, delta)) return false;
+			applied = statValue(stat) - before;
+		}
+		// An empty stat is a real entry with nothing to undo — Ward's barrier
+		// is a consumable shield layer, so what it leaves behind is PRESENCE
+		// (the refresh rule reads it) and no number.
+		_standingEffects.push_back({ spellId, stat, applied, duration });
+		return true;
+	}
+
+	bool AUnit::hasBuff(std::string_view id) const
+	{
+		for (const StandingEffect& e : _standingEffects)
+			if (e.spellId == id) return true;
+		return false;
+	}
+
+	void AUnit::tickEffects()
+	{
+		// Timed effects only: ticksLeft 0 is "the whole battle" (T-5's default),
+		// never "expires now". Walked backwards so an expiry can erase in place.
+		for (int i = static_cast<int>(_standingEffects.size()) - 1; i >= 0; --i) {
+			StandingEffect& e = _standingEffects[static_cast<size_t>(i)];
+			if (e.ticksLeft <= 0) continue;
+			if (--e.ticksLeft > 0) continue;
+			if (!e.stat.empty()) applyStatMod(e.stat, -e.applied);
+			_standingEffects.erase(_standingEffects.begin() + i);
+		}
+	}
+
+	void AUnit::revertEffects()
+	{
+		for (const StandingEffect& e : _standingEffects)
+			if (!e.stat.empty()) applyStatMod(e.stat, -e.applied);
+		_standingEffects.clear();
 	}
 
 	bool AUnit::testConcentration(int damage)
@@ -1097,6 +1162,24 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			formationFighter += delta;
 			return true;
 		}
+		// ── T-4's two contest stats ───────────────────────────────────────
+		// The reserved mod-bag names the resistance decision asked for. No item
+		// carries either today; they are here so the day one does, the door is
+		// already the same door gear and spells both come through — and so a
+		// standing effect can move them like any other number.
+		//
+		// Floored at 0 rather than 1: a body with no resistance at all is a
+		// legitimate thing for a hostile mod to make (it still has to beat the
+		// caster's total on the dice), and a negative one would hand the target
+		// its own bonus back through the subtraction in the contest.
+		if (stat == "resistance") {
+			resistance = std::max(0, resistance + delta);
+			return true;
+		}
+		if (stat == "penetration") {
+			penetration = std::max(0, penetration + delta);
+			return true;
+		}
 		return false;
 	}
 
@@ -1148,6 +1231,26 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 void AUnit::restoreForNextBattle()
 {
 	reset();           // detach from hex
+	// A-8/T-5: standing spell effects are BATTLE-scoped, like everything else
+	// this function clears — the refresh rule stops a caster restacking
+	// Stoneskin on one man during a fight and says nothing about the next one,
+	// so a survivor carried into another battle is a legal target again.
+	//
+	// REVERTED, not merely forgotten, and that is T-5's fix: applyStatMod
+	// mutates the stat outright, so until this line a Stoneskin cast in one
+	// raid followed its bearer into every later battle in the process. Latent
+	// while the campaign ran one battle per process; a real bug the moment it
+	// does not, and the battle lab already runs N battles in a row.
+	revertEffects();
+	// The temporary shield stack goes with them, for the same reason and by the
+	// same rule. A Ward's layer is CONSUMABLE — it is spent by being rolled
+	// against, not undone — so it is not something revertEffects() can put back;
+	// it is simply not carried out of the battle it was raised in.
+	_extraShields.clear();
+	// AFTER the revert, and the order is load-bearing: an effect that had moved
+	// maxHP puts it back above, so healing to full has to read the number the
+	// body is going back to and not the one a spell left it at. (Nothing on the
+	// roster mods maxHP today; the ordering is what stops that from mattering.)
 	hitpoints        = maxHP;
 	fatigue          = 0;
 	fatiguelvl       = 0;
@@ -1161,11 +1264,6 @@ void AUnit::restoreForNextBattle()
 	_engagedRank     = 0;
 	spentMove        = 0;
 	_movePoints      = 0;
-	// A-8: buff marks are BATTLE-scoped, like everything else this function
-	// clears — the refresh rule stops a caster restacking Stoneskin on one man
-	// during a fight, and says nothing about the next one. A survivor carried
-	// into another battle is a legal target again.
-	_activeBuffs.clear();
 	// A-6: the opening sequence is per battle; the channel target never survives one.
 	_scriptCursor  = 0;
 	_channelTarget = nullptr;

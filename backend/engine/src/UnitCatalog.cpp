@@ -197,6 +197,16 @@ std::string unitCatalogJson()
                 // per squad and is not visible here; `size` above stays the
                 // real body either way.
                 {"formationFighter", u->getFormationFighter()},
+                // T-4's two contest stats. `resistance` is what this type
+                // brings against a resistible spell — RESIST_HUMAN by default,
+                // so a type that says nothing about magic exports the human
+                // number — and `penetration` what a caster of the type brings
+                // to push one through, 0 on everything today. Exported for the
+                // same reason every other stat is: the C++ table is the single
+                // source of truth, and the campaign sheet can show a mod to
+                // either the day an item carries one.
+                {"resistance",     u->getResistance()},
+                {"penetration",    u->getPenetration()},
             }},
         });
     }

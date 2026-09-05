@@ -402,9 +402,17 @@ TEST_CASE("enchantments: a pool that cannot pay in full drops the line, and the 
     // Two Nature lines, the global first. The enemy stands inside SPELLRANGE so
     // the SECOND line has something to do — which is what makes "the walk went
     // on" observable rather than an absence.
-    place(red, makeCaster(REDTEAM, SpellPath::Nature, 2, {"soothing_winds", "briar_snare"}),
-          at(8, RED_ROW));
+    AUnit* druid = place(red, makeCaster(REDTEAM, SpellPath::Nature, 2,
+                                        {"soothing_winds", "briar_snare"}),
+                         at(8, RED_ROW));
     Soldier* enemy = place(blue, std::make_unique<Soldier>(BLUETEAM), at(8, RED_ROW - 4));
+    // TG-3 made briar_snare resistible (T-4), and this case is about the POOL —
+    // it asserts the exact fatigue the snare inflicts, which a shrugged-off
+    // snare would not. The contest is settled out of the way rather than
+    // seeded: the tick below rolls for a dozen other things and there is no
+    // saying which draw the contest would take. Penetration is a real stat and
+    // this is what a great deal of it does.
+    druid->setPenetration(1000);
 
     field.loadArmies(std::move(red), std::move(blue));
     field.setChannels(REDTEAM, SOOTHING_WINDS_POOL_COST - 1);   // one short

@@ -87,16 +87,19 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-04) — START HERE
 
-**▶▶ THE ACTIVE FRONT IS SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions
-T-1..T-7, THREE SLICES PLANNED, TG-1 SHIPPED 2026-09-04, TG-2 SHIPPED 2026-09-05.** The 2026-09-02 ask
-(*"plan first how spells should generally work and target, then we update the spells to work with
-our plan"*), taken up the day the casting AI closed. The record is the "SPELL TARGETING AND
-DELIVERY" entry at the top of the Deferred design backlog below: the seven decisions, the three
-assistant's calls, and the slice plan (TG-1 delivery, TG-2 area, TG-3 resistance and duration).
-**Start there, and do not re-derive them.** Each slice carries a "what landed" note once it is
-on `main`; a slice without one is not built. What it deliberately leaves alone: line of sight
-(T-3, none), the balance pass (still deferred, now with a settled delivery model under it), and
-walls catching a spell early (parked, undesigned).
+**▶▶ THE SPELL TARGETING AND DELIVERY FRONT IS CLOSED — INTERVIEWED 2026-09-04, decisions
+T-1..T-7, ALL THREE SLICES SHIPPED (TG-1 2026-09-04, TG-2 and TG-3 2026-09-05) AND GREEN ON
+`main`.** The 2026-09-02 ask (*"plan first how spells should generally work and target, then we
+update the spells to work with our plan"*), taken up the day the casting AI closed. The record is
+the "SPELL TARGETING AND DELIVERY" entry at the top of the Deferred design backlog below: the
+seven decisions, the three assistant's calls, and each slice's "what landed" note (TG-1 delivery,
+TG-2 area, TG-3 resistance and duration). **Start there, and do not re-derive them.** Every spell
+now has a declared target kind, a range, an accuracy, an area, a resist tag and a duration on its
+row, and `docs/ADDING_SPELLS.md` is rewritten against that shape. What the front deliberately
+leaves alone: line of sight (T-3, none), walls catching a spell early (parked, undesigned), and
+THE BALANCE PASS — which is now the obvious next front: every `AI_*`, `RESIST_*`, `FIREBALL_AREA`
+and duration number is (bd), the Battle Lab and `make ab-casting` exist to judge them, and no
+item yet moves `resistance` or `penetration` (the mod-bag names are reserved and phrased).
 
 **▶▶ THE CASTING AI FRONT IS CLOSED — INTERVIEWED 2026-09-04, ALL THREE SLICES SHIPPED THE SAME
 DAY AND GREEN ON `main` (schema v46, lab scenario v4).** Ten decisions (A-1..A-10), the
@@ -8210,6 +8213,48 @@ one resolver, effect-only bodies); the interview walked the other six.
 - **TG-3, resistance and duration.** The contest, the two new stats through the type rows and the
   mod bag, durations and expiry, the battle-end undo, the scorer's land chance, and
   `docs/ADDING_SPELLS.md` rewritten against the new shape.
+  - **✅ TG-3 SHIPPED 2026-09-05.** Spec'd here, built by an Opus subagent (the first attempt was
+    killed by a container restart before it wrote a line; the second built it whole), reviewed
+    and run here. What landed: `ResistKind {None, Negates}` in its own header like `AreaMode`;
+    `SpellForm.resist/resistMod/duration` after `area`; `Spells::resisted(caster, form, target)`
+    — an untagged form DRAWS NOTHING (the common path must not eat a combat test's mock roll);
+    a tagged one throws the exploding die for each side, caster = `RESIST_BASE` + levels held in
+    the PRIMARY path above the row's requirement + `penetration`, target = `resistance` +
+    `resistMod`, and the spell lands only if the caster is STRICTLY higher (a tie goes to the
+    will); one Detail line "X shrugs off Y"; the cast still happened, so fatigue is paid.
+    Direct-effect bodies (hex_of_frailty, briar_snare) ask before applying; drain_life asks
+    through `RangedShot::resisted`, checked in `applyHit` FIRST, before block rolls and hooks,
+    so an area asks each body separately. `Spells::landChancePct` is the scorer's pure twin
+    (dice cancel in expectation: 50% at parity ± `RESIST_PCT_PER_POINT` per point, clamped to
+    `RESIST_CHANCE_MIN/MAX_PCT`), applied in `scoreOf` to the worth before the divider so no
+    estimator can forget it. Three rows tagged: hex_of_frailty (also `buff` now, so it cannot
+    stack), briar_snare, drain_life. Resistance per type: humans 10 (`RESIST_HUMAN`, the AUnit
+    default), casters 12, undead 14, Golem 18, beasts 8 — all (bd); `penetration` 0 everywhere;
+    both reach `applyStatMod` (floor 0) and the `dump-units` stats, and `ITEM_STAT_TEXT` phrases
+    them ("resistance to magic", "spell penetration") so a future item row prices itself — no
+    item authored. Duration: `_activeBuffs` became a registry of `StandingEffect
+    {spellId, stat, applied, ticksLeft}`; `applyEffect` records what ACTUALLY moved (through the
+    same member `applyStatMod` writes, not the getter — a cavalryman's `getDefence()` is his
+    rider's, so a getter read would have recorded 0 and never restored him), `tickEffects()` in
+    `onTurnStart` after `recover()` and before `applyEnchantments()` counts timed effects down
+    and undoes them at zero, `revertEffects()` in `restoreForNextBattle` undoes every one and
+    clears `_extraShields` — AI-1's latent "Stoneskin survives into the next battle" is closed.
+    A-8's refresh rule is now "not while active", applied at BOTH selection sites
+    (`candidates()` and the `Densest` pick's team walk, which found the same man forever
+    otherwise — pinned to agree). `HEX_FRAILTY_DURATION` 8 (bd); everything else lasts the
+    battle. Catalog exports `resist`/`resistMod`/`duration`; The Study prints "Lasts N ticks"
+    and "Can be resisted" only when true. `docs/ADDING_SPELLS.md` rewritten: every field in
+    struct order with its decision number, "Resistance: the contest" and "Duration, and the
+    standing-effect registry".
+  - **Facts corrected on contact:** two existing cases hid dice-order dependencies the contest
+    exposed — test_delivery's Broken-pick case let `takeDamage` roll morale on the wrong man
+    (now pinned unbroken), and test_enchantments' pool case asserts an exact snare fatigue its
+    `tick()` cannot seed positionally, so that caster is given a large `penetration` to make the
+    contest a formality (the one place the contest is bypassed rather than pinned, and it says
+    so).
+  - Engine 522 cases green fast, sanitized and on twenty fixed seeds (`test_resist.cpp` 13,
+    `test_duration.cpp` 7); campaign-server 1483; frontend 549 + lint; the changed TUs pass
+    `clang++ -fsyntax-only` with the repo's warning set.
 
 **What is true today, audited 2026-09-02 so the interview starts from facts** (all in
 `backend/engine/src/SpellList.cpp` unless named):

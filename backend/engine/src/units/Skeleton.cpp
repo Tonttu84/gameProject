@@ -7,6 +7,7 @@ Skeleton::Skeleton(int setTeam) : AUnit(setTeam)
     setInnateAbilities(UnitAbility::Undead | UnitAbility::Mindless);  // Mindless => Fearless
     fatigueCost = 0;   // no flesh, no fatigue
     unitValue   = 4;
+    resistance  = RESIST_UNDEAD;   // T-4: little left in it for a spell to work on
 
     // Skilled but fragile: more nimble than a zombie, shatters when hit.
     // HP=4 (~40% of a human's 10). Low strength — old bones have no muscle.

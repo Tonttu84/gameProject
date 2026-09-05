@@ -466,6 +466,13 @@ export const spellsForSchool = (spells, school, level) =>
       // through like the rest, and the screen decides whether it is worth a word.
       areaMode: row.areaMode ?? 'none',
       area: row.area ?? 0,
+      // T-4/T-5 (TG-3): whether a will can throw the spell off, by how much the
+      // form makes that easier or harder, and how long what it leaves behind
+      // stands — 0 being the whole battle. Passed through like every other
+      // engine number; the screen decides which of them is worth a word.
+      resist: row.resist ?? 'none',
+      resistMod: row.resistMod ?? 0,
+      duration: row.duration ?? 0,
       // A battlefield row's price is not its fatigue (E-2), so the Study says
       // so on the row itself — phrased here, printed verbatim there.
       ...poolFieldsOf(row),
@@ -574,6 +581,10 @@ export const castableSpellsForLevels = (paths, schoolLevels, spells = []) => {
       // And the area with them (T-6/T-7), off the same winning form.
       areaMode: row.areaMode ?? 'none',
       area: row.area ?? 0,
+      // And resistance and duration (T-4/T-5), off the same winning form again.
+      resist: row.resist ?? 'none',
+      resistMod: row.resistMod ?? 0,
+      duration: row.duration ?? 0,
       // Off the WINNING form, like the label and the description above: a
       // battlefield spell is single-form today (E-3), but the fields are read
       // here rather than off the spell so the strongest-form rule keeps

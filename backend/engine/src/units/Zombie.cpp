@@ -19,6 +19,7 @@ Zombie::Zombie(int setTeam): AUnit::AUnit(setTeam)
     addWeapon(MeleeWeapons::Claws);
     setBallisticSkill(1); // dead hands throw nothing straight
     fatigueCost = 0; //Undead dont need rest
+    resistance = RESIST_UNDEAD;   // T-4: little left in it for a spell to work on
     size = SIZE;
 
 }

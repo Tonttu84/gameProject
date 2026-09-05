@@ -65,6 +65,25 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
     }
   }, 30000)
 
+  // T-4's two contest stats, on every unit row. The campaign's UnitType does
+  // NOT store them — the same call `formationFighter` gets, for the same reason
+  // (no campaign capability reads either, and the character sheet shows a
+  // modifier to a stat the catalog does not carry) — so what is pinned is the
+  // EXPORT, which is where the battle layer reads them from.
+  test('dump-units carries a resistance and a penetration for every type', async () => {
+    const catalog = await dumpUnits()
+    for (const unit of catalog.units) {
+      expect(Number.isInteger(unit.stats.resistance),
+        `${unit.name} exports no resistance`).toBe(true)
+      // Every body has SOME will: a resistance of 0 would mean a type nothing
+      // can be shrugged off by, which is a balance choice nobody has made.
+      expect(unit.stats.resistance, `${unit.name} has no resistance at all`)
+        .toBeGreaterThanOrEqual(1)
+      expect(unit.stats.penetration, `${unit.name} has negative penetration`)
+        .toBeGreaterThanOrEqual(0)
+    }
+  }, 30000)
+
   test('info output has the grid/units shape the frontend relies on', async () => {
     const info = await getInfo()
     expect(info.grid.width).toBeGreaterThan(0)
@@ -450,8 +469,27 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
       expect(Number.isInteger(row.area)).toBe(true)
       expect(row.area).toBeGreaterThanOrEqual(0)
       expect(row.area > 0).toBe(row.areaMode !== 'none')
+      // TG-3 (T-4/T-5): whether a will can throw the spell off, by how much the
+      // form tilts that, and how long what it leaves behind stands. The kind is
+      // one of the two the engine knows; the modifier is a signed number and
+      // MAY be 0 (it is, everywhere, today — the field is the point); the
+      // duration is a count of ticks, 0 meaning the whole battle.
+      expect(['none', 'negates']).toContain(row.resist)
+      expect(Number.isInteger(row.resistMod)).toBe(true)
+      expect(Number.isInteger(row.duration)).toBe(true)
+      expect(row.duration).toBeGreaterThanOrEqual(0)
     }
   })
+
+  test('some form is resistible and some form is timed — the fields are wired, not dead',
+    async () => {
+      // The sweep above passes on a roster where every row says "none, 0, 0",
+      // which is exactly what an export that forgot to read the row would say.
+      // These two say the fields reach the wire carrying real values.
+      const { spells } = await dumpSpells()
+      expect(spells.some((row) => row.resist === 'negates')).toBe(true)
+      expect(spells.some((row) => row.duration > 0)).toBe(true)
+    })
 
   test('every school-less form is Holy or Unholy — what S3-2 filters on', async () => {
     const { spells } = await dumpSpells()

@@ -19,6 +19,7 @@ Golem::Golem(int setTeam): AUnit::AUnit(setTeam)
     unitValue = 18;       // a spell magnet, like the guard it out-weighs
     movementSpeed = 8;    // ponderous — slower than a marching man (10)
     setBallisticSkill(1); // it does not throw things
+    resistance = RESIST_GOLEM;   // T-4: animated stone — the hardest thing to enchant
     addWeapon(MeleeWeapons::TitanFist);
     size = SIZE;
 }

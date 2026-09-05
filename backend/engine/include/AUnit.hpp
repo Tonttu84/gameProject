@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <memory>
 #include <assert.h>
 #include <climits>
@@ -11,7 +12,6 @@
 #include "Abilities.hpp"
 #include "Spell.hpp"   // SpellPath/SpellForm are stored by value/pointer below
 #include <array>
-#include <set>
 #include "Anatomy.hpp"
 #include "Battlefield.hpp"
 #include "Utility.hpp"
@@ -179,17 +179,52 @@ public:
     // Low-primary spell (M-21). Public so tests can price a form directly.
     int  spellFatigueCost(const SpellForm& form) const;
 
-    // ── The buff registry (A-8's refresh rule, slice AI-1) ───────────────────
-    // Which standing spell effects this body is already carrying, by roster
-    // spell id. Spells::candidates() drops a unit that already carries a `buff`
-    // form's spell, so a caster cannot stack Stoneskin on the same man tick
-    // after tick — applyStatMod clamps each delta on its own and never the
-    // total, so without this the right play is to recast forever.
+    // ── The standing-effect registry (A-8's refresh rule, T-5's duration) ────
+    //
+    // AI-1 kept a SET OF IDS here and called it the buff registry: it answered
+    // "is this man carrying Stoneskin" and nothing else, which was all the
+    // refresh rule needed. T-5 needs two more answers — when does it stop, and
+    // what exactly has to be put back — so the set became a record of WHAT WAS
+    // DONE. `applied` is the change that actually landed rather than the one
+    // that was asked for (applyStatMod floors each stat and clamps every delta
+    // to ±MAX_STAT_MOD, so the two differ), because the revert has to undo
+    // exactly what the apply did and nothing more.
     //
     // Ids are roster string literals (static storage), so a view is safe to
-    // keep; nothing else ever calls markBuff.
+    // keep. `stat` is a real string: it is handed straight back to
+    // applyStatMod, whose vocabulary is std::string.
+    struct StandingEffect {
+        std::string_view spellId;   // the ROSTER id of the spell that laid it
+        std::string      stat;      // the modded stat, or empty for an effect
+                                    // that changed no number (Ward's shield)
+        int              applied;   // the change that actually landed, signed
+        int              ticksLeft; // 0 = stands for the whole battle (T-5)
+    };
+
+    // Apply a standing effect and record it. Returns false — recording nothing
+    // — for a stat applyStatMod does not know, so an effect that could not be
+    // applied is never one the registry claims is standing. An empty `stat` is
+    // the deliberate exception: it records presence for a body that changed no
+    // number, which is what a Ward is (its shield layer is consumable and is
+    // cleared with the rest of the stack at battle end, not reverted here).
+    bool applyEffect(std::string_view spellId, const std::string& stat,
+                     int delta, int duration);
+
+    // Is this body carrying that spell right now? The name AI-1 gave it, kept:
+    // Spells::candidates() asks exactly this, and since T-5 the answer is
+    // "while the effect is ACTIVE" by construction rather than by a mark that
+    // outlived what it marked.
     bool hasBuff(std::string_view id) const;
-    void markBuff(std::string_view id);
+
+    // T-5: count every timed effect down one tick and undo the ones that reach
+    // zero. Battlefield::onTurnStart() calls it on every living body.
+    void tickEffects();
+
+    // T-5: undo every standing effect, timed or not, and forget them. Called at
+    // battle end (restoreForNextBattle) — before this, a Stoneskin cast in a
+    // raid followed its bearer into the next battle and the one after that,
+    // for the life of the process.
+    void revertEffects();
 
     // ── Channelling (M-23) ───────────────────────────────────────────────────
     bool isChannelling() const { return _channelForm != nullptr; }
@@ -214,7 +249,10 @@ public:
     void setPlaced(bool value);
     bool getPlaced() const;
 
-    virtual void restoreForNextBattle(); // heal to full and reset battle state for campaign carry-over
+    // Heal to full and reset battle state for campaign carry-over. Since T-5 it
+    // also UNDOES every standing spell effect and empties the temporary shield
+    // stack — both were battle-scoped in intent and permanent in fact.
+    virtual void restoreForNextBattle();
 
     void setBattleSummon(bool value);
     bool getBattleSummon() const;
@@ -496,9 +534,14 @@ public:
     // CATALOG", 4b) and character gear (slice 9a): apply one FLAT modifier to a
     // named stat, by the same names the unit catalog exports — "maxHP",
     // "attack", "defence", "armour", "speed", "ballisticSkill",
-    // "preferredRange", "formationFighter". Returns false for a name it does
-    // not handle, so an unknown stat is INERT rather than silently mis-applied
-    // — the same contract the campaign layer's effect readers use.
+    // "preferredRange", "formationFighter", "resistance", "penetration".
+    // Returns false for a name it does not handle, so an unknown stat is INERT
+    // rather than silently mis-applied — the same contract the campaign layer's
+    // effect readers use.
+    //
+    // Since T-5 it is also the door a SPELL's standing effect goes through, via
+    // applyEffect() above: one place that knows how to move a stat, whether the
+    // mover is a helm or a hex.
     //
     // The vocabulary is the CHARACTER SHEET (9-5): what a player sees as a
     // number. Two deliberate absences —
@@ -516,10 +559,27 @@ public:
     // bounds; they exist for the request that is not a +1 upgrade.
     static constexpr int MAX_STAT_MOD = 10;
     bool applyStatMod(const std::string& stat, int delta);
+    // The current value of the stat applyStatMod writes under that name — the
+    // before/after pair applyEffect needs to record what actually landed. NOT
+    // virtual and not the public getters: see the comment on the definition.
+    int  statValue(const std::string& stat) const;
     int  getMovementSpeed()  const  { return movementSpeed; }
     int  getBallisticSkill() const  { return ballisticSkill; }
     int  getReconTag()       const  { return reconTag; }
     int  getAccuracy()       const  { return accuracy; }
+
+    // ── The two sides of the resistance contest (T-4, slice TG-3) ────────────
+    // `resistance` is what a body brings against a spell tagged as resistible;
+    // `penetration` is what a caster brings to push one through. Both are
+    // ordinary stats — applyStatMod knows their names, so an item may carry
+    // either the day one is authored (none does today). Plain accessors and
+    // NOT virtual, deliberately: a mounted composite resists as itself, being
+    // one body with one will, rather than delegating to the rider the way the
+    // combat stats do.
+    int  getResistance()  const  { return resistance; }
+    void setResistance(int v)    { resistance = std::max(0, v); }
+    int  getPenetration() const  { return penetration; }
+    void setPenetration(int v)   { penetration = std::max(0, v); }
 
     // ── Movement points ───────────────────────────────────────────────────────
     // Signed bank every unit moves on: each tick it regains movementSpeed,
@@ -608,7 +668,16 @@ protected:
     // unitCatalogJson() like every other stat.
     int reconTag        = 0;
     
-    int resistance = 10;
+    // T-4: what this body brings against a resistible spell. RESIST_HUMAN is
+    // the default on purpose — a type that says nothing about magic is a man,
+    // which is right for every human unit and honest for a new type whose
+    // author has not thought about it yet. The per-type table is in Defines.hpp
+    // and each type sets its own in its constructor.
+    int resistance = RESIST_HUMAN;
+    // T-4: what a CASTER brings to push a spell through one. Zero on every unit
+    // type today — the stat exists so the contest has the term the user's
+    // "+ spell penetration" named, and so an item can carry it tomorrow.
+    int penetration = 0;
     int unitValue = 10; // relative priority: mages weigh this to avoid wasting spells on low-value chaff
     size_t size = 10;   // the REAL size — the body itself. See getPackingSize().
     // How much less room this unit takes than its real size when packed
@@ -675,10 +744,11 @@ protected:
     const Spell*     _channelSpell = nullptr;
     const SpellForm* _channelForm  = nullptr;
 
-    // Standing spell effects this body carries, by roster spell id (A-8). Per
-    // BATTLE, not per campaign: cleared in restoreForNextBattle() beside every
-    // other battle-scoped field.
-    std::set<std::string_view> _activeBuffs;
+    // Standing spell effects this body carries (A-8, T-5). Per BATTLE, not per
+    // campaign: restoreForNextBattle() REVERTS them rather than merely dropping
+    // them, which is the bug T-5 closed — applyStatMod mutates the stat
+    // outright, so before this a Stoneskin was permanent for the process.
+    std::vector<StandingEffect> _standingEffects;
     int _holdTurns = 0;
     int _replayId = -1;
 
