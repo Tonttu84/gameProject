@@ -40,13 +40,16 @@ a useful version of the same idea instead of a strictly worse spell of its own.
 { "minor", "Ember", ember(),
   {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber, nullptr,
   EnchantAim::None, 0, nullptr,
-  TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE },
+  TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE,
+  AreaMode::None, 0 },
 //  ↑form    ↑label ↑description
 //                  ↑paths        ↑school ↑lvl ↑fatigue ↑castingTime ↑cast ↑price
 //   ↑the battlefield trio at its default (see below) — the table is initialised
 //    POSITIONALLY, so an ordinary row has to name what it skips over
 //                                    ↑target kind  ↑pick   ↑buff (A-8)
 //                                                          ↑accuracy ↑range (T-1/T-2)
+//    ↑area mode ↑area in hex points (T-6) — `AreaMode::None, 0` unless the form
+//     covers GROUND rather than a man
 ```
 
 | Field         | What it is                                                                  |
@@ -66,6 +69,8 @@ a useful version of the same idea instead of a strictly worse spell of its own.
 | `buff`        | `true` for a standing effect the target keeps; the resolver then refuses to relay it (A-8) |
 | `accuracy`    | T-1: a SIGNED modifier on the caster's own accuracy stat, clamped to 0-100. `SPELL_PRECISE` (100) means the form just lands — no roll, no scatter, no elevation or forest adjustment |
 | `range`       | T-2: how far the form reaches in hexes, elevation-adjusted — **boons included**. Defaults to `SPELLRANGE` |
+| `areaMode`    | T-6: `AreaMode::None` \| `Explosion` \| `Random` — how the form's blast spreads out from where it landed. DESCRIPTIVE: the body reads it off the row to fill the shot |
+| `area`        | T-6: how much ground it covers, in hex SIZE POINTS (640 = one whole hex). `0` with `None`, non-zero with either other mode — the pair is a biconditional the sweep pins |
 | `spell`       | back-pointer to the spell above — **wired automatically** at the end of `roster()`, never authored |
 | `worth`       | `int(const AUnit&, const SpellForm&, const Target&)` — what casting this form at that target is worth, in `unitValue` (A-3); **wired by id** in `worthFor()`, see "Scoring" below |
 | `aiDivider`   | `0` = derive from fatigue, casting time and pool cost (A-4); any positive number overrides it for playtesting/modding |
@@ -114,6 +119,44 @@ row:
 A form whose body applies its effect directly — every boon, every debuff, both battlefield
 enchantments — is written `SPELL_PRECISE`, because that is what it always was: it never rolled
 to hit anything. Only fireball's two forms are thrown.
+
+### Area: the arc (T-6, T-7 — slice TG-2)
+
+An area is **hex size points**, and a hex given points covers them as **one contiguous arc** of
+its 640 slots: a start slot is rolled, `points` consecutive slots are covered from it — wrapping
+past 640 back to 1 — and every body whose slot range overlaps is struck **once** for the shot's
+`areaDamage`. 640 points or more take the hex whole and roll nothing. The layout is
+`pickHexTarget`'s: the phase's slot cache, in cache order, each body `getSize()` slots wide from
+slot 1, empty ground after them. That is why a blast on a sparse line mostly hits dirt.
+
+The user's own example: 50 points thrown from start 630 cover 630-640 and 1-40, so of twenty men
+standing in slots 1-200 exactly the four in 1-40 are struck. Rejected on the way: a per-spot
+lottery, which given enough rolls hits every man in the hex — *"this makes it too easy to hit all
+humans"*.
+
+The two modes spend the points differently:
+
+- **`Explosion`** fills the landed hex first (640 covers it), then opens the next RING outward,
+  640 a hex, and so on until the points run out; the last hex reached takes the remainder as an
+  arc. Ring order is turned by ONE `getRandom(0, 5)` roll per cast so no compass direction is
+  favoured, and off-map hexes are skipped **without spending their share** — a blast at the map's
+  edge loses nothing to the void.
+- **`Random`** splits the total into `AREA_CHUNK`-sized chunks and drops each on a hex drawn
+  uniformly from the smallest ring set that could hold the whole area. Every hex that received
+  points then covers them as one arc, so chunks that landed together are one stretch of ground.
+
+**Friendly fire is real (T-7).** There is no team filter anywhere in coverage: the blast strikes
+what it covers, both sides, the caster included. Nothing forbids throwing one into your own
+line — the SCORER nets it instead. `worthArea()` adds, for every body other than the aimed man in
+every hex the area would reach, `areaDamage × chance × value / (100 × AI_DAMAGE_SCALE)` where
+`chance` is the arc-overlap probability `min(100, (P + size) × 100 / 640)`, POSITIVE for an enemy
+and NEGATIVE for one of the caster's own. It is pure — no dice, no state — like every other
+estimator. A consequence worth knowing before you author an area: a blast is only worth throwing
+at a CROWD, so a caster at a lone man reaches for the cheap single-target form instead.
+
+The rolls an area makes are COMBAT rolls at delivery time (`Utility::getRandom`, pinned with
+`pushDiceRoll`), exactly like `pickHexTarget`'s. `shot.onDamage` fires once **per body** the arc
+struck, so an effect hung on a hit — a life drain, say — would trigger N times on an area form.
 
 **A `buff` form** (Stoneskin, Ward) marks its target with `markBuffOn(unit, "<spell id>")` on
 success, and a marked man stops being a candidate for that spell for the rest of the battle

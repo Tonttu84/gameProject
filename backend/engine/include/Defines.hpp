@@ -112,10 +112,22 @@ constexpr int BOWDAMAGE   = 5;
 constexpr int BOWMAXRANGE = 8;   // max hex distance an archer can shoot
 constexpr int BOWAMMO     = 30;
 
+// Area of effect (T-6/T-7, slice TG-2). An area is measured in HEX SIZE POINTS
+// — the same 640-slot currency a hex's bodies stand in — and covered as one
+// contiguous arc per hex, so a blast strikes the men who happen to stand where
+// it falls rather than sampling the hex until it has found everybody.
+constexpr int AREA_CHUNK = 10;  // (bd) the RANDOM mode's grain: one man's worth of
+                                 // ground per drawn hex, so a scattered area lands in
+                                 // recognisable patches instead of one point per hex
+
 // Fireball
-constexpr int FIREBALL_CENTRE    = 10; // damage to the primary hit
-constexpr int FIREBALL_BLAST     = 5;  // damage per secondary hit
-constexpr int FIREBALL_SECONDARY = 5;  // number of secondary blast hits
+constexpr int FIREBALL_CENTRE    = 10; // damage to the man it lands on
+constexpr int FIREBALL_BLAST     = 5;  // damage to every OTHER body the area covers
+                                        // (T-7: friend and foe alike)
+constexpr int FIREBALL_AREA      = 100; // (bd) ten men's worth of ground: on a hex of
+                                        // twenty humans a 100-point arc strikes three
+                                        // or four, close to the old splash's expectation
+
 // T-2: the DEFAULT per-form range. Every SpellForm carries its own `range` and
 // this is what a row gets when it does not say otherwise — boons included, now
 // that a Ward across the map is no longer a thing (see SPELL TARGETING AND

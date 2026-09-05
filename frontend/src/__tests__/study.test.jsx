@@ -38,6 +38,8 @@ const researchFixture = {
           // TG-1's delivery fields (T-1/T-2), as the server ships them: the
           // thrown Fire forms scatter, everything else on the roster is precise.
           accuracy: 0, precise: false, range: 10,
+          // TG-2's area (T-6). Ember is a single bolt, so it covers no ground.
+          areaMode: 'none', area: 0,
         },
         {
           spell: 'fireball', form: 'major', label: 'Fireball',
@@ -45,6 +47,7 @@ const researchFixture = {
           requires: [{ path: 'fire', label: 'Fire', level: 3 }],
           schoolLevel: 3, unlocked: false, fatigue: 22, castingTime: 2,
           accuracy: 0, precise: false, range: 10,
+          areaMode: 'explosion', area: 100,
         },
       ],
     },
@@ -66,6 +69,7 @@ const researchFixture = {
           requires: [{ path: 'nature', label: 'Nature', level: 2 }],
           schoolLevel: 2, unlocked: true, fatigue: 20, castingTime: 3,
           accuracy: 100, precise: true, range: 10,
+          areaMode: 'none', area: 0,
           battlefield: true, poolCost: 2,
           poolLine: "Draws 2 from the army's pool — once per battle, and only when scripted.",
         },
@@ -178,6 +182,20 @@ describe('The Study', () => {
     expect(detail).toHaveTextContent('Range 10')
     expect(detail).toHaveTextContent('Precise')
   })
+
+  it('T-6: a form that covers ground says how much, and one that does not is silent',
+    async () => {
+      studyWith()
+      await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-major'))
+      expect(screen.getByTestId('study-spell-detail-fireball-major'))
+        .toHaveTextContent('Area 100 (explosion)')
+
+      // Ember hits one man, so there is no area to name — "Area 0" would be a
+      // number that tells the player nothing.
+      await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
+      expect(screen.getByTestId('study-spell-detail-fireball-minor'))
+        .not.toHaveTextContent('Area')
+    })
 
   it('S3-5: Construction renders like any school, saying it holds nothing', () => {
     studyWith()

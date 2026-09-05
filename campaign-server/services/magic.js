@@ -461,6 +461,11 @@ export const spellsForSchool = (spells, school, level) =>
       accuracy: row.accuracy ?? 0,
       precise: row.precise === true,
       range: row.range ?? 0,
+      // T-6/T-7 (TG-2): how much ground the form's blast covers, in hex points,
+      // and how it spreads. 'none'/0 on everything that hits one man — passed
+      // through like the rest, and the screen decides whether it is worth a word.
+      areaMode: row.areaMode ?? 'none',
+      area: row.area ?? 0,
       // A battlefield row's price is not its fatigue (E-2), so the Study says
       // so on the row itself — phrased here, printed verbatim there.
       ...poolFieldsOf(row),
@@ -566,6 +571,9 @@ export const castableSpellsForLevels = (paths, schoolLevels, spells = []) => {
       accuracy: row.accuracy ?? 0,
       precise: row.precise === true,
       range: row.range ?? 0,
+      // And the area with them (T-6/T-7), off the same winning form.
+      areaMode: row.areaMode ?? 'none',
+      area: row.area ?? 0,
       // Off the WINNING form, like the label and the description above: a
       // battlefield spell is single-form today (E-3), but the fields are read
       // here rather than off the spell so the strongest-form rule keeps

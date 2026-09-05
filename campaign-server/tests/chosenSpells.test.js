@@ -151,6 +151,8 @@ describe('what the sheet is sent (S4-7)', () => {
         // reason: a reader that has to test for a missing key will one day
         // forget to. Ember is thrown, so it is not precise.
         accuracy: 0, precise: false, range: 10,
+        // And how much GROUND it covers (TG-2, T-6): a single bolt covers none.
+        areaMode: 'none', area: 0,
         // Every row says where it stands on the pool, so the sheet never has
         // to test for a missing field (slice A, E-2).
         battlefield: false, poolCost: 0,

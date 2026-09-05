@@ -41,50 +41,72 @@ using json = nlohmann::json;
 // Mage BS 12 → accuracy 60 → aimed range 6 hexes. Zombie target: undead (no
 // morale dice), armour 0 — takes exactly FIREBALL_CENTRE damage from a hit.
 //
-// Dice for one fireball on flat open ground at distance 3, SINCE TG-1:
+// Dice for one fireball on flat open ground at distance 3, SINCE TG-2:
 //   deviation:  dist/accuracy = 3/60 = 0 → no rolls, so it lands on his hex
 //   aimed roll: NONE. T-1 took the archer's "roll ≤ accuracy" off spells
 //               entirely — an imprecise spell's whole miss is the scatter, and
 //               a shot that did not scatter takes the man it was aimed at.
 //   morale:     undead target → no rolls
-//   splash:     FIREBALL_SECONDARY × pickHexTarget getRandom(1,640);
-//               push 640 each — lands on empty ground slots, hits nobody.
+//   area:       ONE getRandom(1, 640) — the start slot of the arc the blast
+//               covers the landed hex with (T-6). The old five splash rolls are
+//               gone: an area is a shape, not a handful of extra shots.
+//
+// SIX zombies rather than one, and that is TG-2's doing: the scorer NETS the
+// blast honestly now (assistant's call 2), so a fireball at a lone man is worth
+// its centre damage alone and the cheap Ember out-scores it on ratio. The blast
+// is for a CROWD, which is what T-6 made it — so the fixture stands a crowd
+// there. Whom the lottery aims at among six identical bodies is not fixed, so
+// what is asserted is the SHAPE: one man takes the centre, the rest take the
+// blast, and the arc's start decides who.
 
 TEST_CASE("Mage fireball hits an in-range enemy for FIREBALL_CENTRE plus its Fire level") {
     Battlefield& field = Utility::getBattlefield();
 
-    auto magePtr   = std::make_unique<Mage>(REDTEAM);
-    auto zombiePtr = std::make_unique<Zombie>(BLUETEAM);
-    Zombie* zombie = zombiePtr.get();
-
+    auto magePtr = std::make_unique<Mage>(REDTEAM);
     magePtr->setHex(field.hexGrid.getHex({5, 8}));
-    zombiePtr->setHex(field.hexGrid.getHex({2, 8}));
     // The blast is fireball's MAJOR form now, gated on Fire 3 (M-13/M-18); a
     // stock Mage is Fire 1 and would throw the minor ember instead.
     magePtr->setPathLevel(SpellPath::Fire, 3);
 
     Army red, blue;
     red.push_back(std::move(magePtr));
-    blue.push_back(std::move(zombiePtr));
+    std::vector<Zombie*> line;
+    for (int i = 0; i < 6; ++i) {
+        auto zombiePtr = std::make_unique<Zombie>(BLUETEAM);
+        zombiePtr->setHex(field.hexGrid.getHex({2, 8}));
+        line.push_back(zombiePtr.get());
+        blue.push_back(std::move(zombiePtr));
+    }
     field.loadArmies(std::move(red), std::move(blue));
 
-    REQUIRE(zombie->getHp() == zombie->getmaxHP());
+    for (Zombie* z : line) REQUIRE(z->getHp() == z->getmaxHP());
 
     RangedCombat::resetCache(); // tick() normally does this before the phase
     Utility::clearDiceRolls();
-    for (int i = 0; i < FIREBALL_SECONDARY; ++i)
-        Utility::pushDiceRoll(640); // splash finds only empty ground
+    // The arc starts at slot 1 and runs FIREBALL_AREA slots, which covers all
+    // six bodies (they stand in slots 1-60).
+    Utility::pushDiceRoll(1);
 
     // The major form channels for two ticks (M-23): the first phase starts it
     // and consumes no dice, the second fires it.
     field.triggerSpecialPhase();
-    REQUIRE(zombie->getHp() == zombie->getmaxHP()); // still mid-channel
+    for (Zombie* z : line) REQUIRE(z->getHp() == z->getmaxHP()); // still mid-channel
     field.triggerSpecialPhase();
     Utility::clearDiceRolls();
 
-    // M-20: the blast scales on the caster's PRIMARY path level.
-    REQUIRE(zombie->getHp() == zombie->getmaxHP() - (FIREBALL_CENTRE + 3));
-    REQUIRE(zombie->getAlive() == true);
+    // M-20: the blast scales on the caster's PRIMARY path level. Exactly one man
+    // took that centre damage; the other five took the blast, ONCE each (T-6).
+    int centres = 0, blasted = 0;
+    for (Zombie* z : line) {
+        int taken = z->getmaxHP() - z->getHp();
+        if (taken == FIREBALL_CENTRE + 3) ++centres;
+        else if (taken == FIREBALL_BLAST) ++blasted;
+        INFO("a body took " << taken);
+        CHECK((taken == FIREBALL_CENTRE + 3 || taken == FIREBALL_BLAST));
+        CHECK(z->getAlive() == true);
+    }
+    CHECK(centres == 1);
+    CHECK(blasted == 5);
 
     field.extractResult();
 }
@@ -480,7 +502,7 @@ TEST_CASE("castSpells: fatigue is paid on a successful cast, never when no targe
 
     RangedCombat::resetCache();
     Utility::clearDiceRolls();
-    Utility::pushDiceRoll(1);   // aimed-hit roll (the ember has no splash)
+    Utility::pushDiceRoll(1);   // spare: the ember is one bolt and carries no area
 
     field.triggerSpecialPhase();
     Utility::clearDiceRolls();

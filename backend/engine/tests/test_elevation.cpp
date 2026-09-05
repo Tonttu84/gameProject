@@ -234,7 +234,7 @@ TEST_CASE("elevation: caster height extends fireball range by one hex per tier")
         // the man it was aimed at. Out of range: no dice either.
         //
         // A stock Mage is Fire 1, so this is fireball's MINOR form (M-18) —
-        // one bolt and no splash, hence no secondary rolls to push.
+        // one bolt and no area, hence no arc start to push (T-6).
         field.triggerSpecialPhase();
         Utility::clearDiceRolls();
 

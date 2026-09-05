@@ -197,36 +197,48 @@ TEST_CASE("scoring: a wire value raises a target's score, one option per enemy",
 TEST_CASE("scoring: the lottery draws through its own seam, tickets in proportion to score",
           "[scoring]") {
     Battlefield& field = Utility::getBattlefield();
+
+    // SIX bodies to a hex, and TG-2 is why: the scorer nets the blast honestly
+    // now (assistant's call 2), so fireball's major form only out-scores the
+    // cheap Ember on ratio where there is a CROWD to catch it. Two equally
+    // packed hexes keep the point of this case — the draw alone decides — while
+    // the two-tick major keeps the chosen target held when the phase ends.
+    auto packed = [&](Army& army, int q) {
+        std::vector<Zombie*> men;
+        for (int i = 0; i < 6; ++i)
+            men.push_back(place(army, std::make_unique<Zombie>(BLUETEAM), q));
+        return men;
+    };
+
     Army red, blue;
-    Mage*   mage  = place(red,  caster(REDTEAM, SpellPath::Fire, 3), 8);
-    Zombie* first = place(blue, std::make_unique<Zombie>(BLUETEAM), 5);
-    Zombie* last  = place(blue, std::make_unique<Zombie>(BLUETEAM), 4);
+    Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    std::vector<Zombie*> near = packed(blue, 5);
+    std::vector<Zombie*> away = packed(blue, 4);
     field.loadArmies(std::move(red), std::move(blue));
-    // Two equal targets, so the draw alone decides — and a two-tick major so
-    // the chosen target is still held when the phase ends.
+
     const Spell* fireball = Spells::findSpell("fireball");
     std::vector<CastOption> options = Spells::optionsFor(*mage, *fireball, AI_LOTTERY_FLOOR);
-    REQUIRE(options.size() == 2);
+    REQUIRE(options.size() == near.size() + away.size());
     REQUIRE(options[0].form->name == "major");
-    int total = options[0].score + options[1].score;
+    int total = 0;
+    for (const CastOption& o : options) total += o.score;
 
     Utility::clearLotteryRolls();
     Utility::pushLotteryRoll(1);          // the first ticket
     field.triggerSpecialPhase();
     REQUIRE(mage->isChannelling());
-    REQUIRE(mage->channelTarget() == first);
+    REQUIRE(mage->channelTarget() == near.front());
     field.extractResult();
 
     Army red2, blue2;
-    Mage*   mage2  = place(red2,  caster(REDTEAM, SpellPath::Fire, 3), 8);
-    place(blue2, std::make_unique<Zombie>(BLUETEAM), 5);
-    Zombie* last2  = place(blue2, std::make_unique<Zombie>(BLUETEAM), 4);
+    Mage* mage2 = place(red2, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    packed(blue2, 5);
+    std::vector<Zombie*> away2 = packed(blue2, 4);
     field.loadArmies(std::move(red2), std::move(blue2));
-    (void) last;
     Utility::pushLotteryRoll(total);      // the last ticket
     field.triggerSpecialPhase();
     REQUIRE(mage2->isChannelling());
-    REQUIRE(mage2->channelTarget() == last2);
+    REQUIRE(mage2->channelTarget() == away2.back());
     REQUIRE(logHasDetail(field, "weighs"));
     Utility::clearLotteryRolls();
     field.extractResult();

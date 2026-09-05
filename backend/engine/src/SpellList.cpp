@@ -142,12 +142,15 @@ static bool castFireball(AUnit& caster, const SpellForm& form, const Target& tar
 
     RangedShot shot;
     // M-20: the blast grows with the caster's FIRE level and nothing else.
-    shot.baseDamage      = FIREBALL_CENTRE + caster.getPathLevel(SpellPath::Fire);
-    shot.pen             = ArmorPen::Normal;
-    // Secondary blast hits: shrapnel from the detonation, landing on the same
-    // hex as the primary shot regardless of whether the primary found a target.
-    shot.secondaryHits   = FIREBALL_SECONDARY;
-    shot.secondaryDamage = FIREBALL_BLAST;
+    shot.baseDamage = FIREBALL_CENTRE + caster.getPathLevel(SpellPath::Fire);
+    shot.pen        = ArmorPen::Normal;
+    // T-6: the AREA is read off the ROW rather than typed here, so the catalog
+    // the player reads and the blast he is hit by cannot say different things —
+    // the delivery sweep pins the agreement. Only the per-body damage is the
+    // body's own, being an effect number like the centre damage above it.
+    shot.areaMode   = form.areaMode;
+    shot.areaPoints = form.area;
+    shot.areaDamage = FIREBALL_BLAST;
 
     deliver(caster, form, *aimUnit, shot);
     return true;
@@ -476,6 +479,15 @@ namespace {
     static_assert(kTargetKindNames[static_cast<size_t>(TargetKind::EnemyUnit)] == "enemy_unit");
     static_assert(kTargetKindNames[static_cast<size_t>(TargetKind::AllyTeam)]  == "ally_team");
     static_assert(kTargetKindNames[static_cast<size_t>(TargetKind::None)]      == "none");
+    // Ordered to match AreaMode, guarded exactly as the kinds above are: a mode
+    // inserted in the middle would otherwise rename every mode after it on the
+    // wire, and the campaign layer would be told a spell spreads a way it does not.
+    constexpr std::string_view kAreaModeNames[] = { "none", "explosion", "random" };
+    static_assert(sizeof(kAreaModeNames) / sizeof(kAreaModeNames[0])
+                  == static_cast<size_t>(AreaMode::Random) + 1);
+    static_assert(kAreaModeNames[static_cast<size_t>(AreaMode::None)]      == "none");
+    static_assert(kAreaModeNames[static_cast<size_t>(AreaMode::Explosion)] == "explosion");
+    static_assert(kAreaModeNames[static_cast<size_t>(AreaMode::Random)]    == "random");
 }
 
 std::string_view spellPathName(SpellPath p)
@@ -532,6 +544,11 @@ std::string_view targetKindName(TargetKind k)
     return kTargetKindNames[static_cast<size_t>(k)];
 }
 
+std::string_view areaModeName(AreaMode m)
+{
+    return kAreaModeNames[static_cast<size_t>(m)];
+}
+
 SpellSchool spellSchoolFromName(std::string_view name)
 {
     for (size_t i = 0; i < SPELL_SCHOOL_COUNT; ++i)
@@ -576,9 +593,11 @@ std::string fireball()
 {
     return "A detonation" + kRange + ": " + std::to_string(FIREBALL_CENTRE)
          + " damage to the man it lands on, and one more for every level of Fire "
-           "the caster commands, then " + std::to_string(FIREBALL_SECONDARY)
-         + " further hits of " + std::to_string(FIREBALL_BLAST)
-         + " damage each tearing through the same ground.";
+           "the caster commands. The blast then spreads outward from where it fell "
+           "over " + std::to_string(FIREBALL_AREA / AREA_CHUNK)
+         + " men's worth of ground, and every body it covers takes "
+         + std::to_string(FIREBALL_BLAST)
+         + " — friend and foe alike, your own line included.";
 }
 
 std::string shock()
@@ -702,13 +721,85 @@ static int worthEmber(const AUnit& c, const SpellForm& form, const Target& t)
                        spellAccuracy(c, form), t);
 }
 
+// ── what an AREA is worth (assistant's call 2, T-7 — slice TG-2) ─────────────
+//
+// The candidate stays the enemy unit: an area form aims at a MAN, and the blast
+// is what happens around him. What the estimator adds to the centre's worth is
+// a FULL-COVERAGE estimate with no dice in it — for every hex the area would
+// reach with P points, each body other than the aimed man is struck with the
+// ARC-OVERLAP probability min(100, (P + size) × 100 / 640) percent, the chance
+// that a P-slot arc starting anywhere overlaps a body `size` slots wide.
+//
+// NETTED (T-7): a body on the caster's own side counts NEGATIVE, in A-3's one
+// currency and with no new number. That is the whole of "friendly fire is real"
+// as the AI sees it — a fireball into a melee your own line is holding prices
+// itself out, and nothing had to forbid it.
+//
+// Deliberately ignored: the elevation damage bonus, and the accuracy — the
+// aimed man's own term already carries the latter through worthDamage, and a
+// scattered blast covers a hex either way. PURE: it reads hex->units and the
+// ring walk, never the slot cache (which would MUTATE it) and never the dice.
+static int worthAreaOnHex(const AUnit& c, const Hex* hex, int points,
+                          const AUnit* aimed, int areaDamage)
+{
+    if (!hex) return 0;
+    int worth = 0;
+    for (const AUnit* u : hex->units) {
+        if (!u || u == aimed || !u->getAlive()) continue;
+        int chance = std::min(100, (points + static_cast<int>(u->getSize())) * 100
+                                   / Hex::CAPACITY);
+        int share  = areaDamage * chance * u->getValue() / (100 * AI_DAMAGE_SCALE);
+        worth += (u->getTeam() == c.getTeam()) ? -share : share;
+    }
+    return worth;
+}
+
+// Written generically rather than inside worthFireball: the second area spell
+// is a roster row away, and its estimator should be one line.
+static int worthArea(const AUnit& c, const SpellForm& form, const Target& t, int areaDamage)
+{
+    if (!t.unit || !t.unit->getHex() || form.area <= 0 || areaDamage <= 0) return 0;
+    const Hex* centre = t.unit->getHex();
+    int worth = 0;
+
+    if (form.areaMode == AreaMode::Explosion) {
+        // The same walk coverArea makes, minus the rotation roll: which hexes
+        // are reached does not depend on it, only the order they are reached in.
+        int left = form.area;
+        for (int k = 0; left > 0; ++k) {
+            std::vector<Hex*> ring = RangedCombat::ringHexes(centre, k);
+            if (k > 0 && ring.empty()) break;
+            for (const Hex* h : ring) {
+                if (left <= 0) break;
+                int give = std::min(left, Hex::CAPACITY);
+                worth += worthAreaOnHex(c, h, give, t.unit, areaDamage);
+                left  -= give;
+            }
+        }
+    } else if (form.areaMode == AreaMode::Random) {
+        // No dice to model, so the honest expectation is the total spread EVENLY
+        // over the ring set the chunks would be drawn from.
+        std::vector<Hex*> set;
+        for (int k = 0; ; ++k) {
+            std::vector<Hex*> ring = RangedCombat::ringHexes(centre, k);
+            if (k > 0 && ring.empty()) break;
+            set.insert(set.end(), ring.begin(), ring.end());
+            if (static_cast<int>(set.size()) * Hex::CAPACITY >= form.area) break;
+        }
+        if (set.empty()) return 0;
+        int each = form.area / static_cast<int>(set.size());
+        for (const Hex* h : set) worth += worthAreaOnHex(c, h, each, t.unit, areaDamage);
+    }
+    return worth;
+}
+
 static int worthFireball(const AUnit& c, const SpellForm& form, const Target& t)
 {
-    // The blast lands on the same hex: half the splash is a fair expectation
-    // of what else stands there.
-    int dmg = FIREBALL_CENTRE + c.getPathLevel(SpellPath::Fire)
-            + FIREBALL_SECONDARY * FIREBALL_BLAST / 2;
-    return worthDamage(dmg, spellAccuracy(c, form), t);
+    // The man it lands on, priced like every other bolt, plus what the blast
+    // does to everyone else standing in it — his own side subtracted (T-7).
+    return worthDamage(FIREBALL_CENTRE + c.getPathLevel(SpellPath::Fire),
+                       spellAccuracy(c, form), t)
+         + worthArea(c, form, t, FIREBALL_BLAST);
 }
 
 static int worthShock(const AUnit& c, const SpellForm& form, const Target& t)
@@ -860,17 +951,28 @@ namespace Spells
         // they are the two that were always thrown rather than laid on. Range is
         // SPELLRANGE everywhere for now; the number is balance-deferred and the
         // FIELD is the point, so a row can differ the day one should.
+        //
+        // TG-2 adds TWO MORE after the range: the AREA MODE and the area's size
+        // in hex points (T-6). They are DESCRIPTIVE — the body reads them off
+        // its own row to fill the shot — and `AreaMode::None, 0` on every row
+        // but fireball's major form, which is the only thing on the roster that
+        // covers ground rather than a man.
         static std::vector<Spell> table = {
             // ── Fire ─────────────────────────────────────────────────────────
             { "fireball", {
                 { "minor", "Ember", ember(),
                   {{P::Fire, 1}}, S::Evocation, 1,  8, 1, castEmber,    nullptr,
                   EnchantAim::None, 0, nullptr,
-                  TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE },
+                  TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE,
+                  AreaMode::None, 0 },
                 { "major", "Fireball", fireball(),
                   {{P::Fire, 3}}, S::Evocation, 3, 22, 2, castFireball, nullptr,
                   EnchantAim::None, 0, nullptr,
-                  TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE },
+                  TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE,
+                  // The one area on the roster (T-6): an EXPLOSION of
+                  // FIREBALL_AREA points, filling the hex it lands on and
+                  // opening the ring outward when it has more than that to give.
+                  AreaMode::Explosion, FIREBALL_AREA },
             }},
             // ── Air ──────────────────────────────────────────────────────────
             { "shock", {
@@ -879,7 +981,8 @@ namespace Spells
                   EnchantAim::None, 0, nullptr,
                   // PRECISE: what SHOCK_ACCURACY used to say, said as a rule.
                   TargetKind::EnemyUnit, TargetPick::Densest, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── Earth ────────────────────────────────────────────────────────
             { "stoneskin", {
@@ -887,7 +990,8 @@ namespace Spells
                   {{P::Earth, 1}}, S::Enchantment, 1, 10, 1, castStoneskin, nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Wounded, true,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── Water ────────────────────────────────────────────────────────
             { "soothing_current", {
@@ -895,7 +999,8 @@ namespace Spells
                   {{P::Water, 1}}, S::Enchantment, 1, 8, 1, castSoothingCurrent, nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Fatigued, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── High ─────────────────────────────────────────────────────────
             { "ward", {
@@ -903,7 +1008,8 @@ namespace Spells
                   {{P::High, 1}}, S::Enchantment, 2, 12, 1, castWard, nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Wounded, true,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── Nature ───────────────────────────────────────────────────────
             { "briar_snare", {
@@ -911,7 +1017,8 @@ namespace Spells
                   {{P::Nature, 1}}, S::Enchantment, 1, 10, 1, castBriarSnare, nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::EnemyUnit, TargetPick::Densest, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // A battlefield-wide enchantment: ONE form, named "battlefield"
             // rather than minor/major, because there is no ladder to climb —
@@ -925,7 +1032,8 @@ namespace Spells
                   // Nothing is aimed at, so precise is the honest value and the
                   // range is never read.
                   TargetKind::Battlefield, TargetPick::First, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── Low — half fatigue (M-21) and a price that fires with it (M-24)
             { "hex_of_frailty", {
@@ -934,7 +1042,8 @@ namespace Spells
                   castHexOfFrailty, priceOfFrailty,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::EnemyUnit, TargetPick::Densest, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── Death ────────────────────────────────────────────────────────
             { "raise_dead", {
@@ -942,12 +1051,14 @@ namespace Spells
                   {{P::Death, 1}}, S::Conjuration, 1, 12, 1, castRaiseSkeleton, nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::Adjacent, TargetPick::First, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
                 { "major", "Raise Dead", raiseDead(),
                   {{P::Death, 3}}, S::Conjuration, 3, 26, 2, castRaiseDead,     nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::Adjacent, TargetPick::First, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // The symmetric one: an Everyone aim presses on both lines at once,
             // and only once however many instances stand.
@@ -957,7 +1068,8 @@ namespace Spells
                   LEADEN_AIR_FATIGUE, 2, castLeadenAir, nullptr,
                   EnchantAim::Everyone, LEADEN_AIR_POOL_COST, tickLeadenAir,
                   TargetKind::Battlefield, TargetPick::First, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── Holy — granted, not researched, so NO school gate (M-14) ─────
             { "bless", {
@@ -965,12 +1077,14 @@ namespace Spells
                   {{P::Holy, 1}}, S::None, 0, 10, 1, castBless,        nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyUnit, TargetPick::Broken, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
                 { "major", "Greater Blessing", greaterBlessing(),
                   {{P::Holy, 3}}, S::None, 0, 24, 2, castGreaterBless, nullptr,
                   EnchantAim::None, 0, nullptr,
                   TargetKind::AllyTeam, TargetPick::First, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
             // ── Unholy — granted like Holy, and likewise ungated by school ───
             { "drain_life", {
@@ -982,7 +1096,8 @@ namespace Spells
                   // bystander in the hex. Precise now — the life is pulled out
                   // of the man it was pulled out of.
                   TargetKind::EnemyUnit, TargetPick::Densest, false,
-                  SPELL_PRECISE, SPELLRANGE },
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::None, 0 },
             }},
         };
         // A-1/A-8: every form learns which spell it belongs to, ONCE, after the
@@ -1376,6 +1491,13 @@ namespace Spells
                     {"accuracy",    form.accuracy},
                     {"precise",     spellPrecise(form)},
                     {"range",       form.range},
+                    // T-6/T-7 (TG-2), and on every row for the same reason: how
+                    // the form's blast spreads and how much ground it covers, in
+                    // hex size points (640 = one whole hex). "none" and 0 on
+                    // everything that is not an area spell — the pair is a
+                    // biconditional, pinned on both sides of the wire.
+                    {"areaMode",    std::string(areaModeName(form.areaMode))},
+                    {"area",        form.area},
                 });
             }
         }

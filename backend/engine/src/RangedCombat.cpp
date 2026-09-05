@@ -1,7 +1,9 @@
 #include "RangedCombat.hpp"
 #include "AUnit.hpp"
+#include "Battlefield.hpp"
 #include "Utility.hpp"
 #include <algorithm>
+#include <string>
 
 std::unordered_map<const Hex*, RangedCombat::SlotCache> RangedCombat::cache;
 
@@ -101,21 +103,197 @@ void RangedCombat::fire(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot)
     if (target && target->getAlive())
         applyHit(shooter, target, shot, shot.baseDamage, elevDmgBonus);
 
-    // Splash always lands on the hex regardless of whether the primary shot
+    // An area always goes off on the hex regardless of whether the primary shot
     // found someone — same as an inaccurate single shot falling back to
-    // pickHexTarget() on the landed hex.
-    secondaryHitsOn(shooter, landedHex, shot, elevDmgBonus);
+    // pickHexTarget() on the landed hex. No archer carries one, so this is a
+    // no-op here; it is on the shared path rather than behind an `if` because
+    // there is exactly one way a blast spreads, whoever threw it.
+    coverArea(shooter, landedHex, shot, elevDmgBonus, target);
 }
 
-void RangedCombat::secondaryHitsOn(AUnit* shooter, Hex* landedHex, const RangedShot& shot,
-                                   int elevDmgBonus)
+// ── Area of effect (T-6, T-7 — slice TG-2) ───────────────────────────────────
+//
+// The old splash asked the hex N times "who is standing somewhere random", so
+// N large enough eventually found every man in it. T-6 replaces that with a
+// SHAPE: a number of hex size points, laid down as one contiguous arc of the
+// hex's 640 slots from a rolled start, wrapping past 640 back to 1. Whom it
+// strikes is then a fact about where the men stand, not about how many times
+// the blast rolled — the user's reason for rejecting a per-spot lottery.
+//
+// The rolls below are COMBAT rolls, made at delivery time exactly as
+// pickHexTarget's are, so they go through Utility::getRandom and the suite pins
+// them with pushDiceRoll. The scorer never rolls at all (A-1).
+
+// Does the arc [start, start + points) — 1-based slots, wrapping — overlap the
+// `size` slots a body occupies from `begin`?
+//
+// Measured in offsets FROM the arc's start, which makes the wrap disappear: the
+// arc is offsets 0..points-1, and the body is `size` consecutive offsets from
+// o0. If those wrap past the end they include offset 0, which the arc always
+// holds; otherwise the body's lowest offset is o0 and one comparison settles it.
+static bool arcCovers(int start, int points, int begin, int size)
 {
-    if (!landedHex) return;
-    for (int i = 0; i < shot.secondaryHits; ++i) {
-        AUnit* hit = pickHexTarget(landedHex);
-        if (hit && hit->getAlive())
-            applyHit(shooter, hit, shot, shot.secondaryDamage, elevDmgBonus);
+    int o0 = (begin - start + Hex::CAPACITY) % Hex::CAPACITY;
+    if (o0 + size > Hex::CAPACITY) return true;
+    return o0 < points;
+}
+
+void RangedCombat::coverHex(AUnit* shooter, Hex* hex, int points, const RangedShot& shot,
+                            int elevDmgBonus, AUnit* already, std::vector<AUnit*>& struck)
+{
+    if (!hex || points <= 0) return;
+
+    // The SAME layout pickHexTarget rolls into — the phase's slot cache, in
+    // cache order, each body getSize() slots wide from slot 1 — because they
+    // are the same 640 slots and two layouts would be two answers to "who is
+    // standing here". Empty ground first: nothing to strike and, exactly as
+    // pickHexTarget does it, nothing to roll for either.
+    const SlotCache& sc = getSlotCache(hex);
+    if (sc.units.empty()) return;
+
+    // 640 points or more is the whole hex, deterministically: there is no start
+    // that would leave a slot uncovered, so there is nothing to roll.
+    const bool full  = points >= Hex::CAPACITY;
+    const int  start = full ? 1 : Utility::getRandom(1, Hex::CAPACITY);
+
+    int cumulative = 0;
+    for (AUnit* u : sc.units) {
+        const int begin = cumulative + 1;
+        const int size  = static_cast<int>(u->getSize());
+        cumulative += size;   // dead bodies keep their slots, as the cache keeps them
+
+        if (u == already) continue;          // T-6: once per body per cast, and the
+                                              // primary already took shot.baseDamage
+        if (!u->getAlive()) continue;
+        if (std::find(struck.begin(), struck.end(), u) != struck.end()) continue;
+        if (!full && !arcCovers(start, points, begin, size)) continue;
+
+        struck.push_back(u);
+        // NO team filter, here or anywhere in coverage (T-7): the blast strikes
+        // what it covers. onDamage runs per body, so an effect hung on a hit —
+        // drain_life's healing, say — would fire once for each body an area
+        // struck. No area spell carries one today; a spell that does is
+        // authoring N triggers, and should mean to.
+        applyHit(shooter, u, shot, shot.areaDamage, elevDmgBonus);
     }
+}
+
+std::vector<Hex*> RangedCombat::ringHexes(const Hex* centre, int k)
+{
+    std::vector<Hex*> ring;
+    if (!centre || k < 0) return ring;
+
+    HexGrid& grid = Utility::getBattlefield().hexGrid;
+    if (k == 0) {
+        if (Hex* self = grid.safeGetHex(centre->coord.q, centre->coord.r)) ring.push_back(self);
+        return ring;
+    }
+
+    // BFS outward over neighbours, one layer at a time, so ring 1 comes back in
+    // neighbour order and every later ring in a discovery order derived from it.
+    // Off-map neighbours are simply never queued, which is how a ring at the
+    // edge of the map comes back short instead of holding holes.
+    std::vector<HexCoord> frontier{ centre->coord };
+    std::vector<HexCoord> seen{ centre->coord };
+    for (int depth = 1; depth <= k; ++depth) {
+        std::vector<HexCoord> next;
+        for (const HexCoord& c : frontier)
+            for (const HexCoord& n : grid.neighbors(c)) {
+                if (!grid.getHex(n)) continue;
+                if (std::find(seen.begin(), seen.end(), n) != seen.end()) continue;
+                seen.push_back(n);
+                next.push_back(n);
+            }
+        frontier = std::move(next);
+        if (frontier.empty()) break;   // the map ran out before the radius did
+    }
+
+    for (const HexCoord& c : frontier)
+        if (Hex* h = grid.getHex(c)) ring.push_back(h);
+    return ring;
+}
+
+// The smallest radius whose on-map hexes could hold `points` (640 each), and
+// those hexes. Radius 0 is the landed hex alone. Stops growing when a ring adds
+// nothing — a small map cannot be asked for more room than it has.
+static std::vector<Hex*> ringSetFor(const Hex* centre, int points)
+{
+    std::vector<Hex*> set = RangedCombat::ringHexes(centre, 0);
+    for (int k = 1; static_cast<int>(set.size()) * Hex::CAPACITY < points; ++k) {
+        std::vector<Hex*> ring = RangedCombat::ringHexes(centre, k);
+        if (ring.empty()) break;
+        set.insert(set.end(), ring.begin(), ring.end());
+    }
+    return set;
+}
+
+void RangedCombat::coverArea(AUnit* shooter, Hex* landedHex, const RangedShot& shot,
+                             int elevDmgBonus, AUnit* already)
+{
+    if (!landedHex || shot.areaMode == AreaMode::None || shot.areaPoints <= 0) return;
+
+    std::vector<AUnit*> struck;   // the once-per-body ledger, for the whole cast
+    int hexesCovered = 0;
+
+    if (shot.areaMode == AreaMode::Explosion) {
+        // The landed hex takes the first 640; when it is full the next ring
+        // opens, 640 a hex, and so outward until the points run out. ONE
+        // rotation roll for the cast, drawn the first time a ring opens, so no
+        // compass direction is favoured — and so an area that never leaves the
+        // landed hex costs no roll at all.
+        int left = shot.areaPoints;
+        int rot  = -1;
+        for (int k = 0; left > 0; ++k) {
+            std::vector<Hex*> ring = ringHexes(landedHex, k);
+            if (k > 0 && ring.empty()) break;   // past the edge of the map
+            if (k > 0) {
+                if (rot < 0) rot = Utility::getRandom(0, 5);
+                // Rotate by rot SIDES rather than by rot hexes: ring k holds up
+                // to 6k of them, and turning by a whole side is what "no fixed
+                // direction is favoured" means once a ring is longer than six.
+                // For ring 1 the two are the same thing.
+                const size_t by = (static_cast<size_t>(rot) * static_cast<size_t>(k))
+                                  % ring.size();
+                std::rotate(ring.begin(), ring.begin() + static_cast<long>(by), ring.end());
+            }
+            for (Hex* h : ring) {
+                if (left <= 0) break;
+                const int give = std::min(left, Hex::CAPACITY);
+                coverHex(shooter, h, give, shot, elevDmgBonus, already, struck);
+                left -= give;
+                ++hexesCovered;
+            }
+        }
+    } else {
+        // RANDOM: AREA_CHUNK-sized chunks, each dropped on a hex drawn uniformly
+        // over the smallest ring set that could hold the whole area, and every
+        // hex that received points then covers them as one arc — so the chunks
+        // that landed together are ONE stretch of ground, not a scatter of
+        // separate blasts.
+        std::vector<Hex*> set = ringSetFor(landedHex, shot.areaPoints);
+        if (set.empty()) return;
+        std::vector<int> share(set.size(), 0);
+        for (int left = shot.areaPoints; left > 0; ) {
+            // At least one point a chunk, whatever the balance pass does to the
+            // grain: a chunk of nothing would never spend the area down.
+            const int chunk = std::max(1, std::min(left, AREA_CHUNK));
+            const int idx   = Utility::getRandom(1, static_cast<int>(set.size()));
+            share[static_cast<size_t>(std::clamp(idx, 1, static_cast<int>(set.size()))) - 1]
+                += chunk;
+            left -= chunk;
+        }
+        for (size_t i = 0; i < set.size(); ++i) {
+            if (share[i] <= 0) continue;
+            coverHex(shooter, set[i], share[i], shot, elevDmgBonus, already, struck);
+            ++hexesCovered;
+        }
+    }
+
+    // L-8's tier discipline: one line for the whole area, at Detail — the
+    // per-body hits already write themselves at Trace through applyHit.
+    Utility::getBattlefield().logEvent(LogTier::Detail,
+        "the blast covers " + std::to_string(hexesCovered) + " hexes and strikes "
+        + std::to_string(struck.size()));
 }
 
 // ── Spell delivery (T-1, slice TG-1) ─────────────────────────────────────────
@@ -147,9 +325,10 @@ void RangedCombat::strike(AUnit* shooter, AUnit* target, const RangedShot& shot)
     if (target->getAlive())
         applyHit(shooter, target, shot, shot.baseDamage, elevDmgBonus);
 
-    // Fireball's blast still needs a hex to go off on, and it goes off on the
-    // one the strike landed on. TG-2 replaces this with a real area.
-    secondaryHitsOn(shooter, target->getHex(), shot, elevDmgBonus);
+    // Fireball's blast needs a hex to go off on, and it goes off on the one the
+    // strike landed on — the struck man excluded from it, having already taken
+    // the centre damage (T-6: once per body per cast).
+    coverArea(shooter, target->getHex(), shot, elevDmgBonus, target);
 }
 
 void RangedCombat::scatter(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot,
@@ -177,7 +356,9 @@ void RangedCombat::scatter(AUnit* shooter, AUnit* aimUnit, const RangedShot& sho
     if (struck && struck->getAlive())
         applyHit(shooter, struck, shot, shot.baseDamage, elevDmgBonus);
 
-    secondaryHitsOn(shooter, landedHex, shot, elevDmgBonus);
+    // And the area goes off where the shot fell, whether or not it found a body
+    // there — the stray it did find is the one it does not strike twice.
+    coverArea(shooter, landedHex, shot, elevDmgBonus, struck);
 }
 
 

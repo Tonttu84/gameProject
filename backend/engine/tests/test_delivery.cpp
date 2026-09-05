@@ -527,3 +527,436 @@ TEST_CASE("delivery: the catalog exports accuracy, precise and range on every ro
         if (row["spell"] == "fireball") CHECK(row["precise"] == false);
     }
 }
+
+// ── (g) The area: the arc, the two modes, friendly fire (T-6, T-7 — TG-2) ────
+//
+// T-6  An area is HEX SIZE POINTS covered as ONE CONTIGUOUS ARC per hex: a
+//      rolled start slot and `points` consecutive slots from it, wrapping past
+//      640 back to 1, striking every body whose slot range overlaps — once.
+//      640 or more covers the hex whole and rolls nothing.
+// T-6  EXPLOSION fills the landed hex first, then opens the ring outward, 640
+//      a hex, the last hex reached taking the remainder as an arc. RANDOM drops
+//      AREA_CHUNK-sized chunks on hexes drawn from the smallest ring set that
+//      could hold the area, and each hex then covers its share as one arc.
+// T-7  Friendly fire is real: no team filter anywhere in coverage, the caster
+//      included, and the scorer NETS his own losses rather than being forbidden.
+//
+// The dice discipline is the file's: everything is pushed, and the sentinel is
+// what proves a case rolled nothing it was not asked to.
+
+namespace {
+
+// N size-10 bodies on ONE hex, in slot order: the first zombie occupies slots
+// 1-10, the second 11-20, and so on — pickHexTarget's layout, which is the same
+// layout the arc reads (that being the point of sharing the slot cache).
+std::vector<Zombie*> crowd(Army& army, int q, int n, int team)
+{
+    std::vector<Zombie*> made;
+    for (int i = 0; i < n; ++i)
+        made.push_back(place(army, std::make_unique<Zombie>(team), q));
+    return made;
+}
+
+// A shot carrying nothing but an area — what coverHex/coverArea read.
+RangedShot areaShot(AreaMode mode, int points, int damage)
+{
+    RangedShot shot;
+    shot.areaMode   = mode;
+    shot.areaPoints = points;
+    shot.areaDamage = damage;
+    return shot;
+}
+
+constexpr int AREA_DMG = 3;   // arbitrary, and not FIREBALL_BLAST on purpose:
+                              // the primitive knows nothing about fireball
+
+bool hurt(const AUnit* u) { return u->getHp() < u->getmaxHP(); }
+
+}  // namespace
+
+TEST_CASE("area: the arc covers consecutive slots from the rolled start, wrapping past 640",
+          "[delivery][area]") {
+    // The user's own example: 50 points thrown from start 630 covers 630-640 and
+    // 1-40, so of twenty men standing in slots 1-200 exactly the FOUR in 1-40
+    // are struck. Everything else about an area follows from this.
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    std::vector<Zombie*> line = crowd(blue, 5, 20, BLUETEAM);
+    field.loadArmies(std::move(red), std::move(blue));
+    Hex* hex = line.front()->getHex();
+
+    RangedCombat::resetCache();
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(630);        // the arc's start slot
+    Utility::pushDiceRoll(SENTINEL);   // one roll per hex, and no more
+
+    std::vector<AUnit*> struck;
+    RangedCombat::coverHex(mage, hex, 50, areaShot(AreaMode::Explosion, 50, AREA_DMG),
+                           0, nullptr, struck);
+
+    CHECK(struck.size() == 4);
+    for (size_t i = 0; i < line.size(); ++i) {
+        INFO("body " << i << " in slots " << (i * 10 + 1) << "-" << (i * 10 + 10));
+        CHECK(hurt(line[i]) == (i < 4));
+    }
+    CHECK(sentinelUntouched());
+
+    field.extractResult();
+}
+
+TEST_CASE("area: 640 points or more take the whole hex, and roll nothing at all",
+          "[delivery][area]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    std::vector<Zombie*> line = crowd(blue, 5, 20, BLUETEAM);
+    field.loadArmies(std::move(red), std::move(blue));
+    Hex* hex = line.front()->getHex();
+
+    RangedCombat::resetCache();
+    seedSentinel();
+
+    std::vector<AUnit*> struck;
+    RangedCombat::coverHex(mage, hex, Hex::CAPACITY,
+                           areaShot(AreaMode::Explosion, Hex::CAPACITY, AREA_DMG),
+                           0, nullptr, struck);
+
+    CHECK(struck.size() == line.size());
+    for (Zombie* z : line) CHECK(hurt(z));
+    // There is no start slot that would leave a slot uncovered, so a full hex is
+    // DETERMINISTIC — asking the dice would be asking a question with one answer.
+    CHECK(sentinelUntouched());
+
+    field.extractResult();
+}
+
+TEST_CASE("area: the man the shot already struck is not struck again by his own blast",
+          "[delivery][area]") {
+    // T-6's "once per body". The aimed man takes the centre damage and the arc
+    // steps over him; everyone else standing in it takes the blast.
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    std::vector<Zombie*> line = crowd(blue, 5, 3, BLUETEAM);
+    field.loadArmies(std::move(red), std::move(blue));
+    Zombie* aimed = line[1];
+
+    const SpellForm& fb = formOf("fireball", 1);
+    REQUIRE(fb.areaMode == AreaMode::Explosion);
+
+    RangedCombat::resetCache();
+    Utility::clearDiceRolls();
+    // Distance 3 at accuracy 60 deviates 3/60 = 0 hexes, so the shot stays on
+    // the aimed man's hex and no deviation rolls are drawn.
+    Utility::pushDiceRoll(1);          // the arc starts at slot 1: all three bodies
+    Utility::pushDiceRoll(SENTINEL);
+
+    Target t;
+    t.unit = aimed;
+    CHECK(fb.cast(*mage, fb, t) == true);
+
+    CHECK(aimed->getHp() == aimed->getmaxHP() - (FIREBALL_CENTRE + 3));
+    CHECK(line[0]->getHp() == line[0]->getmaxHP() - FIREBALL_BLAST);
+    CHECK(line[2]->getHp() == line[2]->getmaxHP() - FIREBALL_BLAST);
+    CHECK(sentinelUntouched());
+
+    field.extractResult();
+}
+
+TEST_CASE("area: an explosion fills the landed hex, then opens the ring outward",
+          "[delivery][area]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    std::vector<Zombie*> here = crowd(blue, 5, 3, BLUETEAM);
+    std::vector<Zombie*> next = crowd(blue, 6, 3, BLUETEAM);   // the E neighbour
+    field.loadArmies(std::move(red), std::move(blue));
+
+    RangedCombat::resetCache();
+    Utility::clearDiceRolls();
+    // 700 points: 640 fill the landed hex (no roll — it is covered whole), the
+    // ring then opens with ONE rotation roll, and the 60 left over land on the
+    // first hex of the rotated ring as an arc.
+    Utility::pushDiceRoll(1);          // rotation: neighbour order turned by one,
+                                        // so E — the hex the men are on — comes first
+    Utility::pushDiceRoll(631);        // the arc's start: 631-640 then 1-50
+    Utility::pushDiceRoll(SENTINEL);
+
+    RangedCombat::coverArea(mage, here.front()->getHex(),
+                            areaShot(AreaMode::Explosion, 700, AREA_DMG), 0, nullptr);
+
+    for (Zombie* z : here) CHECK(hurt(z));   // the landed hex, covered whole
+    // 60 points from slot 631 reach 1-50, which is the first five bodies' worth
+    // of ground — and only three men stand there.
+    for (Zombie* z : next) CHECK(hurt(z));
+    CHECK(sentinelUntouched());
+
+    field.extractResult();
+}
+
+TEST_CASE("area: random mode drops its chunks on drawn hexes, each covered as one arc",
+          "[delivery][area]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    std::vector<Zombie*> here = crowd(blue, 5, 3, BLUETEAM);
+    std::vector<Zombie*> next = crowd(blue, 6, 3, BLUETEAM);
+    field.loadArmies(std::move(red), std::move(blue));
+    Hex* landed = here.front()->getHex();
+
+    // The ring set for 650 points is radius 1 (640 < 650, so the landed hex
+    // alone cannot hold it) — seven hexes, the landed hex first and its
+    // neighbours after it in neighbour order. The E neighbour is index 2.
+    std::vector<Hex*> ring1 = RangedCombat::ringHexes(landed, 1);
+    REQUIRE(ring1.size() == 6);
+    REQUIRE(ring1[1] == next.front()->getHex());
+    const int eastDraw = 3;   // 1-based over [landed, NE, E, SE, SW, W, NW]
+
+    SECTION("every chunk on one hex covers it as one arc") {
+        RangedCombat::resetCache();
+        Utility::clearDiceRolls();
+        // 650 points is 65 chunks of AREA_CHUNK; send 62 of them east (620
+        // points, an arc) and the last 3 onto the landed hex (30 points).
+        for (int i = 0; i < 62; ++i) Utility::pushDiceRoll(eastDraw);
+        for (int i = 0; i < 3;  ++i) Utility::pushDiceRoll(1);
+        // Covered in ring-set order: the landed hex first, the east neighbour
+        // after it. One start roll each, both partial.
+        Utility::pushDiceRoll(631);   // 30 points from 631: 631-640, then 1-20
+        Utility::pushDiceRoll(1);     // 620 points from 1: 1-620, all three men
+        Utility::pushDiceRoll(SENTINEL);
+
+        RangedCombat::coverArea(mage, landed,
+                                areaShot(AreaMode::Random, 650, AREA_DMG), 0, nullptr);
+
+        CHECK(hurt(here[0]));            // slots 1-10, inside 1-20
+        CHECK(hurt(here[1]));            // slots 11-20
+        CHECK_FALSE(hurt(here[2]));      // slots 21-30, past the arc
+        for (Zombie* z : next) CHECK(hurt(z));   // 620 points from 1 reach them all
+        CHECK(sentinelUntouched());
+    }
+
+    SECTION("a hex that drew nothing is not touched") {
+        RangedCombat::resetCache();
+        Utility::clearDiceRolls();
+        for (int i = 0; i < 65; ++i) Utility::pushDiceRoll(eastDraw);
+        // 650 on one hex is more than the 640 it holds, so it is covered whole
+        // and no start is rolled for it either.
+        Utility::pushDiceRoll(SENTINEL);
+
+        RangedCombat::coverArea(mage, landed,
+                                areaShot(AreaMode::Random, 650, AREA_DMG), 0, nullptr);
+
+        for (Zombie* z : next) CHECK(hurt(z));
+        for (Zombie* z : here) CHECK_FALSE(hurt(z));
+        CHECK(sentinelUntouched());
+    }
+
+    field.extractResult();
+}
+
+TEST_CASE("area: friendly fire is real — own men in it are struck, the caster included",
+          "[delivery][area]") {
+    // T-7. There is no team filter anywhere in coverage, and this is the case
+    // that says so out loud: the blast takes the caster's own soldier standing
+    // among the enemy, and takes the caster himself when the ring reaches him.
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage*   mage   = place(red,  caster(REDTEAM, SpellPath::Fire, 3), 6);  // the E neighbour
+    // One of his own, raised and standing in the enemy's hex. A zombie rather
+    // than a soldier so that the pushed queue stays readable: heavy armour would
+    // soak a small blast, and a LIVING body struck mid-coverage rolls for morale
+    // — which would eat the rolls the ring is about to ask for.
+    Zombie* ourOwn = place(red,  std::make_unique<Zombie>(REDTEAM), 5);
+    Zombie* theirs = place(blue, std::make_unique<Zombie>(BLUETEAM), 5);
+    field.loadArmies(std::move(red), std::move(blue));
+
+    RangedCombat::resetCache();
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(1);          // rotation: E first, which is where the caster stands
+    Utility::pushDiceRoll(1);          // the remainder's arc starts at slot 1
+
+    RangedCombat::coverArea(mage, ourOwn->getHex(),
+                            areaShot(AreaMode::Explosion, 700, AREA_DMG), 0, nullptr);
+
+    CHECK(hurt(ourOwn));   // his own man, in the hex the blast landed on
+    CHECK(hurt(theirs));
+    CHECK(hurt(mage));     // and the man who threw it, one hex out
+    // No sentinel here on purpose: the caster is a LIVING man, so being struck
+    // sends him to testMorale and that is two more dice. What this case is about
+    // is who the blast reaches, not what it costs to ask.
+    Utility::clearDiceRolls();
+
+    field.extractResult();
+}
+
+TEST_CASE("area: off-map ring hexes are skipped, and their share is not spent",
+          "[delivery][area]") {
+    // At the western edge of row 8 only three of the six ring-1 hexes exist. The
+    // three that do not must cost the blast nothing — otherwise a fireball
+    // thrown at the map's edge would quietly lose half its force to the void.
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    Zombie* edge = place(blue, std::make_unique<Zombie>(BLUETEAM), -4);   // q = -4, the edge
+    field.loadArmies(std::move(red), std::move(blue));
+    Hex* landed = edge->getHex();
+
+    std::vector<Hex*> ring = RangedCombat::ringHexes(landed, 1);
+    REQUIRE(ring.size() == 3);   // NE, E and SE exist; SW, W and NW are off the map
+
+    // A body in each on-map ring hex, placed straight onto the hexes the walk
+    // reports rather than by coordinate — the ring is what is under test.
+    Army blue2;
+    std::vector<Zombie*> ringMen;
+    for (Hex* h : ring) {
+        auto z = std::make_unique<Zombie>(BLUETEAM);
+        z->setHex(h);
+        ringMen.push_back(z.get());
+        blue2.push_back(std::move(z));
+    }
+    for (auto& u : blue2) field.getTeam(BLUETEAM).push_back(std::move(u));
+
+    RangedCombat::resetCache();
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(0);          // no rotation, so the ring runs in neighbour order
+    Utility::pushDiceRoll(SENTINEL);   // every hex is covered WHOLE: no start rolls
+
+    // Exactly four full hexes' worth. If the three off-map hexes had been given
+    // 640 each, the points would have run out with two of these men unhurt.
+    RangedCombat::coverArea(mage, landed,
+                            areaShot(AreaMode::Explosion, Hex::CAPACITY * 4, AREA_DMG),
+                            0, nullptr);
+
+    CHECK(hurt(edge));
+    for (Zombie* z : ringMen) CHECK(hurt(z));
+    CHECK(sentinelUntouched());
+
+    field.extractResult();
+}
+
+// ── (h) The scorer nets what it would cost (assistant's call 2, T-7) ─────────
+
+TEST_CASE("area: the scorer prices the blast, and subtracts the caster's own men",
+          "[delivery][area]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    const SpellForm& fb = formOf("fireball", 1);
+    REQUIRE(fb.area > 0);
+
+    // Three aim points, the same spell, the same caster. Only who else is
+    // standing in the blast changes.
+    auto worthWith = [&](int enemies, int allies) {
+        Army red, blue;
+        Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+        std::vector<Zombie*> foes = crowd(blue, 5, enemies, BLUETEAM);
+        for (int i = 0; i < allies; ++i)
+            place(red, std::make_unique<Soldier>(REDTEAM), 5);
+        field.loadArmies(std::move(red), std::move(blue));
+
+        Utility::clearDiceRolls();
+        Utility::pushDiceRoll(SENTINEL);
+        Target t;
+        t.unit = foes.front();
+        int worth = fb.worth(*mage, fb, t);
+        CHECK(sentinelUntouched());     // A-1: the estimator rolls nothing
+        field.extractResult();
+        return worth;
+    };
+
+    const int alone     = worthWith(1, 0);
+    const int withOwn   = worthWith(1, 2);
+    const int threeFoes = worthWith(3, 0);
+
+    // T-7 netted in A-3's one currency: two of your own men standing where the
+    // fireball would fall make it worth LESS than the same shot on clean ground,
+    // and a packed enemy hex is worth more than a lone man. Nothing forbids the
+    // first case — it prices itself out.
+    CHECK(withOwn < alone);
+    CHECK(alone < threeFoes);
+}
+
+// ── (i) The row says what the body does, and the wire says it too ───────────
+
+TEST_CASE("area: only fireball's major form carries an area, and the row IS the blast",
+          "[delivery][area]") {
+    for (const Spell& spell : Spells::roster())
+        for (const SpellForm& form : spell.forms) {
+            INFO(std::string(spell.id) + "/" + std::string(form.name));
+            const bool isBlast = spell.id == "fireball" && form.name == "major";
+            CHECK((form.areaMode != AreaMode::None) == isBlast);
+            // The pair is a biconditional: a mode with no points, or points with
+            // no mode, is a row that says two different things about itself.
+            CHECK((form.area > 0) == (form.areaMode != AreaMode::None));
+            if (isBlast) CHECK(form.area == FIREBALL_AREA);
+        }
+}
+
+TEST_CASE("area: the size the body covers is the size the ROW names", "[delivery][area]") {
+    // Read back through the arc rather than through a test seam: what the row
+    // claims has to be what the men on the ground actually feel, and the
+    // arithmetic of a 100-point arc pins the number from both sides. Two bodies
+    // in slots 1-20; one of the caster's OWN is FIRST, so the aimed zombie
+    // (slots 11-20) is the primary and the friendly body is the area's only
+    // candidate — armourless and undead, so nothing it does asks the dice.
+    Battlefield& field = Utility::getBattlefield();
+    const SpellForm& fb = formOf("fireball", 1);
+
+    auto castFrom = [&](int start) {
+        Army red, blue;
+        Mage*   mage  = place(red,  caster(REDTEAM, SpellPath::Fire, 3), 8);
+        Zombie* own   = place(red,  std::make_unique<Zombie>(REDTEAM), 5);
+        Zombie* aimed = place(blue, std::make_unique<Zombie>(BLUETEAM), 5);
+        field.loadArmies(std::move(red), std::move(blue));
+
+        RangedCombat::resetCache();
+        Utility::clearDiceRolls();
+        Utility::pushDiceRoll(start);
+        Utility::pushDiceRoll(SENTINEL);
+
+        Target t;
+        t.unit = aimed;
+        REQUIRE(fb.cast(*mage, fb, t) == true);
+        REQUIRE(aimed->getHp() == aimed->getmaxHP() - (FIREBALL_CENTRE + 3));
+        bool struck = hurt(own);
+        CHECK(sentinelUntouched());
+        field.extractResult();
+        return struck;
+    };
+
+    // FIREBALL_AREA points from slot 541 cover 541-640 and stop: exactly one
+    // point short of wrapping onto the first body.
+    CHECK_FALSE(castFrom(Hex::CAPACITY - FIREBALL_AREA + 1));
+    // One slot later the arc wraps onto slot 1, and the soldier standing in
+    // 1-10 takes the blast. Both halves of the assertion move if the row does.
+    CHECK(castFrom(Hex::CAPACITY - FIREBALL_AREA + 2));
+}
+
+TEST_CASE("area: the catalog exports areaMode and area on every row", "[delivery][area]") {
+    json catalog = json::parse(Spells::spellCatalogJson());
+    REQUIRE(catalog.contains("spells"));
+
+    for (const auto& row : catalog["spells"]) {
+        INFO(row["spell"].get<std::string>() + "/" + row["form"].get<std::string>());
+        REQUIRE(row.contains("areaMode"));
+        REQUIRE(row.contains("area"));
+        const std::string mode = row["areaMode"].get<std::string>();
+        CHECK((mode == "none" || mode == "explosion" || mode == "random"));
+        CHECK(row["area"].is_number_integer());
+        CHECK(row["area"].get<int>() >= 0);
+        // The same biconditional the roster carries, pinned on the wire too:
+        // a reader should never have to know which of the two to trust.
+        CHECK((row["area"].get<int>() > 0) == (mode != "none"));
+        if (row["spell"] == "fireball" && row["form"] == "major") {
+            CHECK(mode == "explosion");
+            CHECK(row["area"].get<int>() == FIREBALL_AREA);
+        }
+    }
+}

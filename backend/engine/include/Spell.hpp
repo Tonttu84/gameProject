@@ -1,4 +1,5 @@
 #pragma once
+#include "AreaMode.hpp"
 #include "Defines.hpp"
 #include <string>
 #include <string_view>
@@ -137,6 +138,10 @@ struct Target {
 // C++ roster is the single source of truth for what a spell targets.
 std::string_view targetKindName(TargetKind k);
 
+// The JSON name of an area mode ("none" | "explosion" | "random"), for the
+// catalog export, and one direction only for the same reason targetKindName is.
+std::string_view areaModeName(AreaMode m);
+
 // A single castable form. M-12 gives one spell a MINOR and a MAJOR form rather
 // than a ladder of near-duplicates, so each form carries its own gates, price
 // and effect — otherwise "the best form you qualify for" (M-13) has nothing to
@@ -257,6 +262,19 @@ struct SpellForm {
     // the enemy rule always was — and BOONS ARE CHECKED TOO now, which is the
     // hole T-2 closed (a Ward used to reach a man across the map).
     int range = SPELLRANGE;
+
+    // T-6/T-7: what the form's AREA is, and how it spreads. DESCRIPTIVE fields
+    // — the area a cast actually covers rides on the RangedShot the body fills,
+    // because a form's area is an effect number like its damage and lives in
+    // the body beside the constant it reads. These two exist so the CATALOG can
+    // say it (S3-4), and the body reads them straight off its own row so the
+    // two cannot disagree; the delivery sweep in test_delivery.cpp pins that.
+    //
+    // `area` is in hex SIZE POINTS (640 = a whole hex), and the pair is a
+    // biconditional: a mode of None means 0 points, and any points mean a mode.
+    // Balance-deferred like every number on a row.
+    AreaMode areaMode = AreaMode::None;
+    int      area     = 0;
 
     // The spell this form belongs to, wired once at the end of roster(). A form
     // can therefore name itself: the resolver needs the id to ask the buff

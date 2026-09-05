@@ -442,6 +442,14 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
       expect(typeof row.precise).toBe('boolean')
       expect(row.precise).toBe(row.accuracy === 100)
       expect(row.range).toBeGreaterThanOrEqual(1)
+      // TG-2 (T-6/T-7): the area, on every row. The mode is one of the three
+      // the engine knows, the size is in hex points, and the two are a
+      // BICONDITIONAL — an area with no mode, or a mode with no area, is a row
+      // that says two different things about itself.
+      expect(['none', 'explosion', 'random']).toContain(row.areaMode)
+      expect(Number.isInteger(row.area)).toBe(true)
+      expect(row.area).toBeGreaterThanOrEqual(0)
+      expect(row.area > 0).toBe(row.areaMode !== 'none')
     }
   })
 

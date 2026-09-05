@@ -1,9 +1,11 @@
 #pragma once
 
+#include "AreaMode.hpp"
 #include "Defines.hpp"
 #include "hex/HexGrid.hpp"
 #include <functional>
 #include <unordered_map>
+#include <vector>
 
 class AUnit;
 
@@ -23,12 +25,20 @@ struct RangedShot {
     int      accuracy    = 0;
     ArmorPen pen         = ArmorPen::Normal;
 
-    // AoE splash: after the primary shot resolves (hit or miss), fire() picks
-    // `secondaryHits` additional weighted-random units from the landed hex
-    // (same pickHexTarget pool, same block/damage pipeline) and damages each
-    // for `secondaryDamage` + elevation bonus. 0 means no splash (the default).
-    int secondaryHits   = 0;
-    int secondaryDamage = 0;
+    // AREA (T-6/T-7, slice TG-2). What TG-2 replaced the old `secondaryHits`
+    // splash with: an area is a number of hex SIZE POINTS spread over hexes by
+    // `areaMode`, and each hex covers what it received as ONE CONTIGUOUS ARC of
+    // its 640 slots. A body whose slot range overlaps the arc is struck ONCE for
+    // `areaDamage` — whichever side it is on, the caster included (T-7). The
+    // primary body is excluded, having already taken `baseDamage`.
+    //
+    // The old splash rolled N independent weighted hits into the landed hex, so
+    // enough hits eventually found every man in it; an arc finds the men who
+    // stand where it falls. `areaPoints` 0 (the default) means no area, which is
+    // every archer and every spell but fireball's major form.
+    AreaMode areaMode   = AreaMode::None;
+    int      areaPoints = 0;
+    int      areaDamage = 0;
 
     // Called after the universal block checks (extraShield, terrain) for the
     // primary hit only. `blocked` is by reference so the callback can apply
@@ -71,11 +81,11 @@ public:
 
     // Full ranged attack pipeline: elevation, accuracy clamp, deviation,
     // hit resolution, universal block checks (extraShield + terrain),
-    // onHit callback, damage, takeDamage, onDamage callback. If
-    // shot.secondaryHits > 0, also splashes that many weighted-random hits
-    // onto the landed hex (same pipeline, shot.secondaryDamage), regardless
-    // of whether the primary shot found a target — a miss still lands
-    // somewhere and the blast goes off there.
+    // onHit callback, damage, takeDamage, onDamage callback. If the shot
+    // carries an area it is covered afterwards from the landed hex, regardless
+    // of whether the primary shot found a target — a miss still lands somewhere
+    // and the blast goes off there. No archer sets one, so for fire() that call
+    // is a no-op; it is ONE code path rather than an archer special case.
     //
     // Resource consumption (ammo, mana) and caller-specific accuracy
     // adjustments (e.g. forest aim penalty) are the caller's responsibility.
@@ -85,8 +95,8 @@ public:
     //
     // A spell is NOT an arrow any more. fire() above is the archer's pipeline
     // and stays exactly as it was; the two entry points below are the two
-    // halves of T-1, and they share applyHit() and the secondary-hits loop with
-    // it so what a hit DOES is the same wherever it came from.
+    // halves of T-1, and they share applyHit() and the area walk with it so what
+    // a hit DOES is the same wherever it came from.
     //
     // Neither reads `shot.accuracy`: the caller has already folded the form's
     // modifier into the caster's stat (spellAccuracy), so the argument — or, for
@@ -109,6 +119,37 @@ public:
     static void scatter(AUnit* shooter, AUnit* aimUnit, const RangedShot& shot,
                         int accuracy);
 
+    // ── Area of effect (T-6, T-7 — slice TG-2) ───────────────────────────────
+    //
+    // Public rather than private, like pickHexTarget above it: the arc IS a
+    // rule, and a rule the suite pins directly is a rule that cannot drift
+    // behind a spell that happens to exercise it. SpellList.cpp's scorer walks
+    // ringHexes() too, so the estimate and the explosion agree on which hexes an
+    // area would reach by construction (assistant's call 2).
+
+    // Spread shot.areaPoints out from `landedHex` per shot.areaMode and cover
+    // each hex that receives points with one arc. `already` is the body the
+    // primary hit struck: excluded, because a cast strikes a body ONCE (T-6).
+    // Nothing happens when the shot carries no area.
+    static void coverArea(AUnit* shooter, Hex* landedHex, const RangedShot& shot,
+                          int elevDmgBonus, AUnit* already);
+
+    // ONE hex, `points` of it. The bodies are laid out exactly as pickHexTarget
+    // lays them out — the same slot cache, the same order, each body getSize()
+    // slots wide from slot 1 — and the arc is `points` consecutive slots from a
+    // rolled start, WRAPPING past 640 back to 1. Every body it overlaps is
+    // struck for shot.areaDamage. points >= Hex::CAPACITY covers the hex whole
+    // and rolls nothing. Appends whom it struck to `struck`, which is what keeps
+    // "once per body per cast" true across the hexes of one area.
+    static void coverHex(AUnit* shooter, Hex* hex, int points, const RangedShot& shot,
+                         int elevDmgBonus, AUnit* already, std::vector<AUnit*>& struck);
+
+    // The on-map hexes at EXACTLY distance k from `centre` (k = 0 is the centre
+    // itself), found by BFS outward over HexGrid::neighbors and returned in
+    // discovery order — which for k = 1 is neighbour order. Off-map hexes are
+    // dropped, so a ring at the edge of the map is simply shorter.
+    static std::vector<Hex*> ringHexes(const Hex* centre, int k);
+
 private:
     struct SlotCache {
         std::vector<AUnit*> units; // units present when the phase began
@@ -118,17 +159,11 @@ private:
     static const SlotCache& getSlotCache(const Hex* hex);
 
     // Block checks, onHit callback, damage, takeDamage, onDamage callback
-    // for a single resolved target. Shared by the primary hit and every
-    // secondary splash hit so they go through identical rules.
+    // for a single resolved target. Shared by the primary hit and every body an
+    // area covers so they go through identical rules — an area's hits are hits,
+    // which is also why shot.onDamage fires once PER BODY the arc struck.
     static void applyHit(AUnit* shooter, AUnit* target, const RangedShot& shot,
                           int baseDamage, int elevDmgBonus);
-
-    // The splash loop, shared by fire(), strike() and scatter(): shot.secondaryHits
-    // weighted-random bodies out of the hex the shot landed on, each through
-    // applyHit like the primary. One copy, so a blast is the same blast whoever
-    // threw it.
-    static void secondaryHitsOn(AUnit* shooter, Hex* landedHex, const RangedShot& shot,
-                                 int elevDmgBonus);
 
     RangedCombat() = delete;
 };

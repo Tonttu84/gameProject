@@ -88,7 +88,7 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 ### Where the work stands (2026-09-04) — START HERE
 
 **▶▶ THE ACTIVE FRONT IS SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions
-T-1..T-7, THREE SLICES PLANNED, TG-1 SHIPPED 2026-09-04.** The 2026-09-02 ask
+T-1..T-7, THREE SLICES PLANNED, TG-1 SHIPPED 2026-09-04, TG-2 SHIPPED 2026-09-05.** The 2026-09-02 ask
 (*"plan first how spells should generally work and target, then we update the spells to work with
 our plan"*), taken up the day the casting AI closed. The record is the "SPELL TARGETING AND
 DELIVERY" entry at the top of the Deferred design backlog below: the seven decisions, the three
@@ -8176,6 +8176,37 @@ one resolver, effect-only bodies); the interview walked the other six.
     -Werror -Wshadow -Wnull-dereference`; run `make clang` on a dev box when next there.
 - **TG-2, area.** The arc, explosion and random, friendly fire, the scorer netting own losses,
   `secondaryHits` retired for spells. The visible change.
+  - **✅ TG-2 SHIPPED 2026-09-05.** Spec'd here, built by an Opus subagent, reviewed and run
+    here. What landed: `AreaMode {None, Explosion, Random}` in its own header (Spell.hpp names
+    it descriptively, RangedCombat.hpp walks it); `RangedShot.areaMode/areaPoints/areaDamage`
+    REPLACE `secondaryHits/secondaryDamage` outright (no archer ever set them);
+    `RangedCombat::coverArea/coverHex/ringHexes` public like `pickHexTarget`, the arc laid on
+    the SAME slot cache and order pickHexTarget rolls into, `arcCovers()` doing the wrap in
+    offsets-from-start; 640+ points cover a hex with NO roll; explosion opens rings by BFS with
+    ONE rotation roll per cast (by `rot × k` sides for ring k, drawn only when a ring opens);
+    random splits `AREA_CHUNK` (10) chunks over the smallest holding ring set; every entry
+    point (`fire`, `strike`, `scatter`) ends in `coverArea(..., already)` so the primary is
+    never struck twice; one Detail-tier line per area cast. `SpellForm.areaMode/area` after
+    `range` (descriptive; `castFireball` reads them off its own row); `FIREBALL_AREA` 100 (bd),
+    `FIREBALL_SECONDARY` deleted, `FIREBALL_BLAST` is now the per-body area damage; fireball's
+    description says "friend and foe alike, your own line included". The scorer:
+    `worthArea()` generic and NETTED — arc-overlap chance `min(100, (P + size) × 100 / 640)`
+    per body, own side negative, same ring walk as the blast, pure. Catalog exports
+    `areaMode`/`area`, The Study prints "Area N (explosion)".
+  - **Amendment to T-6's fill-in:** the arc's rolls are COMBAT rolls made at delivery time,
+    exactly like pickHexTarget's, so they go through `getRandom` and tests pin them with
+    `pushDiceRoll` — NOT the scorer's lottery seam as the plan first said. The scorer rolls
+    nothing (A-1); the seam distinction was about scoring noise, not delivery dice.
+  - **Choices the spec left open, taken by the subagent and accepted:** an EMPTY on-map hex
+    draws no start roll but still consumes its points (off-map hexes are skipped free); dead
+    bodies keep their slots for the phase (the cache's rule) and are not struck; the random
+    walk needs 650+ points before a neighbour can ever be drawn (30 points is radius 0).
+  - **Consequence worth knowing:** with the honest netted estimate a fireball at a LONE man is
+    worth its centre alone and loses on ratio to Ember; it out-scores Ember at ~5+ bodies in
+    the target hex. Two fixtures (test_scoring's lottery case, test_spells' fireball case)
+    now stand a crowd. That is the scorer telling the truth, not a regression.
+  - Engine 502 cases green fast and sanitized (and on five fixed seeds), campaign-server 1480,
+    frontend 548 + lint.
 - **TG-3, resistance and duration.** The contest, the two new stats through the type rows and the
   mod bag, durations and expiry, the battle-end undo, the scorer's land chance, and
   `docs/ADDING_SPELLS.md` rewritten against the new shape.

@@ -70,7 +70,9 @@ const SpellRow = ({ spell, schoolLabel }) => {
               the server's and neither re-derived here: how far the form reaches,
               and whether it just lands. A precise row says so; an imprecise one
               names its modifier only when it HAS one, because "Accuracy +0" is
-              a number that tells the player nothing. */}
+              a number that tells the player nothing. TG-2 (T-6) adds the AREA on
+              the same terms — named only where there is one, since "Area 0" says
+              nothing either. */}
           <p className="study-spell-numbers">
             Fatigue {spell.fatigue} · {spell.castingTime} tick
             {spell.castingTime === 1 ? '' : 's'} to cast · Range {spell.range}
@@ -79,6 +81,7 @@ const SpellRow = ({ spell, schoolLabel }) => {
               : spell.accuracy
                 ? ` · Accuracy ${spell.accuracy > 0 ? '+' : '−'}${Math.abs(spell.accuracy)}`
                 : ''}
+            {spell.area > 0 ? ` · Area ${spell.area} (${spell.areaMode})` : ''}
           </p>
           {/* A BATTLEFIELD ENCHANTMENT (slice A, E-2/E-3) is priced in the
               ARMY's pool as well as in the caster's fatigue, and never fires
