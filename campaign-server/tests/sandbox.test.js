@@ -457,6 +457,13 @@ describe("a caster's shortlist and a body's value (A-5 / A-7)", () => {
       .toEqual([12, SANDBOX_MAX_VALUE, 1])
   })
 
+  // TC-1's tripwire, the campaign half: the engine pins AI_VALUE_CAP == 1000 in
+  // test_scoring.cpp, and this pins the mirror, so the pair cannot drift apart
+  // with both suites green. Retune both or neither.
+  test('SANDBOX_MAX_VALUE is the number the engine\'s AI_VALUE_CAP mirrors', () => {
+    expect(SANDBOX_MAX_VALUE).toBe(1000)
+  })
+
   test('a blank, a null and a word are omitted — none of them is a number', async () => {
     stubEngine()
     await launch({

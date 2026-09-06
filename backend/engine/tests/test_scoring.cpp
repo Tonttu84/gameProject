@@ -194,6 +194,18 @@ TEST_CASE("scoring: a wire value raises a target's score, one option per enemy",
     field.extractResult();
 }
 
+// TC-1 item 8 (audit B3): the cap is written down TWICE — here, and as
+// SANDBOX_MAX_VALUE in campaign-server/utils/campaignConfig.js, where the Battle
+// Lab clamps what a scenario may set on a body (L-3). Nothing ties the two, so
+// raising one alone would leave the lab refusing values the engine happily
+// accepts, or accepting values the engine then clamps behind the player's back.
+// Neither side can see the other — the lab's own cases spell the constant
+// rather than the number — so this is the engine's tripwire on the shared
+// figure: change it here and this line is what tells you the lab must follow.
+TEST_CASE("scoring: AI_VALUE_CAP is the number SANDBOX_MAX_VALUE mirrors", "[scoring]") {
+    CHECK(AI_VALUE_CAP == 1000);
+}
+
 TEST_CASE("scoring: the lottery draws through its own seam, tickets in proportion to score",
           "[scoring]") {
     Battlefield& field = Utility::getBattlefield();

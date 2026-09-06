@@ -8,6 +8,8 @@ import { battleResultFixture } from './fixtures/battleResult.js'
 import { catalogFixture } from './fixtures/catalog.js'
 import { pushRoll, clearRolls } from '../utils/dice.js'
 import { fortifiedSidesFor } from '../services/fortification.js'
+import { characterValue } from '../services/characters.js'
+import { enginePaths } from '../services/magic.js'
 import { CHARTER_BEATS, EVENT_POOL } from '../services/events.js'
 import { findCharter } from '../services/charters.js'
 import { RECRUIT_POOL } from '../services/recruit.js'
@@ -3835,6 +3837,69 @@ describe('characters (docs/CAMPAIGN_PLAN.md "SLICE 5")', () => {
     const input = engine.runBattle.mock.calls.at(-1)[0]
     const entry = input.player_placement.find((e) => e.character_id === mage.id)
     expect(entry).toMatchObject({ unit_type: 'Mage', q: 5, r: 4, avoids_melee: true })
+  })
+
+  // The whole of the character's own sheet is stamped from the RECORD, and the
+  // four fields below are the ones that had no case of their own: `value`
+  // (A-5) most of all, because it is what the ENEMY's casters weigh a target
+  // by — a client that could set it could make its own casters worthless to
+  // shoot at and the enemy's own bodies worth everything. `shortlist`,
+  // `script` and `paths` are the same rule (routes/campaigns.js strips all four
+  // unconditionally), and every sibling forgery — squad_mods, squad_abilities,
+  // avoids_melee, denied_abilities — already had this test.
+  test('a forged value/shortlist/script/paths on a character placement is discarded', async () => {
+    const { body: c } = await createCampaign()
+    const mage = c.characters.find((x) => x.type === 'Mage')
+
+    await fightWith(
+      c.id,
+      [{
+        unit_type: 'Mage', q: 5, r: 4, character_id: mage.id,
+        value: 999, shortlist: ['fireball'], script: ['fireball'], paths: { fire: 9 },
+      }],
+      [mage.id],
+      {},
+    )
+
+    const input = engine.runBattle.mock.calls.at(-1)[0]
+    const entry = input.player_placement.find((e) => e.character_id === mage.id)
+    const record = (await Campaign.findById(c.id)).characters.find((x) => x.id === mage.id)
+
+    // Stamped from the record, not taken from the request.
+    expect(entry.value).toBe(characterValue(record))
+    expect(entry.value).not.toBe(999)
+    // This mage has neither a script nor a shortlist on his sheet, and an
+    // absent field is what "the engine's own default" looks like on the wire.
+    expect(record.script ?? []).toEqual([])
+    expect(record.shortlist ?? []).toEqual([])
+    expect(entry.script).toBeUndefined()
+    expect(entry.shortlist).toBeUndefined()
+    // His paths are the ones he was HIRED with (S2-3), full map and all — never
+    // the ones the request asked for.
+    expect(entry.paths).toEqual(enginePaths(record.paths))
+    expect(entry.paths.fire).not.toBe(9)
+  })
+
+  // A rank-and-file body carries no sheet at all, so there is nothing to stamp
+  // over the forgery with: the four fields are stripped outright and the engine
+  // keeps its catalog default for every one of them.
+  test('a forged value/shortlist/script/paths on an ordinary troop is stripped outright', async () => {
+    const { body: c } = await createCampaign()
+    await Campaign.updateOne({ _id: c.id }, { $set: { roster: { Soldier: 1 }, bossFightDue: true } })
+    engine.runBattle.mockResolvedValue(structuredClone(battleResultFixture))
+
+    await auth(api.post(`/api/campaigns/${c.id}/battles`)).send({
+      player_placement: [{
+        unit_type: 'Soldier', q: 4, r: 4, squad_id: 1,
+        value: 999, shortlist: ['fireball'], script: ['fireball'], paths: { fire: 9 },
+      }],
+    })
+
+    const entry = engine.runBattle.mock.calls[0][0].player_placement[0]
+    expect(entry.value).toBeUndefined()
+    expect(entry.shortlist).toBeUndefined()
+    expect(entry.script).toBeUndefined()
+    expect(entry.paths).toBeUndefined()
   })
 
   // The client says WHERE a loose character stands; it never says how they

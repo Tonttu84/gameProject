@@ -259,7 +259,6 @@ TEST_CASE("resist: a resisted hex changes nothing, and is still paid for in full
     const int defenceBefore = man->getDefence();
     const int hpBefore      = mage->getHp();
 
-    RangedCombat::resetCache();
     pushContest(1, 5);   // 11 against 15: thrown off
     field.triggerSpecialPhase();
     Utility::clearDiceRolls();
@@ -291,7 +290,6 @@ TEST_CASE("resist: a hex that LANDS takes the defence and stands on the man", "[
 
     const int defenceBefore = man->getDefence();
 
-    RangedCombat::resetCache();
     pushContest(5, 1);   // 15 against 11: it holds
     field.triggerSpecialPhase();
     Utility::clearDiceRolls();
@@ -347,6 +345,53 @@ TEST_CASE("resist: a body that shrugs off drain life takes nothing and gives not
     }
 
     Utility::clearDiceRolls();
+    field.extractResult();
+}
+
+// TC-1 item 4 (audit S4): AN AREA ASKS EACH BODY SEPARATELY.
+//
+// RangedCombat.cpp's `if (shot.resisted && shot.resisted(target)) return;` sits
+// in applyHit, which every struck body passes through — the primary AND every
+// body the arc covered. No roster row carries both an area and a resist tag
+// today (fireball has the area and no tag, drain_life the tag and no area), so
+// the path is unexercised by any spell and has to be driven through the
+// primitive: a shot with an area and a `resisted` predicate that answers
+// differently for two men standing on the same ground.
+//
+// 640 points cover the hex whole and roll nothing, so the only thing that can
+// separate these two bodies is the contest — which is the claim.
+TEST_CASE("resist: an area asks EACH body, and the one who shrugs it off is the only one spared",
+          "[resist]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage*   mage   = place(red,  caster(REDTEAM, SpellPath::Low, 1), 8);
+    Zombie* shrugs = place(blue, std::make_unique<Zombie>(BLUETEAM), 5);
+    Zombie* fails  = place(blue, std::make_unique<Zombie>(BLUETEAM), 5);
+    field.loadArmies(std::move(red), std::move(blue));
+    REQUIRE(shrugs->getHex() == fails->getHex());
+
+    constexpr int AREA_DMG = 4;
+    RangedShot shot;
+    shot.areaMode   = AreaMode::Explosion;
+    shot.areaPoints = Hex::CAPACITY;
+    shot.areaDamage = AREA_DMG;
+    // NP-2's side tag is left at its default here on purpose: P-8 decides WHO
+    // the arc touches and T-4 decides what each touched body then does about
+    // it, and this case is about the second question alone.
+    REQUIRE(shot.affects == Affects::Everyone);
+    shot.resisted = [shrugs](AUnit* target) { return target == shrugs; };
+
+    // No resetCache() here: test_main.cpp's listener starts every case cold.
+    seedSentinel();
+    RangedCombat::coverArea(mage, shrugs->getHex(), shot, 0, nullptr);
+
+    CHECK(shrugs->getHp() == shrugs->getmaxHP());              // asked, and answered
+    CHECK(fails->getHp()  == fails->getmaxHP() - AREA_DMG);    // asked, and did not
+    // Nothing but the contest itself: a body that resisted is not a body that
+    // was hit and then saved, so no block roll was drawn for either of them.
+    CHECK(sentinelUntouched());
+
     field.extractResult();
 }
 

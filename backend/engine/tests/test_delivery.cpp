@@ -173,7 +173,6 @@ TEST_CASE("delivery: a precise form strikes the man it was aimed at, and rolls n
     const SpellForm& shock = formOf("shock");
     REQUIRE(spellPrecise(shock));
 
-    RangedCombat::resetCache();
     seedSentinel();
 
     Target t;
@@ -204,7 +203,6 @@ TEST_CASE("delivery: drain life is precise now, and takes the man it was aimed a
     const SpellForm& drain = formOf("drain_life");
     REQUIRE(spellPrecise(drain));
 
-    RangedCombat::resetCache();
     // TG-3 put FOUR draws in front of this shot: drain_life is tagged
     // ResistKind::Negates, so delivery contests the target's resistance before
     // the hit lands (T-4). Pushed high for the caster and low for the target —
@@ -243,7 +241,6 @@ TEST_CASE("delivery: an imprecise shot that stays on the hex takes the aimed man
     const SpellForm ember = withAccuracy(formOf("fireball", 0), -55);
     REQUIRE(spellAccuracy(*mage, ember) == 5);
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(0); Utility::pushDiceRoll(0);   // step 1: no drift
     Utility::pushDiceRoll(0); Utility::pushDiceRoll(0);   // step 2: no drift
@@ -276,7 +273,6 @@ TEST_CASE("delivery: a shot that scatters off the hex takes a body there — an 
 
     const SpellForm ember = withAccuracy(formOf("fireball", 0), -55);
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     // Step 1 drifts one hex along q (onto the friendly's hex), step 2 stays.
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(0);
@@ -307,7 +303,6 @@ TEST_CASE("delivery: a shot that scatters onto empty ground hits nobody, and sti
 
     const SpellForm ember = withAccuracy(formOf("fireball", 0), -55);
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(0);   // one hex off his line
     Utility::pushDiceRoll(0); Utility::pushDiceRoll(0);
@@ -605,7 +600,6 @@ TEST_CASE("area: the arc covers consecutive slots from the rolled start, wrappin
     field.loadArmies(std::move(red), std::move(blue));
     Hex* hex = line.front()->getHex();
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(630);        // the arc's start slot
     Utility::pushDiceRoll(SENTINEL);   // one roll per hex, and no more
@@ -634,7 +628,6 @@ TEST_CASE("area: 640 points or more take the whole hex, and roll nothing at all"
     field.loadArmies(std::move(red), std::move(blue));
     Hex* hex = line.front()->getHex();
 
-    RangedCombat::resetCache();
     seedSentinel();
 
     std::vector<AUnit*> struck;
@@ -666,7 +659,6 @@ TEST_CASE("area: the man the shot already struck is not struck again by his own 
     const SpellForm& fb = formOf("fireball", 1);
     REQUIRE(fb.areaMode == AreaMode::Explosion);
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     // Distance 3 at accuracy 60 deviates 3/60 = 0 hexes, so the shot stays on
     // the aimed man's hex and no deviation rolls are drawn.
@@ -695,7 +687,6 @@ TEST_CASE("area: an explosion fills the landed hex, then opens the ring outward"
     std::vector<Zombie*> next = crowd(blue, 6, 3, BLUETEAM);   // the E neighbour
     field.loadArmies(std::move(red), std::move(blue));
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     // 700 points: 640 fill the landed hex (no roll — it is covered whole), the
     // ring then opens with ONE rotation roll, and the 60 left over land on the
@@ -795,7 +786,6 @@ TEST_CASE("area: friendly fire is real — own men in it are struck, the caster 
     Zombie* theirs = place(blue, std::make_unique<Zombie>(BLUETEAM), 5);
     field.loadArmies(std::move(red), std::move(blue));
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(1);          // rotation: E first, which is where the caster stands
     Utility::pushDiceRoll(1);          // the remainder's arc starts at slot 1
@@ -945,7 +935,6 @@ TEST_CASE("affects: a friendly boon that scatters onto the enemy's hex touches n
     REQUIRE(spellAccuracy(*mage, wild) == 5);
     REQUIRE(wild.affects == Affects::Friendly);
 
-    RangedCombat::resetCache();
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(0);   // step 1: one hex along q
     Utility::pushDiceRoll(0); Utility::pushDiceRoll(0);   // step 2: stays there
@@ -1070,6 +1059,66 @@ TEST_CASE("area: the size the body covers is the size the ROW names", "[delivery
     // One slot later the arc wraps onto slot 1, and the soldier standing in
     // 1-10 takes the blast. Both halves of the assertion move if the row does.
     CHECK(castFrom(Hex::CAPACITY - FIREBALL_AREA + 2));
+}
+
+// ── The slot cache outlives the army (TC-1 item 14, NP-2's finding) ─────────
+//
+// RangedCombat's slot cache is keyed by `const Hex*`. A hex is part of the grid
+// and outlives every army that ever stood on it, so an entry warmed by one
+// battle names bodies the next battle has already destroyed — and covering that
+// hex again walks a vector of dangling pointers. That is a real use-after-free,
+// and the sanitizer caught it once (NP-2, in test_targeting.cpp's buff sweep).
+//
+// The discipline is now in test_main.cpp's Catch2 listener, which resets the
+// cache before every case; an ad-hoc call is still needed wherever a case
+// repopulates a hex MID-case, which is what this one does deliberately. What it
+// pins is that resetCache() genuinely drops the stale entries: if it ever became
+// a no-op, this case is the one that reads freed memory and the sanitized build
+// is what says so. Run it with `make test-serial`, not `test-fast` — the fast
+// build carries no sanitizer and would call a use-after-free a pass.
+TEST_CASE("area: a hex reused by a second army is covered afresh, not through the freed first",
+          "[delivery][area]") {
+    Battlefield& field = Utility::getBattlefield();
+    Hex* ground = nullptr;
+
+    {
+        Army red, blue;
+        Mage* mage = place(red, caster(REDTEAM, SpellPath::Fire, 3), 8);
+        std::vector<Zombie*> first = crowd(blue, 5, 3, BLUETEAM);
+        field.loadArmies(std::move(red), std::move(blue));
+        ground = first.front()->getHex();
+
+        // Warm the cache on this hex: coverHex reads it through getSlotCache,
+        // which now holds three raw pointers into `blue`.
+        std::vector<AUnit*> struck;
+        RangedCombat::coverHex(mage, ground, Hex::CAPACITY,
+                               areaShot(AreaMode::Explosion, Hex::CAPACITY, AREA_DMG),
+                               0, nullptr, struck);
+        REQUIRE(struck.size() == 3);
+        for (Zombie* z : first) REQUIRE(hurt(z));
+
+        // ...and now every one of those bodies is destroyed. The hex is not.
+        field.extractResult();
+    }
+
+    Army red2, blue2;
+    Mage* mage2 = place(red2, caster(REDTEAM, SpellPath::Fire, 3), 8);
+    std::vector<Zombie*> second = crowd(blue2, 5, 2, BLUETEAM);
+    field.loadArmies(std::move(red2), std::move(blue2));
+    REQUIRE(second.front()->getHex() == ground);
+
+    RangedCombat::resetCache();   // mid-case: the listener cannot see this
+    std::vector<AUnit*> struck;
+    RangedCombat::coverHex(mage2, ground, Hex::CAPACITY,
+                           areaShot(AreaMode::Explosion, Hex::CAPACITY, AREA_DMG),
+                           0, nullptr, struck);
+
+    // Two men stand here now, and exactly two are struck — the cache was
+    // rebuilt from the hex as it IS, not replayed from the army that was.
+    CHECK(struck.size() == 2);
+    for (Zombie* z : second) CHECK(hurt(z));
+
+    field.extractResult();
 }
 
 TEST_CASE("area: the catalog exports areaMode and area on every row", "[delivery][area]") {

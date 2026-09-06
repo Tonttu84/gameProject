@@ -7,6 +7,7 @@
 #include "units/Warhorse.hpp"
 #include "units/Priest.hpp"
 #include "Squad.hpp"
+#include "TestDummies.hpp"
 #include "Utility.hpp"
 #include "Defines.hpp"
 
@@ -607,4 +608,337 @@ TEST_CASE("Priest::castBless detects and rallies a cavalry whose rider is broken
     REQUIRE(cav->getBroken() == false);
 
     field.extractResult();
+}
+
+// ── defend(): a shield and PROTECTION on the same body (TC-1 item 3, audit A7)
+//
+// Every shield case above uses a Zombie — armour 0, natural protection 0 — so
+// until TC-1 nothing exercised the two arithmetics on ONE body, nor the `else
+// if` at AUnit.cpp ~213 that makes an extra shield SUPPRESS the physical one.
+// Both are pinned here on a Soldier (HEAVYARMOUR under a shield), which is the
+// body the roster actually fights with.
+//
+// AttackAttempt is derived from the man's own defence rather than written out,
+// so the case says what it means: `defence + shield` is the bar the shield
+// check clears and `defence + defenceroll` is the one the blow beats.
+//   miss check:   defence + defenceroll = 12+3 = 15 < 16 → HITS
+//   shield check: defence + shield + defenceroll = 12+4+3 = 19 >= 16 → active
+// The blow is 25 raw, which with d1=5/d2=3 is 27 — big enough that the reader
+// can see the two subtractions separately instead of watching a clamp swallow
+// them both.
+
+namespace {
+constexpr int SHIELD_POINTS = 4;
+constexpr int BIG_BLOW      = 25;   // 25 + d1(5) − d2(3) = 27 before any armour
+
+// Two flat morale dice for a LIVING body — a Zombie is undead and rolls none,
+// a Soldier is not. Pushed as 1/1 so the throw is flat either way.
+void pushMoraleDice()
+{
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+}
+}  // namespace
+
+TEST_CASE("defend: a physical shield and the man's protection BOTH come off one melee blow") {
+    Soldier s(REDTEAM);            // armour HEAVYARMOUR, defence 12, no natural skin
+    s.setShield(SHIELD_POINTS);
+    REQUIRE(s.getProtection() == HEAVYARMOUR);
+
+    Utility::clearDiceRolls();
+    pushHitDice();
+    pushMoraleDice();
+
+    const int attempt = s.getDefence() + SHIELD_POINTS;
+    const int dealt   = s.defend(attempt, BIG_BLOW, ArmorPen::Normal);
+    Utility::clearDiceRolls();
+
+    // 27 − (SHIELDREDUCTION + 4*2) − HEAVYARMOUR = 27 − 13 − 5 = 9. The shield
+    // is subtracted first and the protection after it, and BOTH are subtracted.
+    CHECK(dealt == 27 - (SHIELDREDUCTION + SHIELD_POINTS * 2) - HEAVYARMOUR);
+    CHECK(dealt == 9);
+    CHECK(s.getShield() == SHIELD_POINTS - 1);   // the shield took the strain
+}
+
+TEST_CASE("defend: an extra shield SUPPRESSES the physical one, and protection still comes off after") {
+    // The `else if` at AUnit.cpp ~213: a force field that blocks is the whole
+    // of the shield arithmetic for this blow — the physical shield's
+    // SHIELDREDUCTION + shield*2 never runs, and the shield point is not spent.
+    // The protection subtraction below it is NOT part of that branch and runs
+    // all the same, which is the half a reader could easily get wrong.
+    Soldier s(REDTEAM);
+    s.setShield(SHIELD_POINTS);
+    s.addShield(6);                // force field, blocks on a roll <= 6
+
+    Utility::clearDiceRolls();
+    pushHitAndForceFieldDice();    // ...and the force-field roll is 3: it blocks
+    pushMoraleDice();
+
+    const int attempt = s.getDefence() + SHIELD_POINTS;
+    const int dealt   = s.defend(attempt, BIG_BLOW, ArmorPen::Normal);
+    Utility::clearDiceRolls();
+
+    // Only SHIELDREDUCTION, NOT SHIELDREDUCTION + shield*2 — then the plate.
+    CHECK(dealt == 27 - SHIELDREDUCTION - HEAVYARMOUR);
+    CHECK(dealt == 17);
+    CHECK(s.getShield() == SHIELD_POINTS);   // never engaged, never damaged
+}
+
+// ── A live mount answers with its rider's ARMOUR (TC-1 item 9, audit A9) ─────
+// The twin of test_protection.cpp's "a mount's natural protection follows its
+// rider": only the both-dead fallback (getArmour() == 0, above) was pinned, so
+// the live forwarding at MountedUnit.cpp:54 rode on its sibling alone.
+
+TEST_CASE("MountedUnit: a live mount answers with its rider's armour, moved or not") {
+    Cavalry cav(REDTEAM);
+    REQUIRE(cav.effectTarget() != &cav);          // the rider is up
+    const int riderBase = cav.effectTarget()->getArmour();
+    REQUIRE(riderBase == HEAVYARMOUR);            // the rider is a Soldier in plate
+    CHECK(cav.getArmour() == riderBase);
+
+    REQUIRE(cav.effectTarget()->applyStatMod("armour", 3) == true);
+    CHECK(cav.getArmour() == riderBase + 3);
+    // ...and what the damage sites read moves with it (P-3).
+    CHECK(cav.getProtection() == combinedProtection(cav.getNaturalProtection(), riderBase + 3));
+}
+
+// ── The three untested melee dials (TC-1 items 10-12, audit (d)) ─────────────
+//
+// CRAMPED_COMBAT_PENALTY, MULTI_ATTACK_DEFENCE_PENALTY and fatiguelvl's ×2
+// defence penalty are live balance dials that no test named before TC-1. These
+// PIN WHAT THE CODE DOES TODAY — none of them is an opinion about what the
+// number should be.
+//
+// The body is a Zombie throughout: defence 5, armour 0, shield 0, undead (so
+// testMorale returns without drawing a die) — which makes the defence total in
+// AUnit.cpp:187 exactly `5 − fatiguelvl*2 + defenceroll − cramped − swarm`,
+// with nothing else in it. defenceroll is seeded to 3 by pushDefenceRoll(),
+// so the bar the attack has to beat is 8 on an unencumbered body: an
+// AttackAttempt of 8 is turned (the total is `>=`) and 9 lands.
+
+namespace {
+constexpr int ZOMBIE_DEFENCE = 5;
+constexpr int DEFENCE_ROLL   = 3;
+
+void pushDefenceRoll()      // just the one draw defend() makes before deciding
+{
+    Utility::pushDiceRoll(DEFENCE_ROLL); Utility::pushDiceRoll(1);
+}
+
+void pushDamageDice()       // d1 = d2 = 1, so a landed blow deals exactly `damage`
+{
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(1);
+}
+
+// One blow at `attempt`, with the dice for both outcomes queued. Returns what
+// landed; 0 means the defence turned it.
+int blowAt(AUnit& u, int attempt, int damage = 4)
+{
+    Utility::clearDiceRolls();
+    pushDefenceRoll();
+    pushDamageDice();
+    const int dealt = u.defend(attempt, damage, ArmorPen::Normal);
+    Utility::clearDiceRolls();
+    return dealt;
+}
+}  // namespace
+
+TEST_CASE("defend: CRAMPED_COMBAT_PENALTY costs one point of defence per tier of overhang") {
+    // The tier is computed off the ENGAGED SIDE's effective frontage: forest
+    // halves it to 20, and the threshold is two thirds of that (13). A body
+    // whose PACKING size overhangs 13 pays one penalty per 13 points of
+    // overhang — so packing 14 is one tier and packing 27 is two.
+    HexGrid grid;
+    grid.buildRect(16, 30);
+    Hex* mine  = grid.getHex({3, 8});
+    Hex* yours = grid.getHex({4, 8});
+    REQUIRE(mine != nullptr);
+    REQUIRE(yours != nullptr);
+    mine->terrain = TerrainType::Forest;
+
+    HexSide side;
+    side.hexA = mine;
+    side.hexB = yours;
+    REQUIRE(effectiveFrontage(side) == HexSide::FRONTAGE / 2);
+    const int threshold = effectiveFrontage(side) * 2 / 3;
+    REQUIRE(threshold == 13);
+
+    SECTION("a body that fits its frontage pays nothing, and the boundary is exact") {
+        Zombie z(REDTEAM);
+        z.setEngagedSide(&side);
+        REQUIRE(z.getPackingSize() == 10);   // 10 <= 13: room enough
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL) == 0);        // 8 vs 8: turned
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL + 1) > 0);     // 9: lands
+    }
+
+    SECTION("one tier of overhang turns the SAME throw from a parry into a hit") {
+        Zombie z(REDTEAM);
+        z.setEngagedSide(&side);
+        REQUIRE(z.applyStatMod("formationFighter", -4) == true);
+        REQUIRE(z.getPackingSize() == 14);   // 14 > 13: one tier over
+
+        // The blow the unencumbered body above turned now lands...
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL) > 0);
+        // ...and exactly one point lower is still turned. That gap IS the dial.
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - CRAMPED_COMBAT_PENALTY) == 0);
+    }
+
+    SECTION("the penalty is per tier, not per cramped body") {
+        Zombie z(REDTEAM);
+        z.setEngagedSide(&side);
+        // Two calls: applyStatMod bounds each DELTA at MAX_STAT_MOD (10) and the
+        // packing row accumulates, so -17 has to arrive as -10 then -7.
+        REQUIRE(z.applyStatMod("formationFighter", -10) == true);
+        REQUIRE(z.applyStatMod("formationFighter", -7) == true);
+        REQUIRE(z.getPackingSize() == 27);   // 27 > 13, and 14 > 13 again: two tiers
+
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - CRAMPED_COMBAT_PENALTY) > 0);
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - 2 * CRAMPED_COMBAT_PENALTY) == 0);
+    }
+
+    SECTION("the attacker pays the same penalty, on the same tiers") {
+        // The twin at AUnit.cpp:327. computeMeleeAttackBonus() is the whole of
+        // what a cramped attacker loses, so it is asked directly rather than
+        // through a second exchange: nobody is holding the far side here, so
+        // the bonus is UNDEFENDED_SIDE_BONUS minus the tiers.
+        Zombie roomy(REDTEAM), tight(REDTEAM), tighter(REDTEAM);
+        for (Zombie* z : { &roomy, &tight, &tighter }) {
+            z->setHex(mine);
+            z->setEngagedSide(&side);
+        }
+        REQUIRE(tight.applyStatMod("formationFighter", -4) == true);
+        REQUIRE(tighter.applyStatMod("formationFighter", -10) == true);
+        REQUIRE(tighter.applyStatMod("formationFighter", -7) == true);
+        REQUIRE(tighter.getPackingSize() == 27);
+
+        CHECK(roomy.computeMeleeAttackBonus()   == UNDEFENDED_SIDE_BONUS);
+        CHECK(tight.computeMeleeAttackBonus()   == UNDEFENDED_SIDE_BONUS - CRAMPED_COMBAT_PENALTY);
+        CHECK(tighter.computeMeleeAttackBonus() == UNDEFENDED_SIDE_BONUS - 2 * CRAMPED_COMBAT_PENALTY);
+    }
+}
+
+TEST_CASE("defend: MULTI_ATTACK_DEFENCE_PENALTY makes a swarmed body easier to hit, until the turn resets") {
+    Zombie z(REDTEAM);
+    REQUIRE(z.getAttacksReceivedThisTurn() == 0);
+
+    // The first blow of the turn is turned...
+    CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL) == 0);
+
+    // ...and the second, after one attack has landed on him this turn, is not.
+    z.incrementAttacksReceived();
+    CHECK(z.getAttacksReceivedThisTurn() == 1);
+    CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL) > 0);
+    // One point, no more: the same blow one lower is still turned.
+    CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - MULTI_ATTACK_DEFENCE_PENALTY) == 0);
+
+    // And it stacks per attacker.
+    z.incrementAttacksReceived();
+    CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - MULTI_ATTACK_DEFENCE_PENALTY) > 0);
+    CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - 2 * MULTI_ATTACK_DEFENCE_PENALTY) == 0);
+
+    // resetAttacksReceived() puts the man back on his feet.
+    z.resetAttacksReceived();
+    CHECK(z.getAttacksReceivedThisTurn() == 0);
+    CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL) == 0);
+}
+
+TEST_CASE("the turn itself clears the multi-attack counter, at the start of the next tick") {
+    // Where resetAttacksReceived() is actually called from (Battlefield.cpp,
+    // onTurnStart) — so the penalty is a WITHIN-TURN effect and not a running
+    // total over a battle. Pinned through a real tick rather than by reading
+    // the call site.
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    auto redPtr  = std::make_unique<ImmobileDummy>(REDTEAM);
+    auto bluePtr = std::make_unique<ImmobileDummy>(BLUETEAM);
+    ImmobileDummy* mine = redPtr.get();
+    mine->setHex(field.hexGrid.getHex({2, 4}));
+    bluePtr->setHex(field.hexGrid.getHex({12, 25}));   // nowhere near: no melee
+    red.push_back(std::move(redPtr));
+    blue.push_back(std::move(bluePtr));
+    field.loadArmies(std::move(red), std::move(blue));
+
+    mine->incrementAttacksReceived();
+    mine->incrementAttacksReceived();
+    REQUIRE(mine->getAttacksReceivedThisTurn() == 2);
+
+    field.tick();
+    CHECK(mine->getAttacksReceivedThisTurn() == 0);
+
+    field.extractResult();
+}
+
+TEST_CASE("defend: every level of fatigue costs TWO points of defence") {
+    // fatiguelvl is fatigue / FATIGUE_LEVEL_DIV, and defend() subtracts twice
+    // it. Nothing named the number before TC-1 — only fatigue accumulation and
+    // recovery were covered.
+    SECTION("one level: the bar drops by exactly 2") {
+        Zombie z(REDTEAM);
+        z.addFatigue(FATIGUE_LEVEL_DIV);
+        REQUIRE(z.getFatigue() == FATIGUE_LEVEL_DIV);
+
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL) > 0);       // 8 lands now
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - 2) == 0);  // 6 is still turned
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - 1) > 0);   // and 7 lands: the flip
+    }
+    SECTION("two levels: twice as much, so the dial is per level and not a flag") {
+        Zombie z(REDTEAM);
+        z.addFatigue(FATIGUE_LEVEL_DIV * 2);
+
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - 3) > 0);
+        CHECK(blowAt(z, ZOMBIE_DEFENCE + DEFENCE_ROLL - 4) == 0);
+    }
+}
+
+// ── The two defence totals inside one defend() (TC-1 item 13, audit (e)3) ────
+//
+// AUnit.cpp:187 decides whether the blow lands with
+//     defence − fatiguelvl*2 + defenceroll + cohesionStatBonus()
+//              − crampedPenalty − attacksReceived*MULTI_ATTACK_DEFENCE_PENALTY
+// and the physical-shield activation check twelve lines below it (AUnit.cpp:214)
+// re-derives its own total as
+//     defence + shield − fatiguelvl*2 + defenceroll
+// — WITHOUT cohesion, without the cramped penalty and without the multi-attack
+// penalty. So a swarmed man's guard is beaten while his shield is not, and a
+// man in a tight formation gets no shield help from his cohesion.
+//
+// This test PINS WHAT THE CODE DOES TODAY and resolves nothing. The question
+// for the balance pass, unanswered on purpose: deliberate — a shield is a
+// SKILL check, not a formation one — or an accident? Either reading moves real
+// numbers, which is exactly why it is written down rather than "fixed" here.
+
+TEST_CASE("defend: the shield's own defence total ignores the swarm penalty the main one pays") {
+    Soldier s(REDTEAM);            // defence 12, HEAVYARMOUR, shield below
+    s.setShield(SHIELD_POINTS);
+
+    // Two men already at him this turn: the main total is 12 + 3 − 2 = 13, and
+    // the shield's is 12 + 4 + 3 = 19. An attempt of 14 sits BETWEEN them.
+    s.incrementAttacksReceived();
+    s.incrementAttacksReceived();
+    const int attempt = s.getDefence() + DEFENCE_ROLL
+                      - 2 * MULTI_ATTACK_DEFENCE_PENALTY + 1;
+    REQUIRE(attempt == 14);
+    REQUIRE(s.getDefence() + SHIELD_POINTS + DEFENCE_ROLL >= attempt);
+
+    Utility::clearDiceRolls();
+    pushHitDice();
+    pushMoraleDice();
+    const int dealt = s.defend(attempt, BIG_BLOW, ArmorPen::Normal);
+    Utility::clearDiceRolls();
+
+    // The blow got through the guard — and the shield still stopped its share.
+    CHECK(dealt == 27 - (SHIELDREDUCTION + SHIELD_POINTS * 2) - HEAVYARMOUR);
+    CHECK(s.getShield() == SHIELD_POINTS - 1);
+
+    // The comparison that makes the disagreement visible: the SAME attempt
+    // against the SAME man, unswarmed, never reaches the damage at all.
+    Soldier fresh(REDTEAM);
+    fresh.setShield(SHIELD_POINTS);
+    Utility::clearDiceRolls();
+    pushHitDice();
+    pushMoraleDice();
+    CHECK(fresh.defend(attempt, BIG_BLOW, ArmorPen::Normal) == 0);
+    Utility::clearDiceRolls();
 }

@@ -87,9 +87,17 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-04) — START HERE
 
-**▶▶ NATURAL PROTECTION AND AREA BOONS — INTERVIEWED 2026-09-06, decisions P-1..P-11, BOTH
-SLICES SHIPPED THE SAME DAY (NP-1 cce09bb, NP-2 next); THE COVERAGE PASS TC-1 IS THE LIVE SLICE,
-then THE BALANCE PASS is the front.** Taken up from A-3's parked note ("buffs should
+**▶▶ THE NATURAL PROTECTION AND AREA BOONS FRONT IS CLOSED — INTERVIEWED 2026-09-06, decisions
+P-1..P-11, NP-1, NP-2 AND THE COVERAGE PASS TC-1 ALL SHIPPED THE SAME DAY AND GREEN ON `main`.
+THE NEXT FRONT IS THE BALANCE PASS.** What it inherits, all recorded under the entry below and
+none of it tuned: P-11 made a plated body close to unkillable by a militia line in melee
+(Piercing weapons and `HEAVYARMOUR` are the knobs); every `AI_*`, `RESIST_*`, `PROTECTION_DIVISOR`,
+skin floor, area and duration number is (bd); a skin or hex on a MOUNTED body is inert while the
+scorer still prices it (design call: should `applyStatMod` on a MountedUnit forward to the
+rider?); `landChancePct` is optimistic at parity; the shield activation total ignores swarm and
+cohesion; `Utility::Deviate` makes "scattered" nominal at battle ranges; the area estimator prices
+one neighbour of a partial ring while delivery covers another. The Battle Lab and `make ab-casting`
+are the instruments. Taken up from A-3's parked note ("buffs should
 prefer fresh units") and grown, in the interview, into Dominions' protection model: a
 `naturalProtection` stat beside armour, combined sub-additively; skin spells that raise natural
 protection TO a floor (so they never stack, highest wins); a marginal-gain scorer for them; boons
@@ -8285,9 +8293,27 @@ leaves the question to the balance pass.
   `coverHex` and into `worthAreaOnHex`; a boon-carrying `RangedShot` (an effect to apply per body
   struck, no damage) so Barkskin rides `deliver()`; both Barkskin rows; catalog/Study print the tag;
   the five-militia test; `docs/ADDING_SPELLS.md` gains the area-boon shape.
-- **TC-1 — the coverage pass (Opus, tests only).** The audit's nine seams and the four melee
-  dials, pinned as the code behaves today; a failing pin is a bug found, reported and left marked,
-  never a test loosened.
+- **✅ TC-1 SHIPPED 2026-09-06 — the coverage pass (Opus, tests only).** All fourteen items,
+  every pin green — no `[!mayfail]`, so no new bug beyond the audit's three: the deploy route's
+  strip of a forged `value`/`shortlist`/`script`/`paths` (and its unconditional twin on a
+  rank-and-file entry); `value` across the wire, clamped, junk → default; shield × protection on
+  one melee blow and the extra shield SUPPRESSING the physical one; an area asking each body for
+  resistance; a roster sweep that EVERY `buff` row is worth less on a half-dead body (five rows,
+  no silent skips); the combine's clamp driven directly; naturalProtection/resistance/penetration
+  across the wire; the `AI_VALUE_CAP == 1000` tripwire (both sides now — the campaign twin pins
+  `SANDBOX_MAX_VALUE`); a live mount's armour. THE FOUR MELEE DIALS pinned as they behave today:
+  `CRAMPED_COMBAT_PENALTY` one point per tier of overhang on both sides of the exchange;
+  `MULTI_ATTACK_DEFENCE_PENALTY` at one and two blows received and cleared by the turn's own
+  `onTurnStart`; fatigue level costing two points of defence per level; and the shield's
+  activation total IGNORING the swarm penalty the main total pays — a swarmed shield-bearer takes
+  the blow AND fires the shield; the test's comment holds the question for the balance pass.
+  Infrastructure: `test_main.cpp`'s Catch2 listener resets `RangedCombat`'s slot cache before
+  EVERY case, 13 ad-hoc resets removed where redundant (calls inside a SECTION or after a
+  mid-case repopulation kept — the hook fires once per TEST_CASE), and a pin case that a hex
+  reused by a second army is covered afresh; removing either half makes the sanitized build
+  ASan-abort, which is the proof it earns its place. Engine 552 → 567 cases; campaign-server
+  1486 → 1488. Noted for later: `applyStatMod` clamps each DELTA at MAX_STAT_MOD (10) while the
+  stat accumulates across calls.
 
 **▶ SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions T-1..T-7, all the user's
 unless flagged. IN PROGRESS.** The 2026-09-02 ask: *"plan first how spells should generally work

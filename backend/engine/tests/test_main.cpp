@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
+#include "RangedCombat.hpp"
 #include "Utility.hpp"
 #include "UnitCatalog.hpp"
 
@@ -25,6 +26,20 @@ struct SeedReporter : Catch::TestEventListenerBase {
         // a unit's name and eat that test's pushed dice. Not a static
         // initialiser: that deadlocks this binary (UnitCatalog.cpp explains).
         warmUnitNames();
+    }
+
+    // TC-1 item 14, out of NP-2's finding: RangedCombat's slot cache is keyed
+    // by `const Hex*` and nothing about a hex changes when the army standing on
+    // it is destroyed — so an entry warmed by one case names bodies the next
+    // case has already freed, and covering that hex again reads them. That is a
+    // real use-after-free, and the sanitized build caught it once, in the buff
+    // sweep of test_targeting.cpp. A per-case reset makes it a DISCIPLINE
+    // rather than a habit every new case has to remember: every case starts
+    // cold, and an ad-hoc call is needed only where a case repopulates a hex
+    // MID-case (a SECTION pass, a lambda run twice), which this hook cannot
+    // see — it fires once per TEST_CASE, before the first section pass.
+    void testCaseStarting(Catch::TestCaseInfo const&) override {
+        RangedCombat::resetCache();
     }
 
     void testRunEnded(Catch::TestRunStats const& stats) override {

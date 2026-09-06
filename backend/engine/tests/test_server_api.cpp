@@ -846,6 +846,71 @@ TEST_CASE("buildArmyFromPlacement: unknown or malformed squad_mods are inert") {
     for (const auto& u : army) REQUIRE(u->getAttackPWR() == baseAttack);
 }
 
+// TC-1 item 7 (audit A11 + A12): the REST of the mod-bag vocabulary over the
+// wire. `attack`, `armour`, `ballisticSkill`, `maxHP` and `formationFighter`
+// each have a case; naturalProtection (P-2) and the two contest stats (T-4)
+// were only ever driven by calling applyStatMod directly. The parser is generic,
+// so they work — but nothing said so, and a parser that grew a name whitelist
+// would leave every one of those suites green.
+
+TEST_CASE("buildArmyFromPlacement: naturalProtection, resistance and penetration cross the wire") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    REQUIRE(base.size() == 1);
+    const int baseResistance = base[0]->getResistance();
+    REQUIRE(base[0]->getNaturalProtection() == 0);   // a man grows no skin
+    REQUIRE(base[0]->getPenetration() == 0);
+
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5},
+             {"squad_mods", json{{"naturalProtection", 2}, {"resistance", 3}, {"penetration", 1}}}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 1);
+    REQUIRE(army[0]->getNaturalProtection() == 2);
+    REQUIRE(army[0]->getResistance() == baseResistance + 3);
+    REQUIRE(army[0]->getPenetration() == 1);
+    // And what the bag moved is what the damage sites read: the COMBINED
+    // figure, not the skin on its own beside untouched plate (P-3).
+    REQUIRE(army[0]->getProtection() == combinedProtection(2, HEAVYARMOUR));
+}
+
+// ── The casting AI's `value` on a placement entry (A-5) ─────────────────────
+//
+// TC-1 item 2 (audit C9): what a target is WORTH to the enemy's casters is read
+// off the placement entry at UnitRegistry.cpp, and until now the only test that
+// sent one asserted nothing about it — it proved the field was not refused. A
+// regression that dropped the parse would leave every suite green and silently
+// un-weight the whole casting AI, so the four answers are pinned here: a plain
+// number, the cap, the floor, and a value that is not a number at all.
+
+TEST_CASE("buildArmyFromPlacement: `value` crosses the wire, clamped, and junk keeps the default") {
+    HexGrid g;
+    g.buildRect(16, 20);
+    json plain = json::array({ json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}} });
+    auto base = buildArmyFromPlacement(plain.dump(), BLUETEAM, g);
+    REQUIRE(base.size() == 1);
+    const int catalogDefault = base[0]->getValue();
+
+    json placement = json::array({
+        json{{"unit_type", "Soldier"}, {"q", 3}, {"r", 5}, {"value", 40}},
+        json{{"unit_type", "Soldier"}, {"q", 4}, {"r", 5}, {"value", AI_VALUE_CAP + 5}},
+        json{{"unit_type", "Soldier"}, {"q", 5}, {"r", 5}, {"value", 0}},
+        json{{"unit_type", "Soldier"}, {"q", 6}, {"r", 5}, {"value", "lots"}},
+    });
+    auto army = buildArmyFromPlacement(placement.dump(), BLUETEAM, g);
+    REQUIRE(army.size() == 4);
+
+    REQUIRE(army[0]->getValue() == 40);              // read, not ignored
+    REQUIRE(army[1]->getValue() == AI_VALUE_CAP);    // clamped at the top...
+    REQUIRE(army[2]->getValue() == 1);               // ...and at the bottom: never 0
+    // Never throws: a non-integer is skipped and the catalog's own worth stands.
+    REQUIRE(army[3]->getValue() == catalogDefault);
+    REQUIRE(catalogDefault > 0);
+}
+
 // ── The gear stat vocabulary (slice 9a, decision 9-5) ───────────────────────
 //
 // The three names applyStatMod grew for character equipment, and the one rule

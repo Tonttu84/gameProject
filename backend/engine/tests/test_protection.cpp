@@ -135,12 +135,29 @@ TEST_CASE("protection: the combine is nat + armour − nat×armour÷divisor, and
     CHECK(combinedProtection(-3, 5) == 5);
 }
 
+// TC-1 item 6 (audit A4): the clamp, driven DIRECTLY. The comment this replaces
+// said it "cannot be driven ... without a hook" — it can: the guard is inside
+// combinedProtection itself, so any pair whose cross term eats past the larger
+// part exercises it, and no roster body has to carry those numbers.
+TEST_CASE("protection: the combine never falls below the larger part — the clamp, driven",
+          "[protection]") {
+    // 40 + 40 − 40×40÷36 = 80 − 44 = 36 by the raw formula, which is LESS than
+    // either part. The clamp is what stops a second layer of protection from
+    // making a body softer than it was with one.
+    CHECK(combinedProtection(40, 40) == 40);
+    CHECK(combinedProtection(30, 50) == 50);
+    // ...and it is a floor, not a cap: below the crossover the formula stands.
+    CHECK(combinedProtection(12, 12) == 20);
+    // These are GUARD numbers, not roster numbers: nothing on the roster is
+    // anywhere near them today, which is the point — the guard has to hold for
+    // the day something is.
+}
+
 TEST_CASE("protection: for every roster body the combine is at least each part, and the sum less one",
           "[protection]") {
-    // The clamp guard (never below max(nat, armour)) cannot be driven with a
-    // low divisor without a hook, so what is pinned is its consequence on
-    // every body that exists: combined ≥ each part, and — since the cross
-    // term is 0 at today's numbers — combined ≥ sum − 1 as well.
+    // What the case above pins as a rule, pinned here as a CONSEQUENCE on every
+    // body that exists: combined ≥ each part, and — since the cross term is 0 at
+    // today's numbers — combined ≥ sum − 1 as well.
     for (const auto& entry : unitCatalog()) {
         auto u = entry.make(BLUETEAM);
         REQUIRE(u != nullptr);
@@ -614,5 +631,65 @@ TEST_CASE("protection: pricing a skin draws no dice", "[protection]") {
     CHECK(Utility::lotteryRoll(100) == 7);     // nor the lottery's
     Utility::clearDiceRolls();
     Utility::clearLotteryRolls();
+    field.extractResult();
+}
+
+// TC-1 item 5 (audit K11): P-1 AS A SWEEP, not three cases that each happen to
+// agree with it. Ward, Stoneskin and Hex of Frailty were pinned one at a time,
+// so NP-2's two Barkskin rows could have shipped without the rule — and the
+// next `buff` row could still. This walks the roster and asks every one of them.
+//
+// The fixture is built so no row has to be skipped: four bodies worth 200 each
+// (enough that Low's blood price does not swallow the hex's whole share, and
+// enough that halving survives the integer division), standing THREE hexes
+// apart so an area row's arc reaches no one but its own target and the two
+// figures compared differ in freshness alone.
+TEST_CASE("protection: EVERY buff-flagged form is worth less on a half-dead body (P-1)",
+          "[protection]") {
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage* mage = place(red, std::make_unique<Mage>(REDTEAM), 8);
+    ImmobileDummy* allyFull = place(red,  std::make_unique<ImmobileDummy>(REDTEAM), 5);
+    ImmobileDummy* allyHurt = place(red,  std::make_unique<ImmobileDummy>(REDTEAM), 2);
+    ImmobileDummy* foeFull  = place(blue, std::make_unique<ImmobileDummy>(BLUETEAM), -1);
+    ImmobileDummy* foeHurt  = place(blue, std::make_unique<ImmobileDummy>(BLUETEAM), -4);
+    field.loadArmies(std::move(red), std::move(blue));
+
+    for (ImmobileDummy* d : { allyFull, allyHurt, foeFull, foeHurt }) d->setValue(200);
+    halve(*allyHurt);
+    halve(*foeHurt);
+    REQUIRE(allyFull->getHp() == allyFull->getmaxHP());
+    REQUIRE(foeFull->getHp()  == foeFull->getmaxHP());
+
+    size_t swept = 0;
+    for (const Spell& spell : Spells::roster())
+        for (const SpellForm& form : spell.forms) {
+            if (!form.buff) continue;
+            ++swept;
+            INFO("row: " << std::string(spell.id) << "/" << std::string(form.name));
+            // A bane is aimed at the enemy and a boon at your own line; either
+            // way the body it is priced against has to be a legal one.
+            const bool bane = form.target == TargetKind::EnemyUnit;
+            Target whole, hurt;
+            whole.unit = bane ? foeFull : allyFull;
+            hurt.unit  = bane ? foeHurt : allyHurt;
+
+            const int wholeWorth = form.worth(*mage, form, whole);
+            const int hurtWorth  = form.worth(*mage, form, hurt);
+
+            // Never skipped silently: if a row cannot be priced on this fixture
+            // the sweep says so out loud rather than passing vacuously.
+            REQUIRE(wholeWorth > 0);
+            CHECK(hurtWorth <= wholeWorth);
+            CHECK(hurtWorth > 0);
+            // ...and it really is the FRESHNESS doing it, not a tie.
+            CHECK(hurtWorth < wholeWorth);
+        }
+
+    // The count is pinned so that a new buff row joins the sweep deliberately:
+    // ward, stoneskin, both Barkskins and the hex.
+    CHECK(swept == 5);
+
     field.extractResult();
 }
