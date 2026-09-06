@@ -8165,6 +8165,34 @@ a registry of standing effects in TG-3, recording what each effect actually move
 as the unit of a protection point's worth; Scorpion moving to natural alongside Golem; a mount's
 natural protection following the rider like armour.
 
+**THE COVERAGE AUDIT (2026-09-06, read-only, Opus, against NP-1's commit cce09bb; the user:
+*"seems surprising that we dont have a test for armor at all, so once you are done with them go
+check that we have a good test coverage especially with all of the new features"*).** The premise
+was out of date by the time it was checked: `test_protection.cpp` (NP-1) pins the combine, all
+three penetration kinds at BOTH damage sites, the skin ladder, roster-wide monotonicity and the
+gain scorer — before NP-1 the melee side had no test because it had no behaviour (P-11). Across 72
+rules of the three fronts: **62 PINNED, 6 WEAK, 4 MISSING**; delivery 8/8, area 8/8, durations 6/6.
+The gaps are seams between layers, closed by slice **TC-1** (below): the deploy route's strip of a
+forged `value`/`shortlist`/`script`/`paths` (untested while its four siblings are); `value` parsed
+at the wire (dropping the parse leaves every suite green); shield × protection on one body in
+melee (every shield case used a Zombie at armour 0); an area asking each body for resistance; a
+sweep that every `buff` row is fresh-weighted; the combine's clamp driven directly; the rest of
+the mod-bag vocabulary crossing the wire; the AI_VALUE_CAP/SANDBOX_MAX_VALUE tripwire; a live
+mount's armour. Beyond the new features, FOUR MELEE DIALS APPEAR IN NO TEST: `CRAMPED_COMBAT_PENALTY`,
+`MULTI_ATTACK_DEFENCE_PENALTY`, `fatiguelvl`'s ×2 defence penalty, and the physical-shield
+activation formula — TC-1 pins their current behaviour.
+
+Three findings, REPORTED, none fixed: (1) a skin (or hex) on a MOUNTED body is inert in combat and
+the scorer still pays for it — `applySkin` writes the composite's member while the getter forwards
+to the rider (already recorded under NP-1 and TG-3; it is a live AI cost, not a latent one: whether
+`applyStatMod` on a MountedUnit should forward to the rider is the design call); (2) `landChancePct`
+is optimistic at parity — a tie goes to the target in `resisted`, so the true chance at equal
+totals is below 50% while the estimate says exactly 50% (small, one-directional, for the balance
+pass); (3) `defend()` computes two different defence totals twelve lines apart — the shield
+activation check omits cohesion, cramped and multi-attack terms the main check includes;
+plausibly deliberate (a shield is a skill check), undocumented; TC-1 pins today's reading and
+leaves the question to the balance pass.
+
 **THE SLICE PLAN (the assistant's — user, 2026-09-06: *"dont ask me about slices anymore"*):**
 - **✅ NP-1 SHIPPED 2026-09-06 — the machinery.** Spec'd here, built by a FABLE subagent (the
   first slice under the "Fable when hard" rule), reviewed and run here. What landed:
@@ -8218,6 +8246,9 @@ natural protection following the rider like armour.
   `coverHex` and into `worthAreaOnHex`; a boon-carrying `RangedShot` (an effect to apply per body
   struck, no damage) so Barkskin rides `deliver()`; both Barkskin rows; catalog/Study print the tag;
   the five-militia test; `docs/ADDING_SPELLS.md` gains the area-boon shape.
+- **TC-1 — the coverage pass (Opus, tests only).** The audit's nine seams and the four melee
+  dials, pinned as the code behaves today; a failing pin is a bug found, reported and left marked,
+  never a test loosened.
 
 **▶ SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions T-1..T-7, all the user's
 unless flagged. IN PROGRESS.** The 2026-09-02 ask: *"plan first how spells should generally work
