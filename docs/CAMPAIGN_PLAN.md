@@ -87,6 +87,18 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-04) — START HERE
 
+**▶▶ THE LIVE FRONT IS NATURAL PROTECTION AND AREA BOONS — INTERVIEWED 2026-09-06, decisions
+P-1..P-10, TWO SLICES PLANNED, NEITHER BUILT.** Taken up from A-3's parked note ("buffs should
+prefer fresh units") and grown, in the interview, into Dominions' protection model: a
+`naturalProtection` stat beside armour, combined sub-additively; skin spells that raise natural
+protection TO a floor (so they never stack, highest wins); a marginal-gain scorer for them; boons
+delivered like damage with a per-form `Affects` side tag; and Barkskin in two forms as the first
+area boon. The record is the "NATURAL PROTECTION AND AREA BOONS" entry at the top of the Deferred
+design backlog below; **start there, and do not re-derive it.** NP-1 (the machinery: stat, combine,
+raise-to ladder, Stoneskin rewritten, fresh weighting, gain scorer) is cross-cutting engine work and
+goes to Fable; NP-2 (the content: `Affects`, boons through delivery, both Barkskin rows, the
+five-militia test) is Opus's. Each carries a "what landed" note once on `main`.
+
 **▶▶ THE SPELL TARGETING AND DELIVERY FRONT IS CLOSED — INTERVIEWED 2026-09-04, decisions
 T-1..T-7, ALL THREE SLICES SHIPPED (TG-1 2026-09-04, TG-2 and TG-3 2026-09-05) AND GREEN ON
 `main`.** The 2026-09-02 ask (*"plan first how spells should generally work and target, then we
@@ -8074,6 +8086,89 @@ checked at answer time); and the deploy route composes a charter into engine fie
     - Not built, by design: no formation-fighter packing discount in the client's fit check or in
       auto-place (real size is the conservative measure; the server is the fence).
 
+
+**▶ NATURAL PROTECTION AND AREA BOONS — INTERVIEWED 2026-09-06, decisions P-1..P-10, all the
+user's unless flagged. NOT YET BUILT.** The ask began as A-3's parked note (user: *"We can just make
+them cast (non healing buffs) so that the value is multiplied by their hp and divided by maxHP"*),
+then *"lets invent some new ones. Lets say a barkskin that improves the natural protection"*, then
+*"We can copy from dominions, check how it is there. They dont stack fully"*. Dominions' rules were
+checked, not remembered: natural protection is its own stat; skin spells raise it TO a floor
+(Bark 10, Stone 15, Iron 20, +1..+3 over the floor) so only the highest applies; natural and armour
+combine sub-additively (nat + armour − nat×armour÷40).
+
+**What was true first:** one `armour` number per unit (light 2, heavy 5, Golem 7 as "a body OF
+armour"), subtracted flat in `takeDamage` (ranged/spell), halved by Piercing, ignored by Bypass;
+in melee `defend()` only a Piercing blow subtracts half of it. Stoneskin was +1 plus Earth÷3 on
+that same number for the battle; any two spells on one stat stacked (T-5). `_activeBuffs` became
+a registry of standing effects in TG-3, recording what each effect actually moved.
+
+- **P-1. THE FRESH WEIGHTING.** Every `buff`-flagged row prices its target at value × hp ÷ maxHP —
+  boons and banes alike (user: *"Same rule for debuffs"*); healing excluded.
+- **P-2. A `naturalProtection` STAT, DOMINIONS' SHAPE.** Its own number on every unit, default 0
+  for men. Golem's 7 moves over (armour 0), Scorpion's chitin (light, 2) moves over (armour 0). A
+  mod-bag name, exported in `dump-units` stats, phrased in `ITEM_STAT_TEXT`, priced in
+  `VALUE_PER_STAT` beside armour. A mount answers with its rider's, as `getArmour` does.
+- **P-3. THE COMBINE.** Damage subtracts protection = nat + armour − nat×armour÷`PROTECTION_DIVISOR`,
+  integer division, divisor **36** (user: *"we havent done anything highly protected or high damage
+  things yet. So the scale needs to be much higher than we have yet. we can start with 36"*), (bd).
+  At today's numbers (nat ≤ 7, armour ≤ 7) the cross term is 0 everywhere — the formula is there
+  to grow into. Piercing halves the combined figure, Bypass ignores it, exactly where armour was
+  read before; no site gains or loses a subtraction.
+- **P-4. SKINS RAISE TO A FLOOR.** Barkskin to 2, Stoneskin to 3, Ironskin to 5 if ever authored
+  (Dominions' 10/15/20 at our quarter scale, plate at 5 the anchor), +1 for a body already at or
+  above the floor, NO path-level scaling of the floor (the area and the ladder are M-20's growth,
+  not the floor). Stoneskin is rewritten onto the ladder and loses its Earth growth. Skins last the
+  battle (duration 0, T-5's default).
+- **P-5. THE FLOOR IS CHECKED AGAINST BASE NATURAL PROTECTION** — the body's own figure with every
+  standing skin effect subtracted out, which the registry can compute. target = base ≥ floor ?
+  base+1 : floor; delta = max(0, target − current). Bark then Stone on a soldier: 0→2→3; Stone
+  then Bark: 0→3, then delta 0, nothing happens and it scores nothing; the lizard at 5: Bark→6,
+  Stone→delta 0. Highest wins, the bump lands once, order never matters. A skin NEVER lowers
+  anything (user: *"note that it should not lower it as it isnt a debuff"*): the delta is floored
+  at 0 and monotonicity of the combined figure is pinned across the roster.
+- **P-6. THE GAIN SCORER.** Worth of a skin on a body = (combined after − combined before) × value
+  ÷ AI_DAMAGE_SCALE × `AI_PROTECTION_HITS` (3, "hits a man expects to take this battle", bd) × hp ÷
+  maxHP. Ward keeps AI_BUFF_WORTH_PCT (a consumable layer has no gain to measure) × the hp factor.
+  A body already at or above the floor STAYS a candidate and is priced out by the scorer (user:
+  *"A is fine as general rule"*): inside an area his +1 beside nine men's +2 is the honest total.
+- **P-7. BOONS DELIVER LIKE DAMAGE** (user: *"spells should generally, both buffs and damages also
+  get to try to hit something inside a hex with the original strike, then let the AoE do
+  whatever"*): aimed at a UNIT, the primary strike lands on him (precise: always; scattered: him if
+  the shot stays on his hex, a random body if it drifts), then the arc covers around him from an
+  independent start (T-6 as is; anchoring on occupancy order rejected — coverage is about where
+  men stand, not list order). The candidate stays a unit, which is what resolver and scorer work in.
+- **P-8. A PER-FORM `Affects` TAG: `Everyone` | `Friendly` | `Enemy`**, default Everyone (T-7 as
+  written; Fireball keeps it). The arc covers ground the same way; the tag decides who standing on
+  it is touched, and the scorer nets only the side named — a friendly-only bark scattered onto the
+  enemy's hex is worth exactly zero there. (User: *"add a friendly only and enemy only tags to
+  spells and make the logic support it"*.)
+- **P-9. TWO BARKSKIN ROWS, BLESSINGS LEFT ALONE.** Barkskin (minor): Nature 1, Enchantment, area
+  **320** explosion, accuracy **100** (precise), Friendly, floor 2. Greater Barkskin (major): Nature
+  3, area **960** explosion (the aimed hex full plus half of ring 1, so the rotation roll matters),
+  accuracy ~70 (bd, scatters), Friendly, floor 2 — the major buys REACH, not thickness. Fatigue and
+  casting time in Stoneskin's neighbourhood, (bd).
+- **P-10. THE FIVE-MILITIA TEST** (user: *"a test case where there are only 5 militia in a hex but
+  it always needs to hit at least one of them"*): five militia hold slots 1..50 of 640 and a 320
+  arc from a random start overlaps them ~58% of the time — so the guarantee is P-7's primary
+  strike on the aimed man, never the arc. Unseeded: the aimed man carries bark every time; seeded
+  start 1: all five; seeded start 100: the aimed man alone.
+
+*Assistant's calls, flagged:* the divisor's placement as a Defines constant; `AI_PROTECTION_HITS`
+as the unit of a protection point's worth; Scorpion moving to natural alongside Golem; a mount's
+natural protection following the rider like armour.
+
+**THE SLICE PLAN (the assistant's — user, 2026-09-06: *"dont ask me about slices anymore"*):**
+- **NP-1 — the machinery (Fable).** `naturalProtection` on AUnit + mod bag + export + phrasing +
+  value weight; `getProtection()` = the combine, read at every site that read armour for damage;
+  the raise-to helper on the registry (base natural, target, delta) and the two skins' bodies on
+  it; Stoneskin rewritten (floor 3, no Earth growth); P-1's fresh weighting on every buff row; the
+  gain scorer with `AI_PROTECTION_HITS`; Golem/Scorpion moved to natural; monotonicity pinned
+  across the roster; catalog/Study unchanged except Stoneskin's rebuilt description. Green on
+  `main` alone, `make ab-casting` rerun.
+- **NP-2 — the content (Opus).** `Affects` on the form, through `RangedShot` into `applyHit`/
+  `coverHex` and into `worthAreaOnHex`; a boon-carrying `RangedShot` (an effect to apply per body
+  struck, no damage) so Barkskin rides `deliver()`; both Barkskin rows; catalog/Study print the tag;
+  the five-militia test; `docs/ADDING_SPELLS.md` gains the area-boon shape.
 
 **▶ SPELL TARGETING AND DELIVERY — INTERVIEWED 2026-09-04, decisions T-1..T-7, all the user's
 unless flagged. IN PROGRESS.** The 2026-09-02 ask: *"plan first how spells should generally work

@@ -85,6 +85,13 @@ Still ask, before building, about the things a test cannot settle: a design call
 a rule with two defensible answers. That is what the grilling skill above is for. The distinction is
 DESIGN vs SHIPPING — interview freely on the former, never ask permission for the latter.
 
+**Slicing is the assistant's call, not a question (user, 2026-09-06: *"dont ask me about slices
+anymore. I doubt I can handle the division for AI any better than you can yourself unless some
+decision is actually hard"*).** How a front is cut into slices, which slice goes first, and which
+model codes each are engineering decisions: decide them, write the plan into `docs/CAMPAIGN_PLAN.md`,
+and go. Put a slicing question to the user only when it hides a genuine design fork (two cuts that
+would ship different rules), and then ask about the rule, not the cut.
+
 ## Build & test commands
 
 This is a Linux-targeted project. The engine is fully headless (no SFML/X11/font deps — the
