@@ -8153,6 +8153,14 @@ a registry of standing effects in TG-3, recording what each effect actually move
   strike on the aimed man, never the arc. Unseeded: the aimed man carries bark every time; seeded
   start 1: all five; seeded start 100: the aimed man alone.
 
+- **P-11. MELEE SUBTRACTS PROTECTION** (user, 2026-09-06: *"melee should subtract armor. That is
+  the main purpose of armor."*). Found while writing NP-1's spec: `defend()` subtracted no armour
+  from a Normal blow at all — only a Piercing blow took half — while ranged and spells subtracted it
+  in full. Now `defend()` has `takeDamage`'s three-way shape: Normal the full combined figure,
+  Piercing half, Bypass none. Folded into NP-1. This moves every melee number; fixtures are retuned
+  to the new arithmetic, never loosened, and what it does to the balance (heavy infantry in melee,
+  the sample battle, the A/B fixtures) is reported into the balance pass rather than tuned here.
+
 *Assistant's calls, flagged:* the divisor's placement as a Defines constant; `AI_PROTECTION_HITS`
 as the unit of a protection point's worth; Scorpion moving to natural alongside Golem; a mount's
 natural protection following the rider like armour.
