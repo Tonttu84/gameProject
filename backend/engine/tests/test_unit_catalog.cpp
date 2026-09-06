@@ -65,6 +65,7 @@ TEST_CASE("unit catalog: every entry has the full field set") {
         REQUIRE(u.contains("stats"));
         const auto& s = u["stats"];
         for (const char* k : {"maxHP", "attack", "defence", "armour",
+                              "naturalProtection",
                               "speed", "ballisticSkill", "preferredRange",
                               "reconTag"}) {
             INFO("stat: " << k);
@@ -179,6 +180,9 @@ TEST_CASE("unit catalog: exported values match a live instance of each type") {
             REQUIRE(cat["stats"]["defence"].get<int>() == u->getDefence());
             REQUIRE(cat["stats"]["armour"].get<int>()  == u->getArmour());
         }
+        // P-2: the body's own protection is exported beside its armour, and a
+        // skeleton's bones are the same bones whatever it dug up.
+        REQUIRE(cat["stats"]["naturalProtection"].get<int>() == u->getNaturalProtection());
         REQUIRE(cat["stats"]["speed"].get<int>()          == u->getMovementSpeed());
         REQUIRE(cat["stats"]["ballisticSkill"].get<int>() == u->getBallisticSkill());
         REQUIRE(cat["stats"]["preferredRange"].get<int>() == u->getPreferredRange());

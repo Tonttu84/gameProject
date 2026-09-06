@@ -38,14 +38,18 @@ TEST_CASE("corpses: a blue Soldier killed in melee leaves exactly one corpse aft
     // Attacker hit roll explodes: (6,6)(6,1) → 12 → AttackAttempt = 11 + 12 = 23.
     //   defenceroll (1,1): miss check 12 + 1 = 13 < 23 → hit;
     //   shield check 12 + 4 + 1 = 17 < 23 → the shield can't catch it;
-    //   d1 (6,1), d2 (1,1) → resultDMG = 8 + 6 − 1 = 13;
-    //   testMorale(13): (1,1)(1,1) → 10 + 1 − 1 = 10 ≤ 13 → breaks, and the
-    //   13 damage kills through the victim's 10 hp anyway.
+    //   d1 explodes (6,6)(6,1) → 12, d2 (1,1) → resultDMG = 8 + 12 − 1 = 19,
+    //   minus the victim's plate (HEAVYARMOUR 5 — a melee blow subtracts
+    //   protection since P-11; before 2026-09-06 a d1 of 6 was overkill on
+    //   its own) → 14;
+    //   testMorale(14): (1,1)(1,1) → 10 + 1 − 1 = 10 ≤ 14 → breaks, and the
+    //   14 damage kills through the victim's 10 hp anyway.
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(6); Utility::pushDiceRoll(6); // hit roll explodes...
     Utility::pushDiceRoll(6); Utility::pushDiceRoll(1); // ...into 6 + 6 = 12
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
-    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1); // d1
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(6); // d1 explodes...
+    Utility::pushDiceRoll(6); Utility::pushDiceRoll(1); // ...into 6 + 6 = 12
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d2
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // morale m1
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // morale m2

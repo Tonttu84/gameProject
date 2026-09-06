@@ -25,6 +25,9 @@ export const spellsFixture = [
     // tagged or timed row overrides these on a copy, rather than making one of
     // the six rows below unrepresentative of the shape it is here to stand for.
     resist: 'none', resistMod: 0, duration: 0,
+    // NP-1's skin floor (P-4), on every row too: 0 unless the form is a skin,
+    // and none of the six here is one.
+    skinFloor: 0,
   },
   {
     spell: 'fireball', form: 'major', label: 'Fireball',
@@ -35,6 +38,7 @@ export const spellsFixture = [
     // The one area on the roster: an explosion of a hundred hex points.
     areaMode: 'explosion', area: 100,
     resist: 'none', resistMod: 0, duration: 0,
+    skinFloor: 0,
   },
   {
     spell: 'raise_dead', form: 'minor', label: 'Raise Skeleton',
@@ -44,6 +48,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
+    skinFloor: 0,
   },
   // Granted, not researched (M-14) — school null. The Study must not show it.
   {
@@ -54,6 +59,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
+    skinFloor: 0,
   },
   // The battlefield-wide enchantments (E-1/E-6). SINGLE-FORM by construction
   // (form 'battlefield'), and the two fields the ordinary rows above leave off:
@@ -68,6 +74,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
+    skinFloor: 0,
     battlefield: true, poolCost: 2,
   },
   {
@@ -78,6 +85,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
+    skinFloor: 0,
     battlefield: true, poolCost: 3,
   },
 ]

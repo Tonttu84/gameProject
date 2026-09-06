@@ -12,7 +12,12 @@ Golem::Golem(int setTeam): AUnit::AUnit(setTeam)
     fatigueCost = 0;      // stone does not tire
     maxHP     = 35;
     hitpoints = 35;
-    armour    = 7;        // a body OF armour — past plate (HEAVYARMOUR 5)
+    // A body of STONE, not a body OF armour (P-2): what used to be armour 7
+    // is natural protection 7 and no armour at all, so a Stoneskin on a
+    // golem finds him already past the floor and a suit of plate, if one is
+    // ever forged for him, combines with the stone instead of stacking on it.
+    armour            = 0;
+    naturalProtection = GOLEM_NATURAL_PROTECTION;   // past plate (HEAVYARMOUR 5)
     defence   = 8;        // massive, not evasive
     attackPWR = 12;
     strength  = 20;

@@ -184,18 +184,25 @@ static bool castShock(AUnit& caster, const SpellForm& form, const Target& target
 // carrying this spell, so a target arriving here is not already skinned — and
 // recording the effect keeps it that way for as long as the effect stands.
 //
-// T-5: ONE call does both jobs. applyEffect moves the stat through applyStatMod
-// exactly as before AND records what actually landed, so the armour comes back
-// off when the effect expires or the battle ends. The duration is the ROW's —
-// 0 on this row, which is "the whole battle", and the field is what would make
-// a timed stoneskin a one-line change.
-static bool castStoneskin(AUnit& caster, const SpellForm& form, const Target& target)
+// Since NP-1 a skin is a rung on a LADDER (P-4): it raises the target's
+// NATURAL protection to the row's `skinFloor`, or by one more if his base is
+// already there, and never stacks with another skin — AUnit::applySkin is the
+// whole of that rule and reads the floor off the row, so the body and the
+// estimator (worthSkin) cannot disagree. The Earth growth that used to ride on
+// this is GONE on purpose: the floor does not scale with the path (the area and
+// the ladder are M-20's growth, not the floor). The caster is unused for the
+// same reason and the signature says so.
+//
+// A skin that moves nothing (a golem, a man under a harder skin) records
+// nothing and applySkin says why in the log — but the CAST still happened and
+// returns true, so fatigue is paid: M-23 is about a target that could not be
+// reached, and this one was reached and found already hard enough.
+static bool castStoneskin(AUnit& /*caster*/, const SpellForm& form, const Target& target)
 {
     AUnit* unit = target.unit;
     if (!unit) return false;
-    unit->applyEffect("stoneskin", "armour",
-                      1 + caster.getPathLevel(SpellPath::Earth) / 3, form.duration);
-    Utility::getBattlefield().logEvent("Skin hardens to stone");
+    if (unit->applySkin("stoneskin", form.skinFloor, form.duration))
+        Utility::getBattlefield().logEvent("Skin hardens to stone");
     return true;
 }
 
@@ -667,10 +674,17 @@ std::string shock()
          + ". Less than fire carries, but it pierces armour and goes where it is aimed.";
 }
 
+// P-4: built from the ladder's constants, so the sentence moves with them.
+std::string skinTo(int floor)
+{
+    return "natural protection rises to " + std::to_string(floor)
+         + ", or by " + std::to_string(SKIN_OVER_FLOOR_BONUS)
+         + " more if it was already there. Skins do not stack: the hardest one wins.";
+}
+
 std::string stoneskin()
 {
-    return "One ally's skin hardens to stone: a point of armour, and another for "
-           "every three levels of Earth.";
+    return "One ally's skin hardens to stone: " + skinTo(STONESKIN_FLOOR);
 }
 
 std::string soothingCurrent()
@@ -903,11 +917,52 @@ static int worthBriarSnare(const AUnit& c, const SpellForm& /*form*/, const Targ
     return worthDamage(fatigue / AI_FATIGUE_PER_DAMAGE, 100, t);
 }
 
-// A buff's candidates already exclude a body carrying it (A-8), so a fresh
-// target is worth a share of itself and the marked ones never reach here.
+// P-1: EVERY `buff`-flagged estimator — boon or bane, healing excluded —
+// prices its target at value × hp ÷ maxHP. A standing effect on a man about to
+// die is worth about as much as the man is, which is not much; the user's
+// original note (A-3, parked): "buffs should prefer fresh units". In percent,
+// and 100 for a body with no maximum to speak of, so a caller can multiply
+// unconditionally.
+static int freshShare(const AUnit& u)
+{
+    if (u.getmaxHP() <= 0) return 100;
+    return std::clamp(u.getHp() * 100 / u.getmaxHP(), 0, 100);
+}
+
+// Ward only, since NP-1: a consumable barrier has no GAIN to measure, so it
+// keeps the flat share (AI_BUFF_WORTH_PCT) — weighted by freshness (P-1). A
+// buff's candidates already exclude a body carrying it (A-8), so a target
+// reaching here is not already warded.
 static int worthBuff(const AUnit&, const SpellForm&, const Target& t)
 {
-    return t.unit ? t.unit->getValue() * AI_BUFF_WORTH_PCT / 100 : 0;
+    if (!t.unit) return 0;
+    return t.unit->getValue() * AI_BUFF_WORTH_PCT * freshShare(*t.unit) / 10000;
+}
+
+// P-6: a skin is worth what it SAVES — the protection it adds, times the hits
+// the man expects to take (AI_PROTECTION_HITS), in damage points converted at
+// AI_DAMAGE_SCALE like every other estimator — on a fresh man (P-1). The gain
+// is measured on the COMBINED figure through the same combinedProtection the
+// damage sites read, so a body in plate is priced at exactly what takeDamage
+// will subtract more. Generic over the floor: it is read off the row, which is
+// what lets NP-2's Barkskin rows reuse it unchanged.
+//
+// A body already at or above the floor STAYS a candidate and is priced out
+// here (delta 0 → worth 0 → optionsFor drops the option) rather than filtered
+// in candidates(): inside an area his +1 beside nine men's +2 is the honest
+// total, and the resolver should not have an opinion about it.
+static int worthSkin(const AUnit&, const SpellForm& form, const Target& t)
+{
+    if (!t.unit) return 0;
+    const AUnit& u = *t.unit;
+    const int delta = u.skinDelta(form.skinFloor);
+    if (delta <= 0) return 0;
+    const int natural = u.getNaturalProtection();
+    const int armour  = u.getArmour();
+    const int gain = combinedProtection(natural + delta, armour)
+                   - combinedProtection(natural, armour);
+    return gain * u.getValue() * AI_PROTECTION_HITS / AI_DAMAGE_SCALE
+         * freshShare(u) / 100;
 }
 
 static int worthSoothingCurrent(const AUnit& c, const SpellForm& /*form*/, const Target& t)
@@ -921,9 +976,13 @@ static int worthSoothingCurrent(const AUnit& c, const SpellForm& /*form*/, const
 static int worthHexOfFrailty(const AUnit& c, const SpellForm& /*form*/, const Target& t)
 {
     if (!t.unit) return 0;
+    // P-1 applies to a bane as much as to a boon ("Same rule for debuffs"): a
+    // hex on a man about to fall is worth about as much as the man is. The
+    // freshness scales the SHARE, not the price below — what Low takes from
+    // your side is paid whatever shape the target is in.
+    int worth = t.unit->getValue() * AI_DEBUFF_WORTH_PCT * freshShare(*t.unit) / 10000;
     // M-24: the bargain takes LOW_BLOOD_PRICE from your own side, and the
     // caster's own value stands in for whoever ends up paying it.
-    int worth = t.unit->getValue() * AI_DEBUFF_WORTH_PCT / 100;
     return worth - LOW_BLOOD_PRICE * c.getValue() / AI_DAMAGE_SCALE;
 }
 
@@ -982,7 +1041,7 @@ static int (*worthFor(std::string_view spellId, std::string_view formName))(cons
 {
     if (spellId == "fireball")         return formName == "major" ? worthFireball : worthEmber;
     if (spellId == "shock")            return worthShock;
-    if (spellId == "stoneskin")        return worthBuff;
+    if (spellId == "stoneskin")        return worthSkin;
     if (spellId == "soothing_current") return worthSoothingCurrent;
     if (spellId == "ward")             return worthBuff;
     if (spellId == "briar_snare")      return worthBriarSnare;
@@ -1083,7 +1142,11 @@ namespace Spells
                   TargetKind::AllyUnit, TargetPick::Wounded, true,
                   SPELL_PRECISE, SPELLRANGE,
                   AreaMode::None, 0,
-                  ResistKind::None, 0, 0 },
+                  ResistKind::None, 0, 0,
+                  // P-4: the rung this skin raises natural protection TO. The
+                  // one field after the resist trio, and the only row that
+                  // writes it until NP-2's Barkskin.
+                  STONESKIN_FLOOR },
             }},
             // ── Water ────────────────────────────────────────────────────────
             { "soothing_current", {
@@ -1710,6 +1773,10 @@ namespace Spells
                     {"resist",      std::string(resistKindName(form.resist))},
                     {"resistMod",   form.resistMod},
                     {"duration",    form.duration},
+                    // P-4 (NP-1), on every row for the same reason: the floor
+                    // a skin raises natural protection to, 0 on everything
+                    // that is not a skin. The Study prints it when it is one.
+                    {"skinFloor",   form.skinFloor},
                 });
             }
         }

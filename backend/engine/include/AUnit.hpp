@@ -39,6 +39,21 @@ inline std::vector<TerrainType> forbiddenTerrainForCategory(UnitCategory cat) {
     return {};
 }
 
+// ── The protection combine (P-3, slice NP-1) ─────────────────────────────────
+// What damage subtracts: natural protection and worn armour COMBINED,
+// sub-additively — natural + armour − natural×armour÷PROTECTION_DIVISOR,
+// integer division (Dominions' shape at the user's divisor). ONE pure function,
+// so AUnit's damage sites and the casting AI's gain estimator price the same
+// arithmetic: the scorer asks "what would the combined figure be if natural
+// rose by N" and the answer must be exactly what takeDamage would then read.
+//
+// The result is CLAMPED at max(natural, armour): a future, smaller divisor must
+// never make the sum LESS than either part on its own — a man in plate who
+// grows a hide must not become easier to hit than the plate alone made him.
+// At divisor 36 and today's numbers (both ≤ 7) the cross term is 0 and the
+// guard never fires; it exists for the day the divisor is retuned.
+int combinedProtection(int natural, int armour);
+
 class AUnit : public std::enable_shared_from_this<AUnit> {
 public:
     AUnit() = default;
@@ -226,6 +241,39 @@ public:
     // for the life of the process.
     void revertEffects();
 
+    // ── Skins raise TO a floor (P-4, P-5 — slice NP-1) ───────────────────────
+    // The registry records what each standing effect moved, so the body's BASE
+    // natural protection — its own figure with every standing skin subtracted
+    // out — is computable, and the ladder is checked against THAT rather than
+    // against the current number. That is what makes highest-wins fall out
+    // without a priority table: Bark (floor 2) then Stone (floor 3) on a
+    // soldier goes 0→2→3; Stone then Bark goes 0→3 and then Bark finds base 0
+    // below its floor 2 but current 3 already past its target and moves
+    // nothing; a lizard at 5 gets the +1 from either and nothing from the
+    // second. Order never matters and the bump lands once.
+    //
+    // Read from the MEMBER, not the mount-forwarded getter — the same reason
+    // statValue() reads members (see its definition): applyStatMod writes the
+    // composite's own number, so the base and the delta must be computed from
+    // the number the registry actually moved.
+    int baseNaturalProtection() const;
+
+    // The change a skin at `floor` would make right now, never negative (P-5:
+    // "it should not lower it as it isnt a debuff"):
+    //   target = base >= floor ? base + SKIN_OVER_FLOOR_BONUS : floor
+    //   delta  = max(0, target − current natural protection)
+    // Pure, so the scorer prices the gain from the same number the body applies.
+    int skinDelta(int floor) const;
+
+    // Lay a skin on this body: applyEffect(spellId, "naturalProtection", delta,
+    // duration) for a non-zero delta. Returns FALSE and records NOTHING when
+    // the delta is 0 — a skin that moved nothing did not land, so the registry
+    // must not say he wears it (alreadyCarries would then drop him from a
+    // stronger skin's candidates forever). The CAST still returns true from the
+    // body and fatigue is paid: M-23's rule is about a target that could not be
+    // reached, and this one was reached and found already hard enough.
+    bool applySkin(std::string_view spellId, int floor, int duration);
+
     // ── Channelling (M-23) ───────────────────────────────────────────────────
     bool isChannelling() const { return _channelForm != nullptr; }
     // Being struck mid-cast forces a throw rather than automatically losing the
@@ -258,6 +306,22 @@ public:
     bool getBattleSummon() const;
      virtual int getArmour() const;
      virtual int getDefence() const { return defence; }
+
+    // ── Natural protection (P-2, slice NP-1) ─────────────────────────────────
+    // A body's OWN protection — hide, chitin, stone — beside the armour it
+    // wears. VIRTUAL for the same reason getArmour is: a mounted composite
+    // answers with its rider's (MountedUnit forwards it exactly as it forwards
+    // armour), so damage on a cavalryman reads the man and not the saddle.
+    virtual int getNaturalProtection() const;
+    void        setNaturalProtection(int v) { naturalProtection = std::max(0, v); }
+
+    // What DAMAGE subtracts, since P-3: the combine of the two virtual getters
+    // above. NOT virtual — the mount forwarding already happened in the parts.
+    // This is the figure takeDamage (full / half / none by ArmorPen), the
+    // Piercing line of defend() and a bow's penetration all read; getArmour()
+    // still reports armour alone, for the catalog and for anything that wants
+    // to know what a man is WEARING rather than how hard he is to wound.
+    int getProtection() const;
 
     int  getShield() const;
     void setShield(int newVal);
@@ -533,8 +597,9 @@ public:
     // Campaign squad upgrades (docs/CAMPAIGN_PLAN.md "SLICE 4 — THE UPGRADE
     // CATALOG", 4b) and character gear (slice 9a): apply one FLAT modifier to a
     // named stat, by the same names the unit catalog exports — "maxHP",
-    // "attack", "defence", "armour", "speed", "ballisticSkill",
-    // "preferredRange", "formationFighter", "resistance", "penetration".
+    // "attack", "defence", "armour", "naturalProtection", "speed",
+    // "ballisticSkill", "preferredRange", "formationFighter", "resistance",
+    // "penetration".
     // Returns false for a name it does not handle, so an unknown stat is INERT
     // rather than silently mis-applied — the same contract the campaign layer's
     // effect readers use.
@@ -646,6 +711,11 @@ protected:
     int maxHP = 10;
     int cast = 0;
     int armour = 0;
+    // P-2: the body's own protection, beside the armour it wears. 0 for every
+    // man; Golem's stone and Scorpion's chitin live here since NP-1 (they were
+    // `armour` before, which priced a shell as a coat). Skins (P-4) raise it
+    // through the standing-effect registry, never by writing it directly.
+    int naturalProtection = 0;
     int ballisticSkill = 2; // see setBallisticSkill(); default matches accuracy = 10
     int accuracy = 10;      // derived: ballisticSkill * 5; do not set directly
     int ammunition = 0;

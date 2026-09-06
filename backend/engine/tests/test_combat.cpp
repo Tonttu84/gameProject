@@ -393,20 +393,22 @@ TEST_CASE("MountedUnit::heal() restores the rider while mounted, even if the mou
 
     // Hit the rider for exactly 4 damage: target-select roll picks the rider
     // (25 > boundary 20), AttackAttempt=999 guarantees the hit regardless of
-    // defenceroll, damage=4 with d1=1,d2=1 -> resultDMG = 4+1-1 = 4.
+    // defenceroll, damage=9 with d1=1,d2=1 -> resultDMG = 9+1-1 = 9, minus the
+    // rider's plate (HEAVYARMOUR 5, subtracted from a melee blow since P-11) = 4.
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(25);
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d1
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d2
-    int dealt = c.defend(999, 4, ArmorPen::Normal, 0);
+    int dealt = c.defend(999, 4 + HEAVYARMOUR, ArmorPen::Normal, 0);
     Utility::clearDiceRolls();
 
     REQUIRE(dealt == 4);
     REQUIRE(c.getHp() == 6);          // rider: 10 - 4
     REQUIRE(c.hasMount() == true);    // mount untouched by the rider taking a hit
 
-    // Hit the mount too (10 <= boundary 20 -> mount), same fixed damage.
+    // Hit the mount too (10 <= boundary 20 -> mount). The horse wears nothing
+    // (armour 0), so its blow needs no plate added to land the same 4.
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(10);
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
@@ -557,13 +559,15 @@ TEST_CASE("Priest::castBless detects and heals a cavalry whose rider is hurt") {
     red.push_back(std::move(cavPtr));
     field.loadArmies(std::move(red), {});
 
-    // Damage only the rider (25 > boundary 20 -> rider); mount untouched.
+    // Damage only the rider (25 > boundary 20 -> rider); mount untouched. The
+    // blow carries the rider's plate on top of the wound (P-11: a melee blow
+    // subtracts protection), so 4 of it lands.
     Utility::clearDiceRolls();
     Utility::pushDiceRoll(25);
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // defenceroll
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d1
     Utility::pushDiceRoll(1); Utility::pushDiceRoll(1); // d2
-    cav->defend(999, 4, ArmorPen::Normal, 0);
+    cav->defend(999, 4 + HEAVYARMOUR, ArmorPen::Normal, 0);
     Utility::clearDiceRolls();
 
     int hpAfterHit = cav->getHp();

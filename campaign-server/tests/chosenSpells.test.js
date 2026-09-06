@@ -157,6 +157,8 @@ describe('what the sheet is sent (S4-7)', () => {
         // behind stands (TG-3, T-4/T-5). Ember is neither resistible nor
         // standing, which is what 'none'/0/0 says.
         resist: 'none', resistMod: 0, duration: 0,
+        // And the skin floor (NP-1, P-4): Ember is no skin.
+        skinFloor: 0,
         // Every row says where it stands on the pool, so the sheet never has
         // to test for a missing field (slice A, E-2).
         battlefield: false, poolCost: 0,

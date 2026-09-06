@@ -87,6 +87,11 @@ export const ITEM_STAT_TEXT = {
   attack: 'attack',
   defence: 'defence',
   armour: 'armour',
+  // P-2 (engine slice NP-1): the body's OWN protection — hide, chitin, stone
+  // — beside the armour it wears; damage subtracts the two combined. Exported
+  // on every unit row and a mod-bag name the engine knows, so an item that
+  // toughens the skin rather than the coat (none does today) can phrase itself.
+  naturalProtection: 'natural protection',
   speed: 'speed',
   ballisticSkill: 'marksmanship',
   preferredRange: 'preferred distance',

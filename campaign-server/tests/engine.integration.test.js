@@ -84,6 +84,25 @@ describe.skipIf(!hasEngine)('real engine contract', () => {
     }
   }, 30000)
 
+  // P-2 (NP-1): natural protection beside armour on every row, and the two
+  // bodies that moved over — Golem's stone and Scorpion's chitin — exported as
+  // skin and no coat. Not stored in UnitType either, for `formationFighter`'s
+  // reason: the export is where the battle layer reads it from.
+  test('dump-units carries a natural protection for every type; Golem and Scorpion are skin, not kit',
+    async () => {
+      const catalog = await dumpUnits()
+      for (const unit of catalog.units) {
+        expect(Number.isInteger(unit.stats.naturalProtection),
+          `${unit.name} exports no naturalProtection`).toBe(true)
+        expect(unit.stats.naturalProtection, `${unit.name} has negative skin`)
+          .toBeGreaterThanOrEqual(0)
+      }
+      const golem = catalog.units.find((u) => u.name === 'Golem')
+      expect(golem.stats).toMatchObject({ naturalProtection: 7, armour: 0 })
+      const scorpion = catalog.units.find((u) => u.name === 'Scorpion')
+      expect(scorpion.stats).toMatchObject({ naturalProtection: 2, armour: 0 })
+    }, 30000)
+
   test('info output has the grid/units shape the frontend relies on', async () => {
     const info = await getInfo()
     expect(info.grid.width).toBeGreaterThan(0)
@@ -478,7 +497,20 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
       expect(Number.isInteger(row.resistMod)).toBe(true)
       expect(Number.isInteger(row.duration)).toBe(true)
       expect(row.duration).toBeGreaterThanOrEqual(0)
+      // NP-1 (P-4): the floor a skin raises natural protection to, on every
+      // row, 0 on everything that is not a skin.
+      expect(Number.isInteger(row.skinFloor)).toBe(true)
+      expect(row.skinFloor).toBeGreaterThanOrEqual(0)
     }
+  })
+
+  test('stoneskin is a skin: its floor reaches the wire, and no other row claims one', async () => {
+    const { spells } = await dumpSpells()
+    const skin = spells.find((row) => row.spell === 'stoneskin')
+    expect(skin.skinFloor).toBeGreaterThan(0)
+    // Barkskin is NP-2's; until it lands Stoneskin is the only rung authored.
+    for (const row of spells)
+      if (row.spell !== 'stoneskin') expect(row.skinFloor).toBe(0)
   })
 
   test('some form is resistible and some form is timed — the fields are wired, not dead',

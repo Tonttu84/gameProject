@@ -255,8 +255,10 @@ TEST_CASE("scoring: the script is an opening sequence — each line once, then t
     mage->setPathLevel(SpellPath::Fire, 1);
     mage->setChosenSpells({"stoneskin", "fireball"});
     REQUIRE(mage->scriptCursor() == 0);
-    const int armourBefore = man->getArmour();
-    const int mageArmourBefore = mage->getArmour();
+    // NP-1: a skin raises NATURAL protection (P-4), so that is the number
+    // that moves — armour is what a man wears and a spell leaves it alone.
+    const int skinBefore = man->getNaturalProtection();
+    const int mageSkinBefore = mage->getNaturalProtection();
 
     RangedCombat::resetCache();
     Utility::clearDiceRolls();
@@ -266,7 +268,8 @@ TEST_CASE("scoring: the script is an opening sequence — each line once, then t
     // tick, so it lands at once. The cursor has moved past it.
     field.triggerSpecialPhase();
     REQUIRE(mage->scriptCursor() == 1);
-    REQUIRE((man->getArmour() > armourBefore || mage->getArmour() > mageArmourBefore));
+    REQUIRE((man->getNaturalProtection() > skinBefore
+             || mage->getNaturalProtection() > mageSkinBefore));
 
     // Tick 2: line two, Ember at the foe. Cursor at the end.
     Utility::pushDiceRoll(1);
@@ -304,15 +307,16 @@ TEST_CASE("scoring: an enemy-targeted line waits for range instead of being spen
     RangedCombat::resetCache();
     Utility::clearDiceRolls();
     Utility::clearLotteryRolls();
-    const int armourBefore = man->getArmour();
-    const int mageArmourBefore = mage->getArmour();
+    const int skinBefore = man->getNaturalProtection();
+    const int mageSkinBefore = mage->getNaturalProtection();
 
     // Tick 1: the foe is out of range. The line is HELD (cursor still 0) and
     // the pool improvises — Stoneskin is the one thing with a target, so it
     // lands on someone this very tick rather than the caster standing mute.
     field.triggerSpecialPhase();
     REQUIRE(mage->scriptCursor() == 0);
-    REQUIRE((man->getArmour() > armourBefore || mage->getArmour() > mageArmourBefore));
+    REQUIRE((man->getNaturalProtection() > skinBefore
+             || mage->getNaturalProtection() > mageSkinBefore));
 
     // The probe agrees: with the line held, what fires next is the pool's.
     const Spell* probed = nullptr;
@@ -368,9 +372,10 @@ TEST_CASE("scoring: a worthless scripted line is skipped in the same tick", "[sc
     mage->setPathLevel(SpellPath::Fire, 1);
     // T-5 replaced AI-1's bare mark with the standing-effect registry, so a
     // test that wants a man ALREADY SKINNED lays the real effect on him — the
-    // same call the body makes, with the row's own duration of 0.
-    mage->applyEffect("stoneskin", "armour", 1, 0);
-    man->applyEffect("stoneskin", "armour", 1, 0);
+    // same call the body makes since NP-1 (applySkin to the row's floor), with
+    // the row's own duration of 0.
+    REQUIRE(mage->applySkin("stoneskin", STONESKIN_FLOOR, 0));
+    REQUIRE(man->applySkin("stoneskin", STONESKIN_FLOOR, 0));
     mage->setChosenSpells({"stoneskin", "fireball"});
 
     RangedCombat::resetCache();
@@ -411,8 +416,8 @@ TEST_CASE("scoring: the shortlist narrows the pool, widens when worthless, and i
         place(blue, std::make_unique<Zombie>(BLUETEAM), 4);
         field.loadArmies(std::move(red), std::move(blue));
         mage->setPathLevel(SpellPath::Fire, 1);
-        mage->applyEffect("stoneskin", "armour", 1, 0);
-        man->applyEffect("stoneskin", "armour", 1, 0);
+        REQUIRE(mage->applySkin("stoneskin", STONESKIN_FLOOR, 0));
+        REQUIRE(man->applySkin("stoneskin", STONESKIN_FLOOR, 0));
         mage->setShortlist({"stoneskin"});
 
         const Spell* picked = nullptr;

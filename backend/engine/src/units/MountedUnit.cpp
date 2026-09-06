@@ -55,6 +55,10 @@ int  MountedUnit::getArmour() const {
     const AUnit* t = effectTarget();
     return (t == this) ? AUnit::getArmour() : t->getArmour();
 }
+int  MountedUnit::getNaturalProtection() const {
+    const AUnit* t = effectTarget();
+    return (t == this) ? AUnit::getNaturalProtection() : t->getNaturalProtection();
+}
 int  MountedUnit::getDefence() const {
     const AUnit* t = effectTarget();
     return (t == this) ? AUnit::getDefence() : t->getDefence();

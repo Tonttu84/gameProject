@@ -25,9 +25,11 @@ int Archer::calcUnitValue(const AUnit& targetUnit, int myTeam)
         return 0;
 
     int retval;
-    if (BOWDAMAGE + 2 > targetUnit.getArmour())
+    // P-3: a bow's penetration is measured against the target's COMBINED
+    // protection — the figure takeDamage will subtract — not the armour alone.
+    if (BOWDAMAGE + 2 > targetUnit.getProtection())
     {
-        int pen = BOWDAMAGE + 2 - targetUnit.getArmour();
+        int pen = BOWDAMAGE + 2 - targetUnit.getProtection();
         retval = (pen > targetUnit.getHp() ? targetUnit.getHp() + 2 : pen) * targetUnit.getValue();
     }
     else

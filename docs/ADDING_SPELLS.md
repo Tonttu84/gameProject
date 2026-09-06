@@ -86,6 +86,7 @@ the body may throw it off, and how long what is left of it stands.
 | `resist`      | T-4      | `ResistKind::None` (cannot be resisted, and rolls nothing) or `Negates` (contested per target body; the winner takes nothing) |
 | `resistMod`   | T-4      | signed, added to the TARGET's side of the contest — Dominions' "easily"/"hard" as data. `0` on every row today |
 | `duration`    | T-5      | ticks the form's standing effect stands; `0` = the whole battle. Read by the BODY and passed to `applyEffect` |
+| `skinFloor`   | P-4      | `0` for every form that is not a skin; a skin writes the floor it raises natural protection TO (`STONESKIN_FLOOR`…). The body hands it to `applySkin` and `worthSkin` prices the gain from it — one number, read twice |
 | `spell`       | A-1      | back-pointer to the spell above — **wired automatically**, never authored |
 | `worth`       | A-3      | `int(const AUnit&, const SpellForm&, const Target&)` — **wired by id** in `worthFor()`, never authored in the row; see "Scoring" |
 | `aiDivider`   | A-4      | `0` = derive from fatigue, casting time and pool cost; any positive number overrides it for playtesting/modding |
@@ -301,7 +302,17 @@ asks each qualifying form, for every candidate the resolver returns, what the ca
   **NEGATIVE for one of the caster's own** (T-7). A blast is therefore only worth throwing at a
   CROWD, and a caster at a lone man reaches for the cheap single-target form instead;
 - a standing effect is *the value of what it lifts × `AI_BUFF_WORTH_PCT`* (a bane its own
-  percentage, minus what Low's price costs your side);
+  percentage, minus what Low's price costs your side) — and since NP-1 **every `buff`-flagged
+  estimator, boon or bane, multiplies by the target's freshness** `hp ÷ maxHP` (P-1; healing forms
+  excluded). `freshShare()` is the one helper; a new standing effect calls it or it is mispriced;
+- a **skin** is priced by its GAIN, not by a flat share (P-6): `worthSkin` reads the row's
+  `skinFloor`, asks the body `skinDelta(floor)` — the raise-to rule (P-4/P-5: to the floor, or
+  `SKIN_OVER_FLOOR_BONUS` past a base already there, never below what stands), and prices
+  `(combinedProtection(nat + delta, armour) − combinedProtection(nat, armour)) × value ×
+  AI_PROTECTION_HITS ÷ AI_DAMAGE_SCALE × fresh ÷ 100`. A body the skin would not move is worth 0
+  and is dropped by `optionsFor`, NOT filtered by `candidates()` — inside an area his +1 beside nine
+  men's +2 is the honest total. A new skin row is the same estimator with a different floor: set
+  `skinFloor` on the row, wire `worthSkin` in `worthFor()`, and write nothing else;
 - a conjuration is *bodies × their value*, and **0 when the body would fail** (too few corpses);
 - a battlefield enchantment is the flat `AI_GLOBAL_WORTH` — script-only (E-3), so its worth
   only has to clear the script floor.

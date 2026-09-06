@@ -90,6 +90,18 @@ const researchFixture = {
           areaMode: 'none', area: 0,
           resist: 'negates', resistMod: 0, duration: 8,
         },
+        // The row that carries NP-1's one new fact (P-4): a skin raises natural
+        // protection TO a floor, and the server ships the floor as a number.
+        {
+          spell: 'stoneskin', form: 'minor', label: 'Stoneskin',
+          description: "One ally's skin hardens to stone.",
+          requires: [{ path: 'earth', label: 'Earth', level: 1 }],
+          schoolLevel: 1, unlocked: true, fatigue: 10, castingTime: 1,
+          accuracy: 100, precise: true, range: 10,
+          areaMode: 'none', area: 0,
+          resist: 'none', resistMod: 0, duration: 0,
+          skinFloor: 3,
+        },
       ],
     },
     construction: {
@@ -214,6 +226,20 @@ describe('The Study', () => {
       const ember = screen.getByTestId('study-spell-detail-fireball-minor')
       expect(ember).not.toHaveTextContent('Lasts')
       expect(ember).not.toHaveTextContent('resisted')
+    })
+
+  it('P-4: a skin says the floor it raises natural protection to, and every other row is silent',
+    async () => {
+      studyWith()
+      await userEvent.click(screen.getByTestId('study-spell-toggle-stoneskin-minor'))
+      const skin = screen.getByTestId('study-spell-detail-stoneskin-minor')
+      expect(skin).toHaveTextContent('Skin to 3')
+
+      // A row that is not a skin ships skinFloor 0 (or, from an older server,
+      // nothing at all) and says nothing about skin either way.
+      await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
+      const ember = screen.getByTestId('study-spell-detail-fireball-minor')
+      expect(ember).not.toHaveTextContent('Skin to')
     })
 
   it('T-6: a form that covers ground says how much, and one that does not is silent',

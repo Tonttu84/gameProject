@@ -323,6 +323,15 @@ struct SpellForm {
     // Balance-deferred.
     int duration = 0;
 
+    // ── The skin ladder (P-4 — slice NP-1) ───────────────────────────────────
+    // 0 for every form that is not a skin. A skin form writes the floor its
+    // body raises natural protection TO (BARKSKIN_FLOOR, STONESKIN_FLOOR, …),
+    // and the body and the estimator both read THIS number — castStoneskin
+    // hands it to AUnit::applySkin, worthSkin prices the gain from it — so the
+    // two cannot disagree, and the catalog can export it for The Study.
+    // Balance-deferred like every number on a row.
+    int skinFloor = 0;
+
     // The spell this form belongs to, wired once at the end of roster(). A form
     // can therefore name itself: the resolver needs the id to ask the buff
     // registry about it, and AI-2's one-line-per-decision log needs it to say

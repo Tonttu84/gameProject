@@ -6,7 +6,10 @@ Scorpion::Scorpion(int setTeam): AUnit::AUnit(setTeam)
     setCategory(UnitCategory::Mounted);
     hitpoints = 18;
     maxHP     = 18;
-    armour    = LIGHTARMOUR;  // chitin shell
+    // Chitin is skin, not kit (P-2): the shell is the beast's own protection,
+    // light-armour thick, and it wears nothing over it.
+    armour            = 0;
+    naturalProtection = LIGHTARMOUR;  // chitin shell
     defence   = 8;            // armored but not especially evasive
     attackPWR = 8;
     unitValue = 6;

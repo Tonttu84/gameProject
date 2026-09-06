@@ -1831,6 +1831,10 @@ export const CHARACTER_VALUE_BASE = 10
 // weights, not tuned ones, and A-4's divider is the other half of the dial.
 export const VALUE_PER_STAT = {
   armour: 3,
+  // P-2 (bd): a point of skin is worth a point of plate to the enemy's scorer
+  // — it saves the same damage (A-5's reasoning: what makes you a target is
+  // how hard you are to wound, and the combine treats the two alike).
+  naturalProtection: 3,
   defence: 3,
   maxHP: 2,
   attack: 1,

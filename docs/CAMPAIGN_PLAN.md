@@ -8166,7 +8166,48 @@ as the unit of a protection point's worth; Scorpion moving to natural alongside 
 natural protection following the rider like armour.
 
 **THE SLICE PLAN (the assistant's — user, 2026-09-06: *"dont ask me about slices anymore"*):**
-- **NP-1 — the machinery (Fable).** `naturalProtection` on AUnit + mod bag + export + phrasing +
+- **✅ NP-1 SHIPPED 2026-09-06 — the machinery.** Spec'd here, built by a FABLE subagent (the
+  first slice under the "Fable when hard" rule), reviewed and run here. What landed:
+  `naturalProtection` beside `armour` (virtual getter forwarded to the rider on a mount like
+  `getArmour`; `"naturalProtection"` in the mod bag with floor 0; exported in `dump-units` stats;
+  `ITEM_STAT_TEXT` "natural protection"; `VALUE_PER_STAT` 3 beside armour); free
+  `combinedProtection(nat, armour)` = nat + armour − nat×armour÷`PROTECTION_DIVISOR` (36, bd)
+  CLAMPED at ≥ max(nat, armour) so no future divisor can make the sum less than either part;
+  `AUnit::getProtection()` read at every damage site — `takeDamage` (full/half/none as before),
+  `defend()` (P-11: Normal now subtracts the FULL figure, Piercing half, Bypass none), the bow's
+  penetration compare. Golem natural 7 / armour 0 (`GOLEM_NATURAL_PROTECTION`), Scorpion natural
+  2 / armour 0. The registry helpers: `baseNaturalProtection()` (member minus every standing
+  `naturalProtection` effect), `skinDelta(floor)` (P-5 exactly), `applySkin(id, floor, duration)`
+  — delta 0 records NOTHING and returns false with a Detail line ("X's skin is already as hard as
+  Y would make it"), so a harder skin never counts as wearing the softer one. `SpellForm.skinFloor`
+  after `duration` (0 = not a skin), exported as `skinFloor`, carried by both campaign
+  projections, The Study prints "Skin to N". Stoneskin: `applySkin(STONESKIN_FLOOR 3)`, Earth
+  growth gone, description rebuilt. Scorer: `freshShare()` = hp×100÷maxHP on Ward, Hex of
+  Frailty (the debuff share only — Low's blood price is what YOUR side pays, not scaled by the
+  target's hp) and the new `worthSkin` = Δcombined × value × `AI_PROTECTION_HITS` (3, bd) ÷
+  AI_DAMAGE_SCALE × fresh; a body at the floor still gets +1 (P-5) and is only worth 0 when a
+  harder skin already stands on him — priced out, never filtered. `test_protection.cpp` (16
+  cases) pins the combine table, the roster sweep, the ladder's worked examples, monotonicity
+  across every type × floor × order, the melee subtraction, revert on tick and at battle end.
+  - **P-11 retunes: three assertions in two files** (test_combat's two mounted cases raise a flat
+    4-damage blow by HEAVYARMOUR so the same 4 lands on a plated rider; test_corpses' overkill
+    kill explodes d1 to clear plate). Nothing else moved on the random seed or five fixed ones.
+  - **What P-11 did to balance — REPORTED INTO THE BALANCE PASS, not tuned:** a plated Soldier now
+    needs the d1−d2 swing to scratch another; heavy-vs-heavy melee is slower and the unarmoured
+    bleed. `make ab-casting` (10 runs): mages_vs_line scorer 8/10 (blue 7.8 / red 1.7 survivors,
+    140 casts — the battle runs longer, spells decide more of it); kitted_target's plated man soaks
+    36% of his side's losses and dies 0/10 — **a well-plated body is close to unkillable by a
+    militia line in melee.** First thing for the balance pass: Piercing weapons and `HEAVYARMOUR`
+    are the knobs.
+  - **Outside the slice, recorded:** a skin (or any stat effect) on a MOUNTED composite is inert
+    in combat — `applyStatMod` writes the composite's member, the getters forward to the rider —
+    the same shape TG-3 left for hex_of_frailty on a cavalryman; whether `applyStatMod` on a
+    MountedUnit should forward to the rider is a design call for later. `VALUE_PER_STAT` has no
+    `resistance`/`penetration` entry (no item mods them yet).
+  - Engine 538 cases green fast, sanitized (clean rebuild) and on five seeds; campaign-server
+    1486; frontend 550 + lint; clang syntax over the changed TUs clean.
+
+  *As planned:* `naturalProtection` on AUnit + mod bag + export + phrasing +
   value weight; `getProtection()` = the combine, read at every site that read armour for damage;
   the raise-to helper on the registry (base natural, target, delta) and the two skins' bodies on
   it; Stoneskin rewritten (floor 3, no Earth growth); P-1's fresh weighting on every buff row; the

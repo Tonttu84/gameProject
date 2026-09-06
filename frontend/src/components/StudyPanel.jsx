@@ -88,6 +88,7 @@ const SpellRow = ({ spell, schoolLabel }) => {
             {spell.area > 0 ? ` · Area ${spell.area} (${spell.areaMode})` : ''}
             {spell.duration > 0 ? ` · Lasts ${spell.duration} ticks` : ''}
             {spell.resist === 'negates' ? ' · Can be resisted' : ''}
+            {spell.skinFloor > 0 ? ` · Skin to ${spell.skinFloor}` : ''}
           </p>
           {/* A BATTLEFIELD ENCHANTMENT (slice A, E-2/E-3) is priced in the
               ARMY's pool as well as in the caster's fatigue, and never fires

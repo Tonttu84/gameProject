@@ -368,6 +368,17 @@ describe('describeItem', () => {
     }
   })
 
+  test('every engine stat an item could move has a player-facing word', () => {
+    // The mod-bag names the engine's applyStatMod knows (AUnit.hpp). A row
+    // may only mod what it can phrase, so the vocabulary has to be at least
+    // this wide — NP-1 added naturalProtection to both sides at once.
+    for (const stat of ['maxHP', 'attack', 'defence', 'armour', 'naturalProtection',
+                        'speed', 'ballisticSkill', 'preferredRange', 'formationFighter',
+                        'resistance', 'penetration']) {
+      expect(ITEM_STAT_TEXT[stat]).toBeTruthy()
+    }
+  })
+
   test('every stat a catalog row moves has a player-facing word', () => {
     // Same contract as the ability sweep, and the same reason: describeItem
     // drops what it cannot phrase, so without this a new stat would leave the

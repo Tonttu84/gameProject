@@ -415,10 +415,10 @@ TEST_CASE("targeting: a caster whose line is fully buffed casts nothing and pays
 
     // T-5 replaced AI-1's bare mark with the standing-effect registry: a man
     // "already skinned" is a man carrying the real effect, laid on by the same
-    // call the body makes.
-    mage->applyEffect("stoneskin", "armour", 1, 0);
-    man->applyEffect("stoneskin", "armour", 1, 0);
-    const int armourBefore = man->getArmour();
+    // call the body makes — since NP-1, applySkin to the row's floor (P-4).
+    REQUIRE(mage->applySkin("stoneskin", STONESKIN_FLOOR, 0));
+    REQUIRE(man->applySkin("stoneskin", STONESKIN_FLOOR, 0));
+    const int protectionBefore = man->getProtection();
 
     Utility::clearDiceRolls();
     field.triggerSpecialPhase();        // one-tick form: it would fire this phase
@@ -427,7 +427,7 @@ TEST_CASE("targeting: a caster whose line is fully buffed casts nothing and pays
     // corpses are not (M-26's fall-through exists for the same reason). The CAST
     // then finds nobody, and M-23's other half means that costs nothing.
     CHECK(mage->getFatigue() == 0);
-    CHECK(man->getArmour() == armourBefore);
+    CHECK(man->getProtection() == protectionBefore);
 
     // A fresh body on the line is a target again, and now it does fire.
     Army wave;
@@ -443,17 +443,20 @@ TEST_CASE("targeting: a caster whose line is fully buffed casts nothing and pays
 
 TEST_CASE("targeting: standing effects are per battle, not per campaign", "[targeting]") {
     Soldier man(REDTEAM);
-    const int armour = man.getArmour();
-    man.applyEffect("stoneskin", "armour", 1, 0);
+    const int natural    = man.getNaturalProtection();
+    const int protection = man.getProtection();
+    REQUIRE(man.applySkin("stoneskin", STONESKIN_FLOOR, 0));
     REQUIRE(man.hasBuff("stoneskin") == true);
-    REQUIRE(man.getArmour() == armour + 1);
+    REQUIRE(man.getNaturalProtection() == STONESKIN_FLOOR);
+    REQUIRE(man.getProtection() > protection);
 
     man.restoreForNextBattle();
     CHECK(man.hasBuff("stoneskin") == false);
-    // T-5: the armour comes back OFF with the mark. Before TG-3 the mark was
+    // T-5: the skin comes back OFF with the mark. Before TG-3 the mark was
     // dropped and the stat was not, so a skinned survivor kept the point for
     // the life of the process.
-    CHECK(man.getArmour() == armour);
+    CHECK(man.getNaturalProtection() == natural);
+    CHECK(man.getProtection() == protection);
 }
 
 // ── (g) Roster sweeps — structural, so a spell authored next month is covered ─

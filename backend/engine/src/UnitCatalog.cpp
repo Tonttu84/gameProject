@@ -188,6 +188,12 @@ std::string unitCatalogJson()
                 {"attack",         u->getAttackPWR()},
                 {"defence",        u->getDefence()},
                 {"armour",         u->getArmour()},
+                // P-2: the body's own protection beside the armour it wears.
+                // Both are exported — the campaign's ITEM_STAT_TEXT phrases a
+                // modifier to either — and what damage subtracts is their
+                // combine (combinedProtection), which nothing exports because
+                // it is arithmetic, not a stat.
+                {"naturalProtection", u->getNaturalProtection()},
                 {"speed",          u->getMovementSpeed()},
                 {"ballisticSkill", u->getBallisticSkill()},
                 {"preferredRange", u->getPreferredRange()},

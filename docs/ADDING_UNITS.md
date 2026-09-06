@@ -25,6 +25,7 @@ the stat sheet:
 | size                | `size = SIZE;` with `static constexpr int SIZE = …;` in the header |
 | category / forbidden terrain | `setCategory(UnitCategory::…)`; forbidden terrain derives from the category via `forbiddenTerrainForCategory()` in `AUnit.hpp` — do **not** list terrain per unit |
 | maxHP / attack / defence / armour | `maxHP`, `hitpoints`, `attackPWR`, `defence`, `armour` |
+| natural protection  | `naturalProtection` — the body's OWN protection (hide, chitin, stone), **not kit**: a golem is stone (7), a scorpion is chitin (`LIGHTARMOUR`), a man is 0 and wears his `armour` instead. Damage subtracts the two **combined** (`combinedProtection`: nat + armour − nat×armour÷`PROTECTION_DIVISOR`), so a type gets one or the other and never the same number twice. Skin spells raise this one, to a floor (P-2..P-5) |
 | speed / preferred range | `movementSpeed` (hexes per tick — implemented, not cosmetic), `preferredRange` |
 | ballistic skill     | `setBallisticSkill(n)` — melee-attack scale (10 = trained archer); derives the legacy 0-100 `accuracy` as n×5. Campaign scouting/foraging values derive from speed + this (`campaign-server/utils/capabilities.js`) |
 | weapons             | `addWeapon(MeleeWeapons::…)` (may modify defence/shield)   |

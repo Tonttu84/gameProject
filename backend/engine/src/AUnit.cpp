@@ -8,6 +8,16 @@
 
 
 
+// P-3's combine, and the guard the header explains. Integer division, so at
+// the roster's numbers under divisor 36 this is plain addition.
+int combinedProtection(int natural, int armour)
+{
+	natural = std::max(0, natural);
+	armour  = std::max(0, armour);
+	const int combined = natural + armour - natural * armour / PROTECTION_DIVISOR;
+	return std::max(combined, std::max(natural, armour));
+}
+
 AUnit::AUnit(const int newTeam)
 : team(newTeam), sortKey(Utility::getRandom(0, 1000000))
 {
@@ -214,9 +224,17 @@ int AUnit::defend(int AttackAttempt, int damage, ArmorPen pen, int /*attackerRea
 		}
 	}
 
-	// Piercing weapons partially bypass melee armor.
-	if (resultDMG > 0 && pen == ArmorPen::Piercing)
-		resultDMG -= armour / 2;
+	// P-11 (user, 2026-09-06: "melee should subtract armor. That is the main
+	// purpose of armor"): a blow that gets through the shield arithmetic above
+	// subtracts the COMBINED protection (P-3: natural + worn, sub-additive) —
+	// full for a Normal blow, half for a Piercing one, none for Bypass — the
+	// same three-way shape takeDamage() has always had. Until 2026-09-06 only
+	// the Piercing line existed here, so a suit of plate did NOTHING against
+	// an ordinary sword stroke and armour was a ranged-only stat in melee.
+	if (resultDMG > 0 && pen != ArmorPen::Bypass) {
+		const int protection = getProtection();
+		resultDMG -= (pen == ArmorPen::Piercing) ? protection / 2 : protection;
+	}
 
 	if (resultDMG > 0)
 	{
@@ -722,6 +740,7 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		if (stat == "defence")          return defence;
 		if (stat == "preferredRange")   return preferredRange;
 		if (stat == "armour")           return armour;
+		if (stat == "naturalProtection") return naturalProtection;
 		if (stat == "speed")            return movementSpeed;
 		if (stat == "ballisticSkill")   return ballisticSkill;
 		if (stat == "formationFighter") return formationFighter;
@@ -1090,6 +1109,52 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 		return armour;
 	}
 
+	int AUnit::getNaturalProtection() const{
+		return naturalProtection;
+	}
+
+	int AUnit::getProtection() const{
+		return combinedProtection(getNaturalProtection(), getArmour());
+	}
+
+	// ── The skin ladder (P-4, P-5) ────────────────────────────────────────────
+	// Members throughout, for the reason statValue() gives: the registry's
+	// `applied` numbers were read off the member applyStatMod writes, so the
+	// base has to be recovered from that same member or a cavalryman's base
+	// would be his rider's figure minus the composite's skins.
+	int AUnit::baseNaturalProtection() const
+	{
+		int standing = 0;
+		for (const StandingEffect& e : _standingEffects)
+			if (e.stat == "naturalProtection") standing += e.applied;
+		return naturalProtection - standing;
+	}
+
+	int AUnit::skinDelta(int floor) const
+	{
+		const int base   = baseNaturalProtection();
+		const int target = base >= floor ? base + SKIN_OVER_FLOOR_BONUS : floor;
+		// Never negative: a skin is not a debuff (P-5). A body whose current
+		// figure is already past the target — because a higher skin stands on
+		// him — is left exactly as he is.
+		return std::max(0, target - naturalProtection);
+	}
+
+	bool AUnit::applySkin(std::string_view spellId, int floor, int duration)
+	{
+		const int delta = skinDelta(floor);
+		if (delta == 0) {
+			// Nothing to record: an entry with applied 0 would still answer
+			// hasBuff() yes, and the resolver would then keep a STRONGER skin
+			// off him for as long as the empty one stood.
+			Utility::getBattlefield().logEvent(LogTier::Detail,
+				logName() + "'s skin is already as hard as " + std::string(spellId)
+				+ " would make it");
+			return false;
+		}
+		return applyEffect(spellId, "naturalProtection", delta, duration);
+	}
+
 	// One flat modifier onto one named stat — see the header for why this is
 	// bounded and why an unknown name is inert.
 	//
@@ -1145,6 +1210,15 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 			armour = std::max(0, armour + delta);
 			return true;
 		}
+		// P-2: the body's own protection, the other half of what damage
+		// subtracts (combinedProtection). Floored at 0 like armour — a hide
+		// cannot be worse than no hide — and it is the door a skin spell's
+		// standing effect comes through (applySkin → applyEffect), so the
+		// registry can put it back exactly.
+		if (stat == "naturalProtection") {
+			naturalProtection = std::max(0, naturalProtection + delta);
+			return true;
+		}
 		if (stat == "speed") {
 			movementSpeed = std::max(1, movementSpeed + delta);
 			return true;
@@ -1186,11 +1260,16 @@ AUnit *AUnit::find_target(Battlefield &myBattlefield)
 	int AUnit::getValue() const{
 		return unitValue;
 	}
+	// P-3: what a ranged hit or a spell subtracts is the COMBINED protection
+	// (natural + worn, sub-additive) — full for a Normal hit, half for a
+	// Piercing one, none for Bypass. The shape is the one armour always had
+	// here; only what the word means changed.
 	int AUnit::takeDamage(int amount, ArmorPen pen)
 	{
-		int eff = (pen == ArmorPen::Piercing) ? armour / 2
+		const int protection = getProtection();
+		int eff = (pen == ArmorPen::Piercing) ? protection / 2
 		        : (pen == ArmorPen::Bypass)   ? 0
-		        :                               armour;
+		        :                               protection;
 		if (amount - eff <= 0)
 			return 0;
 		hitpoints -= (amount - eff);

@@ -71,6 +71,9 @@ describe('what the kit adds', () => {
       .toBeGreaterThan(characterValue(character([BLADE.id])))
     expect(VALUE_PER_STAT.armour).toBeGreaterThan(VALUE_PER_STAT.attack)
     expect(VALUE_PER_STAT.defence).toBeGreaterThan(VALUE_PER_STAT.attack)
+    // P-2: a point of skin saves what a point of plate saves, so the enemy's
+    // scorer prices the two alike.
+    expect(VALUE_PER_STAT.naturalProtection).toBe(VALUE_PER_STAT.armour)
   })
 
   test('a granted ability is worth its flat price, and a denial is not charged for', () => {

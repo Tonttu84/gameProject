@@ -473,6 +473,10 @@ export const spellsForSchool = (spells, school, level) =>
       resist: row.resist ?? 'none',
       resistMod: row.resistMod ?? 0,
       duration: row.duration ?? 0,
+      // P-4 (NP-1): the floor a skin raises natural protection to, 0 on every
+      // form that is not a skin. Passed through like the rest; the screen
+      // prints it only when it is one.
+      skinFloor: row.skinFloor ?? 0,
       // A battlefield row's price is not its fatigue (E-2), so the Study says
       // so on the row itself — phrased here, printed verbatim there.
       ...poolFieldsOf(row),
@@ -585,6 +589,8 @@ export const castableSpellsForLevels = (paths, schoolLevels, spells = []) => {
       resist: row.resist ?? 'none',
       resistMod: row.resistMod ?? 0,
       duration: row.duration ?? 0,
+      // And the skin floor (P-4), off the same winning form.
+      skinFloor: row.skinFloor ?? 0,
       // Off the WINNING form, like the label and the description above: a
       // battlefield spell is single-form today (E-3), but the fields are read
       // here rather than off the spell so the strongest-form rule keeps

@@ -82,14 +82,16 @@ TEST_CASE("duration: a form written 0 stands for the whole battle", "[duration]"
     field.loadArmies(std::move(red), std::move(blue));
 
     REQUIRE(formOf("stoneskin").duration == 0);
-    const int armour = man->getArmour();
-    man->applyEffect("stoneskin", "armour", 2, formOf("stoneskin").duration);
-    REQUIRE(man->getArmour() == armour + 2);
+    // NP-1: a skin moves NATURAL protection, to the row's floor (P-4).
+    REQUIRE(man->getNaturalProtection() == 0);
+    REQUIRE(man->applySkin("stoneskin", formOf("stoneskin").skinFloor,
+                           formOf("stoneskin").duration));
+    REQUIRE(man->getNaturalProtection() == STONESKIN_FLOOR);
 
     for (int i = 0; i < HEX_FRAILTY_DURATION * 3; ++i) field.tick();
 
     CHECK(man->hasBuff("stoneskin") == true);
-    CHECK(man->getArmour() == armour + 2);
+    CHECK(man->getNaturalProtection() == STONESKIN_FLOOR);
 
     field.extractResult();
 }
@@ -178,23 +180,26 @@ TEST_CASE("duration: battle end reverts every standing effect and empties the sh
     // STAT, so a survivor carried a spell's armour into every later battle in
     // the process — and a Ward's shield layers with it.
     Soldier man(REDTEAM);
-    const int armour  = man.getArmour();
-    const int defence = man.getDefence();
+    const int natural    = man.getNaturalProtection();
+    const int protection = man.getProtection();
+    const int defence    = man.getDefence();
 
-    man.applyEffect("stoneskin", "armour", 2, 0);
+    REQUIRE(man.applySkin("stoneskin", STONESKIN_FLOOR, 0));
     man.applyEffect("hex_of_frailty", "defence", -2, HEX_FRAILTY_DURATION);
     // Ward records PRESENCE and no number: its barrier is a consumable shield
     // layer, so there is nothing for a revert to put back.
     man.addShield(3);
     man.applyEffect("ward", "", 0, 0);
 
-    REQUIRE(man.getArmour()  == armour + 2);
+    REQUIRE(man.getNaturalProtection() == STONESKIN_FLOOR);
+    REQUIRE(man.getProtection() > protection);
     REQUIRE(man.getDefence() == defence - 2);
     REQUIRE(man.hasBuff("ward") == true);
 
     man.restoreForNextBattle();
 
-    CHECK(man.getArmour()  == armour);
+    CHECK(man.getNaturalProtection() == natural);
+    CHECK(man.getProtection() == protection);
     CHECK(man.getDefence() == defence);
     CHECK(man.hasBuff("stoneskin") == false);
     CHECK(man.hasBuff("hex_of_frailty") == false);
@@ -214,20 +219,22 @@ TEST_CASE("duration: different spells stack on one body, the same spell never do
     // T-5's sentence in full. Both halves matter: a man may be skinned AND
     // warded, and he may not be skinned twice.
     Soldier man(REDTEAM);
-    const int armour = man.getArmour();
+    const int natural = man.getNaturalProtection();
 
-    REQUIRE(man.applyEffect("stoneskin", "armour", 2, 0) == true);
+    REQUIRE(man.applySkin("stoneskin", STONESKIN_FLOOR, 0) == true);
     REQUIRE(man.applyEffect("ward", "", 0, 0) == true);
     CHECK(man.hasBuff("stoneskin") == true);
     CHECK(man.hasBuff("ward") == true);
-    CHECK(man.getArmour() == armour + 2);
+    CHECK(man.getNaturalProtection() == STONESKIN_FLOOR);
 
     // Nothing here FORBIDS a second stoneskin — the registry is a record, and
     // the rule that keeps it off him is the resolver's (candidates() drops a
-    // body that carries the spell). What is pinned is that the record is what
-    // the resolver reads, and that a revert of two effects is two reverts.
+    // body that carries the spell) and, since NP-1, the ladder's (applySkin
+    // finds nothing to raise and records nothing). What is pinned is that the
+    // record is what the resolver reads, and that a revert of two effects is
+    // two reverts.
     man.revertEffects();
-    CHECK(man.getArmour() == armour);
+    CHECK(man.getNaturalProtection() == natural);
     CHECK(man.hasBuff("stoneskin") == false);
     CHECK(man.hasBuff("ward") == false);
 }

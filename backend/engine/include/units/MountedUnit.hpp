@@ -53,6 +53,10 @@ public:
     int  getHp() const override;
     int  getmaxHP() const override;
     int  getArmour() const override;
+    // P-2: a mount's natural protection follows the rider like its armour does
+    // (assistant's call, flagged in the plan) — the composite is hit AS the
+    // rider, so it is protected as the rider.
+    int  getNaturalProtection() const override;
     int  getDefence() const override;
     int  getAttackPWR() const override;
     void heal(int value) override;

@@ -82,6 +82,39 @@ constexpr UnitAbility withoutAbilities(UnitAbility set, UnitAbility denied) {
 constexpr int LIGHTARMOUR = 2;
 constexpr int HEAVYARMOUR = 5;
 
+// ── Natural protection (P-2..P-5, slice NP-1) ────────────────────────────────
+// Dominions' shape: a body has a `naturalProtection` of its own — hide, chitin,
+// stone — BESIDE the armour it wears, and damage subtracts the two COMBINED
+// (P-3): natural + armour − natural×armour÷PROTECTION_DIVISOR, integer
+// division. Sub-additive on purpose: a plate coat over a stone body does not
+// add a full plate coat's worth. ALL BALANCE-DEFERRED.
+//
+// The divisor is 36 on the user's reasoning (2026-09-06): "we havent done
+// anything highly protected or high damage things yet. So the scale needs to
+// be much higher than we have yet. we can start with 36". At today's numbers
+// (natural ≤ 7, armour ≤ 7) the cross term nat×armour÷36 is 0 for every body
+// on the roster, so the combine is plain addition in practice — the formula is
+// there to grow into, not a number anything is tuned against yet.
+constexpr int PROTECTION_DIVISOR = 36;
+
+// Golem's body OF armour (7, past plate) is now a body of STONE: the number
+// moves from `armour` to `naturalProtection` unchanged (P-2), and becomes a
+// named design number at the same time. Scorpion's chitin is LIGHTARMOUR on
+// the natural side, with no constant of its own for the same reason it never
+// had one as armour.
+constexpr int GOLEM_NATURAL_PROTECTION = 7;
+
+// The skin ladder (P-4): a skin spell raises natural protection TO a floor —
+// Dominions' 10/15/20 at our quarter scale, plate (HEAVYARMOUR 5) the anchor.
+// A body already at or above the floor gets SKIN_OVER_FLOOR_BONUS instead, once
+// (P-5: the floor is checked against BASE natural protection, every standing
+// skin subtracted out, so highest wins and order never matters). Ironskin is
+// not authored; its constant is here so the ladder reads as one table.
+constexpr int BARKSKIN_FLOOR        = 2;
+constexpr int STONESKIN_FLOOR       = 3;
+constexpr int IRONSKIN_FLOOR        = 5;
+constexpr int SKIN_OVER_FLOOR_BONUS = 1;
+
 // Fatigue
 constexpr int FATIGUERECOVERY     = 4;   // default per-unit passive recovery every tick
 constexpr int FATIGUE_TIRED       = 30;  // border assignment: fresh → tired
@@ -223,7 +256,12 @@ constexpr int AI_LOTTERY_FLOOR       = 10;   // A-7: an option below this gets n
 // per damage point; a standing effect is a share of its bearer.
 constexpr int AI_DAMAGE_SCALE        = 4;
 constexpr int AI_FATIGUE_PER_DAMAGE  = 5;
-constexpr int AI_BUFF_WORTH_PCT      = 50;   // stoneskin / ward on a fresh body
+constexpr int AI_BUFF_WORTH_PCT      = 50;   // ward on a fresh body (stoneskin is
+                                             // priced by its GAIN since NP-1, P-6)
+// P-6: how many hits a man expects to take this battle — what one point of
+// protection saves per hit, summed, is what a skin is worth on him. The unit a
+// protection point is priced in, and nothing else reads it.
+constexpr int AI_PROTECTION_HITS     = 3;
 constexpr int AI_DEBUFF_WORTH_PCT    = 40;   // hex of frailty
 constexpr int AI_RALLY_WORTH_PCT     = 80;   // un-breaking a man is worth most of him
 constexpr int AI_HEAL_AVG            = 4;    // bless heals 1 + d6 (exploding): call it four
