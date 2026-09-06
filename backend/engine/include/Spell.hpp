@@ -1,4 +1,5 @@
 #pragma once
+#include "Affects.hpp"
 #include "AreaMode.hpp"
 #include "Defines.hpp"
 #include "ResistKind.hpp"
@@ -149,6 +150,10 @@ std::string_view areaModeName(AreaMode m);
 // and one direction only for the same reason the two above are: the C++ roster
 // is the single source of truth for what a spell may be shrugged off.
 std::string_view resistKindName(ResistKind k);
+
+// The JSON name of a side tag ("everyone" | "friendly" | "enemy"), for the
+// catalog export, and one direction only like the three above it.
+std::string_view affectsName(Affects a);
 
 // A single castable form. M-12 gives one spell a MINOR and a MAJOR form rather
 // than a ladder of near-duplicates, so each form carries its own gates, price
@@ -331,6 +336,19 @@ struct SpellForm {
     // two cannot disagree, and the catalog can export it for The Study.
     // Balance-deferred like every number on a row.
     int skinFloor = 0;
+
+    // ── Who the form touches (P-8 — slice NP-2) ──────────────────────────────
+
+    // WHO, of the bodies standing on ground this form's delivery covers, is
+    // actually TOUCHED by it. The arc covers ground the same way regardless —
+    // coverage is about where men stand, not about whose men they are — and
+    // this tag is asked once per body the coverage found (see Affects.hpp).
+    //
+    // `Everyone` is the default and is T-7 exactly as it was written: fireball
+    // takes friend and foe alike. A boon says `Friendly` and is then worth
+    // precisely nothing on the enemy's ground, in the estimator as in the
+    // delivery — both read `affectsTouches`, so they cannot disagree.
+    Affects affects = Affects::Everyone;
 
     // The spell this form belongs to, wired once at the end of roster(). A form
     // can therefore name itself: the resolver needs the id to ask the buff

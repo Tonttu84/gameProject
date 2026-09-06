@@ -1,6 +1,7 @@
 #include "catch.hpp"
 #include "Battlefield.hpp"
 #include "Defines.hpp"
+#include "RangedCombat.hpp"
 #include "SpellList.hpp"
 #include "Utility.hpp"
 #include "units/Mage.hpp"
@@ -523,11 +524,22 @@ TEST_CASE("targeting: every standing-effect body records the id its own row carr
             const bool onEnemy = form.target == TargetKind::EnemyUnit;
 
             Army red, blue;
-            Mage* mage = place(red, std::make_unique<Mage>(REDTEAM), 8);
+            // TWO hexes apart rather than one, since NP-2: an AREA boon
+            // (barkskin) covers the ring around the man it lands on when it has
+            // more than one hex's worth of points, and a caster standing next
+            // to his target would be covered by his own cast — which is correct
+            // behaviour and would make the candidate count below say something
+            // about the arc rather than about the ID this case is pinning.
+            Mage* mage = place(red, std::make_unique<Mage>(REDTEAM), 9);
             Soldier* man = onEnemy
                 ? place(blue, std::make_unique<Soldier>(BLUETEAM), 7)
                 : place(red,  std::make_unique<Soldier>(REDTEAM),  7);
             field.loadArmies(std::move(red), std::move(blue));
+            // The phase's slot cache is keyed by HEX, and hexes outlive armies:
+            // an entry left by the previous form in this loop would hand the
+            // arc pointers to bodies that no longer exist. Harmless while no
+            // buff form covered ground, mandatory since one does (NP-2).
+            RangedCombat::resetCache();
 
             // A tagged form contests the target's resistance (T-4) and would
             // otherwise be shrugged off on some runs. This sweep is about the

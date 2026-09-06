@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Affects.hpp"
 #include "AreaMode.hpp"
 #include "Defines.hpp"
 #include "hex/HexGrid.hpp"
@@ -41,6 +42,35 @@ struct RangedShot {
     AreaMode areaMode   = AreaMode::None;
     int      areaPoints = 0;
     int      areaDamage = 0;
+
+    // ── Who is touched (P-8, slice NP-2) ─────────────────────────────────
+    //
+    // The side tag, copied off the form by deliver() — the body never types it,
+    // exactly as it never types `areaMode`/`areaPoints`: the ROW is the truth.
+    // Everyone (the default) is every archer's shot and fireball's blast, which
+    // is T-7 unchanged.
+    //
+    // Asked ONCE per body, in applyHit, before anything else happens to it: a
+    // body the tag does not name is not struck, not blocked, not logged and not
+    // counted. It still occupies its slots — the arc covers ground, not men.
+    Affects affects = Affects::Everyone;
+
+    // ── A shot that carries an EFFECT rather than damage (P-7, slice NP-2) ──
+    //
+    // Empty on every shot that hurts somebody. When it is set this shot is a
+    // BOON (or any other applied effect): applyHit calls it for each body the
+    // tag touches and returns there — no shield or terrain block rolls (a boon
+    // is not turned aside by a shield), no damage, no onHit, no onDamage. The
+    // return value says whether the effect actually landed, and is used for
+    // logging only.
+    //
+    // It rides the ordinary delivery path on purpose (P-7: "spells should
+    // generally, both buffs and damages, get to try to hit something inside a
+    // hex with the original strike, then let the AoE do whatever") — so the
+    // primary strike guarantees the aimed man and the arc decides who else,
+    // for a bark exactly as for a bolt. `baseDamage` and `areaDamage` are
+    // IGNORED while this is set; the effect is the whole of what a body takes.
+    std::function<bool(AUnit* shooter, AUnit* target)> effect;
 
     // ── Magic resistance (T-4, slice TG-3) ───────────────────────────────
     //

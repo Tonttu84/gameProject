@@ -87,8 +87,9 @@ Tests spanning the two therefore live campaign-side, since only that layer can s
 
 ### Where the work stands (2026-09-04) — START HERE
 
-**▶▶ THE LIVE FRONT IS NATURAL PROTECTION AND AREA BOONS — INTERVIEWED 2026-09-06, decisions
-P-1..P-10, TWO SLICES PLANNED, NEITHER BUILT.** Taken up from A-3's parked note ("buffs should
+**▶▶ NATURAL PROTECTION AND AREA BOONS — INTERVIEWED 2026-09-06, decisions P-1..P-11, BOTH
+SLICES SHIPPED THE SAME DAY (NP-1 cce09bb, NP-2 next); THE COVERAGE PASS TC-1 IS THE LIVE SLICE,
+then THE BALANCE PASS is the front.** Taken up from A-3's parked note ("buffs should
 prefer fresh units") and grown, in the interview, into Dominions' protection model: a
 `naturalProtection` stat beside armour, combined sub-additively; skin spells that raise natural
 protection TO a floor (so they never stack, highest wins); a marginal-gain scorer for them; boons
@@ -8242,7 +8243,45 @@ leaves the question to the balance pass.
   gain scorer with `AI_PROTECTION_HITS`; Golem/Scorpion moved to natural; monotonicity pinned
   across the roster; catalog/Study unchanged except Stoneskin's rebuilt description. Green on
   `main` alone, `make ab-casting` rerun.
-- **NP-2 — the content (Opus).** `Affects` on the form, through `RangedShot` into `applyHit`/
+- **✅ NP-2 SHIPPED 2026-09-06 — the content.** Spec'd here, built by an Opus subagent (the
+  first attempt died on the usage limit before writing a line; the second built it whole),
+  reviewed and run here. What landed: `Affects {Everyone, Friendly, Enemy}` in its own header
+  with ONE `affectsTouches(tag, shooterTeam, targetTeam)` predicate that delivery and the scorer
+  both read; `SpellForm.affects` after `skinFloor` (default Everyone — Fireball keeps T-7),
+  exported as `affects`, carried by both campaign projections, The Study prints "Friendly only" /
+  "Enemy only"; `RangedShot.affects` copied off the row by `deliver()` and checked FIRST in
+  `applyHit`, before the resistance ask — an untouched body is not struck, blocked, logged or
+  counted, but still occupies its slots (the arc covers ground). `RangedShot.effect`: a boon
+  rides the SAME primary-then-arc path as a bolt (P-7) — `applyHit` runs the effect and returns
+  before any block roll or damage. `castBarkskin` is one body for both forms: `applySkin(id,
+  form.skinFloor, form.duration)` per touched body. Rows: Barkskin (Nature 1, area 320 explosion,
+  precise, Friendly, floor 2, fatigue 10) and Greater Barkskin (Nature 3, area 960, accuracy
+  modifier +10 so a Mage lands at ~70, Friendly, floor 2, fatigue 22, 2 ticks); `gale_ward`'s
+  enemy shortlist gains `barkskin`. Scorer: `worthAreaOnHex` generalised over a per-body pricer
+  (damage keeps its sign rule; a boon prices +gain for a body the tag touches on the caster's
+  side, −gain for a touched enemy under Everyone, 0 untouched), `skinGainWorth` shared by
+  `worthSkin` and `worthBarkskin` = primary gain × land chance + the netted arc. P-10 pinned in
+  `test_barkskin.cpp` (11 cases): five militia, precise Barkskin at #1 — unseeded start barks #1
+  every time; start 1 barks all five; start 100 barks #1 alone; fatigue paid once, one cast line.
+  - **Found and fixed on contact, worth knowing:** the arc's slot cache is keyed by `Hex*` and
+    outlives armies, so a test sweep that cast a covering form into a hex reused by the previous
+    fixture handed the arc pointers to FREED bodies — a real use-after-free, latent until a buff
+    form covered ground, caught by the sanitizer. `test_targeting`'s buff sweep now calls
+    `RangedCombat::resetCache()`; TC-1 adds the discipline to every fixture. Two enchantment
+    fixtures that read "no enchantment was called" off the channel pool now read it off
+    `enchantmentCastAlready()`, because a Nature caster with nobody in reach barks himself on
+    turn one and M-11 shaves the same pool.
+  - **Approximations recorded, not fixed:** the area pricer truncates twice where TG-2 truncated
+    once (a per-body term can differ by 1 in some chance ranges; no fixture moved); `worthArea`
+    walks `ringHexes()` order while delivery turns the ring by its rotation roll, so with a
+    PARTIAL ring (960 = 640 + 320) the estimator prices one neighbour and delivery usually covers
+    another; `Utility::Deviate` (deviation = dist ÷ accuracy) makes "scattered" nominal at battle
+    ranges — Greater Barkskin is imprecise by row and always lands on the aimed hex in practice,
+    the same fact TG-1 recorded for a Mage at modifier 0. All three for the balance pass.
+  - Engine 552 cases green fast, sanitized (clean rebuild) and on five seeds; campaign-server
+    1486; frontend 551 + lint; clang syntax over the seven changed TUs clean.
+
+  *As planned:* `Affects` on the form, through `RangedShot` into `applyHit`/
   `coverHex` and into `worthAreaOnHex`; a boon-carrying `RangedShot` (an effect to apply per body
   struck, no damage) so Barkskin rides `deliver()`; both Barkskin rows; catalog/Study print the tag;
   the five-militia test; `docs/ADDING_SPELLS.md` gains the area-boon shape.

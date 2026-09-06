@@ -28,6 +28,10 @@ export const spellsFixture = [
     // NP-1's skin floor (P-4), on every row too: 0 unless the form is a skin,
     // and none of the six here is one.
     skinFloor: 0,
+    // NP-2's side tag (P-8), on every row as well: whom the form touches of the
+    // bodies it reaches. 'everyone' is the default and what every row here is;
+    // a view test that needs a friend-only row overrides it on a copy.
+    affects: 'everyone',
   },
   {
     spell: 'fireball', form: 'major', label: 'Fireball',
@@ -38,7 +42,7 @@ export const spellsFixture = [
     // The one area on the roster: an explosion of a hundred hex points.
     areaMode: 'explosion', area: 100,
     resist: 'none', resistMod: 0, duration: 0,
-    skinFloor: 0,
+    skinFloor: 0, affects: 'everyone',
   },
   {
     spell: 'raise_dead', form: 'minor', label: 'Raise Skeleton',
@@ -48,7 +52,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
-    skinFloor: 0,
+    skinFloor: 0, affects: 'everyone',
   },
   // Granted, not researched (M-14) — school null. The Study must not show it.
   {
@@ -59,7 +63,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
-    skinFloor: 0,
+    skinFloor: 0, affects: 'everyone',
   },
   // The battlefield-wide enchantments (E-1/E-6). SINGLE-FORM by construction
   // (form 'battlefield'), and the two fields the ordinary rows above leave off:
@@ -74,7 +78,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
-    skinFloor: 0,
+    skinFloor: 0, affects: 'everyone',
     battlefield: true, poolCost: 2,
   },
   {
@@ -85,7 +89,7 @@ export const spellsFixture = [
     accuracy: 100, precise: true, range: 10,
     areaMode: 'none', area: 0,
     resist: 'none', resistMod: 0, duration: 0,
-    skinFloor: 0,
+    skinFloor: 0, affects: 'everyone',
     battlefield: true, poolCost: 3,
   },
 ]

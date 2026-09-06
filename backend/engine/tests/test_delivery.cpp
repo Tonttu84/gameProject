@@ -504,8 +504,12 @@ TEST_CASE("delivery: every row carries a sane range, and only the thrown ones sc
             CHECK(form.accuracy >= -SPELL_PRECISE);
             CHECK(form.accuracy <= SPELL_PRECISE);
 
-            // fireball's two forms are the only things that are THROWN.
-            const bool thrown = spell.id == "fireball";
+            // fireball's two forms are THROWN, and since NP-2 so is Greater
+            // Barkskin (P-9: the major buys reach and gives up certainty —
+            // GREATER_BARKSKIN_ACCURACY is a modifier on the caster's stat,
+            // not a result). Everything else lands where it was aimed.
+            const bool thrown = spell.id == "fireball"
+                             || (spell.id == "barkskin" && form.name == "major");
             CHECK(spellPrecise(form) == !thrown);
         }
 }
@@ -856,6 +860,117 @@ TEST_CASE("area: off-map ring hexes are skipped, and their share is not spent",
     field.extractResult();
 }
 
+// ── (g2) The side tag: who standing on covered ground is TOUCHED (P-8) ──────
+//
+// P-8, slice NP-2. The arc covers ground the same way whoever is standing on
+// it; the tag says who of them the spell actually reaches. It is asked ONCE,
+// in applyHit, so the primary strike and every body the arc found go through
+// the same question — and the scorer asks the identical predicate, which is
+// why an estimator cannot promise what delivery will not do.
+
+TEST_CASE("affects: the predicate is the whole rule, and the three tags are what they say",
+          "[delivery][affects]") {
+    // Everyone touches both sides; Friendly only its own; Enemy only the other.
+    // Written out rather than looped: this is the truth table two subsystems
+    // read, and a truth table is worth saying in full.
+    CHECK(affectsTouches(Affects::Everyone, REDTEAM,  REDTEAM));
+    CHECK(affectsTouches(Affects::Everyone, REDTEAM,  BLUETEAM));
+    CHECK(affectsTouches(Affects::Everyone, BLUETEAM, REDTEAM));
+
+    CHECK(affectsTouches(Affects::Friendly, REDTEAM,  REDTEAM));
+    CHECK(affectsTouches(Affects::Friendly, BLUETEAM, BLUETEAM));
+    CHECK_FALSE(affectsTouches(Affects::Friendly, REDTEAM,  BLUETEAM));
+    CHECK_FALSE(affectsTouches(Affects::Friendly, BLUETEAM, REDTEAM));
+
+    CHECK(affectsTouches(Affects::Enemy, REDTEAM,  BLUETEAM));
+    CHECK(affectsTouches(Affects::Enemy, BLUETEAM, REDTEAM));
+    CHECK_FALSE(affectsTouches(Affects::Enemy, REDTEAM,  REDTEAM));
+    CHECK_FALSE(affectsTouches(Affects::Enemy, BLUETEAM, BLUETEAM));
+}
+
+TEST_CASE("affects: the arc covers the hex, and the tag decides who in it is struck",
+          "[delivery][affects]") {
+    // One friendly body and one enemy body on the SAME hex, and a full-hex arc
+    // that certainly covers both — so the only thing deciding who is hurt is
+    // the tag on the shot. Zombies for both, so nothing struck rolls for morale
+    // and the queue below stays readable.
+    Battlefield& field = Utility::getBattlefield();
+
+    auto coverWith = [&](Affects tag) {
+        Army red, blue;
+        Mage*   mage   = place(red,  caster(REDTEAM, SpellPath::Fire, 3), 8);
+        Zombie* ours   = place(red,  std::make_unique<Zombie>(REDTEAM),  5);
+        Zombie* theirs = place(blue, std::make_unique<Zombie>(BLUETEAM), 5);
+        field.loadArmies(std::move(red), std::move(blue));
+
+        RangedCombat::resetCache();
+        seedSentinel();
+
+        RangedShot shot = areaShot(AreaMode::Explosion, Hex::CAPACITY, AREA_DMG);
+        shot.affects = tag;
+        std::vector<AUnit*> struck;
+        RangedCombat::coverHex(mage, ours->getHex(), Hex::CAPACITY, shot, 0, nullptr, struck);
+
+        const std::pair<bool, bool> hit{ hurt(ours), hurt(theirs) };
+        // A body the tag passes over is still CONSIDERED — it stands on the
+        // ground the arc covered, and the once-per-body ledger has to know it
+        // was looked at — so `struck` holds both either way.
+        CHECK(struck.size() == 2);
+        CHECK(sentinelUntouched());
+        field.extractResult();
+        return hit;
+    };
+
+    CHECK(coverWith(Affects::Everyone) == std::pair<bool, bool>{ true,  true  });
+    CHECK(coverWith(Affects::Friendly) == std::pair<bool, bool>{ true,  false });
+    CHECK(coverWith(Affects::Enemy)    == std::pair<bool, bool>{ false, true  });
+}
+
+TEST_CASE("affects: a friendly boon that scatters onto the enemy's hex touches nobody there",
+          "[delivery][affects]") {
+    // P-8's own example, and the case the tag exists for: the shot goes wide,
+    // lands among the enemy, and the arc opens on THEIR ground — covering it,
+    // and hardening no one. A Barkskin row made bad at arriving (accuracy 60 -
+    // 55 = 5 over ten hexes) so the deviation loop actually runs.
+    Battlefield& field = Utility::getBattlefield();
+
+    Army red, blue;
+    Mage*   mage  = place(red,  caster(REDTEAM, SpellPath::Nature, 1), 8);
+    Zombie* ally  = place(red,  std::make_unique<Zombie>(REDTEAM), -2);   // dist 10
+    Zombie* first = place(blue, std::make_unique<Zombie>(BLUETEAM), -1);  // where it falls
+    Zombie* other = place(blue, std::make_unique<Zombie>(BLUETEAM), -1);
+    field.loadArmies(std::move(red), std::move(blue));
+
+    const SpellForm wild = withAccuracy(formOf("barkskin", 0), -55);
+    REQUIRE(spellAccuracy(*mage, wild) == 5);
+    REQUIRE(wild.affects == Affects::Friendly);
+
+    RangedCombat::resetCache();
+    Utility::clearDiceRolls();
+    Utility::pushDiceRoll(1); Utility::pushDiceRoll(0);   // step 1: one hex along q
+    Utility::pushDiceRoll(0); Utility::pushDiceRoll(0);   // step 2: stays there
+    Utility::pushDiceRoll(1);      // pickHexTarget: the first body standing there
+    Utility::pushDiceRoll(1);      // the arc's start: slots 1-320, both of them
+    Utility::pushDiceRoll(SENTINEL);
+
+    Target t;
+    t.unit = ally;
+    CHECK(wild.cast(*mage, wild, t) == true);   // the CASTING happened (M-23)
+
+    // Covered ground, touched nobody: neither the body the stray shot found nor
+    // the one the arc lay over carries bark, and neither is any harder.
+    CHECK_FALSE(first->hasBuff("barkskin"));
+    CHECK_FALSE(other->hasBuff("barkskin"));
+    CHECK(first->getNaturalProtection() == 0);
+    CHECK(other->getNaturalProtection() == 0);
+    // And the man it was aimed at got nothing either — the shot went wide, and
+    // P-7's guarantee is that the PRIMARY lands on him, not that it cannot miss.
+    CHECK_FALSE(ally->hasBuff("barkskin"));
+    CHECK(sentinelUntouched());
+
+    field.extractResult();
+}
+
 // ── (h) The scorer nets what it would cost (assistant's call 2, T-7) ─────────
 
 TEST_CASE("area: the scorer prices the blast, and subtracts the caster's own men",
@@ -899,13 +1014,17 @@ TEST_CASE("area: the scorer prices the blast, and subtracts the caster's own men
 
 // ── (i) The row says what the body does, and the wire says it too ───────────
 
-TEST_CASE("area: only fireball's major form carries an area, and the row IS the blast",
+TEST_CASE("area: the rows that carry an area are the ones that cover ground, and the row IS the blast",
           "[delivery][area]") {
+    // Fireball's major form was the only one until NP-2 gave Nature two area
+    // BOONS (P-9). The sweep names all three rather than counting them, so a
+    // row that quietly grew an area still has to be written down here.
     for (const Spell& spell : Spells::roster())
         for (const SpellForm& form : spell.forms) {
             INFO(std::string(spell.id) + "/" + std::string(form.name));
             const bool isBlast = spell.id == "fireball" && form.name == "major";
-            CHECK((form.areaMode != AreaMode::None) == isBlast);
+            const bool isBoon  = spell.id == "barkskin";
+            CHECK((form.areaMode != AreaMode::None) == (isBlast || isBoon));
             // The pair is a biconditional: a mode with no points, or points with
             // no mode, is a row that says two different things about itself.
             CHECK((form.area > 0) == (form.areaMode != AreaMode::None));

@@ -33,6 +33,21 @@ inline bool logHas(const Battlefield& field, const std::string& needle)
     return logHas(field.tickLog(), needle);
 }
 
+// HOW MANY lines carry it — "exactly once" being a different claim from "at
+// all", and the one a test needs when an ordinary spell and the spell under
+// test both move the same counter (NP-2 gave a Nature caster a boon to cast on
+// himself, which is what made the channel pool stop being evidence).
+inline size_t logCount(const std::vector<LogLine>& log, const std::string& needle)
+{
+    return static_cast<size_t>(std::count_if(log.begin(), log.end(),
+        [&](const LogLine& l) { return l.text.find(needle) != std::string::npos; }));
+}
+
+inline size_t logCount(const Battlefield& field, const std::string& needle)
+{
+    return logCount(field.tickLog(), needle);
+}
+
 // The log rendered for a human, tier-tagged, one line each.
 inline std::string dumpBattleLog(const std::vector<LogLine>& log)
 {

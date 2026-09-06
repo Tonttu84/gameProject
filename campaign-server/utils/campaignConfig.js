@@ -1924,7 +1924,10 @@ export const ENEMY_SCRIPT_STORE = [
   {
     id: 'gale_ward',
     spells: ['soothing_winds', 'briar_snare'],
-    shortlist: ['briar_snare', 'soothing_current'],
+    // NP-2 adds the bark: with the wind up and the briars thrown, hardening
+    // his own line is the next thing a Nature caster has to reach for (A-7's
+    // shortlist is what he improvises inside once the script is spent).
+    shortlist: ['briar_snare', 'soothing_current', 'barkskin'],
   },
   // What the host's eleven Necromancers actually get today (Death 2 declared by
   // the craft, S2-14, against a sealed Conjuration 2): raise from turn one.

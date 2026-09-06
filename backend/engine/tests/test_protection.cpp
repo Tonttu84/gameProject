@@ -473,11 +473,16 @@ TEST_CASE("protection: the catalog exports skinFloor on every row, and the descr
         if (row["spell"] == "stoneskin") {
             CHECK(row["skinFloor"].get<int>() == STONESKIN_FLOOR);
             ++skins;
+        } else if (row["spell"] == "barkskin") {
+            // NP-2's two rungs, and BOTH at the same floor: the major form buys
+            // reach, not thickness (P-9).
+            CHECK(row["skinFloor"].get<int>() == BARKSKIN_FLOOR);
+            ++skins;
         } else {
             CHECK(row["skinFloor"].get<int>() == 0);
         }
     }
-    CHECK(skins == 1);
+    CHECK(skins == 3);
     const std::string desc = formOf("stoneskin").description;
     CHECK(desc.find(std::to_string(STONESKIN_FLOOR)) != std::string::npos);
     CHECK(desc.find("Earth") == std::string::npos);

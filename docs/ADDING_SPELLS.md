@@ -47,6 +47,7 @@ A real row, copied verbatim from `roster()`:
   TargetKind::EnemyUnit, TargetPick::Densest, false, 0, SPELLRANGE,
   AreaMode::None, 0,
   ResistKind::None, 0, 0 },
+//               (a skin row then writes ↑skinFloor and its ↑affects tag)
 //  ↑form    ↑label ↑description
 //                  ↑paths        ↑school ↑lvl ↑fatigue ↑castingTime ↑cast ↑price
 //   ↑the battlefield trio at its default (see below) — the table is initialised
@@ -87,6 +88,7 @@ the body may throw it off, and how long what is left of it stands.
 | `resistMod`   | T-4      | signed, added to the TARGET's side of the contest — Dominions' "easily"/"hard" as data. `0` on every row today |
 | `duration`    | T-5      | ticks the form's standing effect stands; `0` = the whole battle. Read by the BODY and passed to `applyEffect` |
 | `skinFloor`   | P-4      | `0` for every form that is not a skin; a skin writes the floor it raises natural protection TO (`STONESKIN_FLOOR`…). The body hands it to `applySkin` and `worthSkin` prices the gain from it — one number, read twice |
+| `affects`     | P-8      | `Affects::Everyone` (the default, and T-7 as written) \| `Friendly` \| `Enemy` — WHO, of the bodies the delivery reaches, is TOUCHED. The arc covers ground the same way regardless; the tag is asked once per covered body, in `applyHit`, and the estimator asks the identical `affectsTouches()` |
 | `spell`       | A-1      | back-pointer to the spell above — **wired automatically**, never authored |
 | `worth`       | A-3      | `int(const AUnit&, const SpellForm&, const Target&)` — **wired by id** in `worthFor()`, never authored in the row; see "Scoring" |
 | `aiDivider`   | A-4      | `0` = derive from fatigue, casting time and pool cost; any positive number overrides it for playtesting/modding |
@@ -172,6 +174,40 @@ line — the SCORER nets it instead (see "Scoring"). The rolls an area makes are
 delivery time (`Utility::getRandom`, pinned with `pushDiceRoll`), exactly like
 `pickHexTarget`'s. `shot.onDamage` fires once **per body** the arc struck, so an effect hung on
 a hit — a life drain, say — would trigger N times on an area form.
+
+### Area BOONS: a shot that carries an effect (P-7, P-8 — slice NP-2)
+
+An area does not have to hurt anybody. `RangedShot::effect` —
+`bool(AUnit* shooter, AUnit* target)` — makes the shot carry an EFFECT instead of damage:
+`applyHit` runs it for every body the shot touches and returns there, so no shield or terrain
+block is rolled, no damage is computed and `onHit`/`onDamage` never run. `baseDamage` and
+`areaDamage` are ignored while it is set. Barkskin is the whole pattern, and it is short: fill
+`areaMode`/`areaPoints` off the row, set `effect` to a lambda that applies the per-body rule,
+and hand the shot to `deliver()` like any bolt.
+
+**Why a boon rides the delivery path at all (P-7, the user's rule):** *"spells should generally,
+both buffs and damages, get to try to hit something inside a hex with the original strike, then
+let the AoE do whatever"*. So the aimed man is guaranteed by the PRIMARY strike — precise rows
+always, a thrown row whenever the shot stays on his hex — and the arc, rolling its own start,
+decides who else. That ordering is what P-10's five militia pin: five men hold slots 1-50 of 640
+and a 320-point arc overlaps them barely half the time, yet the man it was cast at carries bark
+every single cast.
+
+**The side tag (P-8).** `Affects` says who standing on covered ground is touched:
+
+- the arc still covers the ground it covers — coverage is about where men stand, not about whose
+  men they are, and a body the tag passes over is still on the once-per-body ledger;
+- `applyHit` asks `affectsTouches(shot.affects, shooterTeam, targetTeam)` FIRST, before the
+  resistance contest, and a body the tag does not name is not struck, not blocked, not contested,
+  not logged and not counted;
+- `deliver()` copies the tag off the row, so a body never types it — the row is the truth,
+  exactly as it is for the area;
+- the ESTIMATOR reads the same predicate (`worthAreaOnHex`'s pricer), so a friendly-only boon
+  scattered onto the enemy's hex is worth **exactly zero** there — never negative, and never a
+  promise delivery will not keep.
+
+`Everyone` is the default and every row but Barkskin's two: fireball takes friend and foe alike,
+which is T-7 unchanged.
 
 ### Resistance: the contest (T-4 — slice TG-3)
 
@@ -480,6 +516,10 @@ Usually **none**. The suite is sweeps, and a new row walks into them:
   purity of scoring.
 - `test_delivery.cpp` sweeps every form's `range` and `accuracy`, pins which rows are precise,
   and drives both delivery paths through the dice.
+  It also pins the `Affects` truth table and the tag's effect on who an arc strikes;
+  `test_barkskin.cpp` is the area-BOON file (the five-militia guarantee, the ring the greater
+  form opens, the estimator's zero on the untouched side, and the sweep that a `skinFloor` row
+  and a skin body always come together).
 - `test_resist.cpp` sweeps `duration >= 0`, the `resistMod` band, and the claim that the tagged
   rows are exactly the three named ones — so tagging a fourth is a deliberate act. It also pins
   the contest's arithmetic on both sides of the boundary and the catalog's three new keys.

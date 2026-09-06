@@ -43,12 +43,39 @@ AUnit* RangedCombat::pickHexTarget(const Hex* hex)
 void RangedCombat::applyHit(AUnit* shooter, AUnit* target, const RangedShot& shot,
                             int baseDamage, int elevDmgBonus)
 {
+    // P-8 FIRST OF ALL, before even the resistance contest: the shot's side tag
+    // decides whether this body is TOUCHED at all, and a body it does not name
+    // is not struck, not blocked, not contested, not logged and not counted.
+    // Here and nowhere else, because applyHit is the one gate every struck body
+    // passes through — the primary (strike/scatter/fire) and every body the arc
+    // covered (coverHex) — so delivery cannot grow a second opinion about it.
+    // Coverage itself is deliberately unfiltered: the arc falls on ground.
+    // A shooter is always given by the entry points above; the check is written
+    // so a shooterless call still delivers, Everyone being the honest default.
+    if (shooter && !affectsTouches(shot.affects, shooter->getTeam(), target->getTeam()))
+        return;
+
     // T-4 FIRST, before every other check: a body that shrugs the spell off is
     // not a body that was hit and then saved. Nothing is rolled for the block,
     // nothing runs on the hooks, and nothing is logged beyond the one Detail
     // line Spells::resisted writes — an area covering five men asks each of
     // them separately, and the ones who fail still take it.
     if (shot.resisted && shot.resisted(target)) return;
+
+    // P-7: a shot may carry an EFFECT instead of damage, and then the effect is
+    // the whole of what this body takes. Nothing below runs — a boon is not
+    // blocked by a shield, does not care about elevation, and has no damage to
+    // reduce. The one line here is at Trace like the damage lines, and says
+    // whether it moved anything: a body already as hard as the bark would make
+    // him gets NP-1's own Detail line out of applySkin, which is the detail a
+    // reader wants; this is only the record that the effect reached him.
+    if (shot.effect) {
+        const bool landed = shot.effect(shooter, target);
+        Utility::getBattlefield().logEvent(LogTier::Trace,
+            target->logName() + (landed ? " is covered by the spell"
+                                        : " is reached by the spell, and unchanged"));
+        return;
+    }
 
     bool extraBlocked   = target->tryBlockExtraShield();
     bool terrainBlocked = !extraBlocked && target->rollTerrainRangedBlock(shot.pen);
@@ -176,8 +203,12 @@ void RangedCombat::coverHex(AUnit* shooter, Hex* hex, int points, const RangedSh
         if (!full && !arcCovers(start, points, begin, size)) continue;
 
         struck.push_back(u);
-        // NO team filter, here or anywhere in coverage (T-7): the blast strikes
-        // what it covers. onDamage runs per body, so an effect hung on a hit —
+        // NO team filter, here or anywhere in coverage (T-7/P-8): the arc falls
+        // on GROUND, and whether the body standing there is touched is
+        // applyHit's question, asked once from the shot's `affects` tag. So a
+        // body the tag passes over is on this list — "struck" here means
+        // CONSIDERED ONCE, which is exactly what the once-per-body ledger needs
+        // it to mean. onDamage runs per body, so an effect hung on a hit —
         // drain_life's healing, say — would fire once for each body an area
         // struck. No area spell carries one today; a spell that does is
         // authoring N triggers, and should mean to.

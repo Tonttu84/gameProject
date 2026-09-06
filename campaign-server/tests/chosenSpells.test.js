@@ -159,6 +159,9 @@ describe('what the sheet is sent (S4-7)', () => {
         resist: 'none', resistMod: 0, duration: 0,
         // And the skin floor (NP-1, P-4): Ember is no skin.
         skinFloor: 0,
+        // And whom it touches (NP-2, P-8): everyone it reaches, which is
+        // T-7 as written and what all but the Barkskin rows say.
+        affects: 'everyone',
         // Every row says where it stands on the pool, so the sheet never has
         // to test for a missing field (slice A, E-2).
         battlefield: false, poolCost: 0,

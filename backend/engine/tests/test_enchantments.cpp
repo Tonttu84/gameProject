@@ -155,7 +155,17 @@ TEST_CASE("enchantments: an unscripted caster never calls one, however long it s
     CAPTURE_BATTLE_LOG(field);
     CHECK(field.activeEnchantments().empty());
     CHECK_FALSE(logHas(field, "Soothing Winds"));
-    CHECK(field.getChannels(REDTEAM) == SOOTHING_WINDS_POOL_COST * 3);
+    // And the once-per-side register is untouched — he never called it, so
+    // there is nothing recorded against his side.
+    //
+    // This used to read the CHANNEL POOL instead ("nothing was drawn"), which
+    // stopped being evidence when NP-2 gave Nature a boon: a Nature caster with
+    // no enemy in reach now barks himself on turn one, and M-11 shaves an
+    // ordinary cast off the same pool. The register is the honest instrument —
+    // it moves for an enchantment and for nothing else.
+    const Spell* winds = Spells::findSpell("soothing_winds");
+    REQUIRE(winds != nullptr);
+    CHECK_FALSE(field.enchantmentCastAlready(REDTEAM, *winds));
 
     field.extractResult();
     clearMagicState();
@@ -304,8 +314,13 @@ TEST_CASE("enchantments: a side that has called one cannot call it again", "[enc
     CAPTURE_BATTLE_LOG(field);
     CHECK(field.activeEnchantments().empty());
     // Not a fizzle at completion either: the walk skipped the spell outright,
-    // so the second caster never began the channel and nothing was drawn.
-    CHECK(field.getChannels(REDTEAM) == SOOTHING_WINDS_POOL_COST * 2);
+    // so the second caster never began the channel. Counted in the LOG rather
+    // than in the pool since NP-2 — an ordinary cast shaves the same channels
+    // (M-11), and the second caster has a Nature boon to spend his ticks on,
+    // so "the pool is untouched" is no longer the same claim as "he never
+    // called the wind".
+    CHECK(logCount(field, "begins to channel Soothing Winds") == 1);
+    CHECK(logCount(field, "casts Soothing Winds") == 1);
 
     field.extractResult();
     clearMagicState();

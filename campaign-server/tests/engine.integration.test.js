@@ -501,16 +501,29 @@ describe.skipIf(!hasEngine)('the real spell roster', () => {
       // row, 0 on everything that is not a skin.
       expect(Number.isInteger(row.skinFloor)).toBe(true)
       expect(row.skinFloor).toBeGreaterThanOrEqual(0)
+      // NP-2 (P-8): whom the form touches of the bodies it reaches — one of
+      // the three words the engine knows, on every row.
+      expect(['everyone', 'friendly', 'enemy']).toContain(row.affects)
     }
   })
 
-  test('stoneskin is a skin: its floor reaches the wire, and no other row claims one', async () => {
+  test('the skins are the rows with a floor, and nothing else claims one', async () => {
     const { spells } = await dumpSpells()
-    const skin = spells.find((row) => row.spell === 'stoneskin')
-    expect(skin.skinFloor).toBeGreaterThan(0)
-    // Barkskin is NP-2's; until it lands Stoneskin is the only rung authored.
+    const skins = ['stoneskin', 'barkskin']
+    for (const id of skins)
+      for (const row of spells.filter((r) => r.spell === id))
+        expect(row.skinFloor, `${id}/${row.form} carries no floor`).toBeGreaterThan(0)
     for (const row of spells)
-      if (row.spell !== 'stoneskin') expect(row.skinFloor).toBe(0)
+      if (!skins.includes(row.spell)) expect(row.skinFloor).toBe(0)
+    // P-9: BOTH Barkskin rows at the same floor — the major buys reach, not
+    // thickness — and both of them friend-only (P-8), which is the one place
+    // on the roster where the side tag is not the default.
+    const bark = spells.filter((row) => row.spell === 'barkskin')
+    expect(bark.length).toBe(2)
+    expect(new Set(bark.map((row) => row.skinFloor)).size).toBe(1)
+    for (const row of bark) expect(row.affects).toBe('friendly')
+    for (const row of spells)
+      if (row.spell !== 'barkskin') expect(row.affects).toBe('everyone')
   })
 
   test('some form is resistible and some form is timed — the fields are wired, not dead',

@@ -76,7 +76,11 @@ const SpellRow = ({ spell, schoolLabel }) => {
               again: a row that can be shrugged off says so, and a row that
               leaves something standing says how long. A spell that cannot be
               resisted and leaves nothing behind says neither — which is most of
-              the roster, and a line of zeroes would bury the rows that matter. */}
+              the roster, and a line of zeroes would bury the rows that matter.
+              NP-2 (P-8) adds the SIDE TAG last, on the same terms once more: a
+              form that touches only one side says which, and the default
+              'everyone' says nothing — almost every row is one, and the word on
+              all of them would be noise. */}
           <p className="study-spell-numbers">
             Fatigue {spell.fatigue} · {spell.castingTime} tick
             {spell.castingTime === 1 ? '' : 's'} to cast · Range {spell.range}
@@ -89,6 +93,9 @@ const SpellRow = ({ spell, schoolLabel }) => {
             {spell.duration > 0 ? ` · Lasts ${spell.duration} ticks` : ''}
             {spell.resist === 'negates' ? ' · Can be resisted' : ''}
             {spell.skinFloor > 0 ? ` · Skin to ${spell.skinFloor}` : ''}
+            {spell.affects === 'friendly'
+              ? ' · Friendly only'
+              : spell.affects === 'enemy' ? ' · Enemy only' : ''}
           </p>
           {/* A BATTLEFIELD ENCHANTMENT (slice A, E-2/E-3) is priced in the
               ARMY's pool as well as in the caster's fatigue, and never fires

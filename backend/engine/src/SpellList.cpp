@@ -9,6 +9,7 @@
 #include "units/Skeleton.hpp"
 #include "extern/json.hpp"
 #include <algorithm>
+#include <functional>
 #include <string>
 
 using json = nlohmann::json;
@@ -114,8 +115,15 @@ static bool alreadyCarries(const SpellForm& form, const AUnit& unit)
 // caster's stat plus the row's modifier, and delivery is told it outright.
 static void deliver(AUnit& caster, const SpellForm& form, AUnit& aimUnit, const RangedShot& shot)
 {
-    if (spellPrecise(form)) RangedCombat::strike(&caster, &aimUnit, shot);
-    else RangedCombat::scatter(&caster, &aimUnit, shot, spellAccuracy(caster, form));
+    // P-8: the side tag is COPIED OFF THE ROW here, once, for every spell that
+    // is delivered — a body never types it, exactly as it never types the area
+    // (T-6). One place to read it is what keeps "the row is the truth" true,
+    // and it is why a form authored Friendly cannot be delivered as Everyone by
+    // a body that forgot.
+    RangedShot sent = shot;
+    sent.affects = form.affects;
+    if (spellPrecise(form)) RangedCombat::strike(&caster, &aimUnit, sent);
+    else RangedCombat::scatter(&caster, &aimUnit, sent, spellAccuracy(caster, form));
 }
 
 // ── Fire — fireball (Evocation) ──────────────────────────────────────────────
@@ -203,6 +211,60 @@ static bool castStoneskin(AUnit& /*caster*/, const SpellForm& form, const Target
     if (!unit) return false;
     if (unit->applySkin("stoneskin", form.skinFloor, form.duration))
         Utility::getBattlefield().logEvent("Skin hardens to stone");
+    return true;
+}
+
+// ── Nature — barkskin (Enchantment), NP-2's two rows ─────────────────────────
+//
+// The first AREA BOON on the roster, and the reason P-7 exists: a boon is
+// DELIVERED like a bolt rather than laid on. The shot carries no damage at all
+// — it carries an EFFECT (RangedShot::effect), which applyHit runs for every
+// body the shot's side tag touches. What follows from riding the same path:
+//
+//   • the aimed man is guaranteed by the PRIMARY strike (P-7), never by the
+//     arc — which is what P-10's five militia in one hex pin: a 320-point arc
+//     from a random start misses them better than half the time, and he carries
+//     bark every single cast anyway;
+//   • the arc then decides who ELSE, from its own start slot (T-6), and covers
+//     ground without asking whose men stand on it;
+//   • the tag (Affects::Friendly on both rows) decides who of them is touched,
+//     so a major form that scatters onto the enemy's hex bothers nobody there.
+//
+// ONE body for both forms: minor and major differ only in the numbers their
+// rows carry (the floor is the SAME — the major buys reach, P-9), and the body
+// reads every one of them off `form`. The per-body rule is NP-1's applySkin
+// whole: raise to the floor, +1 past a base already there, nothing at all for a
+// body under a harder skin — and that last case writes its own Detail line.
+static bool castBarkskin(AUnit& caster, const SpellForm& form, const Target& target)
+{
+    // A shot is thrown FROM somewhere AT somebody placed, exactly as
+    // castFireball needs both — this is delivery, not a hand laid on a man.
+    if (!caster.getHex()) return false;
+    AUnit* aimUnit = target.unit;
+    if (!aimUnit || !aimUnit->getHex()) return false;
+
+    // The id recorded on each body is the ROW's own (the sweep in
+    // test_targeting.cpp holds a body's id and its row together); the literal
+    // is only the fallback for a hand-built form with no back-pointer wired.
+    const std::string_view id    = form.spell ? form.spell->id : std::string_view("barkskin");
+    const int              floor = form.skinFloor;
+    const int              ticks = form.duration;
+
+    RangedShot shot;
+    // No damage on this shot at all: `effect` is what every touched body takes.
+    shot.effect = [id, floor, ticks](AUnit*, AUnit* t) {
+        return t->applySkin(id, floor, ticks);
+    };
+    // T-6: the area is the ROW's, read off it like fireball reads its own.
+    shot.areaMode   = form.areaMode;
+    shot.areaPoints = form.area;
+
+    deliver(caster, form, *aimUnit, shot);
+    // ONE line for the casting, at Basic — completeCast already names the
+    // caster and the form ("X casts Barkskin"), and every body that took it
+    // writes itself at Trace through applyHit, so this is the flavour and
+    // nothing else. The same shape castStoneskin's line has.
+    Utility::getBattlefield().logEvent("Bark spreads over the line");
     return true;
 }
 
@@ -551,6 +613,16 @@ namespace {
                   == static_cast<size_t>(ResistKind::Negates) + 1);
     static_assert(kResistKindNames[static_cast<size_t>(ResistKind::None)]    == "none");
     static_assert(kResistKindNames[static_cast<size_t>(ResistKind::Negates)] == "negates");
+    // Ordered to match Affects, guarded exactly as the three above are, and for
+    // the same reason: a tag inserted in the middle would rename every tag
+    // after it on the wire, and the campaign layer would be told a spell
+    // touches a side it does not.
+    constexpr std::string_view kAffectsNames[] = { "everyone", "friendly", "enemy" };
+    static_assert(sizeof(kAffectsNames) / sizeof(kAffectsNames[0])
+                  == static_cast<size_t>(Affects::Enemy) + 1);
+    static_assert(kAffectsNames[static_cast<size_t>(Affects::Everyone)] == "everyone");
+    static_assert(kAffectsNames[static_cast<size_t>(Affects::Friendly)] == "friendly");
+    static_assert(kAffectsNames[static_cast<size_t>(Affects::Enemy)]    == "enemy");
 }
 
 std::string_view spellPathName(SpellPath p)
@@ -615,6 +687,11 @@ std::string_view areaModeName(AreaMode m)
 std::string_view resistKindName(ResistKind k)
 {
     return kResistKindNames[static_cast<size_t>(k)];
+}
+
+std::string_view affectsName(Affects a)
+{
+    return kAffectsNames[static_cast<size_t>(a)];
 }
 
 SpellSchool spellSchoolFromName(std::string_view name)
@@ -685,6 +762,34 @@ std::string skinTo(int floor)
 std::string stoneskin()
 {
     return "One ally's skin hardens to stone: " + skinTo(STONESKIN_FLOOR);
+}
+
+// P-7/P-8/P-9's three facts in the two sentences the player is owed: how much
+// ground the cast covers, that only his OWN men take it, and — for the major —
+// that it is thrown rather than laid on, so it can come down off the aimed man.
+// Built from the constants like every other description here; the ground is
+// said in MEN'S WORTH (AREA_CHUNK points to a man) because hex size points are
+// the engine's currency and not the player's.
+std::string areaBoonGround(int points)
+{
+    return "It falls over " + std::to_string(points / AREA_CHUNK)
+         + " men's worth of ground around the man it is cast at, and every one "
+           "of your own standing there takes it — friend only, never the enemy.";
+}
+
+std::string barkskin()
+{
+    return "Bark closes over one ally and the ground about him: "
+         + skinTo(BARKSKIN_FLOOR) + " " + areaBoonGround(BARKSKIN_AREA)
+         + " The man it is cast at always takes it.";
+}
+
+std::string greaterBarkskin()
+{
+    return "The same bark, over far more of the line: " + skinTo(BARKSKIN_FLOOR)
+         + " " + areaBoonGround(GREATER_BARKSKIN_AREA)
+         + " It is thrown rather than laid on, so where exactly it comes down is "
+           "not certain — the greater form buys reach, not a harder skin.";
 }
 
 std::string soothingCurrent()
@@ -830,8 +935,17 @@ static int worthEmber(const AUnit& c, const SpellForm& form, const Target& t)
 // aimed man's own term already carries the latter through worthDamage, and a
 // scattered blast covers a hex either way. PURE: it reads hex->units and the
 // ring walk, never the slot cache (which would MUTATE it) and never the dice.
-static int worthAreaOnHex(const AUnit& c, const Hex* hex, int points,
-                          const AUnit* aimed, int areaDamage)
+// NP-2 generalises the per-body number the walk below multiplies by the
+// overlap chance: a PRICER, `int(const AUnit&)`, returning the SIGNED worth of
+// covering that body FULLY. Damage and boons are then the same walk with two
+// different pricers, and — the point of the seam — both route their side rule
+// through affectsTouches(), the very predicate delivery reads (P-8). An
+// estimator that netted a side delivery does not touch would be a scorer
+// telling a lie the battle then corrects.
+using BodyPricer = std::function<int(const AUnit&)>;
+
+static int worthAreaOnHex(const Hex* hex, int points, const AUnit* aimed,
+                          const BodyPricer& price)
 {
     if (!hex) return 0;
     int worth = 0;
@@ -839,17 +953,32 @@ static int worthAreaOnHex(const AUnit& c, const Hex* hex, int points,
         if (!u || u == aimed || !u->getAlive()) continue;
         int chance = std::min(100, (points + static_cast<int>(u->getSize())) * 100
                                    / Hex::CAPACITY);
-        int share  = areaDamage * chance * u->getValue() / (100 * AI_DAMAGE_SCALE);
-        worth += (u->getTeam() == c.getTeam()) ? -share : share;
+        worth += price(*u) * chance / 100;
     }
     return worth;
 }
 
+// T-7's netting, as the pricer a DAMAGE area is walked with: what a body would
+// take if the arc certainly covered him, negative for one of the caster's own.
+// A tag that does not name a body prices him at nothing at all — which for
+// fireball (Everyone, T-7) is nobody, and the arithmetic below is TG-2's
+// unchanged.
+static BodyPricer damagePricer(const AUnit& c, const SpellForm& form, int areaDamage)
+{
+    const int myTeam = c.getTeam();
+    const Affects tag = form.affects;
+    return [myTeam, tag, areaDamage](const AUnit& u) {
+        if (!affectsTouches(tag, myTeam, u.getTeam())) return 0;
+        const int share = areaDamage * u.getValue() / AI_DAMAGE_SCALE;
+        return (u.getTeam() == myTeam) ? -share : share;
+    };
+}
+
 // Written generically rather than inside worthFireball: the second area spell
 // is a roster row away, and its estimator should be one line.
-static int worthArea(const AUnit& c, const SpellForm& form, const Target& t, int areaDamage)
+static int worthArea(const SpellForm& form, const Target& t, const BodyPricer& price)
 {
-    if (!t.unit || !t.unit->getHex() || form.area <= 0 || areaDamage <= 0) return 0;
+    if (!t.unit || !t.unit->getHex() || form.area <= 0) return 0;
     const Hex* centre = t.unit->getHex();
     int worth = 0;
 
@@ -863,7 +992,7 @@ static int worthArea(const AUnit& c, const SpellForm& form, const Target& t, int
             for (const Hex* h : ring) {
                 if (left <= 0) break;
                 int give = std::min(left, Hex::CAPACITY);
-                worth += worthAreaOnHex(c, h, give, t.unit, areaDamage);
+                worth += worthAreaOnHex(h, give, t.unit, price);
                 left  -= give;
             }
         }
@@ -879,7 +1008,7 @@ static int worthArea(const AUnit& c, const SpellForm& form, const Target& t, int
         }
         if (set.empty()) return 0;
         int each = form.area / static_cast<int>(set.size());
-        for (const Hex* h : set) worth += worthAreaOnHex(c, h, each, t.unit, areaDamage);
+        for (const Hex* h : set) worth += worthAreaOnHex(h, each, t.unit, price);
     }
     return worth;
 }
@@ -890,7 +1019,7 @@ static int worthFireball(const AUnit& c, const SpellForm& form, const Target& t)
     // does to everyone else standing in it — his own side subtracted (T-7).
     return worthDamage(FIREBALL_CENTRE + c.getPathLevel(SpellPath::Fire),
                        spellAccuracy(c, form), t)
-         + worthArea(c, form, t, FIREBALL_BLAST);
+         + worthArea(form, t, damagePricer(c, form, FIREBALL_BLAST));
 }
 
 static int worthShock(const AUnit& c, const SpellForm& form, const Target& t)
@@ -951,10 +1080,14 @@ static int worthBuff(const AUnit&, const SpellForm&, const Target& t)
 // here (delta 0 → worth 0 → optionsFor drops the option) rather than filtered
 // in candidates(): inside an area his +1 beside nine men's +2 is the honest
 // total, and the resolver should not have an opinion about it.
-static int worthSkin(const AUnit&, const SpellForm& form, const Target& t)
+// ONE BODY's worth of a skin, which NP-2 needed twice: worthSkin below prices
+// the man a single-target skin is laid on, and NP-2's area pricer prices every
+// man an area boon covers. Same arithmetic, one site, so the two cannot drift.
+// A row with skinFloor 0 would price everything at 0 here — no such row reaches
+// this function, and the catalog sweep in test_barkskin.cpp is what says so
+// (every skinFloor row uses a skin body and every skin body's row has a floor).
+static int skinGainWorth(const SpellForm& form, const AUnit& u)
 {
-    if (!t.unit) return 0;
-    const AUnit& u = *t.unit;
     const int delta = u.skinDelta(form.skinFloor);
     if (delta <= 0) return 0;
     const int natural = u.getNaturalProtection();
@@ -963,6 +1096,36 @@ static int worthSkin(const AUnit&, const SpellForm& form, const Target& t)
                    - combinedProtection(natural, armour);
     return gain * u.getValue() * AI_PROTECTION_HITS / AI_DAMAGE_SCALE
          * freshShare(u) / 100;
+}
+
+static int worthSkin(const AUnit&, const SpellForm& form, const Target& t)
+{
+    return t.unit ? skinGainWorth(form, *t.unit) : 0;
+}
+
+// P-6 through P-8, for a skin that is DELIVERED over ground (NP-2). Two terms,
+// exactly the two things that happen:
+//
+//   the PRIMARY strike on the aimed man — his own gain times the chance the
+//   shot arrives on him, which is 100 for a precise row and the form's
+//   effective accuracy otherwise, mirroring what worthDamage folds into a bolt;
+//   plus the ARC, walked by worthArea with a BOON pricer: a body the form's tag
+//   touches on the caster's side is worth his gain, a touched enemy body under
+//   an Everyone tag is worth MINUS his (you would be hardening theirs), and a
+//   body the tag passes over is worth exactly nothing (P-8 — never negative:
+//   a friendly-only bark on the enemy's ground is worth zero there, not a loss).
+static int worthBarkskin(const AUnit& c, const SpellForm& form, const Target& t)
+{
+    if (!t.unit) return 0;
+    const int myTeam  = c.getTeam();
+    const Affects tag = form.affects;
+    BodyPricer boon = [myTeam, tag, &form](const AUnit& u) {
+        if (!affectsTouches(tag, myTeam, u.getTeam())) return 0;
+        const int gain = skinGainWorth(form, u);
+        return (u.getTeam() == myTeam) ? gain : -gain;
+    };
+    return skinGainWorth(form, *t.unit) * spellAccuracy(c, form) / 100
+         + worthArea(form, t, boon);
 }
 
 static int worthSoothingCurrent(const AUnit& c, const SpellForm& /*form*/, const Target& t)
@@ -1042,6 +1205,7 @@ static int (*worthFor(std::string_view spellId, std::string_view formName))(cons
     if (spellId == "fireball")         return formName == "major" ? worthFireball : worthEmber;
     if (spellId == "shock")            return worthShock;
     if (spellId == "stoneskin")        return worthSkin;
+    if (spellId == "barkskin")         return worthBarkskin;   // both forms (P-9)
     if (spellId == "soothing_current") return worthSoothingCurrent;
     if (spellId == "ward")             return worthBuff;
     if (spellId == "briar_snare")      return worthBriarSnare;
@@ -1177,6 +1341,38 @@ namespace Spells
                   SPELL_PRECISE, SPELLRANGE,
                   AreaMode::None, 0,
                   ResistKind::Negates, 0, 0 },
+            }},
+            // NP-2's two skin rows, beside the briars: the first AREA BOON.
+            // What is new on them and nowhere else on the roster —
+            //   • an area on a form that is not a bolt (the arc carries an
+            //     EFFECT, not damage — P-7),
+            //   • `Affects::Friendly` after the skin floor, the tag that says
+            //     only the caster's own men standing on covered ground take it
+            //     (P-8; every other row is Everyone, which is T-7 as written),
+            //   • the SAME floor on both forms: the major buys REACH — three
+            //     times the ground, thrown rather than laid on — and not a
+            //     harder skin (P-9).
+            { "barkskin", {
+                { "minor", "Barkskin", barkskin(),
+                  {{P::Nature, 1}}, S::Enchantment, 1, BARKSKIN_FATIGUE, 1,
+                  castBarkskin, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::AllyUnit, TargetPick::Wounded, true,
+                  SPELL_PRECISE, SPELLRANGE,
+                  AreaMode::Explosion, BARKSKIN_AREA,
+                  ResistKind::None, 0, 0,
+                  BARKSKIN_FLOOR, Affects::Friendly },
+                { "major", "Greater Barkskin", greaterBarkskin(),
+                  {{P::Nature, 3}}, S::Enchantment, 3, GREATER_BARKSKIN_FATIGUE, 2,
+                  castBarkskin, nullptr,
+                  EnchantAim::None, 0, nullptr,
+                  TargetKind::AllyUnit, TargetPick::Wounded, true,
+                  // A MODIFIER on the caster's stat, not a result (T-1): a
+                  // Mage's 60 lands at 70, so the major is thrown.
+                  GREATER_BARKSKIN_ACCURACY, SPELLRANGE,
+                  AreaMode::Explosion, GREATER_BARKSKIN_AREA,
+                  ResistKind::None, 0, 0,
+                  BARKSKIN_FLOOR, Affects::Friendly },
             }},
             // A battlefield-wide enchantment: ONE form, named "battlefield"
             // rather than minor/major, because there is no ladder to climb —
@@ -1777,6 +1973,11 @@ namespace Spells
                     // a skin raises natural protection to, 0 on everything
                     // that is not a skin. The Study prints it when it is one.
                     {"skinFloor",   form.skinFloor},
+                    // P-8 (NP-2), on every row for the same reason as all of
+                    // the above: whom the form touches of the bodies it
+                    // reaches — "everyone" on all but the two Barkskin rows,
+                    // which are "friendly". The Study says it in words.
+                    {"affects",     std::string(affectsName(form.affects))},
                 });
             }
         }

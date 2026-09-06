@@ -172,6 +172,28 @@ constexpr int SPELLRANGE         = 10; // the DEFAULT per-form range (T-2)
 // scale, and "as accurate as a thing can be" is what the rule means by it.
 constexpr int SPELL_PRECISE      = 100;
 
+// ── Barkskin (P-9, slice NP-2) ───────────────────────────────────────────────
+// Nature's two skin rows. Both raise natural protection to BARKSKIN_FLOOR (2,
+// above): the major form buys REACH, not thickness, which is the whole of P-9.
+// ALL BALANCE-DEFERRED, and the areas doubly so — they are the first numbers a
+// balance pass would move once area boons are played with.
+//
+// The minor covers 320 hex points, half a hex, from a precise strike (user:
+// "especially for testing" — half a hex is the size where WHERE the arc fell
+// visibly decides who got it, which is what P-10's five militia pin).
+constexpr int BARKSKIN_AREA             = 320;
+// The major covers 960: the aimed hex whole (640) and half of ring 1 after it,
+// so the explosion's rotation roll decides which neighbour the overspill takes.
+constexpr int GREATER_BARKSKIN_AREA     = 960;
+// A MODIFIER on the caster's own accuracy (T-1), not the result: a Mage's 60
+// plus this lands at ~70, the user's "say 70" — the major is thrown rather than
+// laid on, and can drift off the man it was aimed at.
+constexpr int GREATER_BARKSKIN_ACCURACY = 10;
+// In Stoneskin's neighbourhood (10), the major priced like the other majors on
+// the roster — a second path level and roughly twice the breath.
+constexpr int BARKSKIN_FATIGUE          = 10;
+constexpr int GREATER_BARKSKIN_FATIGUE  = 22;
+
 // ── Magic resistance (T-4, slice TG-3) ───────────────────────────────────────
 // Dominions' shape: a TAGGED form is contested per target body, both sides
 // adding the engine's exploding die, and the spell lands only if the caster's

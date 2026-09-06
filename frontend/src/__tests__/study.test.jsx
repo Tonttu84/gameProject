@@ -102,6 +102,18 @@ const researchFixture = {
           resist: 'none', resistMod: 0, duration: 0,
           skinFloor: 3,
         },
+        // NP-2's row (P-7..P-9): an area BOON, so it carries a floor AND an
+        // area AND the one non-default side tag on the roster.
+        {
+          spell: 'barkskin', form: 'minor', label: 'Barkskin',
+          description: 'Bark closes over one ally and the ground about him.',
+          requires: [{ path: 'nature', label: 'Nature', level: 1 }],
+          schoolLevel: 1, unlocked: true, fatigue: 10, castingTime: 1,
+          accuracy: 100, precise: true, range: 10,
+          areaMode: 'explosion', area: 320,
+          resist: 'none', resistMod: 0, duration: 0,
+          skinFloor: 2, affects: 'friendly',
+        },
       ],
     },
     construction: {
@@ -240,6 +252,25 @@ describe('The Study', () => {
       await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-minor'))
       const ember = screen.getByTestId('study-spell-detail-fireball-minor')
       expect(ember).not.toHaveTextContent('Skin to')
+    })
+
+  it('P-8: a form that touches only one side says which, and the rest are silent',
+    async () => {
+      studyWith()
+      await userEvent.click(screen.getByTestId('study-spell-toggle-barkskin-minor'))
+      const bark = screen.getByTestId('study-spell-detail-barkskin-minor')
+      expect(bark).toHaveTextContent('Friendly only')
+      // ...and it is the same row that says the rest of NP-2's facts.
+      expect(bark).toHaveTextContent('Skin to 2')
+      expect(bark).toHaveTextContent('Area 320 (explosion)')
+
+      // 'everyone' is the default and most of the roster (T-7): the word on
+      // every row would be noise, so an ordinary row says nothing about sides.
+      // An older server that ships no `affects` at all is silent too.
+      await userEvent.click(screen.getByTestId('study-spell-toggle-fireball-major'))
+      const blast = screen.getByTestId('study-spell-detail-fireball-major')
+      expect(blast).not.toHaveTextContent('Friendly only')
+      expect(blast).not.toHaveTextContent('Enemy only')
     })
 
   it('T-6: a form that covers ground says how much, and one that does not is silent',
