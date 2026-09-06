@@ -12,16 +12,25 @@ implementation, if your confidence in the requirements is only medium or low, in
 Staying aligned with the user outranks moving fast — err toward grilling too often rather
 than too rarely. Don't act on the plan until the interview reaches a shared understanding.
 
-## Division of labour: plan with Fable, code with an Opus subagent
+## Division of labour: plan with Fable, code with a subagent (Opus by default, Fable when hard)
 
 **Standing instruction (user, 2026-08-28): the interviewing/planning model (Fable) does the design
-work — grilling, decision records, specs, review — and hands the actual code-writing to an Opus
-subagent via the Agent tool (`model: "opus"`).** Write the subagent a complete, self-contained
-spec: the decided design with decision numbers, the files and line areas to touch, repo
-conventions (comment voice, Defines.hpp for balance-deferred numbers, -Werror), the tests to
-write, and the verification to run before it reports back. Review the returned diff yourself,
-run the suites yourself, and keep the commit/merge responsibility — the subagent writes code,
-it does not ship it.
+work — grilling, decision records, specs, review — and hands the actual code-writing to a
+subagent via the Agent tool.** Write the subagent a complete, self-contained spec: the decided
+design with decision numbers, the files and line areas to touch, repo conventions (comment voice,
+Defines.hpp for balance-deferred numbers, -Werror), the tests to write, and the verification to
+run before it reports back. Review the returned diff yourself, run the suites yourself, and keep
+the commit/merge responsibility — the subagent writes code, it does not ship it.
+
+**Which model codes (user, 2026-09-04 and 2026-09-06): Opus (`model: "opus"`) by default, Fable
+(`model: "fable"`) when the slice is genuinely hard** — weigh it per task before launching. Hard
+means cross-cutting engine work where a wrong reading of an existing invariant costs a day
+(the casting-AI scorer, the spell-delivery contest), not size: a wide-but-mechanical slice
+(catalog rows, a route and its tests, a screen) is Opus's. Fable may also write a hard slice
+directly in the planning session when handing it off would cost more than it saves (AI-2 was
+built that way, by the user's leave). Either way the review-and-ship rules above do not change.
+Keep the spec in a file under the session scratchpad and pass its path — a subagent killed by a
+container restart is relaunched from the same spec, as TG-3 was.
 
 ## Planning & session continuity (multi-machine)
 
