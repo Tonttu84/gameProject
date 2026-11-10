@@ -4,9 +4,16 @@ on:
   push:
   pull_request:
 
+# Every job only reads the repository; nothing here writes back to GitHub.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A hang fails with its log instead of sitting until the 6 h default;
+    # the sanitized build and suite take up to about 7 min (2026-11).
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -128,6 +135,9 @@ jobs:
   # Docker stack is exercised, since dev machines run the stack via WSL.
   docker:
     runs-on: ubuntu-latest
+    # A hang fails with its log instead of sitting until the 6 h default;
+    # the image build and smoke take up to about 11 min (2026-11).
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -210,6 +220,9 @@ jobs:
   # so this job boots the image on :3001 and points them at it.
   e2e:
     runs-on: ubuntu-latest
+    # A hang fails with its log instead of sitting until the 6 h default;
+    # the image build and Playwright run take up to about 6 min (2026-11).
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
