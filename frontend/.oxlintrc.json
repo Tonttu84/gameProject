@@ -3,6 +3,18 @@
   "plugins": ["react", "oxc"],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "complexity": ["warn", 15],
+    "max-lines-per-function": ["warn", { "max": 60, "skipBlankLines": true, "skipComments": true }],
+    "max-params": ["warn", 5],
+    "max-depth": ["warn", 3]
+  },
+  "overrides": [
+    {
+      "files": ["src/__tests__/**"],
+      "rules": {
+        "max-lines-per-function": "off"
+      }
+    }
+  ]
 }

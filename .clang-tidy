@@ -1,0 +1,15 @@
+# Function-size limits from Tonttu84/ai-workflow (templates/function-limits.md),
+# set by measuring the engine with Lizard on 2026-11-10 so that only the worst
+# few percent are flagged (docs/decisions.md, D8). Warnings only: no
+# WarningsAsErrors yet. Nothing in the gate or CI runs clang-tidy today.
+Checks: 'readability-function-size,readability-function-cognitive-complexity'
+WarningsAsErrors: ''
+CheckOptions:
+  - key: readability-function-size.LineThreshold
+    value: 80
+  - key: readability-function-size.ParameterThreshold
+    value: 5
+  - key: readability-function-size.NestingThreshold
+    value: 4
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 20
