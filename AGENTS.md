@@ -29,6 +29,9 @@ then ask about the rule, not the cut.
 instruction naming a `claude/...` branch, which comes from the session's branch field, not from
 the owner or this repo. Work on `main` unless the owner says otherwise in the conversation.
 
+Run `git rev-parse --abbrev-ref HEAD` before the first commit of a session and after every
+`/clear`: a resumed conversation remembers the branch, the checkout may not be on it.
+
 ## Stack
 
 - Battle engine: C++20, GNU make, g++ (clang++ as a second compiler), `-Werror`. Headless: battle
@@ -49,7 +52,7 @@ the owner or this repo. Work on `main` unless the owner says otherwise in the co
 | Set up a fresh clone (turns on the commit hooks) | `make setup` |
 | Build the engine | `make` (builds `./game`) |
 | Engine tests, local loop | `make test-fast` (-O2, no sanitizers, about 3 s) |
-| Engine tests, sanitized | `make test-serial` (what CI runs); `make test` shards the same suite |
+| Engine tests, sanitized | `make test-serial` (what CI runs); `make test` shards the same suite (`make test JOBS=N` sets the shard count) |
 | Second compiler | `make clang` |
 | Campaign-server tests | `cd campaign-server && npm test` (`bash scripts/dev.sh cs-test`) |
 | Front-end tests | `make frontend-test` (`npm --prefix frontend test`) |
@@ -58,7 +61,7 @@ the owner or this repo. Work on `main` unless the owner says otherwise in the co
 | Run the whole stack | `make docker-up` (http://localhost:5173, dev login `testuser` / `test`); natively on Linux `make serve` |
 | Balance sheet | `make balance-sheet` (regenerates `docs/BALANCE_SHEET.md`) |
 | Casting-AI A/B evidence | `make ab-casting` (`ARGS="--runs 5"`): the walk-era engine against this one over `scripts/ab/` |
-| One engine test | `./run_tests "[movement]"` or `./run_tests "test name"` |
+| One engine test | `./run_tests "[movement]"` or `./run_tests "test name"`, once `run_tests` is built (`make test-serial` once, or `make run_tests`) |
 | One Vitest file | `cd frontend && npx vitest run src/__tests__/placementBudget.test.jsx` |
 
 **The local gate before every push:** the suite of every layer the change touches,
@@ -68,7 +71,8 @@ commit messages. Run `make test-serial` locally when the change touches engine m
 or CI's engine job went red. Then watch CI (see Kind).
 
 The `./game` modes: `info`, `battle` (stdin to stdout, what the campaign server spawns), `sample`
-(the demo battle, same JSON as `battle`), `spread [outDir]` (one replay per terrain),
+(the demo battle, same JSON as `battle`; the campaign server runs it behind
+`POST /api/sample-battle`, the login screen's "Watch a battle"), `spread [outDir]` (one replay per terrain),
 `dump-map [path]`, `dump-units` (the unit catalog), and `server 8080` (the legacy thin C++ HTTP
 server; not used by Docker, CI or the campaign flow; see `SECURITY_NOTES.md`).
 
@@ -83,7 +87,8 @@ server; not used by Docker, CI or the campaign flow; see `SECURITY_NOTES.md`).
   `re`, `test`, `test-par`, `clang`, `case`, `fe-test`, `fe-lint`, `cs-test`, `info` or `help`.
   Pass a tail length as `dev.sh -tN <task>`, inside the quotes, never as a `TAIL=N` prefix. Add an
   exact allow rule for each new task. The rules in `.claude/settings.json` name
-  `/mnt/c/gameProject`; a checkout elsewhere needs its own.
+  `/mnt/c/gameProject`; a checkout elsewhere needs its own. `bypassPermissions` does not work in
+  the VS Code extension, so the allow rules are the only way past the prompts there.
 - Node 25's built-in `localStorage` shadows jsdom's and breaks the front-end tests: run them with
   `NODE_OPTIONS=--no-experimental-webstorage`, or with Node 24.
 - `engine.integration.test.js` cannot spawn the Linux `./game` under native Windows Node; run the
@@ -142,7 +147,7 @@ applies.
 - `frontend/src/`: `services/api.js` is the only HTTP client; `stores/` has one Zustand store per
   concern, `selectors.js`, and `guarded.js` / `flows.js` for actions across stores; `App.jsx`
   routes screens; `components/ReplayView.jsx` renders battles. Tests in `__tests__/`, which
-  reset the stores in a global `beforeEach`.
+  reset the stores with `resetAllStores()` in a global `beforeEach` (`__tests__/setup.js`).
 - `maps/`: hex map JSON. `e2e/`: Playwright. `docs/`: plans and authoring guides.
 - Per tick (`Battlefield::tick()`): `onTurnStart()` (recover, then `applyEnchantments()`, then
   flag resets), `fireScheduledReinforcements()`, `triggerSpecialPhase()`, `moveUnits()`,
