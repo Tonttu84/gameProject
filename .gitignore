@@ -6,8 +6,6 @@ run_tests
 run_tests_fast
 .claude/*
 !.claude/settings.json
-!.claude/skills/
-!.claude/skills/**
 !.claude/hooks/
 !.claude/hooks/**
 game_clang
