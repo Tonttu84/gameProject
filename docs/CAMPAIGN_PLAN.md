@@ -206,7 +206,7 @@ this order to pick the work up cold:
    - **CONSTRUCTION / CRAFTING.** The fourth school ships hollow (M-9), The Study renders it empty
      (S3-5), and 9-7 already named crafting as one of the four channels an item can arrive through
      — *"Loot, purchase, crafting, events"* — with only loot and events built. **It has never been
-     interviewed. Interview it before building** (CLAUDE.md's standing rule): what a workshop IS,
+     interviewed. Interview it before building** (the Grilling section of the shared working agreements): what a workshop IS,
      what it consumes, whether a crafted item is permanent like a bound banner, and how a
      Construction level gates any of it are all open. Nothing here is a blank page — M-9, 9-7 and
      S3-5 each say what the thing is FOR — but none of them says what it does.
@@ -691,8 +691,8 @@ CONTENTS LIST, not a design, and three panels are waiting to be absorbed into it
 screen exists.
 
 **INTERVIEW BEFORE BUILDING IT.** It is the largest UI decision in the campaign layer and the
-first screen that is a design rather than a mechanic, so it is exactly what the `grilling` skill
-in CLAUDE.md is for. Do not start from the contents list and guess a layout.
+first screen that is a design rather than a mechanic, so it is exactly what the Grilling section
+of the shared working agreements is for. Do not start from the contents list and guess a layout.
 
 **THE INTERVIEW IS UNDER WAY — ten decisions taken so far (user, 2026-08-20/21), recorded here
 because a `/clear` ate the first batch once already.** They are the user's; do not re-derive them.
