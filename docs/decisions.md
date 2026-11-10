@@ -1,0 +1,12 @@
+# Decisions
+
+Workflow and tooling decisions for this project. The game's design decisions live in
+`docs/CAMPAIGN_PLAN.md` under their own ids (M-*, S*-*, C-*, E-*, SB-*). One row per decision.
+Never rewrite an old row: a reversal is a new row that names the one it replaces.
+
+| ID | Decision | Reason | Chosen against |
+| --- | --- | --- | --- |
+| D1 | The project moves onto the owner's shared ai-workflow rules as a **solo** project (owner's choice, 2026-11-10). `AGENTS.md` is the rulebook, `CLAUDE.md` is the one line `@AGENTS.md`, and the history behind the old `CLAUDE.md` rules moved to `docs/history.md`. Rules the shared agreements now cover (grilling, the coordinator and subagent split, branch checks, shipping) were dropped from the project file. | One way of working across the owner's projects; `AGENTS.md` is the format other coding tools read. | Keeping the long `CLAUDE.md` as the project rulebook. |
+| D2 | The project keeps one step on top of the shared solo flow: after the push, watch CI on the pushed commit until it is green. Agent's choice, keeping the project's 2026-08-10 shipping rule. | The sanitized engine suite, the Docker smoke and the end-to-end tests run only in CI, so the local gate cannot catch what they catch. | Treating the local gate as the whole check. |
+| D3 | Two decision records: this file for workflow and tooling, `docs/CAMPAIGN_PLAN.md` for game design. Agent's choice. | The campaign plan already holds hundreds of cited design decisions under its own ids; moving them would break every citation in code comments and docs. | Moving the design decisions here. |
+| D4 | The commit hooks from ai-workflow's `hooks/install.sh` in its default mode: committed in `.githooks/`, turned on by `core.hooksPath`. `make setup` sets it, natively on Windows without WSL; the Claude `SessionStart` hook sets it on every session; `.gitattributes` keeps `.githooks/*` at LF. Agent's choice. | `.git/hooks` held only samples, so nothing was switched off. The Makefile forwards every other goal to WSL, which a git config line does not need. Hooks without an extension fell outside the existing `*.sh eol=lf` rule, and a CRLF shebang breaks them. | `--git-hooks` (copies into `.git/hooks` that a clone never gets); a separate setup script. |

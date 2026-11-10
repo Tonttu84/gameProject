@@ -19,10 +19,10 @@ the interactive plan at `~/.claude/plans/whimsical-greeting-snail.md`. That fold
 (`c--gameProject`) is derived from the project's absolute path (`c:\gameProject`). So on a
 new machine that memory is only auto-loaded if you (a) put the project at the *same path* and
 (b) copy `~/.claude` over. **This committed file is the fallback that doesn't depend on any of
-that** — if the auto-memory isn't present, treat this file + `CLAUDE.md` + `git log` as the
+that** — if the auto-memory isn't present, treat this file + `AGENTS.md` + `git log` as the
 source of truth.
 
-**To pick up the work cold:** read `CLAUDE.md` (build/test/architecture), then this file, then
+**To pick up the work cold:** read `AGENTS.md` (build/test/architecture), then this file, then
 `git log --oneline -15` to see which stages have actually landed. Don't trust the "done"
 notes below over the git history if they ever disagree — the commits win.
 
@@ -1830,7 +1830,7 @@ The award numbers and the rank ladder were CHOSEN BY THE USER on 2026-08-10, not
 drafts of this handoff called the `strengthBand` scaling an open assistant judgement call, and that
 is now out of date. Treat them as settled.
 
-**Read `CLAUDE.md`'s "Shipping" section first.** Standing instruction as of 2026-08-10: finish a
+**Read `AGENTS.md`'s "Kind" section first.** Standing instruction as of 2026-08-10: finish a
 feature, get it green, merge it to `main` — do not ask permission to ship. Interviewing the user
 about DESIGN is still expected and welcome; asking whether to merge finished work is not.
 

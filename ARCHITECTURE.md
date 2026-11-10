@@ -4,7 +4,7 @@ The shape of the system, in diagrams. Rewritten 2026-08-29 — the previous vers
 pre-hex, pre-magic engine and a campaign layer that was still hypothetical, and had drifted far
 enough to mislead.
 
-**What is authoritative, when this file and the code disagree:** the code, always. `CLAUDE.md`
+**What is authoritative, when this file and the code disagree:** the code, always. `AGENTS.md`
 holds build/test commands and the module boundaries; `docs/CAMPAIGN_PLAN.md` is the campaign
 layer's decision record (every rule cited as M-*, S*-*, C-*, E-* lives there); `DESIGN.md`
 describes the hex/formation/combat design, most of it still marked `[PLANNED]`. This file is the

@@ -8,7 +8,7 @@ The current renderer (`backend/render/src/BattleRenderer.cpp`) draws a flat, 90Â
 hex grid with units as single `sf::Text` letters. We are replacing it wholesale with a **2:1
 isometric** renderer that draws real terrain tiles and animated unit sprites. This is a rewrite of
 the *view only* â€” the engine/simulation (`backend/engine/`) is untouched; the renderer still consumes
-`HexGrid` + `AUnit` state read-only, exactly as the module boundary in CLAUDE.md requires.
+`HexGrid` + `AUnit` state read-only, exactly as the module boundary in CLAUDE.md (now AGENTS.md) requires.
 
 ---
 

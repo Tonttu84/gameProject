@@ -65,7 +65,7 @@ docs/               Living plans & design notes (campaign plan, rendering, addin
 Makefile            Engine build + test targets, plus docker-* and serve helpers.
 ```
 
-Key reading: [CLAUDE.md](CLAUDE.md) (build/test/architecture cheat-sheet), [DESIGN.md](DESIGN.md)
+Key reading: [AGENTS.md](AGENTS.md) (build/test/architecture cheat-sheet and working rules), [DESIGN.md](DESIGN.md)
 (hex/formation/combat design), [docs/CAMPAIGN_PLAN.md](docs/CAMPAIGN_PLAN.md) (campaign roadmap).
 
 ---
@@ -150,7 +150,7 @@ cd frontend && npm test          # frontend Vitest suite
 ```
 
 > On Windows/WSL, engine build/test tasks are wrapped in `scripts/dev.sh` for a prompt-free dev
-> loop — see [CLAUDE.md](CLAUDE.md). Node tests run through the pinned toolchain there.
+> loop — see [AGENTS.md](AGENTS.md). Node tests run through the pinned toolchain there.
 
 ---
 

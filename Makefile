@@ -1,5 +1,5 @@
 # ── Windows shim ──────────────────────────────────────────────────────────────
-# No native Windows build (see CLAUDE.md). GNU make sets OS=Windows_NT when run
+# No native Windows build (see AGENTS.md). GNU make sets OS=Windows_NT when run
 # from cmd/PowerShell; forward every goal into WSL, where the toolchain lives,
 # then skip the Unix rules below. WSL inherits the current directory
 # (C:\gameProject → /mnt/c/gameProject) automatically, so nothing is hardcoded,
