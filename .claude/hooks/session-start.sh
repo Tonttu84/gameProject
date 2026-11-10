@@ -22,6 +22,10 @@
 # and the C++ engine tests via `make test-serial`.
 set -euo pipefail
 
+# The committed commit hooks (.githooks/), on every machine: a clone has them
+# off until core.hooksPath points there (the same line as `make setup`).
+git -C "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}" config core.hooksPath .githooks || true
+
 # Local dev boxes (Linux/WSL/Windows) manage their own toolchain — see CLAUDE.md.
 # Only provision the managed web environment.
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then

@@ -12,18 +12,25 @@
 # stack in Linux containers; every other goal forwards to WSL unchanged.
 ifeq ($(OS),Windows_NT)
 
+# `setup` only sets a git config value, so it runs natively, without WSL.
 GOALS       := $(or $(MAKECMDGOALS),all)
+WSL_GOALS   := $(filter-out setup,$(GOALS))
 RUN_TARGETS := serve server-node frontend
-FWD         := $(foreach g,$(GOALS),$(if $(filter $(RUN_TARGETS),$g),docker-up,$g))
-ifneq ($(FWD),$(GOALS))
+FWD         := $(foreach g,$(WSL_GOALS),$(if $(filter $(RUN_TARGETS),$g),docker-up,$g))
+ifneq ($(FWD),$(WSL_GOALS))
 $(info Windows: the app runs in Docker; forwarding as 'make $(FWD)'.)
 endif
 
-.PHONY: $(GOALS) __wsl
-$(GOALS): __wsl
+.DEFAULT_GOAL := all
+.PHONY: $(GOALS) __wsl setup
+setup:
+	git config core.hooksPath .githooks
+ifneq ($(WSL_GOALS),)
+$(WSL_GOALS): __wsl
 	@:
 __wsl:
 	@wsl -e bash -lc "make $(FWD)"
+endif
 
 else
 
@@ -179,11 +186,18 @@ $(CLANG_NAME): $(CLANG_OBJS)
 
 clang: $(CLANG_NAME)
 
-.PHONY: all clean fclean re test test-serial test-fast clang serve server-node frontend frontend-test \
-        balance-sheet ab-casting db-clean docker-check docker-build docker-up docker-down docker-clean docker-logs
+.PHONY: all setup clean fclean re test test-serial test-fast clang serve server-node frontend \
+        frontend-test balance-sheet ab-casting db-clean docker-check docker-build docker-up \
+        docker-down docker-clean docker-logs
 
 # ── Default goal ──────────────────────────────────────────────────────────────
 all: $(NAME)
+
+# ── Fresh clone ───────────────────────────────────────────────────────────────
+# Turns on the committed commit hooks (.githooks/: commit-msg and pre-push,
+# from Tonttu84/ai-workflow). A clone has them off until this runs once.
+setup:
+	git config core.hooksPath .githooks
 
 # ── Main binary ───────────────────────────────────────────────────────────────
 # Ask the compiler itself where its libstdc++ lives and bake that path into the binary.

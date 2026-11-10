@@ -3,3 +3,5 @@
 # core.autocrlf=true would otherwise stamp them with CRLF and break the
 # interpreter line ("/bin/bash^M: bad interpreter").
 *.sh text eol=lf
+# The commit hooks have no extension and run under bash on every platform.
+.githooks/* text eol=lf
