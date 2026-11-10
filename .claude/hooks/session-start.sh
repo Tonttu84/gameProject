@@ -1,8 +1,11 @@
 #!/bin/bash
-# SessionStart hook for Claude Code on the web (remote sessions).
+# SessionStart hook for Claude Code, every session on every machine.
 #
-# A fresh remote clone has no node_modules and no built ./game, so the test
-# suites and linters can't run until this provisions them. It:
+# Everywhere, it turns on the committed commit hooks (core.hooksPath).
+#
+# On the web (remote sessions) only, it also provisions the checkout: a fresh
+# remote clone has no node_modules and no built ./game, so the test suites and
+# linters can't run until this does. It:
 #   1. builds the headless engine (./game) — needed by the C++ tests and by
 #      campaign-server's engine.integration.test.js, which spawns it;
 #   2. installs the campaign-server + frontend node deps.
