@@ -1,13 +1,23 @@
-import { beforeAll, afterAll, beforeEach, describe, expect, test } from 'vitest'
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, test } from 'vitest'
 import bcrypt from 'bcryptjs'
 import { startTestDb, stopTestDb, clearDb } from './helpers/db.js'
-import { seedDevUser } from '../services/devSeed.js'
+import { seedDevUser, devLoginAvailable } from '../services/devSeed.js'
 import User from '../models/user.js'
 import config from '../utils/config.js'
 
 beforeAll(startTestDb)
 afterAll(stopTestDb)
 beforeEach(clearDb)
+
+// The dev login comes only from the environment (the secrets overlay), so the
+// suite sets its own throwaway pair rather than depending on the machine.
+let savedLogin
+beforeEach(() => {
+  savedLogin = { DEV_USER: config.DEV_USER, DEV_PASSWORD: config.DEV_PASSWORD }
+  config.DEV_USER = 'seed-test-user'
+  config.DEV_PASSWORD = `pw-${Math.random().toString(36).slice(2)}`
+})
+afterEach(() => Object.assign(config, savedLogin))
 
 describe('seedDevUser', () => {
   test('creates the dev user with a hash that matches DEV_PASSWORD', async () => {
@@ -32,5 +42,15 @@ describe('seedDevUser', () => {
     } finally {
       config.MONGODB_URI = saved
     }
+  })
+
+  test('dev login is off without credentials: nothing seeded, nothing advertised', async () => {
+    for (const [user, password] of [[null, null], ['seed-test-user', null], [null, 'pw']]) {
+      config.DEV_USER = user
+      config.DEV_PASSWORD = password
+      expect(devLoginAvailable()).toBe(false)
+      expect(await seedDevUser()).toBe(false)
+    }
+    expect(await User.countDocuments()).toBe(0)
   })
 })

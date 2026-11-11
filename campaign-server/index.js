@@ -1,5 +1,5 @@
 import app, { apiRoutes } from './app.js'
-import config from './utils/config.js'
+import config, { configWarnings } from './utils/config.js'
 import { connectDb } from './utils/db.js'
 import { dumpSpells, dumpUnits, getInfo } from './services/engine.js'
 import { syncCatalog } from './services/catalogSync.js'
@@ -12,6 +12,7 @@ import { seedDevUser, devLoginAvailable } from './services/devSeed.js'
 // Each phase logs BEFORE it runs so a hung boot (unreachable Mongo, wedged
 // engine subprocess) shows where it stopped instead of sitting silent.
 const start = async () => {
+  for (const warning of configWarnings) console.warn(`config: ${warning}`)
   console.log(`boot: connecting to MongoDB (${config.MONGODB_URI ? 'external' : 'embedded'})...`)
   await connectDb()
   console.log('boot: syncing unit catalog from the engine...')
@@ -26,7 +27,7 @@ const start = async () => {
   setSpellCatalog(await dumpSpells())
   console.log(`spell roster loaded (${getSpellCatalog().length} forms)`)
   if (await seedDevUser())
-    console.log(`dev user seeded (${config.DEV_USER}/${config.DEV_PASSWORD})`)
+    console.log(`dev user seeded (${config.DEV_USER})`)
   await getInfo()
 
   // The success banner prints ONLY from the listen callback, and the route
@@ -43,7 +44,7 @@ const start = async () => {
       const gameUrl = config.FRONTEND_DIST
         ? `http://localhost:${config.PORT}`
         : 'http://localhost:5173 (the Vite dev server — this port is the API only)'
-      console.log(`\nReady: open ${gameUrl} and log in as ${config.DEV_USER} / ${config.DEV_PASSWORD}`)
+      console.log(`\nReady: open ${gameUrl} and log in as ${config.DEV_USER} (password: DEV_PASSWORD in the secrets overlay)`)
     }
   })
   // A failed bind must kill the boot loudly. Without this, EADDRINUSE leaves

@@ -280,7 +280,7 @@ frontend/node_modules: frontend/package.json frontend/package-lock.json
 # Node BFF (campaign-server/): DB + replay storage; spawns ./game itself.
 # This is what the frontend's /api proxy points at (port 3001).
 server-node: campaign-server/node_modules $(NAME)
-	cd campaign-server && npm start
+	cd campaign-server && bash ../scripts/with-dev-env.sh npm start
 
 frontend: frontend/node_modules
 	cd frontend && npm run dev
@@ -316,7 +316,7 @@ serve: campaign-server/node_modules frontend/node_modules $(NAME)
 	@cleanup() { kill $$backend_pid $$frontend_pid 2>/dev/null; }; \
 	trap cleanup EXIT; \
 	trap 'cleanup; exit 130' INT TERM; \
-	(cd campaign-server && npm start) & backend_pid=$$!; \
+	(cd campaign-server && bash ../scripts/with-dev-env.sh npm start) & backend_pid=$$!; \
 	(cd frontend && npm run dev) & frontend_pid=$$!; \
 	wait -n $$backend_pid $$frontend_pid; code=$$?; \
 	if kill -0 $$backend_pid 2>/dev/null; then who=frontend; else who=campaign-server; fi; \
@@ -348,7 +348,8 @@ docker-check:
 docker-build: docker-check
 	docker build -t gameproject .
 
-# Build + start everything → http://localhost:5173, log in as testuser/test.
+# Build + start everything → http://localhost:5173, log in with DEV_USER /
+# DEV_PASSWORD from the secrets overlay (docker-compose.yml loads it when present).
 # (5173 = the same port the Vite dev server uses natively, so the game URL is
 # identical on every machine; the compose file sets the PORT override.)
 # Campaigns persist in the `gamedb` volume across restarts.

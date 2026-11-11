@@ -146,12 +146,20 @@ jobs:
       - name: Build image
         run: docker build -t gameproject .
 
+      # The image commits no dev login (docs/decisions.md D10): the smoke seeds
+      # a throwaway one made for this run and logs in with it.
       - name: Boot the stack
         run: |
+          DEV_USER="ci-$(openssl rand -hex 4)"
+          DEV_PASSWORD="$(openssl rand -hex 16)"
+          echo "::add-mask::$DEV_PASSWORD"
+          echo "DEV_USER=$DEV_USER" >> "$GITHUB_ENV"
+          echo "DEV_PASSWORD=$DEV_PASSWORD" >> "$GITHUB_ENV"
           docker network create smoke
           docker run -d --name mongo --network smoke mongo:7
           docker run -d --name game --network smoke -p 3001:3001 \
-            -e MONGODB_URI=mongodb://mongo:27017 -e DEV_SEED=1 gameproject
+            -e MONGODB_URI=mongodb://mongo:27017 -e DEV_SEED=1 \
+            -e DEV_USER="$DEV_USER" -e DEV_PASSWORD="$DEV_PASSWORD" gameproject
           for i in $(seq 1 60); do
             curl -fs http://localhost:3001/api/info > /dev/null && exit 0
             sleep 2
@@ -166,8 +174,8 @@ jobs:
         run: |
           set -e
           BASE=http://localhost:3001/api
-          TOKEN=$(curl -fs -X POST $BASE/login -H 'Content-Type: application/json' \
-            -d '{"username":"testuser","password":"test"}' | jq -r .token)
+          TOKEN=$(jq -n --arg u "$DEV_USER" --arg p "$DEV_PASSWORD" '{username: $u, password: $p}' \
+            | curl -fs -X POST $BASE/login -H 'Content-Type: application/json' -d @- | jq -r .token)
           test "$TOKEN" != "null"
           AUTH="Authorization: Bearer $TOKEN"
           # A real battle proves the headless engine path: the ./game battle

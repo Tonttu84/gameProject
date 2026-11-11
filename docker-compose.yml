@@ -2,7 +2,12 @@
 # MongoDB. On any machine with Docker (Windows: Docker Desktop):
 #
 #   docker compose up --build
-#   → open http://localhost:5173 and log in as testuser / test
+#   → open http://localhost:5173 and log in with DEV_USER / DEV_PASSWORD
+#
+# Those and the JWT SECRET come from the secrets overlay
+# ${SECRETS_DIR:-../secrets}/gameproject/dev.env, which wins over the committed
+# dev.env (names only). Without the overlay the stack still starts, with a
+# random JWT secret and no dev login (docs/decisions.md D10).
 #
 # Campaigns persist in the named volume; `docker compose down -v` wipes them.
 services:
@@ -22,12 +27,16 @@ services:
     # CI runs the image without this override, on the Dockerfile's 3001.
     ports:
       - "5173:5173"
+    env_file:
+      - path: dev.env
+      - path: ${SECRETS_DIR:-../secrets}/gameproject/dev.env
+        required: false
     environment:
       PORT: 5173
       MONGODB_URI: mongodb://mongo:27017
       DB_NAME: gamedb
-      # Local-only convenience login (testuser/test). Remove both this and
-      # the default SECRET before exposing the stack to anyone but yourself.
+      # Local-only convenience: seed the dev login (DEV_USER/DEV_PASSWORD) into
+      # this external Mongo. Remove it before exposing the stack to anyone else.
       DEV_SEED: "1"
       # Test-only: force a deterministic 3-choice, non-deferred augur reveal so
       # the e2e reliably exercises the multi-choice path (all six ids are choice

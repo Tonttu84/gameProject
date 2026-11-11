@@ -58,7 +58,7 @@ Run `git rev-parse --abbrev-ref HEAD` before the first commit of a session and a
 | Front-end tests | `make frontend-test` (`npm --prefix frontend test`) |
 | Front-end lint | `npm --prefix frontend run lint` (oxlint; function-size limits warn only) |
 | End-to-end tests | `cd e2e && npm test` against a running `make docker-up` (http://localhost:5173 by default; `E2E_BASE_URL` overrides; see `e2e/README.md`) |
-| Run the whole stack | `make docker-up` (http://localhost:5173, dev login `testuser` / `test`); natively on Linux `make serve` |
+| Run the whole stack | `make docker-up` (http://localhost:5173, dev login from the secrets overlay, see below); natively on Linux `make serve` |
 | Balance sheet | `make balance-sheet` (regenerates `docs/BALANCE_SHEET.md`) |
 | Casting-AI A/B evidence | `make ab-casting` (`ARGS="--runs 5"`): the walk-era engine against this one over `scripts/ab/` |
 | One engine test | `./run_tests "[movement]"` or `./run_tests "test name"`, once `run_tests` is built (`make test-serial` once, or `make run_tests`) |
@@ -69,6 +69,15 @@ Run `git rev-parse --abbrev-ref HEAD` before the first commit of a session and a
 `npm --prefix frontend run lint` (front end), plus the `pre-push` hook, which checks the outgoing
 commit messages. Run `make test-serial` locally when the change touches engine memory handling
 or CI's engine job went red. Then watch CI (see Kind).
+
+**Dev secrets.** The campaign server's JWT `SECRET` and the seeded dev login (`DEV_USER`,
+`DEV_PASSWORD`) live in the owner's private secrets repo as `gameproject/dev.env`, an overlay of
+the committed `dev.env`, which holds the names with empty values. The clone sits beside this
+checkout (`../secrets`); `SECRETS_DIR` points elsewhere. `docker-compose.yml` loads both files
+(the overlay is optional), and `make serve` / `make server-node` load the overlay through
+`scripts/with-dev-env.sh`. Without it the server still starts: a random per-process JWT secret
+and no dev login, each with a `config:` warning at boot (D10). Never commit a value; the CI
+smoke makes its own throwaway login per run.
 
 The `./game` modes: `info`, `battle` (stdin to stdout, what the campaign server spawns), `sample`
 (the demo battle, same JSON as `battle`; the campaign server runs it behind
@@ -180,8 +189,8 @@ its decisions; read its handoff at the start of a campaign session), `docs/ADDIN
   machines, and Claude's auto-memory does not.
 - The ignored `game`, `run_tests` and `run_tests_fast` binaries in the checkout are Linux ELF
   files.
-- Endpoints are unauthenticated at the engine layer, CORS is open and the dev login is trivial:
-  local use only.
+- Endpoints are unauthenticated at the engine layer, CORS is open and the dev login is a
+  shared test-grade value: local use only.
 
 ## Decisions
 

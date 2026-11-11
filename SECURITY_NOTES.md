@@ -45,8 +45,11 @@ its user; reads (replays, catalog, map, info) are deliberately public. Regressio
 **Still open**: the legacy C++ HTTP server (`./game server 8080`, `BattleServer.cpp`)
 remains unauthenticated — but the frontend no longer talks to it (the Node BFF is the only
 boundary), so treat that C++ server as a local dev tool only and do not expose its port.
-Also note the JWT secret falls back to a dev value; set `SECRET` in any real deployment,
-and consider rate-limiting `/api/login` (no lockout/backoff currently).
+The JWT secret and the dev login are no longer committed (2026-11-11, `docs/decisions.md`
+D10): without `SECRET` the server signs with a random per-process secret and warns at boot,
+and without `DEV_USER`/`DEV_PASSWORD` the dev login is off. Set `SECRET` in any real deployment
+anyway (tokens otherwise die on every restart), and consider rate-limiting `/api/login` (no
+lockout/backoff currently).
 
 ### 3. Uncaught exceptions from malformed JSON crash the battle subprocess — High — Fixed
 **Where**: `backend/server/src/UnitRegistry.cpp` `buildArmyFromPlacement()` (was

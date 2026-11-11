@@ -2,17 +2,20 @@ import bcrypt from 'bcryptjs'
 import User from '../models/user.js'
 import config from '../utils/config.js'
 
-// Dev convenience: guarantee a known login (testuser/test) exists so a
+// Dev convenience: guarantee a known login (DEV_USER/DEV_PASSWORD from the
+// secrets overlay) exists so a
 // `make db-clean` / rebuild doesn't force re-registering every time. Only
 // runs against the embedded local mongod — when MONGODB_URI points at a
 // real/hosted DB this is a no-op, so the account can never leak into a
 // deployment. DEV_SEED=1 is the explicit opt-out of that guard, used by the
 // docker-compose test stack (its Mongo is external but still local-only).
 // True when the known dev login (DEV_USER/DEV_PASSWORD) is guaranteed to exist:
-// the embedded local mongod, or the explicit DEV_SEED opt-in. The single source
+// both credentials set, and the embedded local mongod or the explicit DEV_SEED
+// opt-in. Without credentials the dev login is off (docs/decisions.md D10). The single source
 // of truth for both seeding and printing the boot login hint — so a real
 // deployment (external DB, no DEV_SEED) neither seeds nor advertises creds.
 export function devLoginAvailable() {
+  if (!config.DEV_USER || !config.DEV_PASSWORD) return false
   return !config.MONGODB_URI || config.DEV_SEED
 }
 

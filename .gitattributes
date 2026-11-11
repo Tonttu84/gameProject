@@ -5,3 +5,5 @@
 *.sh text eol=lf
 # The commit hooks have no extension and run under bash on every platform.
 .githooks/* text eol=lf
+# Env files are read by docker compose and sourced by bash on every platform.
+*.env text eol=lf

@@ -2,6 +2,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveAuthEnv } from './authEnv.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Repo root: campaign-server/utils/ → two levels up.
@@ -17,6 +18,11 @@ const buildStampPath = path.join(ROOT, 'BUILD_VERSION')
 const buildStamp = fs.existsSync(buildStampPath)
   ? fs.readFileSync(buildStampPath, 'utf8').trim()
   : null
+
+// JWT secret and dev login: environment only, see utils/authEnv.js. index.js
+// prints configWarnings at boot.
+const auth = resolveAuthEnv(process.env)
+export const configWarnings = auth.warnings
 
 // MONGODB_URI is the later escape hatch to a real/hosted MongoDB: when set,
 // the embedded persistent mongod is skipped entirely and nothing else changes.
@@ -50,13 +56,13 @@ const config = {
     : [],
   // Battles render at ~200ms/tick in the SFML window, so allow long runs.
   BATTLE_TIMEOUT_MS: Number(process.env.BATTLE_TIMEOUT_MS) || 10 * 60 * 1000,
-  // JWT signing secret. The fallback is for local dev only — set SECRET in any
-  // deployment that is reachable by anyone but you.
-  SECRET: process.env.SECRET || 'dev-only-secret-change-me',
+  // JWT signing secret: SECRET, or a random per-process one with a boot warning.
+  SECRET: auth.SECRET,
   // Seeded at boot by services/devSeed.js — embedded local DB only (skipped
   // whenever MONGODB_URI is set), so it survives make db-clean/rebuilds.
-  DEV_USER: process.env.DEV_USER || 'testuser',
-  DEV_PASSWORD: process.env.DEV_PASSWORD || 'test',
+  // Both null (dev login off) unless DEV_USER and DEV_PASSWORD are both set.
+  DEV_USER: auth.DEV_USER,
+  DEV_PASSWORD: auth.DEV_PASSWORD,
 }
 
 export default config
