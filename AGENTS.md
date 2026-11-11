@@ -86,9 +86,11 @@ server; not used by Docker, CI or the campaign flow; see `SECURITY_NOTES.md`).
   `wsl -e bash -lc 'bash /mnt/<drive>/<path>/scripts/dev.sh <task>'`, where `<task>` is `build`,
   `re`, `test`, `test-par`, `clang`, `case`, `fe-test`, `fe-lint`, `cs-test`, `info` or `help`.
   Pass a tail length as `dev.sh -tN <task>`, inside the quotes, never as a `TAIL=N` prefix. Add an
-  exact allow rule for each new task. The rules in `.claude/settings.json` name
-  `/mnt/c/gameProject`; a checkout elsewhere needs its own. `bypassPermissions` does not work in
-  the VS Code extension, so the allow rules are the only way past the prompts there.
+  exact allow rule for each new task. The rules in `.claude/settings.json` name the known
+  checkouts: `/mnt/c/gameProject`, `/mnt/d/Git/gameProject` (and its Git Bash form
+  `/d/Git/gameProject`) and `/home/jrimpila/Git/gameProject`; a checkout elsewhere needs its own
+  (D11). `bypassPermissions` does not work in the VS Code extension, so the allow rules are the
+  only way past the prompts there.
 - Node 25's built-in `localStorage` shadows jsdom's and breaks the front-end tests: run them with
   `NODE_OPTIONS=--no-experimental-webstorage`, or with Node 24.
 - `engine.integration.test.js` cannot spawn the Linux `./game` under native Windows Node; run the
