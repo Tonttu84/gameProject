@@ -3,8 +3,8 @@ import User from '../models/user.js'
 import config from '../utils/config.js'
 
 // Dev convenience: guarantee a known login (DEV_USER/DEV_PASSWORD from the
-// secrets overlay) exists so a
-// `make db-clean` / rebuild doesn't force re-registering every time. Only
+// secrets overlay) exists so a `make db-clean` / rebuild doesn't force
+// re-registering every time. Only
 // runs against the embedded local mongod — when MONGODB_URI points at a
 // real/hosted DB this is a no-op, so the account can never leak into a
 // deployment. DEV_SEED=1 is the explicit opt-out of that guard, used by the

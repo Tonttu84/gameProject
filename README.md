@@ -83,7 +83,10 @@ make docker-up          # or: docker compose up --build
 Then open **http://localhost:5173** and log in with the dev login (`DEV_USER` /
 `DEV_PASSWORD`), which the stack seeds from the owner's private secrets overlay
 (`../secrets/gameproject/dev.env`, or `$SECRETS_DIR`). Without it the stack still starts, with
-no dev login: register an account on the login screen instead. Battles run headless inside the container and stream back to the browser replay.
+no dev login: register an account on the login screen instead. The compose file needs Docker
+Compose 2.24 or later (its optional `env_file`). A database seeded before 2026-11-11 still holds
+the old public `testuser` / `test` login: wipe it with `make docker-clean` (Docker) or
+`make db-clean` (native). Battles run headless inside the container and stream back to the browser replay.
 (5173 is also where the Vite dev server runs natively — the game URL is the same everywhere.)
 
 ```sh
