@@ -53,5 +53,18 @@ updates:
         applies-to: security-updates
         patterns:
           - '*'
+    # Held back because they refuse the owner's Node 25 under the packages'
+    # engine-strict=true (docs/decisions.md D12, D14). Lift both when the
+    # local Node moves to 24 LTS or 26.
+    ignore:
+      # vitest 5: engines.node ^22.12.0 || ^24.0.0 || >=26.0.0 (D12).
+      - dependency-name: vitest
+        update-types:
+          - version-update:semver-major
+      # jsdom 30 and later: engines.node ^22.22.2 || ^24.15.0 || >=26.0.0;
+      # 27 to 29 still allow Node 25, so they may come (D14).
+      - dependency-name: jsdom
+        versions:
+          - '>=30'
     commit-message:
       prefix: chore
