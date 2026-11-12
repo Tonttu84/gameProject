@@ -269,8 +269,11 @@ re:
 # dying mid-launch. `touch` covers the case where npm decides nothing needs
 # installing and so leaves node_modules' mtime older than its prerequisites,
 # which would otherwise make this rule re-run on every invocation.
+# Installed from inside campaign-server/, not with --prefix: mongodb-memory-
+# server's postinstall finds the pinned mongod version (package.json config,
+# D13) from INIT_CWD, which --prefix leaves at the repo root.
 campaign-server/node_modules: campaign-server/package.json campaign-server/package-lock.json
-	npm install --prefix campaign-server
+	cd campaign-server && npm install
 	@touch $@
 
 frontend/node_modules: frontend/package.json frontend/package-lock.json

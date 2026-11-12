@@ -1,6 +1,7 @@
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import mongoose from 'mongoose'
 import { clearCatalogCache } from '../../utils/catalog.js'
+import { EMBEDDED_MONGOD_VERSION } from '../../utils/db.js'
 
 // Ephemeral in-memory mongod for tests — unrelated to the persistent dev DB
 // in utils/db.js (no dbPath: data vanishes with the process).
@@ -24,7 +25,7 @@ export async function startTestDb() {
     await clearDb()
     return
   }
-  memServer = await MongoMemoryServer.create()
+  memServer = await MongoMemoryServer.create({ binary: { version: EMBEDDED_MONGOD_VERSION } })
   await mongoose.connect(memServer.getUri(), { dbName: 'gamedb-test' })
 }
 
