@@ -37,7 +37,7 @@ Run `git rev-parse --abbrev-ref HEAD` before the first commit of a session and a
 - Battle engine: C++20, GNU make, g++ (clang++ as a second compiler), `-Werror`. Headless: battle
   JSON on stdin, result and full replay JSON on stdout. Bundled `httplib`, `nlohmann/json` and
   Catch2 (`backend/engine/include/extern/`, `backend/engine/tests/catch.hpp`).
-- Campaign server: Node 24, Express 5, Mongoose 8 on MongoDB, JWT and bcrypt. Vitest, supertest,
+- Campaign server: Node 24, Express 5, Mongoose 9 on MongoDB, JWT and bcrypt. Vitest, supertest,
   `mongodb-memory-server`.
 - Front end: React 19, Vite 8, Zustand. Vitest with Testing Library, oxlint.
 - End to end: Playwright (`e2e/`), against a running Docker stack.
