@@ -2,9 +2,9 @@ import { describe, expect, test } from 'vitest'
 import { resolveAuthEnv } from '../utils/authEnv.js'
 
 // The JWT secret and the dev login come from the environment only: the secrets
-// overlay (gameproject/dev.env in the private secrets repo) or the deployment.
-// Without them the server still boots, says so, and never falls back to a
-// value that once lived in git (docs/decisions.md D10).
+// overlay (gameproject/credentials/dev.env in the private secrets repo) or the
+// deployment. Without them the server still boots, says so, and never falls
+// back to a value that once lived in git (docs/decisions.md D10).
 const FULL = { SECRET: 's'.repeat(64), DEV_USER: 'dev-user', DEV_PASSWORD: 'dev-password' }
 
 describe('resolveAuthEnv', () => {

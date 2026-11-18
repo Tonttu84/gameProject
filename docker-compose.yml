@@ -5,9 +5,9 @@
 #   → open http://localhost:5173 and log in with DEV_USER / DEV_PASSWORD
 #
 # Those and the JWT SECRET come from the secrets overlay
-# ${SECRETS_DIR:-../secrets}/gameproject/dev.env, which wins over the committed
-# dev.env (names only). Without the overlay the stack still starts, with a
-# random JWT secret and no dev login (docs/decisions.md D10).
+# ${SECRETS_DIR:-../secrets}/gameproject/credentials/dev.env, which wins over
+# the committed dev.env (names only). Without the overlay the stack still
+# starts, with a random JWT secret and no dev login (docs/decisions.md D10).
 #
 # Campaigns persist in the named volume; `docker compose down -v` wipes them.
 services:
@@ -29,7 +29,7 @@ services:
       - "5173:5173"
     env_file:
       - path: dev.env
-      - path: ${SECRETS_DIR:-../secrets}/gameproject/dev.env
+      - path: ${SECRETS_DIR:-../secrets}/gameproject/credentials/dev.env
         required: false
     environment:
       PORT: 5173

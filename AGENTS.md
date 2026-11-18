@@ -71,14 +71,14 @@ commit messages. Run `make test-serial` locally when the change touches engine m
 or CI's engine job went red. Then watch CI (see Kind).
 
 **Dev secrets.** The campaign server's JWT `SECRET` and the seeded dev login (`DEV_USER`,
-`DEV_PASSWORD`) live in the owner's private secrets repo as `gameproject/dev.env`, an overlay of
-the committed `dev.env`, which holds the names with empty values. The clone sits beside this
-checkout (`../secrets`); `SECRETS_DIR` points elsewhere. `docker-compose.yml` loads both files
-(the overlay is optional), and `make serve` / `make server-node` load the overlay through
-`scripts/with-dev-env.sh`. Without it the server still starts: a random per-process JWT secret
-and no dev login, each with a `config:` warning at boot (D10). Never commit a value; the CI
-smoke makes its own throwaway login per run. The optional `env_file` needs Docker Compose 2.24 or
-later.
+`DEV_PASSWORD`) live in the owner's private secrets repo as `gameproject/credentials/dev.env`
+(D15), an overlay of the committed `dev.env`, which holds the names with empty values. The
+clone sits beside this checkout (`../secrets`); `SECRETS_DIR` points elsewhere.
+`docker-compose.yml` loads both files (the overlay is optional), and `make serve` /
+`make server-node` load the overlay through `scripts/with-dev-env.sh`. Without it the server
+still starts: a random per-process JWT secret and no dev login, each with a `config:` warning
+at boot (D10). Never commit a value; the CI smoke makes its own throwaway login per run. The
+optional `env_file` needs Docker Compose 2.24 or later.
 
 The `./game` modes: `info`, `battle` (stdin to stdout, what the campaign server spawns), `sample`
 (the demo battle, same JSON as `battle`; the campaign server runs it behind

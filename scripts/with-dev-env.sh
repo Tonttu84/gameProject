@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Runs a command with the secrets overlay (gameproject/dev.env in the private
-# secrets repo) exported, for the native `make serve` / `make server-node`.
+# Runs a command with the secrets overlay (gameproject/credentials/dev.env in
+# the private secrets repo) exported, for the native `make serve` /
+# `make server-node`.
 # The committed dev.env holds only empty names, so it is not sourced here: its
 # empty values would clobber ones the caller exported. The overlay, like the
 # compose one, wins over the caller's values. A relative SECRETS_DIR resolves
@@ -13,7 +14,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 secrets="${SECRETS_DIR:-../secrets}"
 case "$secrets" in /* | [A-Za-z]:*) ;; *) secrets="$root/$secrets" ;; esac
-overlay="$secrets/gameproject/dev.env"
+overlay="$secrets/gameproject/credentials/dev.env"
 if [ -f "$overlay" ]; then
   set -a
   # shellcheck disable=SC1090
